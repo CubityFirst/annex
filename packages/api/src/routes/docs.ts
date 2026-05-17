@@ -354,6 +354,13 @@ export async function handleDocs(
       ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
     ]);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
+    // Explicit child cleanup. asset_revisions has NO foreign key to docs, so
+    // nothing cascades — without this its rows leak forever on every delete.
+    // doc_shares does declare ON DELETE CASCADE, but the table-recreate
+    // migrations make cascade firing unreliable; deleting here is idempotent
+    // and correct whether or not the cascade also runs.
+    await env.DB.prepare("DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?").bind(docId).run();
+    await env.DB.prepare("DELETE FROM doc_shares WHERE doc_id = ?").bind(docId).run();
     await deleteFtsRow(env.DB, docId);
     // doc_links rows for this doc cascade away, but the deleted title may have shadowed another doc's resolution, so reindex.
     await invalidateProjectGraphIndex(env, doc.project_id);
