@@ -9,7 +9,7 @@
  * Tests are skipped automatically when the servers are not reachable.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const AUTH_URL = "http://localhost:8788";
 const API_URL  = "http://localhost:8787";
@@ -215,5 +215,86 @@ describe.skipIf(!serversUp)("API — authenticated project + doc flow", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ── Public doc access — published-site semantics ─────────────────────────────
+// A published *site* intentionally exposes ALL of its docs regardless of the
+// per-doc published_at flag (which exists for other reasons). A doc is only
+// hidden from /public when neither the site nor the doc is published. This
+// suite locks in that intended behavior so it is not mistaken for an IDOR.
+
+describe.skipIf(!serversUp)("API — public doc access (published-site semantics)", () => {
+  let token = "";
+  let projectId = "";
+  let docId = "";
+
+  // Distinct CF-Connecting-IP so this suite gets its own auth rate-limit
+  // bucket — the other suites already burn most of the shared FAKE_IP budget.
+  const suiteHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({
+    "Content-Type": "application/json",
+    "CF-Connecting-IP": `172.16.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`,
+    ...extra,
+  });
+
+  beforeAll(async () => {
+    const flowEmail = `public-site-${RUN_ID}@example.com`;
+    await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    token = (await loginRes.json<{ data: { token: string } }>()).data?.token ?? "";
+    expect(token, "login did not return a token (rate-limited?)").not.toBe("");
+
+    const projRes = await fetch(`${API_URL}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Public Site Semantics Project" }),
+    });
+    expect(projRes.status).toBe(201);
+    projectId = (await projRes.json<{ data: { id: string } }>()).data.id;
+
+    const docRes = await fetch(`${API_URL}/docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Secret Draft", content: "# Secret Draft\n\nUnpublished.", projectId }),
+    });
+    expect(docRes.status).toBe(201);
+    docId = (await docRes.json<{ data: { id: string } }>()).data.id;
+  });
+
+  it("hides a doc when neither the site nor the doc is published", async () => {
+    const res = await fetch(`${API_URL}/public/docs/${projectId}/${docId}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("exposes an unpublished doc once the site is published (by design)", async () => {
+    const pubSite = await fetch(`${API_URL}/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ publishedAt: new Date().toISOString() }),
+    });
+    expect(pubSite.status).toBe(200);
+
+    const res = await fetch(`${API_URL}/public/docs/${projectId}/${docId}`);
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { doc: { title: string } } }>();
+    expect(body.ok).toBe(true);
+    expect(body.data.doc.title).toBe("Secret Draft");
+  });
+
+  afterAll(async () => {
+    if (projectId && token) {
+      await fetch(`${API_URL}/projects/${projectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
   });
 });

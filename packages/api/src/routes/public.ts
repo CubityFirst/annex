@@ -110,6 +110,9 @@ export async function handlePublic(
 
     const sitePublished = project.published_at !== null;
     const docPublished = doc.published_at !== null;
+    // A published site intentionally exposes all of its docs regardless of
+    // their per-doc published_at (the per-doc flag exists for other reasons).
+    // Only block when neither the site nor the doc is published.
     if (!sitePublished && !docPublished) return errorResponse(Errors.NOT_FOUND);
 
     const r2Object = await env.ASSETS.get(`${projectId}/${docId}`);

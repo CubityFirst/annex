@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -42,7 +42,7 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -182,6 +182,7 @@ export function SiteSettingsPage() {
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
 
+  const [unpublishedDocCount, setUnpublishedDocCount] = useState(0);
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
@@ -264,6 +265,20 @@ export function SiteSettingsPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingMembers(false));
+  }, [projectId]);
+
+  // Count docs left individually unpublished. A published site exposes all of
+  // its docs regardless of this flag, so the count drives a heads-up warning.
+  useEffect(() => {
+    if (!token || !projectId) return;
+    fetch(`/api/docs?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: { published_at: string | null }[] }) => {
+        if (json.ok && json.data) {
+          setUnpublishedDocCount(json.data.filter(d => d.published_at === null).length);
+        }
+      })
+      .catch(() => {});
   }, [projectId]);
 
   useEffect(() => {
@@ -1068,6 +1083,23 @@ export function SiteSettingsPage() {
                 </Button>
               </div>
             </div>
+            {project.published_at && unpublishedDocCount > 0 && (
+              <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>
+                  {unpublishedDocCount === 1
+                    ? "1 document is marked unpublished"
+                    : `${unpublishedDocCount} documents are marked unpublished`}
+                </AlertTitle>
+                <AlertDescription>
+                  This site is published, so every document — including{" "}
+                  {unpublishedDocCount === 1 ? "this one" : "these"} — is publicly
+                  visible. A document's individual publish setting does not hide it
+                  while the whole site is published. Unpublish the site if any of
+                  these should stay private.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         </>
       )}
