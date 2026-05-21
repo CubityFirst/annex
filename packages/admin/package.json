@@ -11,12 +11,12 @@
   },
   "dependencies": {
     "fflate": "^0.8.2",
-    "hono": "^4.0.0"
+    "hono": "^4.12.21"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "concurrently": "^9.2.1",
     "typescript": "^5.5.0",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.6"
   }
 }

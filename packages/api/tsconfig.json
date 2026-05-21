@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "node"]
   },
   "include": ["src", "../auth/src/jwt.ts", "../auth/src/session.ts", "../auth/src/lib.ts", "../auth/src/crypto.ts", "../auth/src/plan.ts", "../auth/src/badges.ts"]
 }
