@@ -1863,7 +1863,7 @@ export function UserSettingsPage() {
               <section id="theme">
                 <h2 className="text-base font-semibold">Theme</h2>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour. Admin only.
+                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   {([
