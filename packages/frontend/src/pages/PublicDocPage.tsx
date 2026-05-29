@@ -634,7 +634,7 @@ export function PublicDocPage() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}>
         <aside className={cn("flex h-full flex-col border-r border-border overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
-          <div className="flex h-14 items-center gap-2 px-4">
+          <div className="flex h-20 items-center gap-2 px-4">
             {hasToken && (
               <button
                 onClick={() => navigate(`/projects/${data.project.id}`)}
@@ -649,21 +649,21 @@ export function PublicDocPage() {
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
                 alt={data.project.name}
                 title={data.project.name}
-                className="h-8 w-auto max-w-[10rem] object-contain"
+                className="h-12 w-auto max-w-[12rem] object-contain"
               />
             ) : data.project.logo_square_updated_at ? (
               <>
                 <img
                   src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/square?v=${encodeURIComponent(data.project.logo_square_updated_at)}`}
                   alt=""
-                  className="h-6 w-6 shrink-0 rounded object-cover"
+                  className="h-10 w-10 shrink-0 rounded object-cover"
                 />
-                <span className="font-semibold tracking-tight">{data.project.name}</span>
+                <span className="text-lg font-semibold tracking-tight">{data.project.name}</span>
               </>
             ) : (
               <>
-                <BookOpen className="h-5 w-5 text-primary" />
-                <span className="font-semibold tracking-tight">{data.project.name}</span>
+                <BookOpen className="h-6 w-6 text-primary" />
+                <span className="text-lg font-semibold tracking-tight">{data.project.name}</span>
               </>
             )}
           </div>
