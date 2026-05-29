@@ -81,3 +81,28 @@ cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --persist-to .
 # Wrong — targets packages/auth/.wrangler/state, ignored by dev server
 cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --command "..."
 ```
+
+## Parallel Worktrees (dev review)
+
+For running several feature branches side-by-side (e.g. many agents in parallel, each
+reviewable in a browser on its own port), use `scripts/worktree.mjs`. The main checkout runs
+the full stack via `pnpm dev` (frontend 5173 + api 8787 + auth 8788 + admin 8789 + the shared
+`.wrangler/state` D1) — that's the **one backend**. Each worktree adds **another frontend** on
+its own port, and the Vite `/api` proxy (hardcoded to `:8787` in `vite.config.ts`) makes every
+worktree frontend talk to that single backend and share the one dev DB. No app-code or
+vite-config changes.
+
+```
+node scripts/worktree.mjs new <name> [--base main] [--start]   # create + install + assign port
+node scripts/worktree.mjs list                                 # worktrees, ports, serving status
+node scripts/worktree.mjs rm <name> [--force]                  # remove worktree, free port
+```
+
+Worktrees live at `../cubedocs-worktrees/<name>` — **on the same drive as the repo** so
+`pnpm install` hardlinks from the warm pnpm store (`G:\.pnpm-store`) instead of copying.
+Ports are assigned from 5200–5299 and persisted in the gitignored `.worktree-ports.json`
+so each feature keeps a stable review port. **The shared dev DB is the boundary of this
+model** — a schema migration on one branch hits everyone; run an isolated backend manually
+if a branch needs its own schema. See `memories/Worktree-Dev.md` for the full workflow,
+caveats (per-port login, dev service-worker staleness, one-backend-at-a-time), and when to
+use this vs. the agents' built-in ephemeral `isolation: "worktree"`.

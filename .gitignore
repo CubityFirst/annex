@@ -9,3 +9,4 @@ test-results/
 playwright-report/
 coverage/
 .claude/worktrees/
+/.worktree-ports.json
