@@ -25,7 +25,7 @@ export function PrivacyPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Privacy Policy</h1>
-            <p className="l-legal-meta">Effective date: May 10, 2026</p>
+            <p className="l-legal-meta">Effective date: May 29, 2026</p>
 
             <div className="l-legal-body">
               <h2>1. What We Collect</h2>
@@ -36,10 +36,12 @@ export function PrivacyPage() {
               <p>
                 If you subscribe to a paid plan (such as Annex Ink), we store identifiers that link
                 your account to our payment processor — specifically a Stripe customer ID, a Stripe
-                subscription ID, your current plan status, the end of your current billing period,
-                any pending cancellation date, and the date your supporter status began. Card
-                numbers and other payment details are collected directly by Stripe at checkout and
-                never reach our servers.
+                subscription ID, which plan you're on and its current status, the end of your current
+                billing period, any pending cancellation date, and the date your supporter status
+                began. If an administrator grants you complimentary supporter status, we also store
+                that grant, when it starts and expires, and an internal note recording the reason.
+                Card numbers and other payment details are collected directly by Stripe at checkout
+                and never reach our servers.
               </p>
               <p>
                 We log standard server-side request data (IP address, user-agent, timestamps) for
@@ -51,8 +53,9 @@ export function PrivacyPage() {
                 you signed in from, a coarse device type (phone, tablet, laptop, or desktop), a
                 short client label derived from your browser's user-agent (for example, “Chrome on
                 macOS”), and sign-in / last-used timestamps. We do not retain the full user-agent
-                string. Session records are deleted when you sign out, when you revoke the session,
-                or when the session expires (currently 7 days after last use).
+                string. Each session expires 7 days after you sign in. When you sign out or revoke a
+                session it is immediately marked inactive and can no longer be used; inactive and
+                expired records are then permanently deleted within about 30 days.
               </p>
 
               <h2>2. Content You Create</h2>
@@ -105,9 +108,9 @@ export function PrivacyPage() {
                 rather than a direct contractual obligation to us.
               </p>
               <p>
-                Payments are processed by Stripe, Inc. When you start a checkout, we send Stripe
-                your email address and a userId reference so the resulting subscription can be tied
-                back to your account. Stripe collects payment details (card number, expiry, billing
+                Payments are processed by Stripe, Inc. When you start a checkout, we send Stripe a
+                reference to your account — and, on your first checkout, your email address — so the
+                resulting subscription can be tied back to you. Stripe collects payment details (card number, expiry, billing
                 address) directly. Stripe's handling of that data is governed by their own privacy
                 policy, available at{" "}
                 <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">
@@ -123,8 +126,8 @@ export function PrivacyPage() {
                 manual — summaries are only generated when a user clicks the "summarise" button on
                 a document. A project admin can additionally opt the project in to automatic
                 summarisation; in that mode content is sent to the AI provider when a document is
-                created or updated. Automatic summarisation is a separate, deliberate setting and
-                is not enabled by default.
+                viewed. Automatic summarisation is a separate, deliberate setting and is not enabled
+                by default.
               </p>
               <p>
                 When an AI action runs (manual or automatic), the relevant document content is
@@ -162,9 +165,10 @@ export function PrivacyPage() {
               <h2>6. Data Retention and Deletion</h2>
               <p>
                 Your account and all associated data remain on our servers until you delete your
-                account. You can request account deletion at any time from your account settings.
-                We will delete your data within 30 days of the request, except where retention is
-                required by law.
+                account, which you can do at any time from your account settings. Because workspaces
+                can have other members, you'll first need to delete or transfer any workspaces you
+                own; once you do, deleting your account immediately and permanently removes your
+                account and associated data, except where retention is required by law.
               </p>
               <p>
                 When you delete your account, any active subscription is cancelled immediately and
