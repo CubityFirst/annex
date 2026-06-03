@@ -1,7 +1,6 @@
 import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc, type Role } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
-import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
-import { upsertFtsRow, deleteFtsRow } from "../lib/fts";
+import { createDoc, applyDocUpdate, deleteDoc, type DocUpdateRow } from "../lib/docOps";
 import type { Env } from "../index";
 
 async function getCallerInfo(db: D1Database, projectId: string, userId: string): Promise<{ role: Role; name: string } | null> {
@@ -97,26 +96,14 @@ export async function handleDocs(
       return errorResponse(Errors.BAD_REQUEST);
     }
 
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const content = body.content ?? "";
-    const fm = parseFrontmatter(content);
-    const sidebarPosition = fm.sidebar_position ?? null;
-    const tags = fm.tags ? JSON.stringify(fm.tags) : null;
-
-    await env.ASSETS.put(`${body.projectId}/${id}`, content);
-    await env.DB.prepare(
-      "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, tags, now, now).run();
-    await upsertFtsRow(env.DB, id, body.projectId, body.title, content);
-
-    // A new doc may be the target of references in other docs, so the whole project's graph index must be recomputed.
-    await invalidateProjectGraphIndex(env, body.projectId);
-
-    return okResponse(
-      { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, folderId, publishedAt: null, createdAt: now, updatedAt: now },
-      201,
-    );
+    const created = await createDoc(env, {
+      projectId: body.projectId,
+      authorId: user.userId,
+      title: body.title,
+      content: body.content ?? "",
+      folderId,
+    });
+    return okResponse(created, 201);
   }
 
   // POST /docs/:id/collab/reset — editor or above; wipes the collab DO so a frozen room
@@ -218,8 +205,7 @@ export async function handleDocs(
 
   // PUT /docs/:id — editor or above
   if (docId && request.method === "PUT") {
-    type DocRow = { id: string; title: string; project_id: string; author_id: string; published_at: string | null; show_heading: number; show_last_updated: number; folder_id: string | null; created_at: string; updated_at: string };
-    const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocRow>();
+    const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocUpdateRow>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
     const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
@@ -244,102 +230,27 @@ export async function handleDocs(
       return errorResponse(Errors.BAD_REQUEST);
     }
 
-    const now = new Date().toISOString();
-    let savedContent: string | undefined;
+    const { updated, savedContent } = await applyDocUpdate(env, doc, user.userId, caller.name, body, {
+      // Collect collab contributors (clears the DO's tracked set for the next
+      // session). Runs only when the body actually changed.
+      gatherContributors: async () => {
+        if (!env.DOC_COLLAB) return null;
+        try {
+          const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
+          const resp = await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/contributors"));
+          if (resp.ok) {
+            const { editors } = await resp.json<{ editors: { id: string; name: string }[] }>();
+            const all = [
+              { id: user.userId, name: caller.name },
+              ...editors.filter(e => e.id !== user.userId),
+            ];
+            if (all.length > 1) return JSON.stringify(all);
+          }
+        } catch { /* non-fatal */ }
+        return null;
+      },
+    });
 
-    if (body.content !== undefined) {
-      const oldR2 = await env.ASSETS.get(`${doc.project_id}/${docId}`);
-      const oldContent = oldR2 ? await oldR2.text() : "";
-      if (body.content !== oldContent) {
-        savedContent = body.content;
-
-        // Collect collab contributors (clears the DO's tracked set for the next session)
-        let contributorsJson: string | null = null;
-        if (env.DOC_COLLAB) {
-          try {
-            const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
-            const resp = await env.DOC_COLLAB.get(roomId).fetch(
-              new Request("https://internal/contributors"),
-            );
-            if (resp.ok) {
-              const { editors } = await resp.json<{ editors: { id: string; name: string }[] }>();
-              const all = [
-                { id: user.userId, name: caller.name },
-                ...editors.filter(e => e.id !== user.userId),
-              ];
-              if (all.length > 1) contributorsJson = JSON.stringify(all);
-            }
-          } catch { /* non-fatal */ }
-        }
-
-        const revisionId = crypto.randomUUID();
-        await Promise.all([
-          env.ASSETS.put(`${doc.project_id}/${docId}`, body.content),
-          env.ASSETS.put(`${doc.project_id}/${docId}/v/${revisionId}`, body.content),
-        ]);
-        await env.DB.prepare(
-          "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?)",
-        ).bind(revisionId, docId, doc.project_id, user.userId, caller.name, now, body.changelog ?? null, contributorsJson).run();
-        await indexDocLinks(env, doc.project_id, docId, body.content);
-      }
-    }
-
-    const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
-    const showLastUpdated = body.showLastUpdated !== undefined ? (body.showLastUpdated ? 1 : 0) : null;
-    const newFm = body.content !== undefined ? parseFrontmatter(body.content) : undefined;
-    const newSidebarPosition = newFm !== undefined ? (newFm.sidebar_position ?? null) : undefined;
-    const newTags = newFm !== undefined ? (newFm.tags ? JSON.stringify(newFm.tags) : null) : undefined;
-
-    // Build dynamic SET clause. Splitting published_at out of the COALESCE
-    // group is required: an undefined publishedAt should leave the column
-    // untouched, but null is a meaningful explicit unpublish, so we can't use
-    // COALESCE there.
-    const sets: string[] = [];
-    const binds: unknown[] = [];
-    if (body.title !== undefined) { sets.push("title = ?"); binds.push(body.title); }
-    if (body.publishedAt !== undefined) { sets.push("published_at = ?"); binds.push(body.publishedAt); }
-    if (showHeading !== null) { sets.push("show_heading = ?"); binds.push(showHeading); }
-    if (showLastUpdated !== null) { sets.push("show_last_updated = ?"); binds.push(showLastUpdated); }
-    if (newSidebarPosition !== undefined) { sets.push("sidebar_position = ?"); binds.push(newSidebarPosition); }
-    if (newTags !== undefined) { sets.push("tags = ?"); binds.push(newTags); }
-    if (body.folderId !== undefined) { sets.push("folder_id = ?"); binds.push(body.folderId); }
-    sets.push("updated_at = ?");
-    binds.push(now);
-    binds.push(docId);
-    await env.DB.prepare(`UPDATE docs SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
-
-    // Title or folder changes affect how *other* docs' wikilinks resolve, so the project-wide index must be rebuilt.
-    if ((body.title && body.title !== doc.title) || body.folderId !== undefined) {
-      await invalidateProjectGraphIndex(env, doc.project_id);
-    }
-
-    // Only re-index FTS when the body changed (title or content). Settings-only
-    // toggles don't affect search.
-    if (body.title !== undefined || savedContent !== undefined) {
-      const ftsContent = savedContent ?? (await (async () => {
-        const r2 = await env.ASSETS.get(`${doc.project_id}/${docId}`);
-        return r2 ? await r2.text() : "";
-      })());
-      await upsertFtsRow(env.DB, docId, doc.project_id, body.title ?? doc.title, ftsContent);
-    }
-
-    // Drop any cached AI summary when the body changed — its version is the doc's
-    // updated_at at cache time, and that just advanced. Leaving the row would
-    // show stale content under DocPage's auto-summary mode until the next
-    // doc.id change, since the effect only refires on id.
-    if (savedContent !== undefined) {
-      await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(docId).run();
-    }
-
-    const updated = {
-      ...doc,
-      title: body.title ?? doc.title,
-      published_at: body.publishedAt !== undefined ? body.publishedAt : doc.published_at,
-      show_heading: showHeading !== null ? showHeading : doc.show_heading,
-      show_last_updated: showLastUpdated !== null ? showLastUpdated : doc.show_last_updated,
-      folder_id: body.folderId !== undefined ? body.folderId : doc.folder_id,
-      updated_at: now,
-    };
     // Only echo content when it was sent. Clients toggling settings already
     // have the content locally and merge non-content fields into existing state.
     return okResponse(savedContent !== undefined ? { ...updated, content: savedContent } : updated);
@@ -357,32 +268,7 @@ export async function handleDocs(
     const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(doc.project_id).first<{ home_doc_id: string | null }>();
     if (proj?.home_doc_id === docId) return errorResponse(Errors.FORBIDDEN);
 
-    const revisions = await env.DB.prepare("SELECT id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?")
-      .bind(docId).all<{ id: string }>();
-    await Promise.all([
-      env.ASSETS.delete(`${doc.project_id}/${docId}`),
-      ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
-    ]);
-    await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
-    // Explicit child cleanup. asset_revisions has NO foreign key to docs, so
-    // nothing cascades — without this its rows leak forever on every delete.
-    // doc_shares does declare ON DELETE CASCADE, but the table-recreate
-    // migrations make cascade firing unreliable; deleting here is idempotent
-    // and correct whether or not the cascade also runs.
-    await env.DB.prepare("DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?").bind(docId).run();
-    await env.DB.prepare("DELETE FROM doc_shares WHERE doc_id = ?").bind(docId).run();
-    await deleteFtsRow(env.DB, docId);
-    // doc_links rows for this doc cascade away, but the deleted title may have shadowed another doc's resolution, so reindex.
-    await invalidateProjectGraphIndex(env, doc.project_id);
-
-    // Best-effort: clean up the collab DO room (closes active sockets + wipes stored state)
-    if (env.DOC_COLLAB) {
-      try {
-        const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
-        await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/", { method: "DELETE" }));
-      } catch { /* non-fatal — room may never have been created */ }
-    }
-
+    await deleteDoc(env, docId, doc.project_id);
     return okResponse({ deleted: true });
   }
 

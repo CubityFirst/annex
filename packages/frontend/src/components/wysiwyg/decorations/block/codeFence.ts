@@ -1,6 +1,7 @@
 import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { CodeFenceWidget } from "../../widgets/CodeFenceWidget";
+import { MermaidWidget } from "../../widgets/MermaidWidget";
 
 export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => {
   const startLine = state.doc.lineAt(node.from);
@@ -40,9 +41,13 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
     ? state.doc.sliceString(codeFrom, codeTo)
     : "";
 
+  // Mermaid renders an async SVG diagram (React); everything else is static
+  // highlighted HTML and uses the lightweight plain-DOM widget.
+  const widget = lang === "mermaid" ? new MermaidWidget(code) : new CodeFenceWidget(lang, code);
+
   decos.push(
     Decoration.replace({
-      widget: new CodeFenceWidget(lang, code),
+      widget,
       block: true,
     }).range(startLine.from, endLine.to),
   );

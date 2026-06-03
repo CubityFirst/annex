@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFrontmatter } from "./frontmatter";
+import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 
 describe("parseFrontmatter", () => {
   it("returns empty object when no frontmatter", () => {
@@ -111,5 +111,58 @@ describe("parseFrontmatter", () => {
 
   it("ignores unknown keys", () => {
     expect(parseFrontmatter("---\nsome_random_key: value\n---\n")).toEqual({});
+  });
+
+  it("parses cover with file path", () => {
+    expect(parseFrontmatter("---\ncover: /api/files/abc123/content\n---\n")).toEqual({ cover: "/api/files/abc123/content" });
+  });
+
+  it("parses cover with quoted absolute URL", () => {
+    expect(parseFrontmatter("---\ncover: \"https://example.com/banner.png\"\n---\n")).toEqual({ cover: "https://example.com/banner.png" });
+  });
+
+  it("ignores empty cover", () => {
+    expect(parseFrontmatter("---\ncover:\n---\n")).toEqual({});
+  });
+
+  it("parses cover and image independently", () => {
+    expect(parseFrontmatter("---\ncover: /api/files/a/content\nimage: /api/files/b/content\n---\n"))
+      .toEqual({ cover: "/api/files/a/content", image: "/api/files/b/content" });
+  });
+});
+
+describe("setFrontmatterKey", () => {
+  it("creates a frontmatter block when none exists", () => {
+    expect(setFrontmatterKey("# Hello", "cover", "/api/files/x/content"))
+      .toBe("---\ncover: /api/files/x/content\n---\n\n# Hello");
+  });
+
+  it("adds a key to an existing block", () => {
+    expect(setFrontmatterKey("---\ntitle: Doc\n---\n\nBody", "cover", "/x"))
+      .toBe("---\ntitle: Doc\ncover: /x\n---\n\nBody");
+  });
+
+  it("replaces an existing key in place-ish without duplicating it", () => {
+    const out = setFrontmatterKey("---\ncover: /old\ntitle: Doc\n---\nBody", "cover", "/new");
+    expect(parseFrontmatter(out)).toEqual({ cover: "/new", title: "Doc" });
+    expect(out.match(/cover:/g)?.length).toBe(1);
+  });
+
+  it("removes a key when value is null, keeping other keys", () => {
+    expect(setFrontmatterKey("---\ntitle: Doc\ncover: /old\n---\nBody", "cover", null))
+      .toBe("---\ntitle: Doc\n---\nBody");
+  });
+
+  it("drops the whole block when removing the last key", () => {
+    expect(setFrontmatterKey("---\ncover: /old\n---\n\nBody", "cover", null)).toBe("Body");
+  });
+
+  it("is a no-op when removing a key from content with no frontmatter", () => {
+    expect(setFrontmatterKey("# Hello", "cover", null)).toBe("# Hello");
+  });
+
+  it("round-trips through parseFrontmatter after a set", () => {
+    const out = setFrontmatterKey("---\ntitle: Doc\ntags: [a, b]\n---\nBody", "cover", "/api/files/z/content");
+    expect(parseFrontmatter(out)).toEqual({ title: "Doc", tags: ["a", "b"], cover: "/api/files/z/content" });
   });
 });

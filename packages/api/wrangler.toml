@@ -49,6 +49,15 @@ type = "ratelimit"
 namespace_id = "2001"
 simple = { limit = 8, period = 60 }
 
+# Per-API-key limiter for the public /v1 surface, keyed by `apikey:<id>`.
+# Caps abuse / runaway scripts on a single scoped key without touching the
+# interactive JWT routes.
+[[unsafe.bindings]]
+name = "RATE_LIMITER_API"
+type = "ratelimit"
+namespace_id = "2002"
+simple = { limit = 120, period = 60 }
+
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"

@@ -56,6 +56,12 @@ Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override
 
 Yjs-based realtime co-editing gated per-project by `projects.features & 4` (`ProjectFeatures.REALTIME`), served from the `DocCollabRoom` Durable Object behind the API worker. **Anything touching `DocCollabRoom`, the `/api/docs/:id/collab` WebSocket route, `CollabProvider`, `EditorPresence`, or the `collab` prop on `WysiwygEditor` belongs to this system** — see `memories/Collab.md` for architecture, key files, WebSocket auth flow, reconnect behavior, and the local-enable command.
 
+## Public API & Scoped API Keys
+
+A narrow public REST surface under **`/v1`** on the API worker (reachable at `https://<site>/api/v1`), authenticated by user-generated **scoped API keys** (`annx_…`) created in Site Settings → Developer → API Keys. Covers doc CRUD + move and member invite/revoke; the site is always implied by the key. **Anything touching the `api_keys` table, `lib/apiKeys.ts`, `lib/docOps.ts`, `routes/v1.ts`, `routes/apiKeys.ts`, the `RATE_LIMITER_API` binding, the Flagship `api` killswitch, or the "API Keys" settings section belongs to this system** — see `memories/Api-Keys.md` for schema, the security invariants (separate key-only auth path used **only** by `/v1`; keys are ceilings re-checked against live membership), rate limiting/killswitch, and tests. Public consumer reference: `docs/api/README.md`.
+
+**Critical invariant:** API keys are authenticated by `authenticateApiKey` and wired **only** into the `/v1` router — never through the shared JWT `authenticate()`. A key sent to any other route fails JWT parsing → 401, which is what stops a scoped key from escaping its site/scope ceiling. Do not route keys through `authenticate()`.
+
 ## Tests
 
 Tests exist — run them before reporting work as done when changes are testable.

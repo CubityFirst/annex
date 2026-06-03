@@ -9,10 +9,11 @@ import { remarkImageAttrs } from "@/lib/remark-image-attrs";
 import { remarkUnderline } from "@/lib/remark-underline";
 import { remarkWikilinks, wikilinkUrlTransform } from "@/lib/remark-wikilinks";
 import { makeDocLink } from "@/components/DocLink";
-import { parseFrontmatter } from "@/lib/frontmatter";
+import { parseFrontmatter, setFrontmatterKey } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
+import { DocCoverImage } from "@/components/DocCoverImage";
 import { AudioEmbed } from "@/components/AudioEmbed";
 import { looksLikeAudio, parseAudioSize, type AudioSize } from "@/lib/audioUrl";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -361,6 +362,8 @@ export function DocPage() {
   const [resettingCollab, setResettingCollab] = useState(false);
 
   const assetsFolderPromiseRef = useRef<Map<string | null, Promise<string>>>(new Map());
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
 
   async function handlePasteImage(file: File): Promise<{ url: string; alt: string }> {
     if (!projectId) throw new Error("no project");
@@ -552,6 +555,48 @@ export function DocPage() {
       setSaveError("Could not connect to the server.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Header image (frontmatter `cover:`). Uploads reuse the paste-image flow, then
+  // upsert the cover into the live document content via a content-only PUT.
+  async function saveCover(content: string) {
+    if (!docId) return;
+    const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (result.ok && result.data) {
+      const data = result.data;
+      // Force the new content locally — settings-style PUTs may not echo it, and
+      // the banner reads `doc.content`'s frontmatter to render.
+      setDoc(prev => prev ? { ...prev, ...data, content } : prev);
+    } else {
+      toast({ title: "Could not update the header image.", variant: "destructive" });
+    }
+  }
+
+  async function handleCoverFile(file: File) {
+    if (!docId || !doc) return;
+    setCoverBusy(true);
+    try {
+      const { url } = await handlePasteImage(file);
+      await saveCover(setFrontmatterKey(doc.content, "cover", url));
+    } catch {
+      // handlePasteImage already surfaces upload failures via toast.
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
+  async function handleRemoveCover() {
+    if (!docId || !doc) return;
+    setCoverBusy(true);
+    try {
+      await saveCover(setFrontmatterKey(doc.content, "cover", null));
+    } finally {
+      setCoverBusy(false);
     }
   }
 
@@ -754,8 +799,10 @@ export function DocPage() {
   if (editing) {
     return (
       <div className="flex h-full flex-col">
-        {/* Title + toolbar */}
-        <div className="flex items-center gap-4 border-b border-border px-6 py-3">
+        {/* Title + toolbar — inner row matches the editor's max-w-3xl column so
+            the title aligns with the document content below. */}
+        <div className="border-b border-border px-6 py-3">
+          <div className="mx-auto flex max-w-3xl items-center gap-4">
           <Input
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
@@ -806,10 +853,11 @@ export function DocPage() {
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
+          </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="flex flex-1 justify-center overflow-hidden px-6">
+          <div className="relative w-full max-w-3xl overflow-hidden">
             <WysiwygEditor
               key={collabFatal ? "fallback" : "collab"}
               mode={rawMode ? "raw" : "editing"}
@@ -862,8 +910,8 @@ export function DocPage() {
               <div className="flex flex-col gap-6 pb-2 text-sm">
                 <MajorSection title="Frontmatter">
                   <Section title="YAML metadata block">
-                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\nimage: /api/files/abc123/content\n---`}</Code>
-                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
+                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
+                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
                   </Section>
                 </MajorSection>
 
@@ -980,6 +1028,29 @@ export function DocPage() {
     <div className="flex min-h-full">
       {/* Article */}
       <div className="flex-1 min-w-0 px-6 py-10">
+        {isEditor && (
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) void handleCoverFile(f); e.target.value = ""; }}
+          />
+        )}
+        {(() => {
+          const cover = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).cover;
+          if (!cover) return null;
+          const editable = isEditor && !viewingRevision;
+          return (
+            <DocCoverImage
+              src={cover}
+              projectId={projectId ?? ""}
+              onReplace={editable ? () => coverInputRef.current?.click() : undefined}
+              onRemove={editable ? handleRemoveCover : undefined}
+              busy={coverBusy}
+            />
+          );
+        })()}
         <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
           <div className="flex justify-end gap-1 mb-2 md:absolute md:top-0 md:right-0 md:mb-0">
@@ -1001,6 +1072,11 @@ export function DocPage() {
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
                 <Pencil className="h-4 w-4" />
               </Button>
+              {!viewingRevision && !parseFrontmatter(doc.content).cover && (
+                <Button variant="ghost" size="icon" title="Add header image" onClick={() => coverInputRef.current?.click()} disabled={coverBusy}>
+                  <ImagePlus className="h-4 w-4" />
+                </Button>
+              )}
               <Button variant="ghost" size="icon" title="View history" onClick={openHistory}>
                 <History className="h-4 w-4" />
               </Button>

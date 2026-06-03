@@ -42,7 +42,7 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound } from "lucide-react";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -76,6 +76,7 @@ const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "site", label: "Site" },
   { id: "features", label: "Features" },
   { id: "people", label: "People" },
+  { id: "developer", label: "Developer" },
   { id: "danger", label: "Danger Zone" },
 ];
 
@@ -123,6 +124,19 @@ interface InviteLink {
   createdBy: string;
   createdAt: string;
   isActive: boolean;
+}
+
+type ApiKeyScope = "read" | "readwrite";
+
+interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scope: ApiKeyScope;
+  canInvite: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
 }
 
 const EXPIRY_OPTIONS = [
@@ -184,6 +198,20 @@ export function SiteSettingsPage() {
   const [creatingLink, setCreatingLink] = useState(false);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [revokingLinkId, setRevokingLinkId] = useState<string | null>(null);
+
+  // ── Scoped API keys (public /v1 API) ──
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [createKeyOpen, setCreateKeyOpen] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyScope, setNewKeyScope] = useState<ApiKeyScope>("read");
+  const [newKeyCanInvite, setNewKeyCanInvite] = useState(false);
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [createKeyError, setCreateKeyError] = useState<string | null>(null);
+  // The plaintext secret, held in memory only long enough to show it once.
+  const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null);
 
   const [exporting, setExporting] = useState(false);
 
@@ -278,6 +306,18 @@ export function SiteSettingsPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingMembers(false));
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!token || !projectId) return;
+    setLoadingKeys(true);
+    fetch(`/api/projects/${projectId}/api-keys`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: ApiKey[] }) => {
+        if (json.ok && json.data) setApiKeys(json.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingKeys(false));
   }, [projectId]);
 
   // Count docs left individually unpublished. A published site exposes all of
@@ -467,6 +507,67 @@ export function SiteSettingsPage() {
     } finally {
       setRemovingId(null);
     }
+  }
+
+  async function handleCreateKey(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId || !newKeyName.trim()) return;
+    setCreatingKey(true);
+    setCreateKeyError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/api-keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: newKeyName.trim(), scope: newKeyScope, canInvite: newKeyCanInvite }),
+      });
+      const json = await res.json() as { ok: boolean; data?: ApiKey & { secret: string }; error?: string };
+      if (json.ok && json.data) {
+        const { secret, ...meta } = json.data;
+        setApiKeys(prev => [meta, ...prev]);
+        setNewKeySecret(secret); // surfaces the one-time reveal dialog
+        setCreateKeyOpen(false);
+        setNewKeyName("");
+        setNewKeyScope("read");
+        setNewKeyCanInvite(false);
+      } else {
+        setCreateKeyError(json.error ?? "Failed to create key.");
+      }
+    } catch {
+      setCreateKeyError("Could not connect to the server.");
+    } finally {
+      setCreatingKey(false);
+    }
+  }
+
+  async function handleRevokeKey(key: ApiKey) {
+    if (!projectId) return;
+    setRevokingKeyId(key.id);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/api-keys/${key.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setApiKeys(prev => prev.filter(k => k.id !== key.id));
+        toast({ title: `API key "${key.name}" revoked.` });
+      } else {
+        toast({ title: "Failed to revoke key.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setRevokingKeyId(null);
+    }
+  }
+
+  async function handleCopySecret() {
+    if (!newKeySecret) return;
+    try {
+      await navigator.clipboard.writeText(newKeySecret);
+      setCopiedSecret(true);
+      setTimeout(() => setCopiedSecret(false), 2000);
+    } catch { /* clipboard unavailable */ }
   }
 
   async function handleCreateLink() {
@@ -951,8 +1052,16 @@ export function SiteSettingsPage() {
     { id: "branding", label: "Branding", group: "site", visible: isAdminOrOwner },
     { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
     { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
+    { id: "api-keys", label: "API Keys", group: "developer", visible: myRole !== null },
     { id: "danger", label: "Danger Zone", group: "danger", visible: myRole !== null, danger: true },
   ];
+
+  // A key is only ever a ceiling on the owner's live access: a read-write key
+  // can't write unless the owner is editor+, and an invite-capable key can't
+  // touch members unless the owner is admin+. Reflect that honestly in the
+  // create form rather than offering scopes that would silently 403.
+  const canMintWriteKey = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["editor"];
+  const canMintInviteKey = isAdminOrOwner;
 
   return (
     <SettingsShell
@@ -1758,6 +1867,187 @@ export function SiteSettingsPage() {
               )}
             </form>
           </div>
+        </>
+      )}
+
+      {/* API keys — any member; scope is a ceiling enforced live on every request */}
+      {myRole !== null && (
+        <>
+          <Separator className="my-10" />
+
+          <div id="api-keys" className="flex flex-col gap-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold">API Keys</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Scoped keys for the <span className="font-medium text-foreground">/v1</span> REST API. Each key is
+                  bound to this site and can never do more than your own role allows. Keep them secret — treat a key
+                  like a password.
+                </p>
+              </div>
+              <Dialog open={createKeyOpen} onOpenChange={open => { setCreateKeyOpen(open); if (!open) setCreateKeyError(null); }}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="shrink-0"><Plus className="size-4" /> New key</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <form onSubmit={handleCreateKey}>
+                    <DialogHeader>
+                      <DialogTitle>Create API key</DialogTitle>
+                      <DialogDescription>
+                        The secret is shown once, right after creation. Store it somewhere safe — it can't be retrieved again.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-4 py-4">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="new-key-name">Name</Label>
+                        <Input
+                          id="new-key-name"
+                          placeholder="e.g. CI publish bot"
+                          value={newKeyName}
+                          onChange={e => setNewKeyName(e.target.value)}
+                          maxLength={100}
+                          required
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Access</Label>
+                        <Select value={newKeyScope} onValueChange={val => setNewKeyScope(val as ApiKeyScope)} disabled={!canMintWriteKey}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="read">Read only</SelectItem>
+                            {canMintWriteKey && <SelectItem value="readwrite">Read &amp; write</SelectItem>}
+                          </SelectContent>
+                        </Select>
+                        {!canMintWriteKey && (
+                          <p className="text-xs text-muted-foreground">
+                            Your role on this site is read-only, so keys you create can only read.
+                          </p>
+                        )}
+                      </div>
+                      {canMintInviteKey && (
+                        <div className="flex items-start justify-between gap-4 rounded-md border border-border px-3 py-2.5">
+                          <div className="flex flex-col gap-0.5">
+                            <Label htmlFor="new-key-invite" className="cursor-pointer">Manage members</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Allow this key to invite and remove members. Still requires you to remain an admin of this site.
+                            </p>
+                          </div>
+                          <Switch id="new-key-invite" checked={newKeyCanInvite} onCheckedChange={setNewKeyCanInvite} />
+                        </div>
+                      )}
+                      {createKeyError && (
+                        <Alert variant="destructive">
+                          <AlertDescription>{createKeyError}</AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" disabled={creatingKey || !newKeyName.trim()}>
+                        {creatingKey ? "Creating…" : "Create key"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {/* Key list */}
+            {loadingKeys ? (
+              <p className="text-sm text-muted-foreground">Loading keys…</p>
+            ) : apiKeys.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No API keys yet. Create one to use the /v1 API.</p>
+            ) : (
+              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                {apiKeys.map(key => (
+                  <div key={key.id} className="flex items-center gap-3 px-4 py-3">
+                    <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-medium">{key.name}</span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {key.keyPrefix}… · {key.lastUsedAt ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}` : "never used"}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {key.scope === "readwrite" ? "Read & write" : "Read"}
+                      </Badge>
+                      {key.canInvite && (
+                        <Badge variant="outline" className="text-xs font-medium bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
+                          Members
+                        </Badge>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            disabled={revokingKeyId === key.id}
+                          >
+                            {revokingKeyId === key.id ? "Revoking…" : "Revoke"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Revoke "{key.name}"?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Any integration using this key will immediately stop working. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleRevokeKey(key)}
+                            >
+                              Revoke key
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Usage hint */}
+            <div className="rounded-md border border-border bg-muted/40 p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Using your key</p>
+              <pre className="overflow-x-auto rounded bg-background p-3 text-xs leading-relaxed text-muted-foreground">
+{`curl ${window.location.origin}/api/v1/docs \\
+  -H "Authorization: Bearer annx_your_key_here"`}
+              </pre>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Base URL <span className="font-mono">{window.location.origin}/api/v1</span>. See the full API reference for
+                endpoints, scopes and rate limits.
+              </p>
+            </div>
+          </div>
+
+          {/* One-time secret reveal */}
+          <Dialog open={newKeySecret !== null} onOpenChange={open => { if (!open) { setNewKeySecret(null); setCopiedSecret(false); } }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Copy your API key</DialogTitle>
+                <DialogDescription>
+                  This is the only time you'll see this key. Copy it now and store it securely.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-2 py-2">
+                <Input readOnly value={newKeySecret ?? ""} className="font-mono text-xs" onFocus={e => e.currentTarget.select()} />
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={handleCopySecret}>
+                  {copiedSecret ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  {copiedSecret ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button type="button" onClick={() => { setNewKeySecret(null); setCopiedSecret(false); }}>Done</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       )}
 

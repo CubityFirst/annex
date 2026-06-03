@@ -13,6 +13,8 @@ import { handlePendingInvites } from "./routes/pendingInvites";
 import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
 import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
+import { handlePublicApi } from "./routes/v1";
+import { handleApiKeys } from "./routes/apiKeys";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
@@ -28,6 +30,8 @@ export interface Env {
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
   RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  // Per-API-key limiter for the public /v1 surface (keyed by `apikey:<id>`).
+  RATE_LIMITER_API?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   FLAGS?: { getBooleanValue(flag: string, defaultValue: boolean, ctx?: Record<string, string>): Promise<boolean> };
 }
 
@@ -49,6 +53,13 @@ export default {
     let response: Response;
 
     try {
+      // Public, API-key-authenticated surface. Handled first and in isolation:
+      // it uses its OWN key-only auth (never the shared JWT authenticate()), so
+      // a scoped key can never fall through to any other route below.
+      if (url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
+        return addCorsHeaders(await handlePublicApi(request, env, url));
+      }
+
       // Proxy auth routes to the auth worker
       if (
         url.pathname === "/register" ||
@@ -639,6 +650,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleMembers(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/api-keys/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleApiKeys(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/invite-links/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

@@ -7,6 +7,7 @@ export interface Frontmatter {
   tags?: string[];
   description?: string;
   image?: string;
+  cover?: string;
 }
 
 const FM_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/;
@@ -59,9 +60,35 @@ export function parseFrontmatter(content: string): Frontmatter {
     } else if (key === "image") {
       const stripped = val.replace(/^['"]|['"]$/g, "");
       if (stripped) result.image = stripped;
+    } else if (key === "cover") {
+      const stripped = val.replace(/^['"]|['"]$/g, "");
+      if (stripped) result.cover = stripped;
     }
   }
 
   if (collectingTags && collectedTags.length > 0) result.tags = collectedTags;
   return result;
+}
+
+// Insert, replace, or (when value is null) remove a single scalar key in the
+// content's YAML frontmatter block, returning the new content. Creates a
+// frontmatter block if none exists and a value is given; drops the block
+// entirely if removing its last key. Used by the header-image upload control to
+// persist `cover:` without round-tripping through the editor. Only safe for
+// simple scalar keys (no nested/list values) — which is all `cover` ever needs.
+export function setFrontmatterKey(content: string, key: string, value: string | null): string {
+  const match = content.match(FM_REGEX);
+  const line = `${key}: ${value}`;
+  if (!match) {
+    return value === null ? content : `---\n${line}\n---\n\n${content}`;
+  }
+  const keyRe = new RegExp(`^\\s*${key}\\s*:`);
+  const kept = match[1].split(/\r?\n/).filter(l => !keyRe.test(l));
+  if (value !== null) kept.push(line);
+  const body = content.slice(match[0].length);
+  if (kept.length === 0) {
+    // Removed the only key — drop the now-empty frontmatter block.
+    return body.replace(/^\r?\n/, "");
+  }
+  return `---\n${kept.join("\n")}\n---\n${body}`;
 }

@@ -6,6 +6,7 @@ import { EditorView } from "@codemirror/view";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { toHeadingId, findHeadingLine } from "@/lib/headingSlug";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
+import { DocCoverImage } from "@/components/DocCoverImage";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
 import { NotFound404 } from "./NotFound404";
@@ -821,6 +822,10 @@ export function PublicDocPage() {
             <div className="flex min-h-full">
               {/* Article */}
               <div className="flex-1 min-w-0 px-6 py-10">
+                {(() => {
+                  const cover = parseFrontmatter(data.doc.content).cover;
+                  return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;
+                })()}
                 <div className="mx-auto max-w-3xl">
                   <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
                     {(() => {
