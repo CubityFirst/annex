@@ -783,8 +783,8 @@ export function PublicDocPage() {
         </div>
       )}
 
-      {/* Main content */}
-      <div className={cn("flex flex-1 flex-col overflow-hidden transition-transform duration-200", showNav && sidebarOpen && "translate-x-64 md:translate-x-0")}>
+      {/* Main content — stays put; the sidebar overlays it on mobile instead of pushing it */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         {!showNav && (
           <header className="flex h-14 items-center border-b border-border px-6 gap-2">
             {data.project.logo_wide_updated_at ? (
