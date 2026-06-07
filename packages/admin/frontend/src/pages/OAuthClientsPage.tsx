@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Copy, KeyRound, Plus, Power, RotateCw, Trash2 } from "lucide-react";
+import { ClipboardCopy, Copy, KeyRound, Plus, Power, RotateCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +59,67 @@ async function copy(text: string, label: string): Promise<void> {
   }
 }
 
+// Build the ready-to-paste brief for the connected service's coding agent, with
+// this client's details filled in. `secret` is only available right after
+// create/rotate; for an existing client it's omitted and the prompt points the
+// operator at "rotate" to mint a fresh one.
+function buildAgentPrompt(opts: {
+  clientId: string;
+  redirectUris: string[];
+  scopes: string;
+  isPublic: boolean;
+  secret?: string | null;
+}): string {
+  const secretLine = opts.isPublic
+    ? "client_secret: (none — public client, PKCE only)"
+    : opts.secret
+      ? `client_secret: ${opts.secret}`
+      : "client_secret: <rotate this client in the Annex admin to mint a fresh secret>";
+  const primaryRedirect = opts.redirectUris[0] ?? "<YOUR_EXACT_CALLBACK_URL>";
+  const extraRedirects =
+    opts.redirectUris.length > 1 ? `\n                 (also registered: ${opts.redirectUris.slice(1).join(", ")})` : "";
+
+  return `Add "Sign in with Annex" to this project. Annex is a standard OpenID Connect
+(OIDC) provider — use a well-maintained OIDC client library for this stack, not
+a hand-rolled flow.
+
+PROVIDER (everything else is discoverable):
+- Issuer:        https://auth.cubityfir.st
+- Discovery:     ${DISCOVERY_URL}
+- Flow:          Authorization Code + PKCE (S256). id_tokens are RS256; verify
+                 offline via the provider's JWKS (in the discovery doc).
+- Scopes:        ${opts.scopes}
+- Claims you get: sub (stable unique user id — key your users on THIS, never on
+                  email), email, email_verified, name.
+
+CREDENTIALS (store the secret server-side only — never ship it to the browser):
+- client_id:     ${opts.clientId}
+- ${secretLine}
+- redirect_uri:  ${primaryRedirect}${extraRedirects}
+
+REQUIREMENTS:
+1. Configure the OIDC client from the discovery URL — do NOT hardcode the
+   endpoints (the authorization endpoint is on a different host than the issuer;
+   discovery handles that for you).
+2. Authorization Code flow with PKCE (code_challenge_method=S256).
+3. Send and verify state (CSRF) and a nonce (bound into the id_token).
+4. Request scope "${opts.scopes}".
+5. On callback: exchange the code at the token endpoint (send the PKCE
+   code_verifier; include the client_secret only for a confidential/server-side
+   client), then VERIFY the id_token: signature against JWKS, plus the iss, aud
+   (== client_id), exp, and nonce claims. Most OIDC libraries do this for you —
+   make sure it's enabled, not skipped.
+6. Establish your app's own session from the verified identity; key users on sub.
+7. The redirect_uri must match what's registered with Annex byte-for-byte
+   (scheme, host, port, path). If you change it, tell me so it can be updated.
+
+Use the right library for the stack (Auth.js/NextAuth custom "oidc" provider,
+Node openid-client, Python authlib, Go coreos/go-oidc, or any conformant
+OIDC+PKCE client) pointed at the discovery URL. Add a "Sign in with Annex"
+button, store the secret in the project's secret manager, and verify end-to-end:
+sign in and show me the verified claims you receive.`;
+}
+
 // Compact field with a copy button — used in the credentials dialog.
 function CopyField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -80,6 +141,9 @@ interface CredentialsState {
   title: string;
   clientId: string;
   secret: string | null;
+  redirectUris: string[];
+  scopes: string;
+  isPublic: boolean;
 }
 
 function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => void }) {
@@ -221,7 +285,14 @@ export function OAuthClientsPage() {
   }, [load]);
 
   function onCreated(c: CreatedOAuthClient) {
-    setCredentials({ title: "Client registered", clientId: c.client_id, secret: c.client_secret });
+    setCredentials({
+      title: "Client registered",
+      clientId: c.client_id,
+      secret: c.client_secret,
+      redirectUris: c.redirect_uris,
+      scopes: c.allowed_scopes,
+      isPublic: c.is_public,
+    });
     void load();
   }
 
@@ -254,7 +325,14 @@ export function OAuthClientsPage() {
     setRotateTarget(null);
     try {
       const secret = await rotateOAuthClientSecret(target.client_id);
-      setCredentials({ title: "New secret generated", clientId: target.client_id, secret });
+      setCredentials({
+        title: "New secret generated",
+        clientId: target.client_id,
+        secret,
+        redirectUris: target.redirect_uris,
+        scopes: target.allowed_scopes,
+        isPublic: target.is_public,
+      });
       void load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to rotate secret");
@@ -337,6 +415,25 @@ export function OAuthClientsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          title="Copy agent prompt"
+                          onClick={() =>
+                            void copy(
+                              buildAgentPrompt({
+                                clientId: client.client_id,
+                                redirectUris: client.redirect_uris,
+                                scopes: client.allowed_scopes,
+                                isPublic: client.is_public,
+                              }),
+                              "Agent prompt",
+                            )
+                          }
+                        >
+                          <ClipboardCopy className="h-4 w-4" />
+                        </Button>
                         {!client.is_public && (
                           <Button size="icon" variant="ghost" className="h-8 w-8" title="Rotate secret" onClick={() => setRotateTarget(client)}>
                             <RotateCw className="h-4 w-4" />
@@ -376,7 +473,26 @@ export function OAuthClientsPage() {
             )}
             <CopyField label="Discovery URL (give this to the service)" value={DISCOVERY_URL} mono={false} />
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={() =>
+                credentials &&
+                void copy(
+                  buildAgentPrompt({
+                    clientId: credentials.clientId,
+                    redirectUris: credentials.redirectUris,
+                    scopes: credentials.scopes,
+                    isPublic: credentials.isPublic,
+                    secret: credentials.secret,
+                  }),
+                  "Agent prompt",
+                )
+              }
+            >
+              <ClipboardCopy className="h-4 w-4" />
+              Copy for agents
+            </Button>
             <Button onClick={() => setCredentials(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>

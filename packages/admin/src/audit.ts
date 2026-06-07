@@ -1,7 +1,7 @@
 import type { Env } from "./index";
 import type { AdminSession } from "./auth";
 
-export type AuditTargetType = "user" | "project";
+export type AuditTargetType = "user" | "project" | "oauth_client";
 
 // Writes one actor-attributed row to admin_audit_log (auth DB). Call
 // AFTER the mutation/export has succeeded so the trail only records
