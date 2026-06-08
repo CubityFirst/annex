@@ -176,6 +176,19 @@ export default {
         }
         response = await handleOAuthToken(request, env);
       } else if (url.pathname === "/oauth/userinfo" && (request.method === "GET" || request.method === "POST")) {
+        // Public endpoint: every call runs an RS256 verify (+ DB reads for a
+        // valid token), so cap it per-IP like /oauth/token. IP is real here —
+        // userinfo is directly routed on auth.cubityfir.st, not proxied.
+        const { success } = await env.RATE_LIMITER_OIDC.limit({ key: `oidc-userinfo:${ip}` });
+        if (!success) {
+          return addCorsHeaders(
+            Response.json(
+              { error: "temporarily_unavailable", error_description: "rate limit exceeded" },
+              { status: 429, headers: { "Cache-Control": "no-store" } },
+            ),
+            corsOrigin,
+          );
+        }
         response = await handleOAuthUserinfo(request, env);
       } else if (url.pathname === "/oauth/jwks" && request.method === "GET") {
         response = handleOAuthJwks(request, env);

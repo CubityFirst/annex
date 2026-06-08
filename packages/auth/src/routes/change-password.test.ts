@@ -14,7 +14,7 @@ import { requireMFA } from "../mfa";
 
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000 };
 
-function makeEnv(passwordHash?: string) {
+function makeEnv(passwordHash?: string, rateLimitSuccess = true) {
   return {
     DB: {
       prepare: vi.fn().mockReturnValue({
@@ -23,6 +23,9 @@ function makeEnv(passwordHash?: string) {
           run: vi.fn().mockResolvedValue(undefined),
         }),
       }),
+    },
+    RATE_LIMITER_AUTH: {
+      limit: vi.fn().mockResolvedValue({ success: rateLimitSuccess }),
     },
   } as unknown as Parameters<typeof handleChangePassword>[1];
 }
@@ -106,6 +109,15 @@ describe("handleChangePassword", () => {
     expect(body.ok).toBe(true);
     // Verify the DB update ran
     expect(env.DB.prepare).toHaveBeenCalledWith("UPDATE users SET password_hash = ? WHERE id = ?");
+  });
+
+  it("returns 429 when the per-user rate limit is exceeded", async () => {
+    vi.mocked(requireAuthenticatedSession).mockResolvedValue(mockSession);
+    const res = await handleChangePassword(
+      makeRequest({ currentPassword: "current-password", newPassword: "NewP@ssw0rd99!" }),
+      makeEnv("unused-hash", false),
+    );
+    expect(res.status).toBe(429);
   });
 
   it("returns the MFA error response when MFA check fails", async () => {

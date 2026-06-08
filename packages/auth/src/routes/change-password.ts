@@ -1,6 +1,6 @@
 import zxcvbn from "zxcvbn";
 import { requireAuthenticatedSession } from "../auth-session";
-import { okResponse, errorResponse, Errors } from "../lib";
+import { okResponse, errorResponse, Errors, rateLimitUser } from "../lib";
 import { verifyPassword, hashPassword } from "../password";
 import { requireMFA } from "../mfa";
 import { revokeAllSessions } from "../sessions";
@@ -21,6 +21,12 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
+
+  // The currentPassword verify below is an unauthenticated-grade guess oracle
+  // for anyone holding a live session; throttle it per-user (the proxy strips
+  // IP, so key on userId).
+  const limited = await rateLimitUser(env.RATE_LIMITER_AUTH, `change-pw:${session.userId}`);
+  if (limited) return limited;
 
   if (zxcvbn(body.newPassword).score < 3) {
     return Response.json({ ok: false, error: "password_too_weak" }, { status: 400 });

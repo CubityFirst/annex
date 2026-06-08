@@ -51,6 +51,22 @@ export function okResponse<T>(data: T, status = 200): Response {
   return Response.json({ ok: true, data }, { status });
 }
 
+// Shape of the Cloudflare ratelimit bindings (see Env in index.ts).
+export interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
+// Per-user rate-limit guard for authenticated, proxied routes. These reach the
+// auth worker via the API worker's service-binding proxy, which does NOT forward
+// CF-Connecting-IP — so an IP key would collapse to "unknown" and bucket every
+// caller together. We key on the authenticated userId instead (same reasoning as
+// the MFA throttle in mfa.ts). Returns a 429 Response to short-circuit on, or
+// null to proceed.
+export async function rateLimitUser(limiter: RateLimiter, key: string): Promise<Response | null> {
+  const { success } = await limiter.limit({ key });
+  return success ? null : errorResponse(Errors.RATE_LIMITED);
+}
+
 // Canonical email normalization for every auth entry point (register, login,
 // resend-verification, webauthn). Trim surrounding whitespace — addresses can't
 // contain spaces, so a stray leading/trailing space is always user error — then
