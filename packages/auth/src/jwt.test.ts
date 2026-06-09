@@ -102,4 +102,22 @@ describe("signJwt / verifyJwt", () => {
     const [, body, sig] = token.split(".");
     expect(await verifyJwt(`!!!.${body}.${sig}`, SECRET)).toBeNull();
   });
+
+  it("returns null (not a throw) for a signature that is not valid base64", async () => {
+    const token = await signJwt(PAYLOAD, SECRET);
+    const [h, body] = token.split(".");
+    await expect(verifyJwt(`${h}.${body}.!!!not-base64!!!`, SECRET)).resolves.toBeNull();
+  });
+
+  it("rejects a correctly-signed token that lacks expiresAt", async () => {
+    const noExpiry = { userId: "user-abc", email: "test@example.com" } as unknown as Session;
+    const token = await signJwt(noExpiry, SECRET);
+    expect(await verifyJwt(token, SECRET)).toBeNull();
+  });
+
+  it("rejects a correctly-signed token whose expiresAt is not a number", async () => {
+    const badExpiry = { ...PAYLOAD, expiresAt: "9999999999999" } as unknown as Session;
+    const token = await signJwt(badExpiry, SECRET);
+    expect(await verifyJwt(token, SECRET)).toBeNull();
+  });
 });

@@ -25,7 +25,9 @@ export async function handleTotpDisable(request: Request, env: Env): Promise<Res
   });
   if (mfaError) return mfaError;
 
-  await env.DB.prepare("UPDATE users SET totp_secret = NULL WHERE id = ?")
+  // Clear the replay guard with the secret: a future re-enrollment must be
+  // able to accept a code from the current time step.
+  await env.DB.prepare("UPDATE users SET totp_secret = NULL, totp_last_used_step = NULL WHERE id = ?")
     .bind(session.userId)
     .run();
 

@@ -78,6 +78,12 @@ function buildAgentPrompt(opts: {
   const primaryRedirect = opts.redirectUris[0] ?? "<YOUR_EXACT_CALLBACK_URL>";
   const extraRedirects =
     opts.redirectUris.length > 1 ? `\n                 (also registered: ${opts.redirectUris.slice(1).join(", ")})` : "";
+  const hasRoles = opts.scopes.split(/\s+/).includes("roles");
+  const rolesClaim = hasRoles ? `, roles (string array, e.g. ["admin"])` : "";
+  const rolesRequirement = hasRoles
+    ? `\n8. The id_token/userinfo include a "roles" array. Gate admin-only features
+   on roles.includes("admin") — do NOT hardcode a user id/email for admin.`
+    : "";
 
   return `Add "Sign in with Annex" to this project. Annex is a standard OpenID Connect
 (OIDC) provider — use a well-maintained OIDC client library for this stack, not
@@ -90,7 +96,7 @@ PROVIDER (everything else is discoverable):
                  offline via the provider's JWKS (in the discovery doc).
 - Scopes:        ${opts.scopes}
 - Claims you get: sub (stable unique user id — key your users on THIS, never on
-                  email), email, email_verified, name.
+                  email), email, email_verified, name${rolesClaim}.
 
 CREDENTIALS (store the secret server-side only — never ship it to the browser):
 - client_id:     ${opts.clientId}
@@ -111,7 +117,7 @@ REQUIREMENTS:
    make sure it's enabled, not skipped.
 6. Establish your app's own session from the verified identity; key users on sub.
 7. The redirect_uri must match what's registered with Annex byte-for-byte
-   (scheme, host, port, path). If you change it, tell me so it can be updated.
+   (scheme, host, port, path). If you change it, tell me so it can be updated.${rolesRequirement}
 
 Use the right library for the stack (Auth.js/NextAuth custom "oidc" provider,
 Node openid-client, Python authlib, Go coreos/go-oidc, or any conformant
@@ -152,6 +158,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
   const [redirects, setRedirects] = useState("");
   const [scopeProfile, setScopeProfile] = useState(true);
   const [scopeEmail, setScopeEmail] = useState(true);
+  const [scopeRoles, setScopeRoles] = useState(false);
   const [trusted, setTrusted] = useState(true);
   const [isPublic, setIsPublic] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -161,6 +168,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
     setRedirects("");
     setScopeProfile(true);
     setScopeEmail(true);
+    setScopeRoles(false);
     setTrusted(true);
     setIsPublic(false);
   }
@@ -171,7 +179,9 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
       toast.error("A name and at least one redirect URI are required");
       return;
     }
-    const scopes = ["openid", scopeProfile ? "profile" : "", scopeEmail ? "email" : ""].filter(Boolean).join(" ");
+    const scopes = ["openid", scopeProfile ? "profile" : "", scopeEmail ? "email" : "", scopeRoles ? "roles" : ""]
+      .filter(Boolean)
+      .join(" ");
     setSubmitting(true);
     try {
       const created = await createOAuthClient({ name: name.trim(), redirect_uris, scopes, trusted, public: isPublic });
@@ -234,6 +244,10 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
             <div className="flex items-center gap-2">
               <Checkbox id="scope-email" checked={scopeEmail} onCheckedChange={(v) => setScopeEmail(v === true)} />
               <Label htmlFor="scope-email" className="font-normal">email (email, email_verified)</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="scope-roles" checked={scopeRoles} onCheckedChange={(v) => setScopeRoles(v === true)} />
+              <Label htmlFor="scope-roles" className="font-normal">roles (admin gating — adds roles: ["admin"] for Annex admins)</Label>
             </div>
           </div>
 

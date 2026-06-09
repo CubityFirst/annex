@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { base32Encode, base32Decode, buildOtpauthUri, verifyTOTP, generateSecret } from "./totp";
+import { base32Encode, base32Decode, buildOtpauthUri, verifyTOTP, matchTotpStep, generateSecret } from "./totp";
 import { toArrayBuffer } from "./crypto";
 
 // Reimplements HOTP so tests can generate expected codes independently.
@@ -144,5 +144,37 @@ describe("verifyTOTP", () => {
 
   it("rejects a non-numeric code", async () => {
     expect(await verifyTOTP(SECRET, "abcdef", NOW)).toBe(false);
+  });
+});
+
+// ── matchTotpStep ────────────────────────────────────────────────────────────
+
+describe("matchTotpStep", () => {
+  const SECRET = "JBSWY3DPEHPK3PXP";
+  const NOW = 1_700_000_000_000;
+  const STEP_NOW = Math.floor(NOW / 1000 / 30);
+
+  it("returns the current step for the current code", async () => {
+    const code = await computeTOTP(SECRET, NOW);
+    expect(await matchTotpStep(SECRET, code, NOW)).toBe(STEP_NOW);
+  });
+
+  it("returns the previous step for a one-step-old code", async () => {
+    const code = await computeTOTP(SECRET, NOW - 30_000);
+    expect(await matchTotpStep(SECRET, code, NOW)).toBe(STEP_NOW - 1);
+  });
+
+  it("returns the next step for a one-step-ahead code", async () => {
+    const code = await computeTOTP(SECRET, NOW + 30_000);
+    expect(await matchTotpStep(SECRET, code, NOW)).toBe(STEP_NOW + 1);
+  });
+
+  it("returns null for a code from a different secret", async () => {
+    const code = await computeTOTP("AAAAAAAAAAAAAAAA", NOW);
+    expect(await matchTotpStep(SECRET, code, NOW)).toBeNull();
+  });
+
+  it("returns null for a malformed code", async () => {
+    expect(await matchTotpStep(SECRET, "abcdef", NOW)).toBeNull();
   });
 });

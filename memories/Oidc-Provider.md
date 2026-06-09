@@ -20,8 +20,15 @@ Generalizes the single-purpose admin handoff (`admin_handoffs`, 0009).
 ## Key files
 - `packages/auth/src/oidc.ts` — pure crypto/helpers: RS256 sign/verify, JWKS
   derivation, PKCE (S256), `resolveScopes`, exact `redirectUriAllowed`, claim
-  builders. Unit-tested in `oidc.test.ts` (PKCE RFC vectors, alg-confusion,
-  exact redirect match, RS256 round-trip).
+  builders. Scopes: `openid`/`profile`/`email`/`roles`. `profile` adds `name` +
+  `picture` (the latter built as `${APP_ORIGIN}/api/avatar/{id}` in the token +
+  userinfo handlers, not in `scopedClaims`; the avatar endpoint 404s for users
+  with no avatar). The `roles` scope adds a
+  `roles` array claim via `rolesForUser` (admins → `["user","admin"]`, else
+  `["user"]`), sourced live from `users.is_admin` at token+userinfo time — lets
+  connected services gate admin features on `roles.includes("admin")`. Unit-tested
+  in `oidc.test.ts` (PKCE RFC vectors, alg-confusion, exact redirect match,
+  RS256 round-trip, roles).
 - `packages/auth/src/routes/oauth-{authorize,token,userinfo,discovery}.ts`.
 - `packages/auth/src/routes/oauth-clients.ts` — **admin-only** client CRUD
   (`/admin/oauth/clients` GET/POST + `/set-disabled`, `/delete`, `/rotate-secret`).

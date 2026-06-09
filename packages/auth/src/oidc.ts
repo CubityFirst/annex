@@ -216,10 +216,28 @@ export interface OidcUser {
   email: string;
   emailVerified: boolean;
   name: string;
+  // Annex platform-admin flag (users.is_admin). Surfaced as the "admin" role
+  // when the `roles` scope is granted, so connected services can gate admin-only
+  // features. Read live at token/userinfo time, so revoking admin takes effect.
+  isAdmin: boolean;
+  // Public URL of the user's avatar (`${APP_ORIGIN}/api/avatar/{id}`), set by the
+  // token/userinfo handlers and emitted as the `picture` claim under the `profile`
+  // scope. The avatar endpoint 404s for users who never uploaded one, so relying
+  // parties should fall back to their own placeholder. Optional so unit tests and
+  // any non-request caller can omit it.
+  picture?: string;
+}
+
+// The roles a user carries. Everyone is a "user"; Annex platform-admins also
+// get "admin". Kept as an array so more roles can be added without a breaking
+// claim-shape change.
+export function rolesForUser(user: OidcUser): string[] {
+  return user.isAdmin ? ["user", "admin"] : ["user"];
 }
 
 // Standard OIDC claims, filtered by the granted scope set. `openid` always
-// yields `sub`; `email` adds email/email_verified; `profile` adds name.
+// yields `sub`; `email` adds email/email_verified; `profile` adds name +
+// picture (when the caller supplied one); `roles` adds the roles array.
 export function scopedClaims(user: OidcUser, scopes: Set<string>): Record<string, unknown> {
   const claims: Record<string, unknown> = { sub: user.id };
   if (scopes.has("email")) {
@@ -228,6 +246,10 @@ export function scopedClaims(user: OidcUser, scopes: Set<string>): Record<string
   }
   if (scopes.has("profile")) {
     claims.name = user.name;
+    if (user.picture) claims.picture = user.picture;
+  }
+  if (scopes.has("roles")) {
+    claims.roles = rolesForUser(user);
   }
   return claims;
 }
@@ -291,10 +313,10 @@ export function buildDiscoveryDocument(issuer: string, authorizeUrl: string): Re
     grant_types_supported: ["authorization_code"],
     subject_types_supported: ["public"],
     id_token_signing_alg_values_supported: ["RS256"],
-    scopes_supported: ["openid", "profile", "email"],
+    scopes_supported: ["openid", "profile", "email", "roles"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
     code_challenge_methods_supported: ["S256"],
-    claims_supported: ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name"],
+    claims_supported: ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name", "picture", "roles"],
   };
 }
 

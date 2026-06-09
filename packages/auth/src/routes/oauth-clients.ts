@@ -37,7 +37,7 @@ interface SetDisabledBody {
   disabled?: boolean;
 }
 
-const ALLOWED_SCOPES = ["openid", "profile", "email"];
+const ALLOWED_SCOPES = ["openid", "profile", "email", "roles"];
 
 async function requireAdmin(request: Request, env: Env): Promise<Session | Response> {
   const session = await requireAuthenticatedSession(request, env);

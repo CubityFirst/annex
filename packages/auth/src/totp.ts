@@ -57,16 +57,23 @@ async function hotp(secretBytes: Uint8Array, counter: bigint): Promise<number> {
   return code;
 }
 
-export async function verifyTOTP(secret: string, code: string, timeMs: number = Date.now()): Promise<boolean> {
-  if (!/^\d{6}$/.test(code)) return false;
+// Returns the 30-second time step the code matched (within the ±1-step clock
+// drift window), or null when invalid. Login-flow callers must go through
+// verifyAndConsumeTotp (mfa.ts), which persists the step to enforce the
+// RFC 6238 never-accept-the-same-or-earlier-OTP replay rule.
+export async function matchTotpStep(secret: string, code: string, timeMs: number = Date.now()): Promise<number | null> {
+  if (!/^\d{6}$/.test(code)) return null;
   const secretBytes = base32Decode(secret);
   const counter = Math.floor(timeMs / 1000 / 30);
-  // Allow +/-1 time step to account for clock drift.
   for (let delta = -1; delta <= 1; delta++) {
     const expected = await hotp(secretBytes, BigInt(counter + delta));
-    if (expected.toString().padStart(6, "0") === code) return true;
+    if (expected.toString().padStart(6, "0") === code) return counter + delta;
   }
-  return false;
+  return null;
+}
+
+export async function verifyTOTP(secret: string, code: string, timeMs: number = Date.now()): Promise<boolean> {
+  return (await matchTotpStep(secret, code, timeMs)) !== null;
 }
 
 export function generateSecret(): string {

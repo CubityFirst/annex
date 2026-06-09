@@ -43,11 +43,20 @@ export async function verifyJwt(token: string, secret: string): Promise<Session 
   }
   if (header.alg !== "HS256" || header.typ !== "JWT") return null;
 
+  // atob throws on non-base64 input — a garbage signature must read as an
+  // invalid token (401), not bubble up as an internal error (500).
+  let sigBytes: Uint8Array;
+  try {
+    sigBytes = Uint8Array.from(b64urlDecode(parts[2]), c => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+
   const key = await importKey(secret);
   const valid = await crypto.subtle.verify(
     ALG,
     key,
-    toArrayBuffer(Uint8Array.from(b64urlDecode(parts[2]), c => c.charCodeAt(0))),
+    toArrayBuffer(sigBytes),
     toArrayBuffer(new TextEncoder().encode(`${parts[0]}.${parts[1]}`)),
   );
   if (!valid) return null;
@@ -58,7 +67,9 @@ export async function verifyJwt(token: string, secret: string): Promise<Session 
   } catch {
     return null;
   }
-  if (payload.expiresAt < Date.now()) return null;
+  // Fail closed on a missing/malformed expiry: `undefined < n` is false, so
+  // without the type check a payload lacking expiresAt would never expire.
+  if (typeof payload.expiresAt !== "number" || payload.expiresAt < Date.now()) return null;
 
   return payload;
 }

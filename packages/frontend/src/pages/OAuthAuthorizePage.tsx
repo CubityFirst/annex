@@ -31,7 +31,7 @@ interface ConsentInfo {
 
 const SCOPE_LABELS: Record<string, string> = {
   openid: "Confirm your identity",
-  profile: "Your display name",
+  profile: "Your display name and profile photo",
   email: "Your email address",
 };
 

@@ -21,7 +21,8 @@ PROVIDER (everything else is discoverable):
                  offline via the provider's JWKS (in the discovery doc).
 - Scopes:        openid profile email
 - Claims you get: sub (stable unique user id — key your users on THIS, never on
-                  email), email, email_verified, name.
+                  email), email, email_verified, name, picture (avatar URL; may
+                  404 if the user has no avatar — fall back to your own placeholder).
 
 CREDENTIALS (store the secret server-side only — never ship it to the browser):
 - client_id:     <ANNEX_CLIENT_ID>
@@ -44,6 +45,9 @@ REQUIREMENTS:
    primary key for the Annex identity; treat email as mutable.
 7. The redirect_uri registered with Annex must match byte-for-byte what your app
    sends (scheme, host, port, path).
+8. (If this client was granted the `roles` scope) the id_token / userinfo carry a
+   `roles` string array. Gate admin-only features on `roles.includes("admin")` —
+   do NOT hardcode a user id or email for admin access.
 
 STACK-SPECIFIC GUIDANCE (pick what fits this project):
 - Next.js / Auth.js (NextAuth): add a custom OIDC provider with

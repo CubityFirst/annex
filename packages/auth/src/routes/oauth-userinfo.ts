@@ -7,6 +7,7 @@ interface UserRow {
   email: string;
   name: string;
   email_verified: number;
+  is_admin: number;
   moderation: number;
   force_password_change: number;
 }
@@ -51,7 +52,7 @@ export async function handleOAuthUserinfo(request: Request, env: Env): Promise<R
   if (!client || client.disabled) return unauthorized("client no longer authorized");
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, email_verified, moderation, force_password_change FROM users WHERE id = ?",
+    "SELECT id, email, name, email_verified, is_admin, moderation, force_password_change FROM users WHERE id = ?",
   ).bind(payload.sub).first<UserRow>();
   if (!user || user.force_password_change || checkModeration(user.moderation)) {
     return unauthorized("subject no longer valid");
@@ -63,6 +64,8 @@ export async function handleOAuthUserinfo(request: Request, env: Env): Promise<R
     email: user.email,
     emailVerified: Boolean(user.email_verified),
     name: user.name,
+    isAdmin: Boolean(user.is_admin),
+    picture: `${env.APP_ORIGIN}/api/avatar/${user.id}`,
   };
 
   return Response.json(scopedClaims(oidcUser, scopes), {

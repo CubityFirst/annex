@@ -1,5 +1,5 @@
 import { verifyWebauthnAssertion } from "./webauthn";
-import { verifyTOTP } from "./totp";
+import { matchTotpStep } from "./totp";
 import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
@@ -41,10 +41,10 @@ export async function requireMFA(
 
   // Throttle real verification attempts per-user so a stolen/live session
   // can't brute-force the 6-digit TOTP or a backup code to strip MFA. Keyed
-  // on userId rather than IP because every caller reaches the auth worker via
-  // the API worker's service-binding proxy, which does not forward
-  // CF-Connecting-IP. Only counted when a code/assertion is actually supplied;
-  // the "mfa_required" prompt path below is a normal flow and not throttled.
+  // on userId rather than IP so the budget holds even against a distributed
+  // attacker rotating source addresses. Only counted when a code/assertion is
+  // actually supplied; the "mfa_required" prompt path below is a normal flow
+  // and not throttled.
   const attempting = !!(
     verification.totpCode ||
     verification.backupCode ||
@@ -67,7 +67,7 @@ export async function requireMFA(
 
   if (hasTOTP) {
     if (verification.totpCode) {
-      const valid = await verifyTOTP(user.totp_secret!, verification.totpCode);
+      const valid = await verifyAndConsumeTotp(env, userId, user.totp_secret!, verification.totpCode);
       if (!valid) {
         return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
       }
@@ -85,6 +85,24 @@ export async function requireMFA(
 
   // Has WebAuthn only, no assertion provided
   return Response.json({ ok: false, error: "mfa_required" }, { status: 200 });
+}
+
+// Verifies a TOTP code AND consumes its time step, so an observed code can't
+// be replayed within its ±1-step validity window. The conditional UPDATE is
+// the consume: it only succeeds for a step strictly later than the last
+// accepted one, and concurrent requests race on the row so exactly one wins.
+export async function verifyAndConsumeTotp(
+  env: Env,
+  userId: string,
+  secret: string,
+  code: string,
+): Promise<boolean> {
+  const step = await matchTotpStep(secret, code);
+  if (step === null) return false;
+  const result = await env.DB.prepare(
+    "UPDATE users SET totp_last_used_step = ? WHERE id = ? AND (totp_last_used_step IS NULL OR totp_last_used_step < ?)",
+  ).bind(step, userId, step).run();
+  return (result.meta.changes ?? 0) === 1;
 }
 
 export async function validateAndConsumeBackupCode(env: Env, userId: string, code: string): Promise<boolean> {

@@ -5,6 +5,7 @@ import {
   buildDiscoveryDocument,
   buildIdTokenClaims,
   constantTimeEqual,
+  rolesForUser,
   deriveS256Challenge,
   derivePublicJwk,
   hashClientSecret,
@@ -80,6 +81,27 @@ describe("resolveScopes", () => {
     expect(resolveScopes("", allowed)).toBeNull();
     expect(resolveScopes(null, allowed)).toBeNull();
   });
+  it("grants roles only when the client allows it", () => {
+    expect(resolveScopes("openid roles", "openid profile email roles")).toBe("openid roles");
+    // client not allowed `roles` -> it's dropped
+    expect(resolveScopes("openid roles", "openid profile email")).toBe("openid");
+  });
+});
+
+describe("roles", () => {
+  const admin: OidcUser = { id: "u1", email: "a@b.com", emailVerified: true, name: "Ada", isAdmin: true };
+  const plain: OidcUser = { id: "u2", email: "c@d.com", emailVerified: true, name: "Cy", isAdmin: false };
+
+  it("gives admins the admin role, others just user", () => {
+    expect(rolesForUser(admin)).toEqual(["user", "admin"]);
+    expect(rolesForUser(plain)).toEqual(["user"]);
+  });
+
+  it("only emits the roles claim when the scope is granted", () => {
+    expect(scopedClaims(admin, new Set(["openid"]))).not.toHaveProperty("roles");
+    expect(scopedClaims(admin, new Set(["openid", "roles"]))).toMatchObject({ roles: ["user", "admin"] });
+    expect(scopedClaims(plain, new Set(["openid", "roles"]))).toMatchObject({ roles: ["user"] });
+  });
 });
 
 describe("redirect URIs", () => {
@@ -152,7 +174,7 @@ describe("RS256 sign/verify", () => {
 });
 
 describe("claims", () => {
-  const user: OidcUser = { id: "u1", email: "a@b.com", emailVerified: true, name: "Ada" };
+  const user: OidcUser = { id: "u1", email: "a@b.com", emailVerified: true, name: "Ada", isAdmin: false };
 
   it("scopes claims by grant", () => {
     expect(scopedClaims(user, new Set(["openid"]))).toEqual({ sub: "u1" });
@@ -162,6 +184,19 @@ describe("claims", () => {
       email_verified: true,
     });
     expect(scopedClaims(user, new Set(["openid", "profile"]))).toEqual({ sub: "u1", name: "Ada" });
+  });
+
+  it("emits picture under the profile scope when the user has one", () => {
+    const withPic: OidcUser = { ...user, picture: "https://app.example/api/avatar/u1" };
+    // picture rides the profile scope alongside name...
+    expect(scopedClaims(withPic, new Set(["openid", "profile"]))).toEqual({
+      sub: "u1",
+      name: "Ada",
+      picture: "https://app.example/api/avatar/u1",
+    });
+    // ...not openid alone, and is omitted entirely when unset.
+    expect(scopedClaims(withPic, new Set(["openid"]))).toEqual({ sub: "u1" });
+    expect(scopedClaims(user, new Set(["openid", "profile"]))).not.toHaveProperty("picture");
   });
 
   it("builds id_token claims with iss/aud/exp and optional nonce", () => {
@@ -211,6 +246,7 @@ describe("discovery document", () => {
       jwks_uri: "https://auth.cubityfir.st/oauth/jwks",
       code_challenge_methods_supported: ["S256"],
       id_token_signing_alg_values_supported: ["RS256"],
+      claims_supported: expect.arrayContaining(["picture"]),
     });
   });
 });

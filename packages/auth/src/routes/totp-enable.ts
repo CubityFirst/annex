@@ -1,6 +1,6 @@
 import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
-import { verifyTOTP } from "../totp";
+import { matchTotpStep } from "../totp";
 import { requireMFA } from "../mfa";
 import type { Env } from "../index";
 
@@ -33,11 +33,13 @@ export async function handleTotpEnable(request: Request, env: Env): Promise<Resp
   });
   if (mfaError) return mfaError;
 
-  const valid = await verifyTOTP(body.secret, body.code);
-  if (!valid) return errorResponse(Errors.UNAUTHORIZED);
+  // Store the enrollment code's time step alongside the secret so the same
+  // code can't be replayed at login — verification only accepts later steps.
+  const step = await matchTotpStep(body.secret, body.code);
+  if (step === null) return errorResponse(Errors.UNAUTHORIZED);
 
-  await env.DB.prepare("UPDATE users SET totp_secret = ? WHERE id = ?")
-    .bind(body.secret, session.userId)
+  await env.DB.prepare("UPDATE users SET totp_secret = ?, totp_last_used_step = ? WHERE id = ?")
+    .bind(body.secret, step, session.userId)
     .run();
 
   return okResponse({});

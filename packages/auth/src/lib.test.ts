@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmail } from "./lib";
+import { clientIp, normalizeEmail } from "./lib";
 
 describe("normalizeEmail", () => {
   it("strips leading and trailing whitespace", () => {
@@ -24,5 +24,23 @@ describe("normalizeEmail", () => {
 
   it("leaves interior characters untouched (only edges are trimmed)", () => {
     expect(normalizeEmail("a.b+tag@sub.example.com")).toBe("a.b+tag@sub.example.com");
+  });
+});
+
+describe("clientIp", () => {
+  const req = (headers: Record<string, string>) =>
+    new Request("https://auth/login", { headers });
+
+  it("prefers the edge-set CF-Connecting-IP when present", () => {
+    expect(clientIp(req({ "CF-Connecting-IP": "1.2.3.4", "X-Client-IP": "5.6.7.8" })))
+      .toBe("1.2.3.4");
+  });
+
+  it("falls back to the proxy-forwarded X-Client-IP on service-binding hops", () => {
+    expect(clientIp(req({ "X-Client-IP": "5.6.7.8" }))).toBe("5.6.7.8");
+  });
+
+  it("returns null when neither header is present", () => {
+    expect(clientIp(req({}))).toBeNull();
   });
 });

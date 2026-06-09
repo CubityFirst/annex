@@ -146,7 +146,15 @@ export default {
       if (url.pathname.startsWith("/api/")) {
         const apiUrl = new URL(url.pathname.replace(/^\/api/, "") || "/", "https://api");
         apiUrl.search = url.search;
-        return await env.API.fetch(new Request(apiUrl.toString(), request));
+        const proxied = new Request(apiUrl.toString(), request);
+        // Service-binding hops drop CF-Connecting-IP, so forward the
+        // edge-observed client IP as X-Client-IP for downstream rate limiting
+        // and session bookkeeping. Always overwrite: an inbound X-Client-IP is
+        // client-controlled and must never survive the hop.
+        const clientIp = request.headers.get("CF-Connecting-IP");
+        if (clientIp) proxied.headers.set("X-Client-IP", clientIp);
+        else proxied.headers.delete("X-Client-IP");
+        return await env.API.fetch(proxied);
       }
 
       // Inject OG metadata for share links

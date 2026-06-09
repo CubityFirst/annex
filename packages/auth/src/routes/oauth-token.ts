@@ -32,6 +32,7 @@ interface UserRow {
   email: string;
   name: string;
   email_verified: number;
+  is_admin: number;
   moderation: number;
   force_password_change: number;
 }
@@ -149,7 +150,7 @@ export async function handleOAuthToken(request: Request, env: Env): Promise<Resp
   if ((consume.meta.changes ?? 0) !== 1) return tokenError("invalid_grant", 400);
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, email_verified, moderation, force_password_change FROM users WHERE id = ?",
+    "SELECT id, email, name, email_verified, is_admin, moderation, force_password_change FROM users WHERE id = ?",
   ).bind(codeRow.user_id).first<UserRow>();
   if (!user || user.force_password_change) return tokenError("invalid_grant", 400);
   // Re-check live account standing (disabled/suspended) at token time.
@@ -164,6 +165,8 @@ export async function handleOAuthToken(request: Request, env: Env): Promise<Resp
     email: user.email,
     emailVerified: Boolean(user.email_verified),
     name: user.name,
+    isAdmin: Boolean(user.is_admin),
+    picture: `${env.APP_ORIGIN}/api/avatar/${user.id}`,
   };
 
   const idToken = await signRs256(

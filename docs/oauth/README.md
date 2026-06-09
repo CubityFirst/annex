@@ -33,8 +33,13 @@ browser-local token on the app origin, so the consent/login step has to happen
 there. OIDC allows endpoints on different hosts — every client reads the exact
 URLs from the discovery document, so this is transparent to consumers.
 
-**Scopes:** `openid` (required, yields `sub`), `profile` (adds `name`), `email`
-(adds `email`, `email_verified`).
+**Scopes:** `openid` (required, yields `sub`), `profile` (adds `name` and
+`picture` — a URL to the user's avatar; it 404s for users who haven't uploaded
+one, so fall back to your own placeholder), `email`
+(adds `email`, `email_verified`), `roles` (adds a `roles` array — `["user","admin"]`
+for Annex platform-admins, `["user"]` otherwise; read live from `users.is_admin`).
+A client must be granted `roles` at registration to receive it; gate admin-only
+features on `roles.includes("admin")`.
 **Signing:** RS256. id_tokens and access tokens are verifiable offline against
 the JWKS. This key is **separate** from the Annex session `JWT_SECRET` — no
 Annex secret is ever shared with a connected service.

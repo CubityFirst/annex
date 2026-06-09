@@ -2,8 +2,7 @@ import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { verifyPassword, hashPassword, needsRehash, DUMMY_PASSWORD_HASH } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
-import { verifyTOTP } from "../totp";
-import { validateAndConsumeBackupCode } from "../mfa";
+import { validateAndConsumeBackupCode, verifyAndConsumeTotp } from "../mfa";
 import { createSession, SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
@@ -109,16 +108,21 @@ async function verifyTotpOrBackup(
   totpCode?: string,
   backupCode?: string,
 ): Promise<Response | null> {
+  if (!totpCode && !backupCode) return null;
+
+  // Same per-user budget as requireMFA (`mfa:<userId>`): the password is
+  // already verified by this point, so key the throttle on the account — a
+  // distributed attacker can rotate source IPs, but not this key.
+  const { success } = await env.RATE_LIMITER_AUTH.limit({ key: `mfa:${userId}` });
+  if (!success) return errorResponse(Errors.RATE_LIMITED);
+
   if (totpCode) {
-    const valid = await verifyTOTP(totpSecret, totpCode);
+    const valid = await verifyAndConsumeTotp(env, userId, totpSecret, totpCode);
     if (!valid) return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
     return null;
   }
-  if (backupCode) {
-    const valid = await validateAndConsumeBackupCode(env, userId, backupCode);
-    if (!valid) return Response.json({ ok: false, error: "invalid_backup_code" }, { status: 401 });
-    return null;
-  }
+  const valid = await validateAndConsumeBackupCode(env, userId, backupCode!);
+  if (!valid) return Response.json({ ok: false, error: "invalid_backup_code" }, { status: 401 });
   return null;
 }
 

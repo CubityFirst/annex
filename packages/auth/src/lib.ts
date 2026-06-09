@@ -51,6 +51,15 @@ export function okResponse<T>(data: T, status = 200): Response {
   return Response.json({ ok: true, data }, { status });
 }
 
+// Resolve the real client IP. CF-Connecting-IP is edge-set and unspoofable but
+// survives only direct edge hits; service-binding hops (frontend → api → auth)
+// drop it, so the proxies forward the edge-observed value as X-Client-IP
+// (overwritten at every hop, never client-controlled). Returns null when
+// neither is present (local dev without the header).
+export function clientIp(request: Request): string | null {
+  return request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
+}
+
 // Canonical email normalization for every auth entry point (register, login,
 // resend-verification, webauthn). Trim surrounding whitespace — addresses can't
 // contain spaces, so a stray leading/trailing space is always user error — then

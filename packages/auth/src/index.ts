@@ -1,4 +1,4 @@
-import { errorResponse, Errors } from "./lib";
+import { clientIp, errorResponse, Errors } from "./lib";
 import { handleRegister } from "./routes/register";
 import { handleLogin } from "./routes/login";
 import { handleVerify } from "./routes/verify";
@@ -98,7 +98,15 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(corsOrigin) });
     }
 
-    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    // CF-Connecting-IP is present only when this worker is hit directly at the
+    // edge (e.g. auth.cubityfir.st). App traffic arrives via two service-binding
+    // hops (frontend → api → auth) which drop that header, so the frontend
+    // worker forwards the edge-observed IP as X-Client-IP and the API worker
+    // re-forwards it. CF-Connecting-IP takes precedence because the edge sets
+    // it unspoofably; X-Client-IP is only honored when it's absent, i.e. on
+    // trusted service-binding hops. Without this fallback every proxied request
+    // shared the single "unknown" rate-limit bucket.
+    const ip = clientIp(request) ?? "unknown";
     let response: Response;
 
     try {

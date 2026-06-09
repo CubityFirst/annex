@@ -1,3 +1,4 @@
+import { clientIp } from "./lib";
 import type { Env } from "./index";
 
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -58,7 +59,7 @@ export async function createSession(
   const id = crypto.randomUUID();
   const now = Date.now();
   const { deviceKind, clientLabel } = parseUserAgent(request.headers.get("User-Agent"));
-  const ip = request.headers.get("CF-Connecting-IP");
+  const ip = clientIp(request);
 
   // Opportunistic GC: drop expired/revoked rows for this user so the table
   // doesn't grow unbounded for users who never log out properly.

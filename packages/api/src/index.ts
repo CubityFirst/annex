@@ -81,7 +81,9 @@ export default {
         url.pathname === "/oauth/authorize" ||
         url.pathname === "/dev/quick-login"
       ) {
-        return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
+        return env.AUTH.fetch(
+          withForwardedClientIp(new Request(`https://auth${url.pathname}`, request), request),
+        );
       }
 
       // TOTP management routes — authenticated, proxied to auth worker with userId injected
@@ -117,7 +119,9 @@ export default {
       // WebAuthn login ceremony — unauthenticated, forwarded directly
       if (url.pathname.startsWith("/webauthn/auth")) {
         return addCorsHeaders(
-          await env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request)),
+          await env.AUTH.fetch(
+            withForwardedClientIp(new Request(`https://auth${url.pathname}`, request), request),
+          ),
         );
       }
 
@@ -802,6 +806,20 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
     }),
   });
   return stub.fetch(upstream);
+}
+
+// Service-binding hops drop CF-Connecting-IP, so the edge-observed client IP
+// travels as X-Client-IP: the frontend worker's /api proxy sets it, and we
+// re-forward it here on the hop to the auth worker, which keys its
+// login/register rate limiters and session-row IP capture on it.
+// CF-Connecting-IP always wins when present — it's set by the Cloudflare edge
+// and unspoofable — so a client-supplied X-Client-IP on a directly-routed
+// request is never trusted.
+function withForwardedClientIp(proxied: Request, incoming: Request): Request {
+  const ip = incoming.headers.get("CF-Connecting-IP") ?? incoming.headers.get("X-Client-IP");
+  if (ip) proxied.headers.set("X-Client-IP", ip);
+  else proxied.headers.delete("X-Client-IP");
+  return proxied;
 }
 
 async function getSession(request: Request, env: Env): Promise<Session | Response> {
