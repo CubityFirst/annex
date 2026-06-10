@@ -1,6 +1,6 @@
 import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
-import { matchTotpStep } from "../totp";
+import { verifyTOTP } from "../totp";
 import { requireMFA } from "../mfa";
 import type { Env } from "../index";
 
@@ -33,13 +33,14 @@ export async function handleTotpEnable(request: Request, env: Env): Promise<Resp
   });
   if (mfaError) return mfaError;
 
-  // Store the enrollment code's time step alongside the secret so the same
-  // code can't be replayed at login — verification only accepts later steps.
-  const step = await matchTotpStep(body.secret, body.code);
-  if (step === null) return errorResponse(Errors.UNAUTHORIZED);
+  // Plain verify — the enrollment code's step is deliberately NOT consumed, so
+  // the user can enable TOTP and sign in within the same 30s code window. The
+  // login path's replay guard starts consuming from the first login onward.
+  const valid = await verifyTOTP(body.secret, body.code);
+  if (!valid) return errorResponse(Errors.UNAUTHORIZED);
 
-  await env.DB.prepare("UPDATE users SET totp_secret = ?, totp_last_used_step = ? WHERE id = ?")
-    .bind(body.secret, step, session.userId)
+  await env.DB.prepare("UPDATE users SET totp_secret = ?, totp_last_used_step = NULL WHERE id = ?")
+    .bind(body.secret, session.userId)
     .run();
 
   return okResponse({});

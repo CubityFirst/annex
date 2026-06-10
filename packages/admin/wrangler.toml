@@ -40,18 +40,18 @@ custom_domain = true
 CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"
 
-[[unsafe.bindings]]
+# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) —
+# same behavior, but simulated locally in wrangler dev. See auth wrangler.toml.
+[[ratelimits]]
 name = "RATE_LIMITER_ADMIN"
-type = "ratelimit"
 namespace_id = "2001"
 # IP-keyed coarse abuse cap across every authenticated admin API route.
 # Generous enough for an operator clicking around the dashboard; only
 # bites scripted abuse with a stolen admin token.
 simple = { limit = 60, period = 60 }
 
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RATE_LIMITER_ADMIN_HANDOFF"
-type = "ratelimit"
 namespace_id = "2002"
 # Tighter, separate bucket for the unauthenticated handoff-exchange
 # proxy (the only pre-auth endpoint that hits the auth worker + DB).

@@ -52,18 +52,18 @@ CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 # /lookup also has its own coarser IP-keyed limiter — this one caps any
 # single account from scraping the email→user map even when multiple
 # users share an IP (office NAT).
-[[unsafe.bindings]]
+# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) —
+# same behavior, but simulated locally in wrangler dev. See auth wrangler.toml.
+[[ratelimits]]
 name = "RATE_LIMITER_INVITE_LOOKUP"
-type = "ratelimit"
 namespace_id = "2001"
 simple = { limit = 8, period = 60 }
 
 # Per-API-key limiter for the public /v1 surface, keyed by `apikey:<id>`.
 # Caps abuse / runaway scripts on a single scoped key without touching the
 # interactive JWT routes.
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RATE_LIMITER_API"
-type = "ratelimit"
 namespace_id = "2002"
 simple = { limit = 120, period = 60 }
 

@@ -1,5 +1,5 @@
 import { verifyWebauthnAssertion } from "./webauthn";
-import { matchTotpStep } from "./totp";
+import { matchTotpStep, verifyTOTP } from "./totp";
 import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
@@ -67,7 +67,13 @@ export async function requireMFA(
 
   if (hasTOTP) {
     if (verification.totpCode) {
-      const valid = await verifyAndConsumeTotp(env, userId, user.totp_secret!, verification.totpCode);
+      // Plain verify, no step consume: these are authenticated re-confirmations
+      // (change password, disable TOTP, delete account), and a user legitimately
+      // confirms several of them within one 30s code window. Replay protection
+      // lives on the unauthenticated login path (verifyAndConsumeTotp), where a
+      // captured code is actually dangerous. Brute force is covered by the
+      // per-user throttle above.
+      const valid = await verifyTOTP(user.totp_secret!, verification.totpCode);
       if (!valid) {
         return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
       }
@@ -87,10 +93,14 @@ export async function requireMFA(
   return Response.json({ ok: false, error: "mfa_required" }, { status: 200 });
 }
 
-// Verifies a TOTP code AND consumes its time step, so an observed code can't
-// be replayed within its ±1-step validity window. The conditional UPDATE is
-// the consume: it only succeeds for a step strictly later than the last
-// accepted one, and concurrent requests race on the row so exactly one wins.
+// Verifies a TOTP code AND consumes its time step, so a captured code can't be
+// replayed to LOG IN within its ±1-step validity window. The conditional
+// UPDATE is the consume: it only succeeds for a step strictly later than the
+// last accepted one, and concurrent requests race on the row so exactly one
+// wins. Only the unauthenticated login path consumes — enroll and the
+// authenticated requireMFA confirmations deliberately don't, so enabling TOTP
+// and signing in (or confirming several settings actions) within one code
+// window keeps working.
 export async function verifyAndConsumeTotp(
   env: Env,
   userId: string,
