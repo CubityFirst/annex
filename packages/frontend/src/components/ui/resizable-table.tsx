@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState } from "react";
+import React, { useRef, useCallback, useMemo, useState, useLayoutEffect } from "react";
 import { GripVerticalIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -33,6 +33,13 @@ interface ResizableTableProps {
   sort?: SortSpec | null;
   /** Called with the clicked column index when a sortable header is clicked. */
   onSort?: (colIdx: number) => void;
+  /**
+   * Opaque token derived from the rendered rows' content. When it changes, the
+   * table re-measures and re-fits its constrained columns (see the auto-fit
+   * effect). Pass a string/number that varies with the data shown in any
+   * constrained (minWidth) column — e.g. a join of that column's cell text.
+   */
+  measureKey?: string | number;
   children: React.ReactNode;
 }
 
@@ -153,9 +160,14 @@ function buildSegments(columns: ColumnDef[]): Segment[] {
 
 // ── ResizableTable ────────────────────────────────────────────────────────────
 
-export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, children }: ResizableTableProps) {
+export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, measureKey, children }: ResizableTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = useMemo(() => buildSegments(columns), [columns]);
+  // Segments the user has manually dragged this session. The auto-fit effect
+  // leaves these alone so re-measuring (on data change) never clobbers a width
+  // the user set by hand. (Cross-session, the persisted `saved` width does the
+  // same job; this covers the window before a reload.)
+  const userResizedSegs = useRef<Set<number>>(new Set());
 
   const [saved] = useState<Record<string, string>>(() => {
     if (!storageKey) return {};
@@ -239,6 +251,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
     const startWidth = segEl.getBoundingClientRect().width;
     const startX = e.clientX;
 
+    userResizedSegs.current.add(seg.segIdx);
     const onMove = (ev: MouseEvent) => {
       const raw = startWidth + ev.clientX - startX;
       const newWidth = Math.max(seg.minPx, Math.min(seg.maxPx, raw));
@@ -253,6 +266,36 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [save]);
+
+  // Auto-fit constrained (minWidth) columns to their content. For each such
+  // column we measure the widest cell's natural width (briefly forcing
+  // `max-content` so truncation doesn't hide the true size), then clamp to
+  // [minWidth, maxWidth] and pin the segment to that width. Result: the column
+  // grows to fit names/badges when there's room and only truncates past the
+  // cap. Runs in a layout effect (before paint, so no flash) and re-runs when
+  // `measureKey` changes. A column the user has manually dragged keeps its
+  // saved width and is left alone.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    for (const seg of segments) {
+      if (!seg.constrained) continue;
+      if (saved[`--seg-${seg.segIdx}-width`]) continue;
+      if (userResizedSegs.current.has(seg.segIdx)) continue;
+      const idx = seg.cols[0].idx;
+      const cells = Array.from(el.querySelectorAll<HTMLElement>(`[data-col="${idx}"]`));
+      if (cells.length === 0) continue;
+      const prevWidths = cells.map(c => c.style.width);
+      cells.forEach(c => { c.style.width = "max-content"; });
+      let max = 0;
+      cells.forEach(c => { max = Math.max(max, c.getBoundingClientRect().width); });
+      cells.forEach((c, i) => { c.style.width = prevWidths[i]; });
+      if (max > 0) {
+        const clamped = Math.max(seg.minPx, Math.min(seg.maxPx, Math.ceil(max)));
+        el.style.setProperty(`--seg-${seg.segIdx}-width`, `${clamped}px`);
+      }
+    }
+  }, [segments, saved, measureKey]);
 
   return (
     <div ref={containerRef} className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
@@ -362,6 +405,7 @@ export function ResizableTableRow({
               return (
                 <div
                   key={idx}
+                  data-col={idx}
                   style={{ width: `var(--col-${idx})` }}
                   className={cn("flex items-center overflow-hidden shrink-0", cell?.className ?? "px-3")}
                   onClick={cell?.onClick}

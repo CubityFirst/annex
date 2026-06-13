@@ -187,7 +187,7 @@ test("preview shows the saved title and content", async () => {
 // ── Navigate back & verify file list ────────────────────────────────────────
 
 test("the document appears in the project file list", async () => {
-  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("link", { name: "File Manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
   await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
 });
@@ -223,7 +223,7 @@ test("navigates into the folder and creates a document inside it", async () => {
 
 test("drags a document into a folder", async () => {
   // Navigate back to the project root file manager.
-  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("link", { name: "File Manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
   await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
 
@@ -256,7 +256,7 @@ test("drags a document back to root via the breadcrumb", async () => {
   await expect(docRow).not.toBeVisible({ timeout: 5000 });
 
   // Navigate to the project root and confirm the doc is back there.
-  await page.getByRole("link", { name: "Documents" }).click();
+  await page.getByRole("link", { name: "File Manager" }).click();
   await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
 });
 

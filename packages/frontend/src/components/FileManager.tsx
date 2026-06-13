@@ -104,6 +104,40 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
+// "Created by" cell — the author/uploader name plus an optional role badge,
+// linking to the user's profile card when we have an id. The name truncates in
+// its own span while the badge stays `shrink-0`, so a long name never pushes
+// the badge out of the (overflow-hidden) cell.
+function AuthorCell({ userId, name, role }: { userId?: string; name?: string; role?: Role | null }) {
+  if (userId && name) {
+    return (
+      <UserProfileCard userId={userId} name={name}>
+        <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+          <span className="truncate">{name}</span>
+          {role && <RoleBadge role={role} />}
+        </div>
+      </UserProfileCard>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
+      <span className="truncate">{name ?? ""}</span>
+      {role && <RoleBadge role={role} />}
+    </div>
+  );
+}
+
+// Module-scope so the array identity is stable across renders — the table keys
+// its segment memo and auto-fit effect off this reference. "Name" and
+// "Created by" are constrained (minWidth/maxWidth) so they auto-fit to content;
+// "Size"/"Last updated" share the remaining resizable space.
+const FILE_COLUMNS = [
+  { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500, sortable: true },
+  { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400, sortable: true },
+  { label: "Size", defaultSize: 15, minSize: 8, sortable: true },
+  { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
+];
+
 interface Props {
   projectId: string;
   projectName: string;
@@ -546,20 +580,21 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     }
   }
 
-  const FILE_COLUMNS = [
-    { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500, sortable: true },
-    { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400, sortable: true },
-    { label: "Size", defaultSize: 15, minSize: 8, sortable: true },
-    { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
-  ];
-
   function renderTable(folderRows: FolderItem[], docRows: DocItem[], fileRows: FileItem[] = []) {
     // Sort within each group; folders stay pinned above docs above files.
     const sortedFolders = sortFolders(folderRows, sort);
     const sortedDocs = sortDocs(docRows, sort);
     const sortedFiles = sortFiles(fileRows, sort);
+    // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
+    // shown in them changes — folder/doc/file names plus author/uploader names.
+    // Deliberately excludes selection state, so checkbox toggles don't re-measure.
+    const measureKey = [
+      ...sortedFolders.map(f => f.name),
+      ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
+      ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
+    ].join("|");
     return (
-      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort}>
+      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort} measureKey={measureKey}>
         <>
           {sortedFolders.map(folder => {
             const isDropTarget = dropTarget === folder.id;
@@ -701,19 +736,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       onClick: navToDoc,
                     },
                     {
-                      content: doc.author_id && doc.author_name ? (
-                        <UserProfileCard userId={doc.author_id} name={doc.author_name}>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors">
-                            {doc.author_name}
-                            {doc.author_role && <RoleBadge role={doc.author_role} />}
-                          </div>
-                        </UserProfileCard>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
-                          {doc.author_name ?? ""}
-                          {doc.author_role && <RoleBadge role={doc.author_role} />}
-                        </div>
-                      ),
+                      content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
                     { content: null },
                     {
@@ -829,19 +852,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     onClick: () => openFile(file),
                   },
                   {
-                    content: file.uploaded_by && file.uploader_name ? (
-                      <UserProfileCard userId={file.uploaded_by} name={file.uploader_name}>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors">
-                          {file.uploader_name}
-                          {file.uploader_role && <RoleBadge role={file.uploader_role} />}
-                        </div>
-                      </UserProfileCard>
-                    ) : (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
-                        {file.uploader_name ?? ""}
-                        {file.uploader_role && <RoleBadge role={file.uploader_role} />}
-                      </div>
-                    ),
+                    content: <AuthorCell userId={file.uploaded_by} name={file.uploader_name} role={file.uploader_role} />,
                   },
                   {
                     content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
