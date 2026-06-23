@@ -157,6 +157,79 @@ The CLI prints a `whsec_...` at startup — paste it into `packages/auth/.dev.va
 
 Without `pnpm dev:stripe` running, the local auth worker will accept webhook POSTs from the public internet but won't see any. Local checkouts will succeed at Stripe, but local DB state won't update until events are forwarded.
 
+## Direct video streaming via presigned R2 URLs (optional)
+
+Required only if you want videos to stream **directly from R2** with range/seek
+("chunked" loading) instead of through the API Worker. With it configured,
+`GET /files/:id` hands the player a short-lived presigned S3 URL, so every
+range request goes browser → R2 with **zero per-request Worker invocations**
+(and no per-request D1 read). **It is entirely optional** — when unset, video
+falls back to the in-Worker token streaming route (which still supports
+range/seek, just with one Worker request per range). Audio, PDF, images and
+text always use the Worker path regardless. See `memories/file-content-streaming.md`.
+
+**1. Create an R2 API token**
+
+In the Cloudflare dashboard → **R2 → Manage R2 API Tokens → Create API Token**:
+
+- Permission: **Object Read only**
+- Scope it to the **`cubedocs-assets` bucket only** (not "all buckets").
+
+Cloudflare gives you an **Access Key ID** and a **Secret Access Key**. You'll
+also need your **Cloudflare Account ID** (R2 overview page, or any dashboard URL).
+
+**2. Production — set the secrets and vars on the API worker**
+
+The two keys are secrets; the account id and bucket name are plain vars.
+Because `annex-api` uses versioned deployments, **deploy first**, then add the
+secrets (a bare `secret put` is refused until the latest version is deployed):
+
+```bash
+cd packages/api
+npx wrangler deploy
+npx wrangler secret put R2_ACCESS_KEY_ID
+npx wrangler secret put R2_SECRET_ACCESS_KEY
+```
+
+Enter each value at the interactive prompt (do **not** pipe it in via
+PowerShell — it appends a CRLF and corrupts the secret). Then set the two vars
+in `packages/api/wrangler.toml` (`R2_BUCKET_NAME` is already there):
+
+```toml
+[vars]
+R2_BUCKET_NAME = "cubedocs-assets"
+R2_ACCOUNT_ID  = "<your-cloudflare-account-id>"
+```
+
+All four values must be present, or presigning stays off and video uses the
+Worker fallback.
+
+**3. Local dev (optional)**
+
+Only needed if you want to exercise the presigned path locally; otherwise dev
+just uses the fallback. Add to `packages/api/.dev.vars`:
+
+```ini
+# packages/api/.dev.vars
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_ACCOUNT_ID=...
+R2_BUCKET_NAME=cubedocs-assets
+```
+
+**Security — keep the bucket private.** The presigned signature must be the
+**only** way to read objects:
+
+- Do **not** enable R2 public access (the `r2.dev` URL or a public custom
+  domain) on `cubedocs-assets`. The Worker reads R2 through its binding and the
+  presigned URLs use the signature-gated S3 endpoint — neither needs public
+  access, and enabling it would let anyone fetch raw objects by key, bypassing
+  every authorization check.
+- The API token above is **read-only** and **single-bucket** — keep it that way.
+- **No CORS policy is required** — `<video>` playback is a no-cors media request.
+  Only add one (scoped to your app origin, never `*`) if you later read media
+  bytes from JavaScript.
+
 ## Other Commands
 
 ```bash
