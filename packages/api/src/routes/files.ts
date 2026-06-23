@@ -1,6 +1,7 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, fileServeHeaders, folderInProject, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
+import { signContentToken, verifyContentToken } from "../lib/contentToken";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -27,55 +28,47 @@ export async function handleFiles(
   const fileId = parts[0] || null;
   const subResource = parts[1] || null;
 
-  // GET /files/:id/content — serve raw file
-  // Access order: published project → authenticated member → deny
+  // GET /files/:id/content — serve raw file (streamed from R2, range-aware)
+  // Access order: published project → ?token= capability → authenticated member → deny.
+  // The token path exists for browser media elements that can't send the
+  // Authorization header on their range/seek subrequests (see lib/contentToken).
   if (fileId && subResource === "content" && request.method === "GET") {
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.name, f.mime_type, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.name, f.mime_type, f.size, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND f.project_id = ?" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string; published_at: string | null }>();
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; size: number; project_id: string; published_at: string | null }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
     const canUsePublishedAccess = !!meta.published_at;
 
     if (!canUsePublishedAccess) {
-      if (!user) return errorResponse(Errors.UNAUTHORIZED);
-      const role = await resolveRole(env.DB, meta.project_id, user.userId);
-      if (role === null) return errorResponse(Errors.FORBIDDEN);
-      if (role === "limited") {
-        const hasShare = await env.DB.prepare(
-          "SELECT id FROM doc_shares WHERE project_id = ? AND user_id = ? LIMIT 1",
-        ).bind(meta.project_id, user.userId).first();
-        if (!hasShare) return errorResponse(Errors.FORBIDDEN);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const tokenOk = await verifyContentToken(env.JWT_SECRET, fileId, url.searchParams.get("token"), nowSeconds);
+      if (!tokenOk) {
+        if (!user) return errorResponse(Errors.UNAUTHORIZED);
+        const role = await resolveRole(env.DB, meta.project_id, user.userId);
+        if (role === null) return errorResponse(Errors.FORBIDDEN);
+        if (role === "limited") {
+          const hasShare = await env.DB.prepare(
+            "SELECT id FROM doc_shares WHERE project_id = ? AND user_id = ? LIMIT 1",
+          ).bind(meta.project_id, user.userId).first();
+          if (!hasShare) return errorResponse(Errors.FORBIDDEN);
+        }
       }
     }
 
-    const obj = await env.ASSETS.get(`files/${fileId}`);
-    if (!obj) return errorResponse(Errors.NOT_FOUND);
-
     // File content is immutable — file_id is keyed to a single uploaded blob, and
-    // PUT /files/:id only mutates name/folder. Safe to let the browser cache for
-    // a few minutes even on authenticated reads (Cache-Control: private keeps it
-    // off shared caches). The ETag enables 304 revalidation after expiry.
-    const ifNoneMatch = request.headers.get("If-None-Match");
-    const etag = `"${fileId}"`;
-    if (ifNoneMatch === etag) {
-      return new Response(null, {
-        status: 304,
-        headers: {
-          "ETag": etag,
-          "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
-        },
-      });
-    }
-    return new Response(await obj.arrayBuffer(), {
-      status: 200,
-      headers: {
-        ...fileServeHeaders(meta.mime_type, meta.name),
-        "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
-        "ETag": etag,
-      },
+    // PUT /files/:id only mutates name/folder. The strong ETag (the immutable id)
+    // enables 304 revalidation; Cache-Control: private keeps authenticated reads
+    // off shared caches.
+    return serveR2Object(env.ASSETS, `files/${fileId}`, {
+      mimeType: meta.mime_type,
+      filename: meta.name,
+      size: meta.size,
+      etag: `"${fileId}"`,
+      cacheControl: canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
+      request,
     });
   }
 
@@ -92,7 +85,11 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (role === "limited") return errorResponse(Errors.FORBIDDEN);
 
-    return okResponse(record);
+    // Mint a short-lived, file-scoped capability token so the client's <video>/
+    // <audio>/<iframe> can stream this file's bytes by URL (those elements can't
+    // send the Authorization header on their range/seek subrequests).
+    const contentToken = await signContentToken(env.JWT_SECRET, record.id, Math.floor(Date.now() / 1000));
+    return okResponse({ ...record, content_token: contentToken });
   }
 
   // GET /files?projectId=xxx[&folderId=yyy] — list files (any member except limited)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Image, FileCode, FileArchive, FileText, File, Music, Download, Link, Check } from "lucide-react";
+import { Image, FileCode, FileArchive, FileText, File, Music, Video, Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -18,11 +18,15 @@ interface FileRecord {
   folder_id: string | null;
   uploaded_by: string;
   created_at: string;
+  // Short-lived capability token for streaming this file's bytes by URL, so
+  // <video>/<audio>/<iframe> (which can't send the auth header) can seek/stream.
+  content_token?: string;
 }
 
 function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
   if (mimeType.startsWith("image/")) return <Image className={className} />;
   if (mimeType.startsWith("audio/")) return <Music className={className} />;
+  if (mimeType.startsWith("video/")) return <Video className={className} />;
   if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
   if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
   if (mimeType === "application/pdf") return <FileText className={className} />;
@@ -34,6 +38,21 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+// Files we render inline as decoded UTF-8 text. Covers text/* (text/plain,
+// text/markdown, text/csv, …) plus a few structured-text application/* types.
+function isTextFile(mimeType: string): boolean {
+  return (
+    mimeType.startsWith("text/") ||
+    mimeType === "application/json" ||
+    mimeType === "application/xml" ||
+    mimeType === "application/javascript"
+  );
+}
+
+// Guard rail so a huge log/dump doesn't lock up the tab — preview the first
+// chunk and tell the user to download for the rest.
+const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -51,7 +70,8 @@ export function FilePage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [contentBlobUrl, setContentBlobUrl] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textTruncated, setTextTruncated] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -76,20 +96,34 @@ export function FilePage() {
             onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
           }));
           setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
-          if (result.data.mime_type.startsWith("audio/") || result.data.mime_type === "application/pdf") {
+          // Media (audio/video/pdf) streams directly from the content URL via a
+          // capability token — no blob fetch. Text is fetched + decoded here so
+          // we can render it inline (and cap the preview size).
+          if (isTextFile(result.data.mime_type)) {
             apiFetch(`/api/files/${fileId}/content`)
-              .then(r => r.blob())
-              .then(blob => setContentBlobUrl(URL.createObjectURL(blob)))
+              .then(r => r.arrayBuffer())
+              .then(buf => {
+                const truncated = buf.byteLength > MAX_TEXT_PREVIEW_BYTES;
+                const slice = truncated ? buf.slice(0, MAX_TEXT_PREVIEW_BYTES) : buf;
+                // Decode as UTF-8 explicitly so non-ASCII bytes render correctly.
+                const text = new TextDecoder("utf-8").decode(slice);
+                setTextContent(text);
+                setTextTruncated(truncated);
+              })
               .catch(() => {});
           }
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-    return () => {
-      setContentBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-    };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // URL the browser can stream/seek directly (token authenticates the request,
+  // since media elements can't attach the Authorization header). Null until the
+  // metadata — and thus the token — has loaded.
+  const contentUrl = file?.content_token
+    ? `/api/files/${file.id}/content?token=${encodeURIComponent(file.content_token)}`
+    : null;
 
   async function handleDownload() {
     if (!file) return;
@@ -157,16 +191,37 @@ export function FilePage() {
         </div>
       )}
 
-      {file.mime_type.startsWith("audio/") && contentBlobUrl && (
+      {file.mime_type.startsWith("audio/") && contentUrl && (
         <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
-          <audio ref={audioRef} controls src={contentBlobUrl} className="w-full" />
+          <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
         </div>
       )}
 
-      {file.mime_type === "application/pdf" && contentBlobUrl && (
+      {file.mime_type.startsWith("video/") && contentUrl && (
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
+          <video controls preload="metadata" src={contentUrl} className="max-h-[70vh] w-full bg-black">
+            Your browser does not support embedded video playback.
+          </video>
+        </div>
+      )}
+
+      {file.mime_type === "application/pdf" && contentUrl && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <iframe src={contentBlobUrl} title={file.name} className="h-[75vh] w-full" />
+          <iframe src={contentUrl} title={file.name} className="h-[75vh] w-full" />
+        </div>
+      )}
+
+      {isTextFile(file.mime_type) && textContent !== null && (
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
+          <pre className="max-h-[75vh] overflow-auto p-4 text-sm leading-relaxed whitespace-pre-wrap break-words font-mono">
+            {textContent}
+          </pre>
+          {textTruncated && (
+            <div className="border-t border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+              Preview truncated at {formatBytes(MAX_TEXT_PREVIEW_BYTES)}. Download the file to see the full contents.
+            </div>
+          )}
         </div>
       )}
 

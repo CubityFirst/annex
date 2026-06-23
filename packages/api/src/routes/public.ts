@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, fileServeHeaders } from "../lib";
+import { okResponse, errorResponse, Errors, serveR2Object } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import type { Env } from "../index";
 
@@ -170,20 +170,18 @@ export async function handlePublic(
     const fileId = parts[1];
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.mime_type, f.name, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.mime_type, f.name, f.size, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; published_at: string | null }>();
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; size: number; published_at: string | null }>();
     if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
 
-    const obj = await env.ASSETS.get(`files/${fileId}`);
-    if (!obj) return errorResponse(Errors.NOT_FOUND);
-
-    return new Response(await obj.arrayBuffer(), {
-      status: 200,
-      headers: {
-        ...fileServeHeaders(meta.mime_type, meta.name),
-        "Cache-Control": "public, max-age=3600",
-      },
+    return serveR2Object(env.ASSETS, `files/${fileId}`, {
+      mimeType: meta.mime_type,
+      filename: meta.name,
+      size: meta.size,
+      etag: `"${fileId}"`,
+      cacheControl: "public, max-age=3600",
+      request,
     });
   }
 

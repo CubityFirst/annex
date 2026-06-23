@@ -161,7 +161,7 @@ const INLINE_SAFE_MIME = new Set([
   "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp", "image/x-icon",
   "application/pdf",
   "audio/mpeg", "audio/ogg", "audio/wav", "audio/webm", "audio/mp4", "audio/aac", "audio/flac",
-  "video/mp4", "video/webm", "video/ogg",
+  "video/mp4", "video/webm", "video/ogg", "video/quicktime",
   "text/plain",
 ]);
 
@@ -180,4 +180,88 @@ export function fileServeHeaders(mimeType: string | null, filename: string): Rec
     "Content-Disposition": `${safe ? "inline" : "attachment"}; filename="${safeName}"`,
     "X-Content-Type-Options": "nosniff",
   };
+}
+
+// Parse a single HTTP byte-range request against a known object size.
+//   - null            → no range / a form we don't handle (serve the full body)
+//   - "unsatisfiable" → syntactically valid but out of bounds (caller → 416)
+//   - {offset,length} → concrete range, clamped to the object
+// Multi-range ("bytes=0-1,5-6") is intentionally unsupported — we return null
+// and serve the whole object, which is a valid response to any Range request.
+export function parseByteRange(
+  rangeHeader: string,
+  size: number,
+): { offset: number; length: number } | null | "unsatisfiable" {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!m) return null;
+  const [, startStr, endStr] = m;
+  if (startStr === "" && endStr === "") return null;
+  let start: number;
+  let end: number;
+  if (startStr === "") {
+    // suffix range: the final N bytes
+    const suffix = parseInt(endStr, 10);
+    if (!Number.isFinite(suffix) || suffix === 0) return "unsatisfiable";
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = parseInt(startStr, 10);
+    end = endStr === "" ? size - 1 : Math.min(parseInt(endStr, 10), size - 1);
+  }
+  if (size === 0 || !Number.isFinite(start) || start > end || start >= size) {
+    return "unsatisfiable";
+  }
+  return { offset: start, length: end - start + 1 };
+}
+
+// Stream a stored blob straight from R2 through the Worker (never buffered into
+// memory) with HTTP range support, so media elements can seek and large files
+// don't pin the isolate. Honors If-None-Match (full requests only — a ranged
+// seek must never 304) and emits Accept-Ranges so browsers know seeking works.
+// Auth/access is the caller's responsibility; this only moves bytes.
+export async function serveR2Object(
+  bucket: R2Bucket,
+  key: string,
+  opts: { mimeType: string | null; filename: string; size: number; cacheControl: string; etag?: string; request: Request },
+): Promise<Response> {
+  const { mimeType, filename, size, cacheControl, etag, request } = opts;
+  const baseHeaders: Record<string, string> = {
+    ...fileServeHeaders(mimeType, filename),
+    "Cache-Control": cacheControl,
+    "Accept-Ranges": "bytes",
+  };
+  if (etag) baseHeaders["ETag"] = etag;
+
+  const rangeHeader = request.headers.get("Range");
+
+  if (etag && !rangeHeader && request.headers.get("If-None-Match") === etag) {
+    return new Response(null, { status: 304, headers: baseHeaders });
+  }
+
+  let range: { offset: number; length: number } | null = null;
+  if (rangeHeader) {
+    const parsed = parseByteRange(rangeHeader, size);
+    if (parsed === "unsatisfiable") {
+      return new Response(null, { status: 416, headers: { ...baseHeaders, "Content-Range": `bytes */${size}` } });
+    }
+    range = parsed;
+  }
+
+  const obj = await bucket.get(key, range ? { range } : undefined);
+  if (!obj) return errorResponse(Errors.NOT_FOUND);
+
+  if (range) {
+    return new Response(obj.body, {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        "Content-Range": `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`,
+        "Content-Length": String(range.length),
+      },
+    });
+  }
+  return new Response(obj.body, {
+    status: 200,
+    headers: { ...baseHeaders, "Content-Length": String(size) },
+  });
 }
