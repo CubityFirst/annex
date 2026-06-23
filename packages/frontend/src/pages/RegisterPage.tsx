@@ -68,7 +68,13 @@ export function RegisterPage() {
           navigate("/login", { replace: true });
         }
       } else {
-        setError(res.status === 409 ? "An account with that email already exists." : "Registration failed. Please try again.");
+        setError(
+          res.status === 409
+            ? "An account with that email already exists."
+            : res.status === 403 && json.error
+              ? json.error
+              : "Registration failed. Please try again.",
+        );
       }
     } catch {
       setError("Could not connect to the server. Please try again.");

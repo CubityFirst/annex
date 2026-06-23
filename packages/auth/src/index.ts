@@ -73,7 +73,12 @@ export interface Env {
       html?: string;
     }): Promise<{ messageId: string }>;
   };
-  REQUIRE_EMAIL_VERIFICATION: string;
+  // Cloudflare Flagship feature flags (shares the API worker's app). Optional so
+  // local dev / flag-service outages fall back to each call's default. Flags in
+  // use: `email-verification` (default off) gates registration verification + the
+  // unverified-login block (register.ts / login.ts); `signup` gates new account
+  // registration (handleRegister).
+  FLAGS?: { getBooleanValue(flag: string, defaultValue: boolean, ctx?: Record<string, string>): Promise<boolean> };
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };

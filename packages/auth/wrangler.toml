@@ -41,7 +41,6 @@ OIDC_AUTHORIZE_URL = "https://docs.cubityfir.st/oauth/authorize"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
 WEBAUTHN_RP_NAME = "Annex"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"
-REQUIRE_EMAIL_VERIFICATION = "false"
 # Stripe price id for the Annex Ink supporter tier ($5/mo recurring).
 # Not a secret — safe to commit. Set the live id once the Stripe product
 # is created in the dashboard.
@@ -50,6 +49,17 @@ STRIPE_INK_PRICE_ID = "price_1TVJk5Rckd4Ls9nPHpnY4tAN"
 [[send_email]]
 name = "EMAIL"
 allowed_sender_addresses = ["noreply@docs.cubityfir.st"]
+
+# Cloudflare Flagship feature flags. Shares the same app as the API worker so a
+# single source governs both. Flags in use:
+#   signup              (default on)  — when false, /register is refused (handleRegister).
+#   email-verification  (default off) — gates registration verification emails +
+#                                       blocks unverified logins (register.ts / login.ts).
+# When the binding is unavailable (local dev) the code falls back to each call's
+# default.
+[[flagship]]
+binding = "FLAGS"
+app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"
 
 # Rate limiters use the GA [[ratelimits]] binding (not the deprecated
 # [[unsafe.bindings]] form): identical runtime behavior and namespace ids, but

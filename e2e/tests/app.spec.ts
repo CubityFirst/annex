@@ -106,7 +106,7 @@ test("registers a new account", async () => {
 // ── Login ────────────────────────────────────────────────────────────────────
 
 test("logs in with the new account", async () => {
-  // Registration may auto-log in (when REQUIRE_EMAIL_VERIFICATION is off).
+  // Registration may auto-log in (when the email-verification flag is off).
   // In that case the user is already on /dashboard and the login form is
   // implicitly verified by the rest of the suite — only run the login flow
   // if we actually landed on /login after registration.

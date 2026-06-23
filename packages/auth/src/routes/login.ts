@@ -35,8 +35,16 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
 
-  if (env.REQUIRE_EMAIL_VERIFICATION === "true" && !row.email_verified) {
-    return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
+  // Only an unverified account can be gated, so skip the flag lookup entirely
+  // for verified users. Default off: when the flag (or its binding) is absent,
+  // verification isn't enforced and login proceeds.
+  if (!row.email_verified) {
+    const requireVerification = env.FLAGS
+      ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: row.id })
+      : false;
+    if (requireVerification) {
+      return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
+    }
   }
 
   // Existence check only — stop at the first row instead of counting every

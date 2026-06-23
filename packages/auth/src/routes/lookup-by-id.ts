@@ -15,6 +15,8 @@ export async function handleLookupById(request: Request, env: Env): Promise<Resp
 
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
-  const emailVerificationEnabled = env.REQUIRE_EMAIL_VERIFICATION === "true";
+  const emailVerificationEnabled = env.FLAGS
+    ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: user.id })
+    : false;
   return okResponse({ userId: user.id, email: user.email, name: user.name, emailVerified: user.email_verified === 1, emailVerificationEnabled, createdAt: user.created_at, timezone: user.timezone, badges: user.badges ?? 0, bio: user.bio });
 }
