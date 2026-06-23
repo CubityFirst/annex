@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { upsertFtsRow } from "../../../api/src/lib/fts";
 import { releaseCustomDomain, removeCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
-import type { AppEnv } from "../index";
+import type { AppEnv, Env } from "../index";
 
 const projectsRouter = new Hono<AppEnv>();
 
@@ -37,11 +37,40 @@ projectsRouter.get("/", async (c) => {
   return c.json({ ok: true, data: rows.results });
 });
 
+// GET /api/projects/:id — full detail view backing the admin "Project details"
+// sheet: branding, ownership/org, granted feature flags + owner-enabled
+// toggles, member breakdown, and doc/file/folder content stats. Read-only and
+// not audited, mirroring GET /api/users/:id.
+projectsRouter.get("/:id", async (c) => {
+  const id = c.req.param("id");
+  const details = await loadProjectDetails(c.env, id);
+  if (!details) return c.json({ ok: false, error: "Project not found" }, 404);
+  return c.json({ ok: true, data: details });
+});
+
+// GET /api/projects/:id/logo?variant=square|wide — proxies a site logo out of
+// R2 for the admin sheet. Sits behind enforceAdmin (unlike the public avatar
+// route), so the frontend fetches it with the bearer token and renders it via
+// an object URL — an unpublished site's logo must not be world-readable by id.
+// 404 when the site has no logo of that variant.
+projectsRouter.get("/:id/logo", async (c) => {
+  const id = c.req.param("id");
+  const variant = c.req.query("variant") === "wide" ? "wide" : "square";
+  const obj = await c.env.ASSETS.get(`site-logos/${id}-${variant}`);
+  if (!obj) return new Response(null, { status: 404 });
+  return new Response(await obj.arrayBuffer(), {
+    headers: {
+      "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+      "Cache-Control": "private, max-age=60",
+    },
+  });
+});
+
 // PATCH /api/projects/:id/features — { features: number }
 projectsRouter.patch("/:id/features", async (c) => {
   const session = c.get("session");
   const id = c.req.param("id");
-  const body = await c.req.json<{ features: number }>();
+  const body = await c.req.json<{ features: number }>().catch(() => ({} as { features?: number }));
   if (typeof body.features !== "number" || !Number.isInteger(body.features) || body.features < 0) {
     return c.json({ ok: false, error: "Invalid features value" }, 400);
   }
@@ -168,5 +197,229 @@ projectsRouter.delete("/:id", async (c) => {
   });
   return c.json({ ok: true });
 });
+
+export interface ProjectDetailRow {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_id: string;
+  created_at: string;
+  published_at: string | null;
+  changelog_mode: string;
+  home_doc_id: string | null;
+  vanity_slug: string | null;
+  logo_square_updated_at: string | null;
+  logo_wide_updated_at: string | null;
+  features: number;
+  ai_enabled: number;
+  ai_summarization_type: string;
+  graph_enabled: number;
+  published_graph_enabled: number;
+  organization_id: string | null;
+  organization_name: string | null;
+}
+
+export interface ProjectMemberRow {
+  id: string;
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  accepted: number;
+  created_at: string;
+}
+
+export interface ProjectDetails {
+  profile: {
+    id: string;
+    name: string;
+    description: string | null;
+    created_at: string;
+    published: boolean;
+    published_at: string | null;
+    changelog_mode: string;
+    home_doc_id: string | null;
+    owner: { id: string; name: string | null; email: string | null } | null;
+  };
+  branding: {
+    vanity_slug: string | null;
+    logo_square_updated_at: string | null;
+    logo_wide_updated_at: string | null;
+    custom_domain: { hostname: string; status: string | null } | null;
+  };
+  organization: { id: string; name: string } | null;
+  settings: {
+    features: number;
+    ai_enabled: boolean;
+    ai_summarization_type: string;
+    graph_enabled: boolean;
+    published_graph_enabled: boolean;
+  };
+  members: {
+    accepted: number;
+    pending: number;
+    by_role: Array<{ role: string; count: number }>;
+    list: Array<{
+      id: string;
+      user_id: string;
+      name: string;
+      email: string;
+      role: string;
+      accepted: boolean;
+      created_at: string;
+    }>;
+  };
+  content: {
+    docs: { total: number; published: number; drafts: number; with_ai_summary: number };
+    folders: number;
+    files: { count: number; total_bytes: number };
+  };
+}
+
+// Aggregates one project's admin detail view. The project row (+ org name) is
+// fetched first to short-circuit on a missing id; everything else fans out in
+// one Promise.all. The owner identity comes from AUTH_DB (cross-DB) since the
+// main DB only stores owner_id; member name/email are denormalized on
+// project_members so no auth lookup is needed for the roster.
+async function loadProjectDetails(env: Env, id: string): Promise<ProjectDetails | null> {
+  const project = await env.DB.prepare(
+    `SELECT p.id, p.name, p.description, p.owner_id, p.created_at, p.published_at,
+            p.changelog_mode, p.home_doc_id, p.vanity_slug,
+            p.logo_square_updated_at, p.logo_wide_updated_at,
+            p.features, p.ai_enabled, p.ai_summarization_type,
+            p.graph_enabled, p.published_graph_enabled,
+            p.organization_id, o.name AS organization_name
+     FROM projects p
+     LEFT JOIN organizations o ON o.id = p.organization_id
+     WHERE p.id = ?`,
+  ).bind(id).first<ProjectDetailRow>();
+
+  if (!project) return null;
+
+  const [owner, customDomain, docStats, aiSummaries, folderCount, fileStats, memberCounts, byRole, members] =
+    await Promise.all([
+      env.AUTH_DB.prepare("SELECT id, name, email FROM users WHERE id = ?")
+        .bind(project.owner_id)
+        .first<{ id: string; name: string | null; email: string | null }>(),
+      env.DB.prepare("SELECT hostname, status FROM project_custom_domains WHERE project_id = ?")
+        .bind(id)
+        .first<{ hostname: string; status: string | null }>(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS total, SUM(CASE WHEN published_at IS NOT NULL THEN 1 ELSE 0 END) AS published FROM docs WHERE project_id = ?",
+      ).bind(id).first<{ total: number; published: number | null }>(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM doc_ai_summaries WHERE doc_id IN (SELECT id FROM docs WHERE project_id = ?)",
+      ).bind(id).first<{ n: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM folders WHERE project_id = ?").bind(id).first<{ n: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM files WHERE project_id = ?")
+        .bind(id)
+        .first<{ n: number; bytes: number }>(),
+      env.DB.prepare(
+        "SELECT SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END) AS accepted, SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END) AS pending FROM project_members WHERE project_id = ?",
+      ).bind(id).first<{ accepted: number | null; pending: number | null }>(),
+      env.DB.prepare(
+        "SELECT role, COUNT(*) AS count FROM project_members WHERE project_id = ? AND accepted = 1 GROUP BY role",
+      ).bind(id).all<{ role: string; count: number }>(),
+      env.DB.prepare(
+        `SELECT id, user_id, email, name, role, accepted, created_at
+         FROM project_members
+         WHERE project_id = ?
+         ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'editor' THEN 2 WHEN 'viewer' THEN 3 ELSE 4 END,
+                  created_at ASC
+         LIMIT 250`,
+      ).bind(id).all<ProjectMemberRow>(),
+    ]);
+
+  return buildProjectDetails({
+    project,
+    owner,
+    customDomain,
+    docStats,
+    aiSummaries,
+    folderCount,
+    fileStats,
+    memberCounts,
+    byRole: byRole.results,
+    members: members.results,
+  });
+}
+
+// Pure assembly of the detail payload from already-fetched rows — split out of
+// loadProjectDetails so it can be unit-tested without a live D1. Coalesces the
+// nullable COUNT/SUM aggregates (a project with zero docs/members/files yields
+// NULL sums) and derives the published flag + draft count.
+export function buildProjectDetails(input: {
+  project: ProjectDetailRow;
+  owner: { id: string; name: string | null; email: string | null } | null;
+  customDomain: { hostname: string; status: string | null } | null;
+  docStats: { total: number; published: number | null } | null;
+  aiSummaries: { n: number } | null;
+  folderCount: { n: number } | null;
+  fileStats: { n: number; bytes: number } | null;
+  memberCounts: { accepted: number | null; pending: number | null } | null;
+  byRole: Array<{ role: string; count: number }>;
+  members: ProjectMemberRow[];
+}): ProjectDetails {
+  const { project, owner, customDomain, docStats, aiSummaries, folderCount, fileStats, memberCounts, byRole, members } =
+    input;
+  const totalDocs = docStats?.total ?? 0;
+  const publishedDocs = docStats?.published ?? 0;
+
+  return {
+    profile: {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      created_at: project.created_at,
+      published: project.published_at !== null,
+      published_at: project.published_at,
+      changelog_mode: project.changelog_mode,
+      home_doc_id: project.home_doc_id,
+      owner: owner ? { id: owner.id, name: owner.name, email: owner.email } : null,
+    },
+    branding: {
+      vanity_slug: project.vanity_slug,
+      logo_square_updated_at: project.logo_square_updated_at,
+      logo_wide_updated_at: project.logo_wide_updated_at,
+      custom_domain: customDomain
+        ? { hostname: customDomain.hostname, status: customDomain.status }
+        : null,
+    },
+    organization: project.organization_id
+      ? { id: project.organization_id, name: project.organization_name ?? "" }
+      : null,
+    settings: {
+      features: project.features,
+      ai_enabled: project.ai_enabled === 1,
+      ai_summarization_type: project.ai_summarization_type,
+      graph_enabled: project.graph_enabled === 1,
+      published_graph_enabled: project.published_graph_enabled === 1,
+    },
+    members: {
+      accepted: memberCounts?.accepted ?? 0,
+      pending: memberCounts?.pending ?? 0,
+      by_role: byRole,
+      list: members.map((m) => ({
+        id: m.id,
+        user_id: m.user_id,
+        name: m.name,
+        email: m.email,
+        role: m.role,
+        accepted: m.accepted === 1,
+        created_at: m.created_at,
+      })),
+    },
+    content: {
+      docs: {
+        total: totalDocs,
+        published: publishedDocs,
+        drafts: totalDocs - publishedDocs,
+        with_ai_summary: aiSummaries?.n ?? 0,
+      },
+      folders: folderCount?.n ?? 0,
+      files: { count: fileStats?.n ?? 0, total_bytes: fileStats?.bytes ?? 0 },
+    },
+  };
+}
 
 export { projectsRouter };

@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
         manifest: {
           name: isDev ? "Annex (Dev)" : "Annex",
           short_name: isDev ? "Annex Dev" : "Annex",
-          description: "Documentation and password vault",
+          description: "A place to keep anything.",
           start_url: "/dashboard",
           display: "standalone",
           background_color: "#09090b",

@@ -320,16 +320,17 @@ usersRouter.patch("/:id", async (c) => {
   const session = c.get("session");
 
   const id = c.req.param("id");
-  const body = await c.req.json<{ moderation: number; reason?: string }>();
+  const body = await c.req.json<{ moderation: number; reason?: string }>()
+    .catch(() => ({} as { moderation?: number; reason?: string }));
   const moderation = body.moderation;
   const reason = body.reason?.trim() ?? "";
   const nowSeconds = Math.floor(Date.now() / 1000);
 
-  if (!Number.isInteger(moderation) || (moderation !== 0 && moderation !== -1 && moderation <= 0)) {
+  if (!Number.isInteger(moderation) || (moderation !== 0 && moderation !== -1 && moderation! <= 0)) {
     return c.json({ ok: false, error: "Invalid moderation value" }, 400);
   }
 
-  if (moderation > 0 && moderation <= nowSeconds) {
+  if (moderation! > 0 && moderation! <= nowSeconds) {
     return c.json({ ok: false, error: "Suspension time must be in the future" }, 400);
   }
 
@@ -337,7 +338,14 @@ usersRouter.patch("/:id", async (c) => {
     return c.json({ ok: false, error: "Moderation reason is required" }, 400);
   }
 
-  const action = getModerationAction(moderation);
+  // Verify the user exists before the batch: the user_moderation_events
+  // INSERT has a NOT NULL FK to users(id), so a bad id would otherwise
+  // reject the whole batch as an opaque 500 instead of a clean 404.
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
+  const action = getModerationAction(moderation!);
   await c.env.AUTH_DB.batch([
     c.env.AUTH_DB.prepare("UPDATE users SET moderation = ? WHERE id = ?").bind(moderation, id),
     c.env.AUTH_DB.prepare(
@@ -354,6 +362,15 @@ usersRouter.patch("/:id", async (c) => {
       `,
     ).bind(crypto.randomUUID(), id, action, moderation, reason || null, session.userId, session.email),
   ]);
+
+  // Also record in the central admin_audit_log so the unified /api/audit
+  // view surfaces moderation alongside every other privileged action. The
+  // user_moderation_events row above stays as the per-user moderation history.
+  await writeAdminAudit(c.env, session, "user.moderation.update", "user", id, {
+    action,
+    moderation,
+    reason: reason || null,
+  });
 
   return c.json({ ok: true });
 });
@@ -389,6 +406,12 @@ usersRouter.post("/:id/force-password-change", async (c) => {
   const session = c.get("session");
 
   const id = c.req.param("id");
+  // Confirm the user exists so we don't log an audit row + report success
+  // for a no-op against a deleted/typo'd id (UPDATE silently affects 0 rows).
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
   await c.env.AUTH_DB.prepare("UPDATE users SET force_password_change = 1 WHERE id = ?")
     .bind(id)
     .run();
@@ -411,6 +434,12 @@ usersRouter.delete("/:id/avatar", async (c) => {
   const session = c.get("session");
 
   const id = c.req.param("id");
+  // Confirm the user exists so we don't log an audit row + report success
+  // for a no-op delete against a nonexistent id.
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
   // Remove both variants and any legacy object.
   await c.env.ASSETS.delete([`avatars/${id}-dark`, `avatars/${id}-light`, `avatars/${id}`]);
   await writeAdminAudit(c.env, session, "user.avatar.delete", "user", id);

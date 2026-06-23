@@ -90,6 +90,15 @@ app.get("/api/verify", async (c) => {
 });
 
 app.get("/api/avatar/:userId", async (c) => {
+  // Deliberately unauthenticated: rendered as a plain <img src> in the admin
+  // UI (browsers can't attach a bearer token to an image request), and the
+  // same bytes are already public via the API worker. But it reads R2, so
+  // IP-rate-limit it to keep it from being an unmetered read surface. Missing
+  // objects still 404 so the UI's initials fallback kicks in.
+  const ip = c.req.raw.headers.get("CF-Connecting-IP") ?? "unknown";
+  const { success } = await c.env.RATE_LIMITER_ADMIN.limit({ key: `avatar:${ip}` });
+  if (!success) return c.json({ ok: false, error: "rate_limited" }, 429);
+
   const userId = c.req.param("userId");
   // Admin only ever shows the dark variant. Read-only: fall back to a legacy
   // object but do NOT migrate/delete here — the API worker owns that.

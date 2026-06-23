@@ -92,6 +92,53 @@ export interface AdminProject {
   custom_domain_status: string | null;
 }
 
+export interface AdminProjectDetails {
+  profile: {
+    id: string;
+    name: string;
+    description: string | null;
+    created_at: string;
+    published: boolean;
+    published_at: string | null;
+    changelog_mode: string;
+    home_doc_id: string | null;
+    owner: { id: string; name: string | null; email: string | null } | null;
+  };
+  branding: {
+    vanity_slug: string | null;
+    logo_square_updated_at: string | null;
+    logo_wide_updated_at: string | null;
+    custom_domain: { hostname: string; status: string | null } | null;
+  };
+  organization: { id: string; name: string } | null;
+  settings: {
+    features: number;
+    ai_enabled: boolean;
+    ai_summarization_type: string;
+    graph_enabled: boolean;
+    published_graph_enabled: boolean;
+  };
+  members: {
+    accepted: number;
+    pending: number;
+    by_role: Array<{ role: string; count: number }>;
+    list: Array<{
+      id: string;
+      user_id: string;
+      name: string;
+      email: string;
+      role: string;
+      accepted: boolean;
+      created_at: string;
+    }>;
+  };
+  content: {
+    docs: { total: number; published: number; drafts: number; with_ai_summary: number };
+    folders: number;
+    files: { count: number; total_bytes: number };
+  };
+}
+
 export interface AdminAuditEntry {
   id: string;
   actor_user_id: string;
@@ -237,6 +284,31 @@ export async function reindexProjectFts(id: string): Promise<{ indexed: number }
   const json = (await res.json()) as { ok: boolean; data?: { indexed: number }; error?: string };
   if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to reindex project");
   return json.data;
+}
+
+export async function getProjectDetails(id: string): Promise<AdminProjectDetails> {
+  const res = await authFetch(`/api/projects/${id}`);
+  let json: { ok: boolean; data?: AdminProjectDetails; error?: string };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    // A non-JSON body means the request never reached the handler (SPA
+    // fallback HTML) or the handler threw before responding (a plain-text
+    // 500) — surface the status rather than a cryptic JSON parse error.
+    throw new Error(`Failed to load project details (HTTP ${res.status})`);
+  }
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load project details");
+  return json.data;
+}
+
+// Fetch a site logo (square|wide) for the admin sheet with the bearer token,
+// returned as a Blob the caller renders via an object URL. Returns null when
+// the site has no logo of that variant (404) or the request otherwise fails —
+// the UI falls back to a neutral tile, so a missing logo isn't an error.
+export async function fetchProjectLogo(id: string, variant: "square" | "wide"): Promise<Blob | null> {
+  const res = await authFetch(`/api/projects/${id}/logo?variant=${variant}`);
+  if (!res.ok) return null;
+  return await res.blob();
 }
 
 export async function listAuditLog(

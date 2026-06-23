@@ -4,6 +4,16 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
+// The fixed set of WebAuthn transport hints (the SDK's AuthenticatorTransportFuture
+// isn't re-exported from @simplewebauthn/server's main entry, so we mirror it here).
+type AuthenticatorTransportFuture =
+  | "ble"
+  | "cable"
+  | "hybrid"
+  | "internal"
+  | "nfc"
+  | "smart-card"
+  | "usb";
 import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
@@ -63,16 +73,36 @@ export async function createRegistrationOptions(
   return { options, challengeId };
 }
 
+// Default transports for credentials registered before we persisted the hint
+// (and for authenticators that report none). internal+hybrid tells the browser a
+// platform / synced password-manager passkey is usable; without any hint Chrome
+// on Android falls back to the external-key UI (USB / NFC / "use another device").
+const DEFAULT_TRANSPORTS = ["internal", "hybrid"] as const;
+
+function parseTransports(raw: string | null): AuthenticatorTransportFuture[] {
+  if (!raw) return [...DEFAULT_TRANSPORTS];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((t) => typeof t === "string")) {
+      return parsed as AuthenticatorTransportFuture[];
+    }
+  } catch {
+    // fall through to default
+  }
+  return [...DEFAULT_TRANSPORTS];
+}
+
 export async function createAuthenticationOptions(env: Env, userId: string) {
   const credentials = await env.DB.prepare(
-    "SELECT id FROM webauthn_credentials WHERE user_id = ?",
-  ).bind(userId).all<{ id: string }>();
+    "SELECT id, transports FROM webauthn_credentials WHERE user_id = ?",
+  ).bind(userId).all<{ id: string; transports: string | null }>();
 
   const options = await generateAuthenticationOptions({
     rpID: env.WEBAUTHN_RP_ID,
     allowCredentials: credentials.results.map((c) => ({
       id: base64urlToUint8Array(c.id),
       type: "public-key" as const,
+      transports: parseTransports(c.transports),
     })),
     userVerification: "required",
   });

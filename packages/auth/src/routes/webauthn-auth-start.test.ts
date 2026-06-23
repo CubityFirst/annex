@@ -2,13 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { handleWebauthnAuthStart } from "./webauthn-auth-start";
 
 // Minimal D1 mock: createAuthenticationOptions reads the user's credentials
-// (.all → none) and inserts a challenge row (.run). No `users` lookup happens
+// (.all → `creds`) and inserts a challenge row (.run). No `users` lookup happens
 // anymore — that existence check was the oracle this endpoint must not have.
-function makeEnv() {
+function makeEnv(creds: Array<{ id: string; transports: string | null }> = []) {
   const db = {
     prepare: vi.fn(() => ({
       bind: vi.fn(() => ({
-        all: vi.fn().mockResolvedValue({ results: [] }),
+        all: vi.fn().mockResolvedValue({ results: creds }),
         run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
         first: vi.fn().mockResolvedValue(null),
       })),
@@ -43,5 +43,31 @@ describe("handleWebauthnAuthStart — no account-existence oracle", () => {
   it("still rejects a request with no userId", async () => {
     const res = await handleWebauthnAuthStart(req({}), makeEnv());
     expect(res.status).toBe(400);
+  });
+});
+
+describe("handleWebauthnAuthStart — transports hint in allowCredentials", () => {
+  async function allowCredentials(creds: Array<{ id: string; transports: string | null }>) {
+    const res = await handleWebauthnAuthStart(req({ userId: "u1" }), makeEnv(creds));
+    const body = await res.json<{
+      data: { options: { allowCredentials?: Array<{ transports?: string[] }> } };
+    }>();
+    return body.data.options.allowCredentials ?? [];
+  }
+
+  it("echoes the stored transports back", async () => {
+    const list = await allowCredentials([{ id: "AQIDBA", transports: '["internal","hybrid"]' }]);
+    expect(list).toHaveLength(1);
+    expect(list[0].transports).toEqual(["internal", "hybrid"]);
+  });
+
+  it("falls back to internal+hybrid when transports are NULL (legacy credential)", async () => {
+    const list = await allowCredentials([{ id: "AQIDBA", transports: null }]);
+    expect(list[0].transports).toEqual(["internal", "hybrid"]);
+  });
+
+  it("falls back to the default when transports JSON is malformed", async () => {
+    const list = await allowCredentials([{ id: "AQIDBA", transports: "not json" }]);
+    expect(list[0].transports).toEqual(["internal", "hybrid"]);
   });
 });

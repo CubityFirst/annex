@@ -54,10 +54,18 @@ export async function handleWebauthnRegisterFinish(request: Request, env: Env): 
   const credentialId = uint8ArrayToBase64url(credentialID);
   const publicKey = uint8ArrayToBase64url(credentialPublicKey);
 
+  // Transports the authenticator reported (e.g. ["internal","hybrid"] for a
+  // password-manager / platform passkey). Echoed back in allowCredentials at
+  // auth time so the browser surfaces the right authenticator UI. May be absent
+  // on some authenticators — store NULL and we fall back to a sensible default.
+  const transports = (body.response as { response?: { transports?: string[] } }).response?.transports;
+  const transportsJson =
+    Array.isArray(transports) && transports.length > 0 ? JSON.stringify(transports) : null;
+
   await env.DB.prepare(
-    "INSERT INTO webauthn_credentials (id, user_id, name, public_key, counter, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO webauthn_credentials (id, user_id, name, public_key, counter, created_at, transports) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(credentialId, session.userId, body.name ?? "Security Key", publicKey, counter, new Date().toISOString())
+    .bind(credentialId, session.userId, body.name ?? "Security Key", publicKey, counter, new Date().toISOString(), transportsJson)
     .run();
 
   return okResponse({ credentialId });

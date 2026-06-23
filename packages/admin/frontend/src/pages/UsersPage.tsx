@@ -203,6 +203,12 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
   const [cancelMode, setCancelMode] = useState<"period_end" | "immediate">("period_end");
   const [pending, setPending] = useState(false);
 
+  // Stripe applies the cancel via an async webhook, so a single fixed-delay
+  // refetch can read stale billing if the webhook is slow. Refetch on a short
+  // backoff schedule instead, and clear any pending timers on unmount.
+  const refetchTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => { refetchTimers.current.forEach(clearTimeout); }, []);
+
   const hasPaidSub = !!billing.stripe.subscription_id;
 
   function planBadge() {
@@ -288,8 +294,13 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
       );
       setCancelOpen(false);
       setCancelMode("period_end");
-      // Webhook fires asynchronously; give it a moment to land before refetching.
-      setTimeout(() => onChanged(), 1500);
+      // Refetch now, then again on a backoff to catch the async webhook once it
+      // lands (a single fixed delay can read stale billing if it's slow).
+      onChanged();
+      refetchTimers.current.push(
+        setTimeout(() => onChanged(), 2000),
+        setTimeout(() => onChanged(), 5000),
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to cancel subscription");
     } finally {

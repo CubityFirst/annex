@@ -196,7 +196,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <SheetTrigger asChild>
         <Button size="sm">
           <Plus className="h-4 w-4" />
@@ -282,6 +282,7 @@ export function OAuthClientsPage() {
   const [credentials, setCredentials] = useState<CredentialsState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OAuthClient | null>(null);
   const [rotateTarget, setRotateTarget] = useState<OAuthClient | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -311,12 +312,16 @@ export function OAuthClientsPage() {
   }
 
   async function toggleDisabled(client: OAuthClient) {
+    if (togglingId) return;
+    setTogglingId(client.client_id);
     try {
       await setOAuthClientDisabled(client.client_id, !client.disabled);
       toast.success(client.disabled ? "Client enabled" : "Client disabled");
       void load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update client");
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -434,6 +439,7 @@ export function OAuthClientsPage() {
                           variant="ghost"
                           className="h-8 w-8"
                           title="Copy agent prompt"
+                          aria-label="Copy agent prompt"
                           onClick={() =>
                             void copy(
                               buildAgentPrompt({
@@ -449,14 +455,22 @@ export function OAuthClientsPage() {
                           <ClipboardCopy className="h-4 w-4" />
                         </Button>
                         {!client.is_public && (
-                          <Button size="icon" variant="ghost" className="h-8 w-8" title="Rotate secret" onClick={() => setRotateTarget(client)}>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" title="Rotate secret" aria-label="Rotate secret" onClick={() => setRotateTarget(client)}>
                             <RotateCw className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button size="icon" variant="ghost" className="h-8 w-8" title={client.disabled ? "Enable" : "Disable"} onClick={() => void toggleDisabled(client)}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          title={client.disabled ? "Enable client" : "Disable client"}
+                          aria-label={client.disabled ? "Enable client" : "Disable client"}
+                          disabled={togglingId === client.client_id}
+                          onClick={() => void toggleDisabled(client)}
+                        >
                           <Power className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" title="Delete" onClick={() => setDeleteTarget(client)}>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" title="Delete client" aria-label="Delete client" onClick={() => setDeleteTarget(client)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
