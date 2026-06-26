@@ -387,6 +387,11 @@ export function PublicDocPage() {
   const [data, setData] = useState<PublicData | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
+  // True while a doc/graph fetch is in flight on a *swap* (data already present,
+  // so the full-page `loading` spinner is skipped). Used to show an inline
+  // spinner in the article area instead of flashing the stale empty-doc
+  // placeholder when moving from a file/graph view to a doc.
+  const [fetching, setFetching] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
@@ -458,6 +463,7 @@ export function PublicDocPage() {
 
     if (isGraph) {
       if (!data) setLoading(true);
+      setFetching(true);
       setNotFound(false);
       setSelectedFile(null);
       Promise.all([
@@ -485,11 +491,12 @@ export function PublicDocPage() {
           setGraphData(graphJson.ok && graphJson.data ? graphJson.data : { nodes: [], edges: [] });
         })
         .catch(() => setNotFound(true))
-        .finally(() => setLoading(false));
+        .finally(() => { setLoading(false); setFetching(false); });
       return;
     }
 
     if (!data) setLoading(true);
+    setFetching(true);
     setNotFound(false);
     setSelectedFile(null);
     fetch(`/api/public/docs/${projectId}/${docId}`)
@@ -519,7 +526,7 @@ export function PublicDocPage() {
         }
       })
       .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setFetching(false); });
   }, [projectId, docId, isGraph, navigate]);
 
   // Redirect raw UUID to vanity slug once we know it. Path mode only — on a
@@ -936,6 +943,10 @@ export function PublicDocPage() {
                           value={data.doc.content}
                           rendererCtx={wysiwygCtx}
                         />
+                      </div>
+                    ) : fetching ? (
+                      <div className="not-prose flex justify-center py-10 text-muted-foreground">
+                        <Spinner />
                       </div>
                     ) : (
                       <p className="not-prose text-sm italic text-muted-foreground/60">
