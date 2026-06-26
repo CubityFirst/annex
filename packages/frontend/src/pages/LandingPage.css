@@ -538,6 +538,37 @@
 }
 .l-footer-link:hover { color: var(--text3); }
 
+/* ── ACKNOWLEDGEMENTS PAGE ── */
+.l-ack-list {
+  list-style: none;
+  margin: 32px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 28px;
+}
+.l-ack-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.l-ack-link {
+  font-size: 15px;
+  color: var(--text2);
+  text-decoration: none;
+  transition: color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l-ack-link:hover { color: var(--text); }
+.l-ack-license {
+  font-size: 11px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
 /* ── LEGAL PAGES ── */
 .l-legal {
   padding: calc(84px + 90px) 0 120px;

@@ -12,6 +12,7 @@ import {
 import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
 import { InkSparkle } from "@/components/InkSparkle";
+import { SiteFooter } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 const WORDS = ["research", "campaigns", "ideas", "knowledge", "writing"];
@@ -329,16 +330,7 @@ export function LandingPage() {
       </section>
 
       {/* FOOTER */}
-      <footer className="l-footer">
-        <div className="l-footer-inner">
-          <AnnexLogo height={18} fill="#383430" />
-          <div className="l-footer-links">
-            <a className="l-footer-link" href="https://docs.cubityfir.st/s/help/" target="_blank" rel="noopener noreferrer">Docs</a>
-            <Link className="l-footer-link" to="/privacy">Privacy</Link>
-            <Link className="l-footer-link" to="/terms">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

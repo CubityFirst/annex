@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
+import { SiteFooter } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 export function TermsPage() {
@@ -143,16 +144,7 @@ export function TermsPage() {
         </div>
       </section>
 
-      <footer className="l-footer">
-        <div className="l-footer-inner">
-          <AnnexLogo height={18} fill="#383430" />
-          <div className="l-footer-links">
-            <Link className="l-footer-link" to="/">Home</Link>
-            <Link className="l-footer-link" to="/privacy">Privacy</Link>
-            <Link className="l-footer-link" to="/terms">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

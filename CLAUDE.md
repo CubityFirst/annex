@@ -40,6 +40,8 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 - `react-markdown` + remark plugins is still used for the AI-summary block in `DocPage.tsx` and the file-summary block in `FileManager.tsx`, but not for the main document body.
 - Authenticated images use the `AuthenticatedImage` component (fetches with auth header)
 - PWA service worker in `dev-dist/sw.js` (auto-generated — do not edit manually)
+- The public marketing/legal pages (landing, privacy, terms, acknowledgements) share one footer: `components/SiteFooter.tsx`. **Use `<SiteFooter />` on any new page in that family** instead of hand-rolling a `l-footer` block, so the link set stays identical everywhere.
+- The **Acknowledgements** page (`/acknowledgements`, `pages/AcknowledgementsPage.tsx`, linked from `SiteFooter`) lists bundled open-source libraries and is driven by `packages/frontend/src/lib/acknowledgements.ts`. **When you add or remove a runtime dependency in `packages/frontend/package.json`, update `acknowledgements.ts` to match** — name, license (read the real value from the package's `package.json`, don't assume MIT), and project URL.
 
 ### Dice Module
 

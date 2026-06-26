@@ -26,6 +26,7 @@ import { OrgSettingsPage } from "./pages/OrgSettingsPage";
 import { TagPage } from "./pages/TagPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
+import { AcknowledgementsPage } from "./pages/AcknowledgementsPage";
 import { TestAudioPage } from "./pages/TestAudioPage";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -73,6 +74,7 @@ export function App() {
         </Route>
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/acknowledgements" element={<AcknowledgementsPage />} />
         <Route path="/test/audio" element={<TestAudioPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
         <Route path="/s/:projectId" element={<PublicDocPage />} />
