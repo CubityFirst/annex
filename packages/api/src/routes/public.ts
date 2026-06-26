@@ -1,5 +1,6 @@
-import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile } from "../lib";
+import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile, isInlineSafeMime } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
+import { presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "../lib/r2Presign";
 import type { Env } from "../index";
 
 interface PublicProject {
@@ -36,6 +37,37 @@ interface PublicFile {
   mime_type: string;
   size: number;
   folder_id: string | null;
+  content_stream_url?: string | null;
+}
+
+// Enrich a list of published-site file rows with a presigned direct-from-R2
+// stream URL for inline-safe videos (mirrors the authenticated GET /files/:id
+// path). Non-video / non-inline-safe rows are returned untouched. Presigning
+// returns null when R2 creds are unconfigured, so consumers fall back to the
+// in-Worker /public/files/:id/content streaming route. Rows are presigned
+// concurrently rather than serially.
+export async function enrichFilesWithStreamUrls(env: Env, files: PublicFile[]): Promise<PublicFile[]> {
+  return Promise.all(
+    files.map(async (f) => {
+      if (!(f.mime_type.startsWith("video/") && isInlineSafeMime(f.mime_type))) return f;
+      // Force a Worker-controlled Content-Type/Disposition on the header-less
+      // direct R2 path; strip quotes/backslashes/control chars from the name.
+      const safeName = f.name.replace(/["\\\r\n\t]/g, "_");
+      // A presign failure must degrade to the in-Worker route for that one file
+      // (content_stream_url: null), never reject the whole list — otherwise a
+      // single signing error would 500 the entire published page (nav + docs +
+      // files), not just the offending video.
+      try {
+        const content_stream_url = await presignR2GetUrl(env, `files/${f.id}`, PRESIGN_URL_TTL_SECONDS, {
+          contentType: f.mime_type,
+          contentDisposition: `inline; filename="${safeName}"`,
+        });
+        return { ...f, content_stream_url };
+      } catch {
+        return { ...f, content_stream_url: null };
+      }
+    }),
+  );
 }
 
 export async function handlePublic(
@@ -104,8 +136,9 @@ export async function handlePublic(
     const files = await env.DB.prepare(
       "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
     ).bind(project.id).all<PublicFile>();
+    const enrichedFiles = await enrichFilesWithStreamUrls(env, files.results);
 
-    return okResponse({ ...project, docs: docs.results, folders: folders.results, files: files.results });
+    return okResponse({ ...project, docs: docs.results, folders: folders.results, files: enrichedFiles });
   }
 
   // /public/docs/:projectId/:docId
@@ -152,7 +185,7 @@ export async function handlePublic(
       const filesResult = await env.DB.prepare(
         "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
       ).bind(projectId).all<PublicFile>();
-      files = filesResult.results;
+      files = await enrichFilesWithStreamUrls(env, filesResult.results);
     }
 
     return okResponse({
@@ -163,6 +196,27 @@ export async function handlePublic(
       folders,
       files,
     });
+  }
+
+  // /public/files/:id/stream-url — mint a FRESH presigned direct-from-R2 URL for
+  // an inline-safe video on a published site. The URLs baked into the file lists
+  // carry the PRESIGN_URL_TTL_SECONDS (3h) TTL and a published page can sit open
+  // longer than that, so the player re-signs here on a playback error instead of
+  // dropping to the in-Worker route. Returns { url: null } when presign is off or
+  // the file isn't an inline-safe video (the player keeps the Worker route).
+  if (parts[0] === "files" && parts[1] && parts[2] === "stream-url") {
+    const fileId = parts[1];
+    const contextProjectId = url.searchParams.get("projectId");
+    const meta = await env.DB.prepare(
+      "SELECT f.id, f.name, f.mime_type, f.size, f.folder_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+        (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<PublicFile & { published_at: string | null }>();
+    if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
+
+    const [enriched] = await enrichFilesWithStreamUrls(env, [
+      { id: meta.id, name: meta.name, mime_type: meta.mime_type, size: meta.size, folder_id: meta.folder_id },
+    ]);
+    return okResponse({ url: enriched.content_stream_url ?? null });
   }
 
   // /public/files/:id/content — serve a file from a published project. Drawings

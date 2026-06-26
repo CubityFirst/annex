@@ -218,7 +218,19 @@ export function FilePage() {
 
       {kind === "video" && videoSrc && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
-          <video controls preload="metadata" src={videoSrc} className="max-h-[70vh] w-full bg-black">
+          <video
+            controls
+            preload="metadata"
+            src={videoSrc}
+            onError={(e) => {
+              // A presigned R2 URL can expire while the page sits open; on
+              // failure fall back to the in-Worker token route. The endsWith
+              // guard stops a retry loop once we're already on that route.
+              const v = e.currentTarget;
+              if (contentUrl && !v.src.endsWith(contentUrl)) v.src = contentUrl;
+            }}
+            className="max-h-[70vh] w-full bg-black"
+          >
             Your browser does not support embedded video playback.
           </video>
         </div>

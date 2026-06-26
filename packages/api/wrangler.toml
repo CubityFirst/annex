@@ -56,7 +56,7 @@ CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 # (create an R2 API token with Object Read for cubedocs-assets). When any of the
 # four is unset, video falls back to the in-Worker token streaming route.
 R2_BUCKET_NAME = "cubedocs-assets"
-# R2_ACCOUNT_ID = "<your-cloudflare-account-id>"
+R2_ACCOUNT_ID = "d843ae90cab33e54f4d284bc65d2fd6a"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's
 # /lookup also has its own coarser IP-keyed limiter — this one caps any

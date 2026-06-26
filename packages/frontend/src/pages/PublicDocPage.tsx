@@ -71,6 +71,7 @@ interface NavFile {
   mime_type: string;
   size: number;
   folder_id: string | null;
+  content_stream_url?: string | null;
 }
 
 interface PublicData {
@@ -261,6 +262,29 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
   const [downloading, setDownloading] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Video src with a re-sign-on-expiry fallback. The presigned R2 URL baked in
+  // at nav-load carries a 3h TTL and a published page can sit open longer, so on
+  // the first playback error we re-sign once (stream-url endpoint), then fall
+  // back to the in-Worker route. resignTriedRef caps it at one re-sign; the
+  // parent renders this with key={file.id} so the state resets per file.
+  const workerVideoSrc = `/api/public/files/${file.id}/content?projectId=${projectId}`;
+  const [videoSrc, setVideoSrc] = useState(file.content_stream_url ?? workerVideoSrc);
+  const resignTriedRef = useRef(false);
+
+  async function handleVideoError() {
+    if (videoSrc === workerVideoSrc) return; // already on the Worker fallback
+    if (!resignTriedRef.current) {
+      resignTriedRef.current = true;
+      try {
+        const res = await fetch(`/api/public/files/${file.id}/stream-url?projectId=${encodeURIComponent(projectId)}`);
+        const json = (await res.json()) as { ok?: boolean; data?: { url?: string | null } };
+        const fresh = json?.data?.url;
+        if (fresh && fresh !== videoSrc) { setVideoSrc(fresh); return; }
+      } catch { /* fall through to the Worker route */ }
+    }
+    setVideoSrc(workerVideoSrc);
+  }
+
   async function handleDownload() {
     setDownloading(true);
     try {
@@ -314,6 +338,30 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
         </div>
       )}
 
+      {file.mime_type.startsWith("video/") && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-black">
+          <video
+            controls
+            preload="metadata"
+            src={videoSrc}
+            onError={handleVideoError}
+            className="max-h-[70vh] w-full bg-black"
+          >
+            Your browser does not support embedded video playback.
+          </video>
+        </div>
+      )}
+
+      {file.mime_type === "application/pdf" && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-muted/30">
+          <iframe
+            src={`/api/public/files/${file.id}/content?projectId=${projectId}`}
+            title={file.name}
+            referrerPolicy="no-referrer"
+            className="h-[75vh] w-full"
+          />
+        </div>
+      )}
 
       <div className="mt-8">
         <Button onClick={handleDownload} disabled={downloading} className="gap-2">
@@ -859,7 +907,7 @@ export function PublicDocPage() {
         ) : (
         <ScrollArea className="flex-1 public-doc-scroller">
           {selectedFile ? (
-            <PublicFileView file={selectedFile} projectId={projectId ?? ""} />
+            <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
