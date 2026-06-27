@@ -39,7 +39,7 @@ export function AuthForm({
 }: AuthFormProps) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <div className="relative flex w-full max-w-md flex-col items-center justify-center px-10">
+      <div className="relative flex w-full max-w-md flex-col items-center justify-center px-6 sm:px-10">
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
             {wordmark ?? (

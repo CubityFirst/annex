@@ -185,10 +185,10 @@ export function OAuthAuthorizePage() {
                 ))}
               </ul>
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => void submit({ denied: true })}>
+                <Button variant="outline" className="h-11 sm:h-9 flex-1" onClick={() => void submit({ denied: true })}>
                   Cancel
                 </Button>
-                <Button className="flex-1" onClick={() => void submit({ approved: true })}>
+                <Button className="h-11 sm:h-9 flex-1" onClick={() => void submit({ approved: true })}>
                   Allow
                 </Button>
               </div>

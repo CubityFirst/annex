@@ -299,7 +299,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
 
   return (
     <div ref={containerRef} className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
-    <div className="min-w-[700px]">
+    <div className="min-w-0 md:min-w-[700px]">
       <div className="flex items-center bg-muted/50 border-b h-10">
         {checkboxColumn && <div className="w-10 shrink-0" />}
 
@@ -339,7 +339,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
               </div>
               {needsDragHandle && (
                 <div
-                  className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2"
+                  className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2"
                   onMouseDown={e => startSegDrag(seg, e)}
                 >
                   <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border">

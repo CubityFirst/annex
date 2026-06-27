@@ -238,7 +238,14 @@ export function FilePage() {
 
       {kind === "pdf" && contentUrl && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" className="h-[75vh] w-full" />
+          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" className="hidden h-[75vh] w-full sm:block" />
+          <div className="flex flex-col items-center gap-3 p-6 text-center sm:hidden">
+            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">PDF preview isn’t available on small screens.</p>
+            <a href={contentUrl} target="_blank" rel="noreferrer" className="w-full">
+              <Button className="min-h-11 w-full">Open PDF</Button>
+            </a>
+          </div>
         </div>
       )}
 
@@ -257,7 +264,7 @@ export function FilePage() {
         </div>
       )}
 
-      <div className="mt-8 flex items-center gap-2">
+      <div className="mt-8 flex flex-wrap items-center gap-2">
         <Button onClick={handleDownload} disabled={downloading} className="gap-2">
           <Download className="h-4 w-4" />
           {downloading ? "Downloading…" : "Download"}

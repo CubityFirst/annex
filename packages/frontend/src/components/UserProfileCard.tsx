@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
@@ -172,7 +172,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
     <Dialog open={open} onOpenChange={setOpen}>
       {children !== undefined && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
-        className="max-w-lg p-0 overflow-hidden focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+        className="max-w-lg p-0 overflow-y-auto max-h-[calc(100dvh-2rem)] focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         onContextMenu={e => e.stopPropagation()}
         onOpenAutoFocus={e => e.preventDefault()}
       >
@@ -205,54 +205,58 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               if (!isInk && !isDeveloper && !isBetaTester) return null;
               const inkSince = isInk ? formatInkSince(profile.personalPlanSince) : null;
               return (
-                <div className="mt-1 flex flex-wrap items-center">
-                  {isDeveloper && (
-                    <Tooltip {...badgeTooltipProps("developer")}>
-                      <TooltipTrigger asChild>
-                        <a
-                          href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label="Annex Developer"
-                          className="inline-flex size-6 items-center justify-center rounded-full text-green-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-green-400"
-                        >
-                          <CodeXml className="size-4" />
-                        </a>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">Annex Developer</TooltipContent>
-                    </Tooltip>
-                  )}
-                  {isBetaTester && (
-                    <Tooltip {...badgeTooltipProps("beta")}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Beta Tester"
-                          className="inline-flex size-6 items-center justify-center rounded-full text-purple-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-purple-400"
-                        >
-                          <FlaskConical className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">Beta Tester</TooltipContent>
-                    </Tooltip>
-                  )}
-                  {isInk && (
-                    <Tooltip {...badgeTooltipProps("ink")}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Annex Ink"
-                          className="inline-flex size-6 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <InkSparkle className="size-4 ink-icon" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {inkSince ? `Annex Ink since ${inkSince}` : "Annex Ink"}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </div>
+                <TooltipProvider delayDuration={0}>
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    {isDeveloper && (
+                      <Tooltip {...badgeTooltipProps("developer")}>
+                        <TooltipTrigger asChild>
+                          <a
+                            href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Annex Developer"
+                            className="inline-flex size-9 sm:size-7 items-center justify-center rounded-full text-green-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-green-400"
+                          >
+                            <CodeXml className="size-4" />
+                          </a>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Annex Developer</TooltipContent>
+                      </Tooltip>
+                    )}
+                    {isBetaTester && (
+                      <Tooltip {...badgeTooltipProps("beta")}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Beta Tester"
+                            onClick={() => setOpenBadge(curr => (curr === "beta" ? null : "beta"))}
+                            className="inline-flex size-9 sm:size-7 items-center justify-center rounded-full text-purple-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-purple-400"
+                          >
+                            <FlaskConical className="size-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Beta Tester</TooltipContent>
+                      </Tooltip>
+                    )}
+                    {isInk && (
+                      <Tooltip {...badgeTooltipProps("ink")}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Annex Ink"
+                            onClick={() => setOpenBadge(curr => (curr === "ink" ? null : "ink"))}
+                            className="inline-flex size-9 sm:size-7 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <InkSparkle className="size-4 ink-icon" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {inkSince ? `Annex Ink since ${inkSince}` : "Annex Ink"}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                </TooltipProvider>
               );
             })()}
             {loading ? (

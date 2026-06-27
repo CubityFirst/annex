@@ -13,7 +13,7 @@ export function PrivacyPage() {
         <div className="l-nav-inner">
           <Link to="/"><AnnexLogo height={21} /></Link>
           <div className="l-nav-links">
-            {!isLoggedIn && <Link className="l-nav-link" to="/login">login</Link>}
+            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
             {isLoggedIn
               ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
               : <Link className="l-nav-cta" to="/register">get started</Link>}

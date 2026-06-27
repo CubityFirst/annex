@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from "react-force-graph-2d";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export interface GraphData {
   nodes: { id: string; title: string; links: number; tags?: string[] }[];
@@ -73,6 +75,19 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
   const [zoom, setZoom] = useState(1);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [coarse, setCoarse] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Coarse (touch) pointers get a two-step tap-to-preview-then-open flow and
+  // enlarged hit targets; fine pointers keep the desktop immediate-navigate.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarse(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   const graph = useMemo(() => {
     const rules = data.tagColors ?? [];
@@ -172,9 +187,22 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             }
           }}
           onNodeClick={(node) => {
+            if (node?.id == null) return;
+            const id = String(node.id);
+            // Touch: first tap selects (preview), second tap on the same node opens.
+            if (coarse && id !== selectedId) {
+              setSelectedId(id);
+              setHoverId(id);
+              return;
+            }
             if (typeof document !== "undefined") document.body.style.cursor = "";
             setHoverId(null);
-            if (node?.id != null) onNodeClick(String(node.id));
+            setSelectedId(null);
+            onNodeClick(id);
+          }}
+          onBackgroundClick={() => {
+            setSelectedId(null);
+            setHoverId(null);
           }}
           onNodeDragEnd={(node) => {
             // release the pin so the node drifts back under simulation forces
@@ -184,7 +212,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;
             const r = n.radius;
-            const isHover = hoverId === n.id;
+            const isHover = hoverId === n.id || selectedId === n.id;
             const nodeColor = isHover ? accentColor : (n.tagColor ?? mutedColor);
             ctx.beginPath();
             ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
@@ -204,12 +232,48 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const n = node as GraphNode;
+            // On touch, floor the hit radius so low-link nodes still hit ~44px
+            // diameter without pinch-zoom. minHit is in graph units (zoom-aware).
+            const minHit = coarse ? 22 / Math.max(zoom, 0.01) : 0;
+            const hitR = Math.max(n.radius + 2, minHit);
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.arc(n.x ?? 0, n.y ?? 0, n.radius + 2, 0, 2 * Math.PI);
+            ctx.arc(n.x ?? 0, n.y ?? 0, hitR, 0, 2 * Math.PI);
             ctx.fill();
           }}
         />
+      )}
+      {coarse && selectedId && (
+        <div className="absolute inset-x-2 bottom-2 flex items-center gap-2 rounded-lg border bg-popover/95 p-2 shadow-md backdrop-blur pb-[env(safe-area-inset-bottom)]">
+          <span className="min-w-0 flex-1 truncate text-sm">
+            {graph.nodes.find(n => n.id === selectedId)?.title}
+          </span>
+          <Button
+            size="sm"
+            className="min-h-10 shrink-0"
+            onClick={() => {
+              const id = selectedId;
+              if (typeof document !== "undefined") document.body.style.cursor = "";
+              setSelectedId(null);
+              setHoverId(null);
+              if (id != null) onNodeClick(id);
+            }}
+          >
+            Open
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="min-h-10 min-w-10"
+            aria-label="Dismiss"
+            onClick={() => {
+              setSelectedId(null);
+              setHoverId(null);
+            }}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
       )}
     </div>
   );

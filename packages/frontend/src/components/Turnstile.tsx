@@ -11,6 +11,7 @@ declare global {
           "expired-callback"?: () => void;
           "error-callback"?: () => void;
           theme?: "light" | "dark" | "auto";
+          size?: "normal" | "flexible" | "compact";
         },
       ) => string;
       reset: (widgetId: string) => void;
@@ -44,6 +45,7 @@ export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
         "expired-callback": () => onExpireRef.current?.(),
         "error-callback": () => onExpireRef.current?.(),
         theme: "dark",
+        size: "flexible",
       });
     }
 

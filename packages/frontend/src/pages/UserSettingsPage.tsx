@@ -1148,7 +1148,7 @@ export function UserSettingsPage() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          className="h-9 gap-1.5 px-2 text-xs text-muted-foreground"
                           onClick={() => setAvatarVariant(avatarVariant === "dark" ? "light" : "dark")}
                           title="Switch which avatar variant you view and edit (dark vs light backgrounds)"
                         >
@@ -1181,7 +1181,7 @@ export function UserSettingsPage() {
                       {emailVerified === true && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                            <button type="button" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none">
                               <CheckCircle2 className="size-4 text-green-500" />
                             </button>
                           </PopoverTrigger>
@@ -1193,7 +1193,7 @@ export function UserSettingsPage() {
                       {emailVerified === false && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                            <button type="button" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none">
                               <AlertCircle className="size-4 text-amber-500" />
                             </button>
                           </PopoverTrigger>
@@ -1765,8 +1765,8 @@ export function UserSettingsPage() {
               Choose the font used for document prose and app chrome. Hover the column headers below for where each one applies. Inline code always stays monospaced.
             </p>
 
-            <div className="mt-5 overflow-hidden rounded-md border border-border">
-              <table className="w-full text-sm">
+            <div className="mt-5 overflow-x-auto rounded-md border border-border">
+              <table className="w-full min-w-[28rem] text-sm">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Font</th>
@@ -1775,7 +1775,7 @@ export function UserSettingsPage() {
                       { label: "Editing", help: "Used when you're editing a document." },
                       { label: "Other", help: "Used everywhere else - sidebar, settings, outline, and the rest of the app." },
                     ] as const).map(col => (
-                      <th key={col.label} className="w-20 px-2 py-2 text-center font-medium">
+                      <th key={col.label} className="w-20 whitespace-nowrap px-2 py-2 text-center font-medium">
                         <span className="inline-flex items-center gap-1">
                           {col.label}
                           <Tooltip>
@@ -1800,7 +1800,7 @@ export function UserSettingsPage() {
                     ];
                     return (
                       <tr key={choice} className="border-t border-border">
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3">
                           <div className="font-medium">{FONT_LABELS[choice]}</div>
                           <div className="mt-0.5 text-xs text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
                             The quick brown fox jumps over the lazy dog.
@@ -1809,7 +1809,7 @@ export function UserSettingsPage() {
                         {columns.map(col => (
                           <td key={col.key} className="px-2 py-3 text-center">
                             <label className={cn(
-                              "relative inline-flex items-center justify-center",
+                              "relative flex w-full min-h-[40px] items-center justify-center",
                               fontPrefsBusy ? "cursor-not-allowed opacity-50" : "cursor-pointer",
                             )}>
                               <input
@@ -2078,7 +2078,7 @@ export function UserSettingsPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                   onClick={() => handleDeleteKey(cred.id)}
                                   disabled={processingKeyId !== null || twoFABusy}
                                 >

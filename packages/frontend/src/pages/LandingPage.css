@@ -666,7 +666,26 @@
 }
 @media (max-width: 700px) {
   .l-features-grid { grid-template-columns: 1fr; gap: 12px; }
-  .l-nav-links .l-nav-link { display: none; }
+  .l-nav-links .l-nav-link:not(.l-nav-login) { display: none; }
+  .l-nav-login {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .l-nav-cta {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .l-editor-tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .l-editor-tabs::-webkit-scrollbar { display: none; }
+  .l-editor-tab { padding: 0 12px; font-size: 14px; }
 }
 @media (max-width: 500px) {
   .l-hero-ctas { flex-direction: column; }

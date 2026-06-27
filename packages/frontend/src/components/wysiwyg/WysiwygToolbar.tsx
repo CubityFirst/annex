@@ -155,7 +155,7 @@ function ToolButton({
         <Button
           type="button"
           variant="ghost"
-          className="h-8 px-1.5 min-w-8 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
+          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-8 sm:px-1.5 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
           onMouseDown={onMouseDown}
           aria-label={title}
         >
@@ -180,7 +180,7 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
       </p>
       <div
         className="grid gap-0.5"
-        style={{ gridTemplateColumns: `repeat(${TABLE_COLS}, 1.25rem)` }}
+        style={{ gridTemplateColumns: `repeat(${TABLE_COLS}, 1.75rem)` }}
         onMouseLeave={() => setHovered({ rows: 0, cols: 0 })}
       >
         {Array.from({ length: TABLE_ROWS * TABLE_COLS }, (_, i) => {
@@ -193,7 +193,7 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
               type="button"
               aria-label={`Insert ${c}×${r} table`}
               className={cn(
-                "h-5 w-5 rounded-sm border transition-colors",
+                "h-7 w-7 sm:h-5 sm:w-5 rounded-sm border transition-colors",
                 active ? "bg-accent border-accent-foreground/30" : "bg-muted/30 border-border hover:bg-muted",
               )}
               onMouseEnter={() => setHovered({ rows: r, cols: c })}
@@ -233,7 +233,7 @@ export function WysiwygToolbar({
         role="toolbar"
         aria-label="Formatting"
         aria-orientation="horizontal"
-        className="flex items-center gap-0.5 px-2 h-9 border-b border-border shrink-0 overflow-x-auto"
+        className="flex items-center gap-1 px-2 h-11 sm:h-9 sm:gap-0.5 border-b border-border shrink-0 overflow-x-auto"
       >
 
         {/* Undo / Redo */}
@@ -255,7 +255,7 @@ export function WysiwygToolbar({
               size="sm"
               aria-label="Heading level"
               className={cn(
-                "h-7 gap-1 px-2 text-xs font-medium w-[4.5rem] justify-between shrink-0",
+                "h-9 sm:h-7 gap-1 px-2 text-xs font-medium w-[4.5rem] justify-between shrink-0",
                 active.headingLevel > 0 && "bg-accent text-accent-foreground",
               )}
             >

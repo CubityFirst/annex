@@ -39,7 +39,7 @@ export function DocCoverImage({ src, projectId, isPublic, onReplace, onRemove, b
         {/* Fade the bottom edge into the page background. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-background" />
         {editable && (
-          <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <div className="absolute right-3 top-3 flex gap-1.5 opacity-100 transition-opacity focus-within:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
             {onReplace && (
               <Button type="button" size="sm" variant="secondary" className="gap-1.5 shadow-sm" onClick={onReplace} disabled={busy}>
                 <ImagePlus className="h-3.5 w-3.5" />

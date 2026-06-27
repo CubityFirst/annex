@@ -7,7 +7,6 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiFetchJson } from "@/lib/apiFetch";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
@@ -81,7 +80,7 @@ export function OrgPage() {
 
   if (notFound) {
     return (
-      <div className="px-8 py-10">
+      <div className="px-4 py-8 sm:px-8 sm:py-10">
         <p className="text-sm text-muted-foreground">Organization not found, or you don't have access.</p>
         <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/dashboard")}>Back to dashboard</Button>
       </div>
@@ -89,7 +88,7 @@ export function OrgPage() {
   }
 
   return (
-    <div className="px-8 py-10">
+    <div className="px-4 py-8 sm:px-8 sm:py-10">
       <button
         onClick={() => navigate("/dashboard")}
         className="mb-6 flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -98,12 +97,12 @@ export function OrgPage() {
       </button>
 
       <div className="mb-8 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
             <Building2 className="h-5 w-5 text-primary" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{org?.name ?? "…"}</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{org?.name ?? "…"}</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Sites in this organization{org && <> · <span className="capitalize">{org.role}</span></>}
             </p>
@@ -158,16 +157,20 @@ export function OrgPage() {
                 )}
               </CardContent>
               <CardFooter className="flex items-center gap-3">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Globe
-                      className={`h-[18px] w-[18px] ${site.published_at ? "cursor-pointer text-green-500 hover:text-green-400" : "text-muted-foreground/40"}`}
-                      strokeWidth={1.5}
-                      onClick={site.published_at ? (e) => { e.stopPropagation(); navigate(`/s/${site.id}`); } : undefined}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>{site.published_at ? "View public site" : "Site is private"}</TooltipContent>
-                </Tooltip>
+                {site.published_at ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-2 h-9 gap-1.5 px-2 text-xs text-green-600 hover:text-green-500"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/s/${site.id}`); }}
+                  >
+                    <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> View public site
+                  </Button>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+                    <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> Private
+                  </span>
+                )}
                 <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
                   <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
                   <span className="text-xs">{site.member_count}</span>

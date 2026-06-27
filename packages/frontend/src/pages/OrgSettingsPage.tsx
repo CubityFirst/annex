@@ -385,7 +385,7 @@ export function OrgSettingsPage() {
                           </Badge>
                         ) : canChangeRole ? (
                           <Select value={member.role} onValueChange={val => handleRoleChange(member, val as Role)}>
-                            <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-9 w-28 text-xs sm:h-7"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
                                 <SelectItem key={role} value={role} className="text-xs">{ROLE_LABELS[role]}</SelectItem>
@@ -400,7 +400,7 @@ export function OrgSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
                             disabled={removingId === member.userId}
                             onClick={() => handleRemove(member)}
                           >
@@ -468,7 +468,7 @@ export function OrgSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
                         onClick={() => handleDetach(site)}
                       >
                         Detach

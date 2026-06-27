@@ -83,7 +83,7 @@ export function PendingInvitesPage() {
   }
 
   return (
-    <div className="px-8 py-10">
+    <div className="px-4 py-8 sm:px-8 sm:py-10">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Pending Invites</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -107,12 +107,12 @@ export function PendingInvitesPage() {
             return (
               <Card key={invite.id} className="flex flex-col">
                 <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
                       {isOrg ? <Building2 className="h-4 w-4 text-primary" /> : <BookOpen className="h-4 w-4 text-primary" />}
                     </div>
-                    <div>
-                      <CardTitle>{title}</CardTitle>
+                    <div className="min-w-0">
+                      <CardTitle className="truncate">{title}</CardTitle>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                         {isOrg ? "Organization" : "Site"}
                       </p>
@@ -134,14 +134,14 @@ export function PendingInvitesPage() {
 
                 <CardFooter className="flex gap-2">
                   <Button
-                    size="sm"
+                    className="flex-1 min-h-11 sm:min-h-9"
                     onClick={() => handleAccept(invite)}
                     disabled={acting === invite.id}
                   >
                     Accept
                   </Button>
                   <Button
-                    size="sm"
+                    className="flex-1 min-h-11 sm:min-h-9"
                     variant="outline"
                     onClick={() => handleDecline(invite)}
                     disabled={acting === invite.id}

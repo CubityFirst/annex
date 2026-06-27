@@ -143,7 +143,7 @@ function MajorSection({ title, children }: { title: string; children: React.Reac
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">{children}</pre>
+    <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed overflow-x-auto whitespace-pre">{children}</pre>
   );
 }
 
@@ -801,13 +801,13 @@ export function DocPage() {
       <div className="flex h-full flex-col">
         {/* Title + toolbar - inner row matches the editor's max-w-3xl column so
             the title aligns with the document content below. */}
-        <div className="border-b border-border px-6 py-3">
-          <div className="mx-auto flex max-w-3xl items-center gap-4">
+        <div className="border-b border-border px-3 py-2 sm:px-6 sm:py-3">
+          <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 sm:gap-4">
           <Input
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
             placeholder="Document title"
-            className="min-w-0 max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none focus-visible:ring-0"
+            className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none focus-visible:ring-0"
             autoFocus={location.state?.isNew}
           />
           <div className="ml-auto flex items-center gap-2">
@@ -822,7 +822,7 @@ export function DocPage() {
                 className="gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5" />
-                Sync disabled
+                <span className="hidden sm:inline">Sync disabled</span>
               </Button>
             )}
             <Button
@@ -846,11 +846,11 @@ export function DocPage() {
             </Button>
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
-              Cancel
+              <span className="hidden sm:inline">Cancel</span>
             </Button>
             <Button size="sm" onClick={handleSaveClick} disabled={saving} className="gap-1.5">
               <Save className="h-3.5 w-3.5" />
-              {saving ? "Saving…" : "Save"}
+              <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
             </Button>
           </div>
           </div>
@@ -1053,7 +1053,7 @@ export function DocPage() {
         })()}
         <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
-          <div className="flex justify-end gap-1 mb-2 md:absolute md:top-0 md:right-0 md:mb-0">
+          <div className="flex flex-wrap justify-end gap-1.5 mb-2 md:flex-nowrap md:gap-1 md:absolute md:top-0 md:right-0 md:mb-0">
             {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
               <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
                 <Sparkles className="h-4 w-4 text-violet-500" />

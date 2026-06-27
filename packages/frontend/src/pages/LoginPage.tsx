@@ -373,7 +373,7 @@ export function LoginPage() {
         footer={
           <button
             type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm"
+            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
             onClick={handleBack}
           >
             Back to sign in
@@ -455,7 +455,7 @@ export function LoginPage() {
         footer={
           <button
             type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm"
+            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
             onClick={handleBack}
           >
             Back to sign in
@@ -487,13 +487,13 @@ export function LoginPage() {
               autoComplete="one-time-code"
               autoFocus
             >
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
+              <InputOTPGroup className="w-full justify-center">
+                <InputOTPSlot index={0} className="h-12 w-full max-w-12" />
+                <InputOTPSlot index={1} className="h-12 w-full max-w-12" />
+                <InputOTPSlot index={2} className="h-12 w-full max-w-12" />
+                <InputOTPSlot index={3} className="h-12 w-full max-w-12" />
+                <InputOTPSlot index={4} className="h-12 w-full max-w-12" />
+                <InputOTPSlot index={5} className="h-12 w-full max-w-12" />
               </InputOTPGroup>
             </InputOTP>
             <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
@@ -501,7 +501,7 @@ export function LoginPage() {
         )}
         <button
           type="button"
-          className="text-primary underline-offset-4 hover:underline text-xs self-center"
+          className="text-primary underline-offset-4 hover:underline text-xs self-center inline-flex min-h-11 items-center px-2 py-2"
           onClick={() => {
             setUsingBackupCode(v => !v);
             setError(null);
@@ -533,7 +533,7 @@ export function LoginPage() {
         footer={
           <button
             type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm"
+            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
             onClick={handleBack}
           >
             Back to sign in
@@ -594,7 +594,7 @@ export function LoginPage() {
         footer={
           <button
             type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm"
+            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
             onClick={handleBack}
           >
             Back to sign in
@@ -659,7 +659,7 @@ export function LoginPage() {
         adminReturnTo ? "Your admin session will continue after sign-in." : (
           <>
             Don&apos;t have an account?{" "}
-            <a href="/register" className="text-primary underline-offset-4 hover:underline">
+            <a href="/register" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
               Sign up
             </a>
           </>

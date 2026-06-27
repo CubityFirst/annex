@@ -129,14 +129,21 @@ export function DashboardPage() {
           )}
         </CardContent>
 
-        <CardFooter className="flex items-center gap-3">
+        <CardFooter className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Star
-                className={`h-[18px] w-[18px] cursor-pointer transition-colors ${project.is_favourite ? "fill-amber-400 text-amber-400 hover:fill-amber-300 hover:text-amber-300" : "text-muted-foreground/40 hover:text-amber-400"}`}
-                strokeWidth={1.5}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                aria-label={project.is_favourite ? "Remove from favourites" : "Add to favourites"}
                 onClick={(e) => handleToggleFavourite(e, project.id)}
-              />
+              >
+                <Star
+                  className={`h-[18px] w-[18px] transition-colors ${project.is_favourite ? "fill-amber-400 text-amber-400 hover:fill-amber-300 hover:text-amber-300" : "text-muted-foreground/40 hover:text-amber-400"}`}
+                  strokeWidth={1.5}
+                />
+              </Button>
             </TooltipTrigger>
             <TooltipContent>
               {project.is_favourite ? "Remove from favourites" : "Add to favourites"}
@@ -145,19 +152,25 @@ export function DashboardPage() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              {project.is_hidden ? (
-                <EyeOff
-                  className="h-[18px] w-[18px] cursor-pointer text-muted-foreground/40 transition-colors hover:text-foreground"
-                  strokeWidth={1.5}
-                  onClick={(e) => handleToggleHidden(e, project.id)}
-                />
-              ) : (
-                <Eye
-                  className="h-[18px] w-[18px] cursor-pointer text-muted-foreground/40 transition-colors hover:text-foreground"
-                  strokeWidth={1.5}
-                  onClick={(e) => handleToggleHidden(e, project.id)}
-                />
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
+                onClick={(e) => handleToggleHidden(e, project.id)}
+              >
+                {project.is_hidden ? (
+                  <EyeOff
+                    className="h-[18px] w-[18px] text-muted-foreground/40 transition-colors hover:text-foreground"
+                    strokeWidth={1.5}
+                  />
+                ) : (
+                  <Eye
+                    className="h-[18px] w-[18px] text-muted-foreground/40 transition-colors hover:text-foreground"
+                    strokeWidth={1.5}
+                  />
+                )}
+              </Button>
             </TooltipTrigger>
             <TooltipContent>
               {project.is_hidden ? "Unhide site" : "Hide site"}
@@ -166,11 +179,19 @@ export function DashboardPage() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Globe
-                className={`h-[18px] w-[18px] ${project.published_at ? "cursor-pointer text-green-500 hover:text-green-400" : "text-muted-foreground/40"}`}
-                strokeWidth={1.5}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                aria-label={project.published_at ? "View public site" : "Site is private"}
+                disabled={!project.published_at}
                 onClick={project.published_at ? (e) => { e.stopPropagation(); navigate(`/s/${project.id}`); } : undefined}
-              />
+              >
+                <Globe
+                  className={`h-[18px] w-[18px] ${project.published_at ? "text-green-500 hover:text-green-400" : "text-muted-foreground/40"}`}
+                  strokeWidth={1.5}
+                />
+              </Button>
             </TooltipTrigger>
             <TooltipContent>
               {project.published_at ? "View public site" : "Site is private"}
@@ -180,7 +201,7 @@ export function DashboardPage() {
           {!!project.ai_enabled && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} />
+                <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} aria-label="AI features enabled" />
               </TooltipTrigger>
               <TooltipContent>AI features enabled</TooltipContent>
             </Tooltip>
@@ -189,7 +210,7 @@ export function DashboardPage() {
           {!!(project.features & REALTIME_FEATURE) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} />
+                <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} aria-label="Real-time collaboration enabled" />
               </TooltipTrigger>
               <TooltipContent>Real-time collaboration enabled</TooltipContent>
             </Tooltip>
@@ -198,7 +219,7 @@ export function DashboardPage() {
           {project.organization_id && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} />
+                <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
               </TooltipTrigger>
               <TooltipContent>
                 Part of {project.organization_name ?? "an organization"}
@@ -208,7 +229,11 @@ export function DashboardPage() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
+              <div
+                className="ml-auto flex items-center gap-1 text-muted-foreground/60"
+                aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+              >
                 <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
                 <span className="text-xs">{project.member_count}</span>
               </div>
@@ -224,7 +249,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="px-8 py-10">
+    <div className="px-4 py-6 sm:px-8 sm:py-10">
       {orgs.length > 0 && (
         <div className="mb-10">
           <h2 className="text-2xl font-bold tracking-tight">Your Orgs</h2>
@@ -248,7 +273,7 @@ export function DashboardPage() {
                   <Badge variant="outline" className="shrink-0 capitalize">{org.role}</Badge>
                 </CardHeader>
                 <CardContent className="flex-1" />
-                <CardFooter className="flex items-center gap-4 text-muted-foreground/70">
+                <CardFooter className="flex flex-wrap items-center gap-4 text-muted-foreground/70">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="flex items-center gap-1 text-xs">

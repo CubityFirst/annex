@@ -44,7 +44,7 @@ export function TagPage() {
   if (!projectId || !tag) return null;
 
   return (
-    <div className="px-8 py-10 max-w-3xl">
+    <div className="px-4 py-8 sm:px-8 sm:py-10 max-w-3xl">
       <div className="mb-8 flex items-center gap-2">
         <Tag className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-2xl font-semibold tracking-tight">{decodedTag}</h1>

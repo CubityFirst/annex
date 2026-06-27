@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
@@ -202,6 +203,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   // external file drop state
   const [externalDragOver, setExternalDragOver] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
+
+  // Hidden <input> backing the explicit toolbar Upload button (touch devices
+  // can't drag-and-drop). Reuses the same uploadFileAndCreateDoc pipeline.
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadContents();
@@ -618,7 +623,34 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
       ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
     ].join("|");
+
+    // Mobile card helpers. The kebab is the sole per-row action entry point in
+    // the card layout; its items mirror the desktop ContextMenu exactly.
+    const toggleDocSel = (id: string) =>
+      setSelectedDocs(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    const toggleFileSel = (id: string) =>
+      setSelectedFiles(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    const renderKebab = (label: string, items: React.ReactNode) => (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={e => e.stopPropagation()}
+            className="inline-flex items-center justify-center h-9 w-9 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">{items}</DropdownMenuContent>
+      </DropdownMenu>
+    );
+
     return (
+      <>
+      {/* Desktop: resizable table (md+) */}
+      <div className="hidden md:block">
       <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort} measureKey={measureKey}>
         <>
           {sortedFolders.map(folder => {
@@ -665,7 +697,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           {canEdit && (
                             <button
                               onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
-                              className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
                               <Pencil className="h-3 w-3" />
@@ -749,7 +781,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           {canEdit && (
                             <button
                               onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
-                              className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
                               <Pencil className="h-3 w-3" />
@@ -772,7 +804,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             {aiEnabled && (
                               <button
                                 onClick={e => handleSummarize(e, doc)}
-                                className="shrink-0 p-1 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
+                                className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
                                 title="Summarise with AI"
                               >
                                 <Sparkles className="h-3.5 w-3.5" />
@@ -780,7 +812,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             )}
                             <button
                               onClick={e => handleDownloadDoc(e, doc)}
-                              className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                              className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                               title="Download as markdown"
                             >
                               <Download className="h-3.5 w-3.5" />
@@ -888,7 +920,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
                         <button
                           onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                           title="Download"
                         >
                           <Download className="h-3.5 w-3.5" />
@@ -930,6 +962,145 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           })}
         </>
       </ResizableTable>
+      </div>
+
+      {/* Mobile: card list (below md) - same data, tappable rows + kebab actions */}
+      <div className="md:hidden rounded-md border bg-background overflow-hidden">
+        {sortedFolders.map(folder => {
+          const c = folderCounts.get(folder.id);
+          const parts: string[] = [];
+          if (c) {
+            if (c.files > 0) parts.push(`${c.files} ${c.files === 1 ? "file" : "files"}`);
+            if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
+          }
+          return (
+            <div
+              key={folder.id}
+              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+              onClick={() => enterFolder(folder)}
+            >
+              <Folder className="h-5 w-5 shrink-0 text-primary/70" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{folder.name}</div>
+                {parts.length > 0 && (
+                  <div className="truncate text-xs text-muted-foreground">{parts.join(", ")}</div>
+                )}
+              </div>
+              {canEdit && renderKebab("Folder actions", (
+                <>
+                  <DropdownMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
+                    <Pencil />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
+                    <Trash2 />
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              ))}
+            </div>
+          );
+        })}
+        {sortedDocs.map(doc => {
+          const isHome = doc.is_home === 1;
+          const navToDoc = () => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } });
+          return (
+            <div
+              key={doc.id}
+              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+              onClick={navToDoc}
+            >
+              {canEdit && !isHome && (
+                <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+                  <Checkbox checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
+                </div>
+              )}
+              {isHome
+                ? <House className="h-5 w-5 shrink-0 text-primary/70" />
+                : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" />
+              }
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm">{doc.title || "Untitled"}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
+                </div>
+              </div>
+              {renderKebab("Document actions", (
+                <>
+                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${doc.id}`); toast({ title: "Link copied" }); }}>
+                    <Link />
+                    Copy link
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => downloadDoc(doc)}>
+                    <Download />
+                    Download
+                  </DropdownMenuItem>
+                  {canEdit && <DropdownMenuSeparator />}
+                  {canEdit && (
+                    <DropdownMenuItem onClick={() => { setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}>
+                      <Pencil />
+                      Rename
+                    </DropdownMenuItem>
+                  )}
+                  {canEdit && !isHome && (
+                    <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
+                      <Trash2 />
+                      Delete
+                    </DropdownMenuItem>
+                  )}
+                </>
+              ))}
+            </div>
+          );
+        })}
+        {sortedFiles.map(file => (
+          <div
+            key={file.id}
+            className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+            onClick={() => openFile(file)}
+          >
+            {canEdit && (
+              <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+                <Checkbox checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
+              </div>
+            )}
+            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm">{file.name}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {formatBytes(file.size)} · {formatRelativeTime(file.created_at)}
+              </div>
+            </div>
+            {renderKebab("File actions", (
+              <>
+                <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/files/${file.id}`); toast({ title: "Link copied" }); }}>
+                  <Link />
+                  Copy link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadFile(file)}>
+                  <Download />
+                  Download
+                </DropdownMenuItem>
+                {canEdit && <DropdownMenuSeparator />}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => { setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}>
+                    <Pencil />
+                    Rename
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
+                    <Trash2 />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </>
+            ))}
+          </div>
+        ))}
+      </div>
+      </>
     );
   }
 
@@ -950,9 +1121,18 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         </div>
       )}
 
+      {/* Hidden file input backing the explicit Upload button (touch can't drag) */}
+      <input
+        type="file"
+        multiple
+        ref={fileInputRef}
+        className="hidden"
+        onChange={e => { Array.from(e.target.files ?? []).forEach(uploadFileAndCreateDoc); e.target.value = ""; }}
+      />
+
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-6 py-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
+        <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search files…"
@@ -963,36 +1143,44 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-5 sm:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-        {canEdit && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
-            <FolderPlus className="h-3.5 w-3.5" />
-            New folder
-          </Button>
-        )}
-        {canEdit && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleNewDrawing} disabled={creatingDrawing}>
-            <PenTool className="h-3.5 w-3.5" />
-            {creatingDrawing ? "Creating…" : "New drawing"}
-          </Button>
-        )}
-        {canEdit && (
-          <Button size="sm" className="gap-1.5" onClick={handleNewDoc} disabled={creatingDoc}>
-            <Plus className="h-3.5 w-3.5" />
-            {creatingDoc ? "Creating…" : "New document"}
-          </Button>
-        )}
-        {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
-          <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
-            <Trash2 className="h-3.5 w-3.5" />
-            {deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {canEdit && (
+            <Button size="sm" variant="outline" aria-label="New folder" title="New folder" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setShowNewFolder(true)}>
+              <FolderPlus className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">New folder</span>
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" variant="outline" aria-label="Upload files" title="Upload files" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Upload</span>
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" variant="outline" aria-label="New drawing" title="New drawing" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDrawing} disabled={creatingDrawing}>
+              <PenTool className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{creatingDrawing ? "Creating…" : "New drawing"}</span>
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" aria-label="New document" title="New document" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDoc} disabled={creatingDoc}>
+              <Plus className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{creatingDoc ? "Creating…" : "New document"}</span>
+            </Button>
+          )}
+          {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
+            <Button size="sm" variant="destructive" aria-label={`Delete ${selectedDocs.size + selectedFiles.size} selected`} title="Delete selected" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Table */}

@@ -39,6 +39,7 @@ import {
   Plus,
   Upload,
   Building2,
+  Menu,
 } from "lucide-react";
 import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -183,7 +184,7 @@ function ProjectSwitcher({
             placeholder="Search sites…"
             value={query}
             onChange={e => { setQuery(e.target.value); setPage(0); }}
-            className="h-7 text-xs"
+            className="h-8 text-base sm:text-xs"
             autoFocus
           />
         </div>
@@ -210,7 +211,7 @@ function ProjectSwitcher({
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
+              className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
@@ -220,7 +221,7 @@ function ProjectSwitcher({
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page === totalPages - 1}
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
+              className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
@@ -621,6 +622,18 @@ export function DocsLayout() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
+      {/* Mobile menu opener - only visible when the sidebar is closed; sits above
+          the aside (z-20) and backdrop (z-10) so it hides behind the open sidebar. */}
+      {!sidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+          className="md:hidden fixed top-2 left-2 z-30 flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background/90 text-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
       {/* Backdrop - mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
@@ -646,7 +659,7 @@ export function DocsLayout() {
             <>
               <button
                 onClick={() => navigate("/dashboard")}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="shrink-0 rounded-md p-2 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 title="All sites"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -659,7 +672,7 @@ export function DocsLayout() {
               <NavLink
                 to={`/projects/${projectId}/settings`}
                 className={({ isActive }) =>
-                  `shrink-0 rounded-md p-1 transition-colors hover:bg-accent hover:text-foreground ${
+                  `shrink-0 rounded-md p-2 sm:p-1 transition-colors hover:bg-accent hover:text-foreground ${
                     isActive ? "bg-accent text-foreground" : "text-muted-foreground"
                   }`
                 }
@@ -801,7 +814,7 @@ export function DocsLayout() {
               onClick={() => navigate("/settings")}
               title="Settings"
               aria-label="Settings"
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <Settings className="h-4 w-4" />
             </button>
@@ -823,7 +836,7 @@ export function DocsLayout() {
               }}
               title="Sign out"
               aria-label="Sign out"
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -833,7 +846,7 @@ export function DocsLayout() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -843,14 +856,15 @@ export function DocsLayout() {
       <main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Breadcrumb bar - always at the top */}
         {breadcrumbs.length > 0 && (
-          <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">
+          <div className="shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap pl-14 pr-4 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]">
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
               return (
-                <span key={i} className="flex items-center gap-1">
+                <span key={i} className="flex items-center gap-1 shrink-0">
                   {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
                   <span
-                    className={`px-1.5 py-0.5 rounded transition-colors ${
+                    title={crumb.name}
+                    className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
                       isLast
                         ? "text-foreground font-medium"
                         : crumb.onClick

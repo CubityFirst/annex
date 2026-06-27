@@ -72,8 +72,8 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                   onClick={() => onSelect(rev.id)}
                   disabled={loading}
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{displayName(rev)}</span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-sm font-medium">{displayName(rev)}</span>
                     <span className="text-xs text-muted-foreground">{formatDateTime(rev.created_at)} · <span className="text-muted-foreground/60">{timeAgo(rev.created_at)}</span></span>
                     {rev.changelog && (
                       <span className="text-xs text-foreground/70 italic line-clamp-2">{rev.changelog}</span>

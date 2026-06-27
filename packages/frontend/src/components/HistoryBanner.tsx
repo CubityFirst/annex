@@ -26,18 +26,18 @@ export function HistoryBanner({ editorName, createdAt, onBack, onRevert, reverti
         <span className="flex-1 min-w-0">
           Historical version saved by <strong>{editorName}</strong> on {formatDate(createdAt)}.
         </span>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-x-4 gap-y-1 shrink-0">
           {onRevert && (
             <button
               onClick={() => setConfirmOpen(true)}
-              className="font-medium underline underline-offset-2 hover:no-underline"
+              className="inline-flex items-center min-h-11 px-1 -mx-1 font-medium underline underline-offset-2 hover:no-underline"
             >
               Revert to this version
             </button>
           )}
           <button
             onClick={onBack}
-            className="font-medium underline underline-offset-2 hover:no-underline"
+            className="inline-flex items-center min-h-11 px-1 -mx-1 font-medium underline underline-offset-2 hover:no-underline"
           >
             Back to live
           </button>

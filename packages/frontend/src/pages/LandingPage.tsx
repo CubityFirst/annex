@@ -193,7 +193,7 @@ export function LandingPage() {
           <div className="l-nav-links">
             <a className="l-nav-link" href="#features">features</a>
             <a className="l-nav-link" href="#pricing">pricing</a>
-            {!isLoggedIn && <Link className="l-nav-link" to="/login">login</Link>}
+            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
             {isLoggedIn
               ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
               : <Link className="l-nav-cta" to="/register">get started</Link>}

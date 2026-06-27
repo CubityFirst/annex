@@ -1351,7 +1351,7 @@ export function SiteSettingsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-9 w-9 sm:h-8 sm:w-8"
                     onClick={() => {
                       const slug = project.vanity_slug ?? projectId;
                       const url = `${window.location.origin}/s/${slug}`;
@@ -1547,38 +1547,42 @@ export function SiteSettingsPage() {
                 </div>
                 <form onSubmit={handleSaveSlug} className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground shrink-0">{window.location.origin}/s/</span>
-                      <InlineSaveControls
-                        changed={vanitySlug.trim() !== (project.vanity_slug ?? "")}
-                        saving={savingSlug}
-                        onReset={() => setVanitySlug(project.vanity_slug ?? "")}
-                        resetLabel="Reset custom link"
-                        saveLabel="Save custom link"
-                      >
-                        <Input
-                          id="vanity-slug"
-                          value={vanitySlug}
-                          onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                          placeholder="my-site"
-                          className="flex-1 pr-9"
-                        />
-                      </InlineSaveControls>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        aria-label="Copy custom link"
-                        onClick={() => {
-                          const slug = project.vanity_slug ?? projectId;
-                          const url = `${window.location.origin}/s/${slug}`;
-                          navigator.clipboard.writeText(url);
-                          toast({ title: "Custom link copied to clipboard." });
-                        }}
-                      >
-                        <Link className="h-4 w-4" />
-                      </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <span className="text-sm text-muted-foreground break-all sm:shrink-0">{window.location.origin}/s/</span>
+                      <div className="flex flex-1 items-center gap-2 min-w-0">
+                        <div className="flex flex-1 min-w-0">
+                          <InlineSaveControls
+                            changed={vanitySlug.trim() !== (project.vanity_slug ?? "")}
+                            saving={savingSlug}
+                            onReset={() => setVanitySlug(project.vanity_slug ?? "")}
+                            resetLabel="Reset custom link"
+                            saveLabel="Save custom link"
+                          >
+                            <Input
+                              id="vanity-slug"
+                              value={vanitySlug}
+                              onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                              placeholder="my-site"
+                              className="flex-1 pr-9"
+                            />
+                          </InlineSaveControls>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 sm:h-8 sm:w-8"
+                          aria-label="Copy custom link"
+                          onClick={() => {
+                            const slug = project.vanity_slug ?? projectId;
+                            const url = `${window.location.origin}/s/${slug}`;
+                            navigator.clipboard.writeText(url);
+                            toast({ title: "Custom link copied to clipboard." });
+                          }}
+                        >
+                          <Link className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
@@ -1853,7 +1857,7 @@ export function SiteSettingsPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
                         disabled={locked || reindexing}
                         onClick={handleReindex}
                         title={locked ? `Reindex available in ${minsLeft} min` : "Reindex graph"}
@@ -1901,17 +1905,17 @@ export function SiteSettingsPage() {
                       </p>
                       <div className="flex flex-col gap-2">
                         {tagColorRules.map(rule => (
-                          <div key={rule.id} className="flex items-center gap-2">
+                          <div key={rule.id} className="flex items-center gap-2.5 sm:gap-2">
                             <Input
                               placeholder="tag-name"
                               value={rule.tag}
                               onChange={e => updateTagRuleTag(rule.id, e.target.value)}
-                              className="flex-1 h-8 text-sm"
+                              className="flex-1 h-9 sm:h-8"
                             />
                             <div className="relative shrink-0">
                               <button
                                 type="button"
-                                className="w-6 h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="w-9 h-9 sm:w-6 sm:h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 style={{ backgroundColor: rule.color }}
                                 aria-label="Pick color"
                                 onClick={() => {
@@ -1931,7 +1935,7 @@ export function SiteSettingsPage() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                              className="h-9 w-9 sm:h-6 sm:w-6 shrink-0 text-muted-foreground hover:text-destructive"
                               onClick={() => removeTagRule(rule.id)}
                             >
                               <X className="h-3 w-3" />
@@ -1944,7 +1948,7 @@ export function SiteSettingsPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="gap-1.5 h-7 text-xs"
+                          className="gap-1.5 h-9 sm:h-7 text-xs"
                           onClick={addTagRule}
                         >
                           <Plus className="h-3 w-3" />
@@ -1953,7 +1957,7 @@ export function SiteSettingsPage() {
                         <Button
                           type="button"
                           size="sm"
-                          className="h-7 text-xs"
+                          className="h-9 sm:h-7 text-xs"
                           disabled={savingTagColors}
                           onClick={saveTagColors}
                         >
@@ -2032,7 +2036,7 @@ export function SiteSettingsPage() {
                             value={member.role}
                             onValueChange={val => handleRoleChange(member, val as Role)}
                           >
-                            <SelectTrigger className="h-7 w-28 text-xs">
+                            <SelectTrigger className="h-9 sm:h-7 w-28 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -2051,7 +2055,7 @@ export function SiteSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                             disabled={removingId === member.userId}
                             onClick={() => handleRemove(member)}
                           >
@@ -2149,7 +2153,7 @@ export function SiteSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs gap-1.5"
+                        className="h-9 sm:h-7 px-2 text-xs gap-1.5"
                         onClick={() => handleCopyLink(link)}
                       >
                         {copiedLinkId === link.id ? <Check className="size-3" /> : <Copy className="size-3" />}
@@ -2158,7 +2162,7 @@ export function SiteSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5"
+                        className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5"
                         disabled={revokingLinkId === link.id}
                         onClick={() => handleRevokeLink(link.id)}
                       >
@@ -2174,7 +2178,7 @@ export function SiteSettingsPage() {
             {/* Invite form */}
             <form onSubmit={handleInvite} className="flex flex-col gap-3">
               <h4 className="text-sm font-medium">Invite a member</h4>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="email"
                   placeholder="user@example.com"
@@ -2183,21 +2187,23 @@ export function SiteSettingsPage() {
                   required
                   className="flex-1"
                 />
-                <Select value={inviteRole} onValueChange={val => setInviteRole(val as Role)}>
-                  <SelectTrigger className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ASSIGNABLE_ROLES.map(role => (
-                      <SelectItem key={role} value={role}>
-                        {ROLE_LABELS[role]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button type="submit" disabled={inviting}>
-                  {inviting ? "Adding…" : "Add"}
-                </Button>
+                <div className="flex gap-2">
+                  <Select value={inviteRole} onValueChange={val => setInviteRole(val as Role)}>
+                    <SelectTrigger className="w-full sm:w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ASSIGNABLE_ROLES.map(role => (
+                        <SelectItem key={role} value={role}>
+                          {ROLE_LABELS[role]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="submit" disabled={inviting}>
+                    {inviting ? "Adding…" : "Add"}
+                  </Button>
+                </div>
               </div>
               {inviteError && (
                 <Alert variant="destructive">
@@ -2322,7 +2328,7 @@ export function SiteSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                             disabled={revokingKeyId === key.id}
                           >
                             {revokingKeyId === key.id ? "Revoking…" : "Revoke"}

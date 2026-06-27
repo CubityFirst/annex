@@ -22,7 +22,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network } from "lucide-react";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List } from "lucide-react";
 
 // Heavy chunk - only loaded when a published drawing is opened.
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
@@ -398,6 +399,7 @@ export function PublicDocPage() {
   const [hasToken, setHasToken] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [graphExpanded, setGraphExpanded] = useState(false);
   const openSearch = useCallback(() => { if (data?.sitePublished && projectId) setSearchOpen(true); }, [data?.sitePublished, projectId]);
   useEffect(() => {
@@ -757,10 +759,14 @@ export function PublicDocPage() {
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder={`Filter titles… (${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full search)`}
+                placeholder={
+                  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
+                    ? "Filter titles…"
+                    : `Filter titles… (${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full search)`
+                }
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="pl-8 pr-7 h-8 text-sm"
+                className="pl-8 pr-7 h-9 text-base md:h-8 md:text-sm"
               />
               {searchQuery && (
                 <button
@@ -847,7 +853,7 @@ export function PublicDocPage() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -856,6 +862,61 @@ export function PublicDocPage() {
 
       {/* Main content - stays put; the sidebar overlays it on mobile instead of pushing it */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        {showNav && (
+          <header className="flex md:hidden h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10"
+              aria-label="Open navigation"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            {data.project.logo_wide_updated_at ? (
+              <img
+                src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
+                alt={data.project.name}
+                title={data.project.name}
+                className="h-8 w-auto max-w-[10rem] object-contain"
+              />
+            ) : data.project.logo_square_updated_at ? (
+              <>
+                <img
+                  src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/square?v=${encodeURIComponent(data.project.logo_square_updated_at)}`}
+                  alt=""
+                  className="h-5 w-5 shrink-0 rounded object-cover"
+                />
+                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+              </>
+            ) : (
+              <>
+                <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 ml-auto"
+              aria-label="Search"
+              onClick={openSearch}
+            >
+              <Search className="h-5 w-5" />
+            </Button>
+            {headings.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 lg:hidden"
+                aria-label="Outline"
+                onClick={() => setSheetOpen(true)}
+              >
+                <List className="h-5 w-5" />
+              </Button>
+            )}
+          </header>
+        )}
         {!showNav && (
           <header className="flex h-14 items-center border-b border-border px-6 gap-2">
             {data.project.logo_wide_updated_at ? (
@@ -1064,6 +1125,46 @@ export function PublicDocPage() {
           projectId={projectId}
           isPublic
         />
+      )}
+      {headings.length > 0 && (
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent side="bottom" className="lg:hidden max-h-[70vh] p-0">
+            <SheetTitle className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Outline
+            </SheetTitle>
+            <ScrollArea className="max-h-[calc(70vh-3rem)] px-2 pb-4">
+              <nav className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
+                    const scroller = document.querySelector(".public-doc-scroller");
+                    const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+                    if (vp) vp.scrollTop = 0;
+                    setSheetOpen(false);
+                  }}
+                  className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  Top
+                </button>
+                {headings.map((h, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
+                      scrollToHash(h.id);
+                      setSheetOpen(false);
+                    }}
+                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
+                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    {h.text}
+                  </button>
+                ))}
+              </nav>
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
       )}
       <Dialog open={graphExpanded} onOpenChange={setGraphExpanded}>
         <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] p-0 overflow-hidden">

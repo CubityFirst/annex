@@ -207,7 +207,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
           size="sm"
           onClick={() => void handleSave()}
           disabled={saving || !dirty}
-          className="absolute bottom-4 right-4 z-20 gap-1.5 shadow-md"
+          className="absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"
         >
           {saving ? <Spinner className="h-3.5 w-3.5 text-current" /> : (!dirty && justSaved) ? <Check className="h-3.5 w-3.5" /> : null}
           {saveLabel}
