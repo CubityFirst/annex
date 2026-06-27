@@ -14,7 +14,7 @@ function loadMermaid(): Promise<Mermaid> {
       startOnLoad: false,
       // App is dark-only (matches Shiki's github-dark-dimmed code blocks).
       theme: "dark",
-      // User-authored diagram source — keep mermaid's DOMPurify sanitization
+      // User-authored diagram source - keep mermaid's DOMPurify sanitization
       // and block inline event handlers / foreignObject script vectors.
       securityLevel: "strict",
       fontFamily: "inherit",

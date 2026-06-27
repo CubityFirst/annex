@@ -1,7 +1,7 @@
 /**
  * E2E test for Annex Ink features (bio, ring style, presence colour, crit sparkles).
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -11,7 +11,7 @@
  * resolves to "ink". Two ways to get there in dev:
  *   1. Stripe checkout (requires external service, not viable in tests)
  *   2. Grant the plan directly in the auth DB via `granted_plan = 'ink'` on
- *      user_billing — same wrangler-shell-out trick collab.spec.ts uses for
+ *      user_billing - same wrangler-shell-out trick collab.spec.ts uses for
  *      the REALTIME feature bit
  *
  * After granting, the user must re-fetch their session for the resolved plan

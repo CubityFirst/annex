@@ -18,7 +18,7 @@ interface MockDB {
 // Returns a sequence-aware D1 mock. Each call to .run() returns the next
 // object from `runResults` (default: { meta: { changes: 1 } }); an Error
 // entry makes that .run() reject (simulates a transient D1 failure).
-// `.first()` always resolves to `firstResult` — used by the idempotency
+// `.first()` always resolves to `firstResult` - used by the idempotency
 // dedup check (null/undefined = not yet processed, truthy = duplicate).
 function makeDB(
   runResults: Array<{ meta: { changes: number } } | Error> = [],
@@ -78,7 +78,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("handleStripeWebhook — signature + idempotency", () => {
+describe("handleStripeWebhook - signature + idempotency", () => {
   it("returns 400 when stripe-signature header is missing", async () => {
     const db = makeDB();
     const req = new Request("http://localhost/stripe/webhook", {
@@ -108,13 +108,13 @@ describe("handleStripeWebhook — signature + idempotency", () => {
     const db = makeDB([], { seen: 1 });
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
-    // Only the dedup lookup should have run — no handler, no marker write
+    // Only the dedup lookup should have run - no handler, no marker write
     expect(db._statements.length).toBe(1);
     expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
   });
 });
 
-describe("handleStripeWebhook — checkout.session.completed", () => {
+describe("handleStripeWebhook - checkout.session.completed", () => {
   it("links customer + subscription IDs to the user", async () => {
     mockConstructEvent({
       id: "evt_2",
@@ -158,7 +158,7 @@ describe("handleStripeWebhook — checkout.session.completed", () => {
   });
 });
 
-describe("handleStripeWebhook — customer.subscription.created/updated", () => {
+describe("handleStripeWebhook - customer.subscription.created/updated", () => {
   const event = {
     id: "evt_4",
     type: "customer.subscription.created",
@@ -193,7 +193,7 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     expect(args[4]).toBe("active"); // status
     expect(args[5]).toBe(1_700_000_000_000); // period end (ms)
     expect(args[6]).toBeNull(); // cancel_at (null when no cancellation pending)
-    // args[7] is now (Date.now()) — just check it's a number
+    // args[7] is now (Date.now()) - just check it's a number
     expect(typeof args[7]).toBe("number");
   });
 
@@ -211,7 +211,7 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     const db = makeDB();
     return handleStripeWebhook(makeRequest("{}"), makeEnv(db)).then(() => {
       const args = db._bindCalls[1];
-      expect(args[6]).toBe(1_750_000_000_000); // cancel_at in ms (now position 6 — userId leads)
+      expect(args[6]).toBe(1_750_000_000_000); // cancel_at in ms (now position 6 - userId leads)
     });
   });
 
@@ -255,13 +255,13 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     const db = makeDB();
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnvWithInkPrice(db, "price_ink"));
     expect(res.status).toBe(200);
-    // No user_billing write — only dedup lookup + post-success marker.
+    // No user_billing write - only dedup lookup + post-success marker.
     expect(db._statements.length).toBe(2);
     expect(db._statements.some(s => s.includes("INSERT INTO user_billing"))).toBe(false);
   });
 });
 
-describe("handleStripeWebhook — customer.subscription.deleted", () => {
+describe("handleStripeWebhook - customer.subscription.deleted", () => {
   it("clears plan + sub id, sets status canceled", async () => {
     mockConstructEvent({
       id: "evt_5",
@@ -278,7 +278,7 @@ describe("handleStripeWebhook — customer.subscription.deleted", () => {
   });
 });
 
-describe("handleStripeWebhook — invoice events", () => {
+describe("handleStripeWebhook - invoice events", () => {
   it("invoice.payment_failed flips status to past_due", async () => {
     mockConstructEvent({
       id: "evt_6",
@@ -314,7 +314,7 @@ describe("handleStripeWebhook — invoice events", () => {
   });
 });
 
-describe("handleStripeWebhook — idempotency ordering on failure", () => {
+describe("handleStripeWebhook - idempotency ordering on failure", () => {
   const deletedEvent = {
     id: "evt_fail",
     type: "customer.subscription.deleted",

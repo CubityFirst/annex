@@ -13,7 +13,7 @@ function highlight(code: string, lang: string): string | null {
   try {
     return h.codeToHtml(code, { lang, theme: THEME });
   } catch {
-    // Unknown language — fall back to plain text
+    // Unknown language - fall back to plain text
     return h.codeToHtml(code, { lang: "text", theme: THEME });
   }
 }
@@ -21,7 +21,7 @@ function highlight(code: string, lang: string): string | null {
 interface CodeBlockProps {
   lang: string;
   code: string;
-  /** Extra classes for the block container — e.g. a max-height + scroll cap when
+  /** Extra classes for the block container - e.g. a max-height + scroll cap when
    *  previewing a whole file rather than an inline fence. */
   className?: string;
 }
@@ -71,7 +71,7 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
   if (html) {
     return (
       <div className={`not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4 ${className ?? ""}`}>
-        {/* Shiki escapes all user code content — safe to set innerHTML */}
+        {/* Shiki escapes all user code content - safe to set innerHTML */}
         <div dangerouslySetInnerHTML={{ __html: html }} />
         {copyButton}
       </div>

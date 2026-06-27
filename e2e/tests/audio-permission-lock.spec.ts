@@ -2,10 +2,10 @@
  * E2E test for file permission locking across projects ("sites"), AUDIO edition.
  *
  * The audio twin of file-permission-lock.spec.ts. Embedded audio goes through
- * the SAME file-content routes and the SAME project-scoping lock as images —
+ * the SAME file-content routes and the SAME project-scoping lock as images -
  * only the renderer (AudioEmbed) and its error UI differ.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Scenario (single owner, two sites):
@@ -21,7 +21,7 @@
  *     user owns Site A, AudioEmbed fetches it scoped `?projectId=<SiteB>`, and
  *     the file-content route locks files to their owning project, so the
  *     cross-project request 404s. (`packages/api/src/routes/files.ts` /
- *     `routes/public.ts` — same `AND f.project_id = ?` / `(p.id = ? OR
+ *     `routes/public.ts` - same `AND f.project_id = ?` / `(p.id = ? OR
  *     p.vanity_slug = ?)` guard as images; the public route's "images only"
  *     comment is stale, it serves any MIME from a published project.)
  *   - Site B audio  → renders an <audio> player (same project context, member
@@ -35,7 +35,7 @@
  *     `![<filename>](/api/files/<id>/content)` (no extension), so the uploaded
  *     files MUST be named `*.wav` for the alt to trigger the audio renderer.
  *   - The external audio is intercepted and fulfilled with a tiny valid WAV so
- *     the test is hermetic / offline-deterministic — we are exercising the
+ *     the test is hermetic / offline-deterministic - we are exercising the
  *     renderer branch that treats non-/api/files URLs as a plain <audio> not
  *     subject to the lock, not third-party network availability.
  *   - The doc body is built from the exact "Copy markdown" string format (see
@@ -55,7 +55,7 @@ const PROJECT_A_NAME = `E2E AudioLock Site A ${RUN_ID}`;
 const PROJECT_B_NAME = `E2E AudioLock Site B ${RUN_ID}`;
 const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7) % 256}.${(RUN_ID + 31) % 256}`;
 
-// External "URL" audio — intercepted below, never hits the network. The .wav
+// External "URL" audio - intercepted below, never hits the network. The .wav
 // extension makes the renderer treat it as audio.
 const EXTERNAL_URL = "https://i.cubityfir.st/explorer_9LHgOrjobE.wav";
 
@@ -181,7 +181,7 @@ async function deleteSite(p: Page, projectId: string) {
   } catch { /* best-effort cleanup */ }
 }
 
-// Reading-mode / published-mode assertions are identical — Site A locked,
+// Reading-mode / published-mode assertions are identical - Site A locked,
 // Site B + external rendered. The doc body is rendered more than once in the
 // DOM (DocPage / PublicDocPage keep a second hidden WysiwygEditor for
 // print/PDF export), so assert on .first() for visibility and on
@@ -189,7 +189,7 @@ async function deleteSite(p: Page, projectId: string) {
 async function assertAudioLockOutcome(p: Page) {
   // Site A: scoped to Site B, the file-content route refuses the cross-project
   // read, and AudioEmbed swaps in its destructive "Audio unavailable" badge
-  // (a <span title=<alt>> — distinct text/icon from the image badge).
+  // (a <span title=<alt>> - distinct text/icon from the image badge).
   const lockedBadge = p.locator(`span[title="${FILE_A_NAME}"]`).first();
   await expect(lockedBadge).toBeVisible({ timeout: 15000 });
   await expect(lockedBadge).toContainText("Audio unavailable");
@@ -290,15 +290,15 @@ test("internal reading view locks the Site A audio; Site B + external render", a
   const content = [
     "# Audio Permission Lock",
     "",
-    "Cross-project (Site A) audio — must be locked:",
+    "Cross-project (Site A) audio - must be locked:",
     "",
     `![${FILE_A_NAME}](/api/files/${fileAId}/content)`,
     "",
-    "Same-project (Site B) audio — must render:",
+    "Same-project (Site B) audio - must render:",
     "",
     `![${FILE_B_NAME}](/api/files/${fileBId}/content)`,
     "",
-    "External URL audio — must render:",
+    "External URL audio - must render:",
     "",
     `![${EXTERNAL_ALT}](${EXTERNAL_URL})`,
     "",

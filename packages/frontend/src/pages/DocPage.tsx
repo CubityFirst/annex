@@ -354,7 +354,7 @@ export function DocPage() {
 
   const [remoteEditors, setRemoteEditors] = useState<{ userId: string; name: string; color: string; personalPlan?: "free" | "ink"; personalPlanStyle?: string | null }[]>([]);
 
-  // Realtime collab fatal state — set when the server rejects further sync because the
+  // Realtime collab fatal state - set when the server rejects further sync because the
   // doc has exceeded the size cap. The editor remounts in non-collab mode while this is true.
   const [collabFatal, setCollabFatal] = useState(false);
   const [collabFatalReason, setCollabFatalReason] = useState<string | null>(null);
@@ -435,7 +435,7 @@ export function DocPage() {
 
   // Sets the breadcrumb folder path. Uses location.state.folderPath when the user
   // navigates from the project sidebar (which knows the path it came from); otherwise
-  // — e.g. when a wikilink jumps here — derives the path from doc.folder_id walking
+  // - e.g. when a wikilink jumps here - derives the path from doc.folder_id walking
   // up through the folder tree.
   useEffect(() => {
     if (!doc || !docId || doc.id !== docId) return;
@@ -569,7 +569,7 @@ export function DocPage() {
     });
     if (result.ok && result.data) {
       const data = result.data;
-      // Force the new content locally — settings-style PUTs may not echo it, and
+      // Force the new content locally - settings-style PUTs may not echo it, and
       // the banner reads `doc.content`'s frontmatter to render.
       setDoc(prev => prev ? { ...prev, ...data, content } : prev);
     } else {
@@ -621,7 +621,7 @@ export function DocPage() {
       });
       if (result.ok && result.data) {
         const data = result.data;
-        // Spread-merge — settings PUTs no longer echo content, so replacing
+        // Spread-merge - settings PUTs no longer echo content, so replacing
         // would clobber it.
         setDoc(prev => prev ? { ...prev, ...data } : data);
         toast({ title: data.published_at ? "Document published." : "Document unpublished." });
@@ -799,7 +799,7 @@ export function DocPage() {
   if (editing) {
     return (
       <div className="flex h-full flex-col">
-        {/* Title + toolbar — inner row matches the editor's max-w-3xl column so
+        {/* Title + toolbar - inner row matches the editor's max-w-3xl column so
             the title aligns with the document content below. */}
         <div className="border-b border-border px-6 py-3">
           <div className="mx-auto flex max-w-3xl items-center gap-4">
@@ -818,7 +818,7 @@ export function DocPage() {
                 variant="destructive"
                 size="sm"
                 onClick={() => setResetConfirmOpen(true)}
-                title="Realtime sync is disabled — click to restore"
+                title="Realtime sync is disabled - click to restore"
                 className="gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -953,7 +953,7 @@ export function DocPage() {
                 </Section>
                 <Section title="Comments">
                   <Code>{`%% hidden note for editors %%`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Inline only — text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Inline only - text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
                 </Section>
                 <Section title="Callouts">
                   <Code>{`> [!note]\n> This is a note.\n\n> [!warning] Watch out\n> Something to be careful about.\n\n> [!tip]+ Foldable tip\n> This starts open.\n\n> [!danger]- Foldable danger\n> This starts closed.`}</Code>
@@ -1179,7 +1179,7 @@ export function DocPage() {
                                 {shareableMembers
                                   .filter(m => !docShares.some(s => s.userId === m.userId))
                                   .map(member => {
-                                    // Viewers already have read access project-wide, so a 'view' share would be a no-op — default to 'edit' for them.
+                                    // Viewers already have read access project-wide, so a 'view' share would be a no-op - default to 'edit' for them.
                                     const defaultPerm: SharePermission = member.role === "viewer" ? "edit" : "view";
                                     const selectedPerm = pendingAddPermission[member.userId] ?? defaultPerm;
                                     return (
@@ -1297,7 +1297,7 @@ export function DocPage() {
                       </div>
                       {projectPublishedAt && (
                         <p className="text-xs text-amber-600 dark:text-amber-400">
-                          The site is currently published — individual document publish status has no effect until the site is unpublished.
+                          The site is currently published - individual document publish status has no effect until the site is unpublished.
                         </p>
                       )}
                     </div>

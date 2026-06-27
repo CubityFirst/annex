@@ -1,7 +1,7 @@
 -- Tracks when a manual grant was applied. Lets the resolver surface a
 -- "Supporter since X" date for gifted users the same way personal_plan_started_at
 -- does for paid users. Backfills existing grants to "now" since we have no
--- prior timestamp — admins can correct individual rows manually if needed.
+-- prior timestamp - admins can correct individual rows manually if needed.
 ALTER TABLE users ADD COLUMN granted_plan_started_at INTEGER;
 
 UPDATE users

@@ -74,7 +74,7 @@ export class WikilinkWidget extends ReactWidget {
     return createElement(WikilinkInner, this.parsed);
   }
 
-  // Interactive — let the <a>'s onClick handle navigation.
+  // Interactive - let the <a>'s onClick handle navigation.
   protected revealOnClick(): boolean {
     return false;
   }

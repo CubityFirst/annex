@@ -1,6 +1,6 @@
 // Mux a sequence of static WebP frames into an animated WebP. Browsers can
 // already produce static WebP via canvas.toBlob("image/webp"), but cannot
-// build the animation container — that's what this does. Each input frame
+// build the animation container - that's what this does. Each input frame
 // is assumed to cover the full canvas (we place ANMF at offset 0,0 with
 // frame_w/h == canvas w/h) and is composited as "do not blend" so the
 // previous frame's pixels are fully replaced.
@@ -67,7 +67,7 @@ function buildAnim(loops: number): Uint8Array {
   const buf = new Uint8Array(14);
   writeAscii(buf, 0, "ANIM");
   writeU32LE(buf, 4, 6);
-  // Background colour BGRA — left fully transparent; the avatar render
+  // Background colour BGRA - left fully transparent; the avatar render
   // ignores corners (clipped to a circle) and the frames themselves have
   // an opaque black fill, so this value is effectively unused.
   buf[8] = buf[9] = buf[10] = buf[11] = 0;
@@ -99,7 +99,7 @@ function buildAnmf(payload: Uint8Array, width: number, height: number, delayMs: 
 }
 
 // Walk a static WebP and return the concatenated VP8/VP8L/ALPH chunks.
-// Skips RIFF/WEBP header and any file-level VP8X — those belong to the
+// Skips RIFF/WEBP header and any file-level VP8X - those belong to the
 // outer animated container, not the inner ANMF payload.
 function extractBitstreamChunks(webp: Uint8Array): Uint8Array {
   if (webp.length < 12) throw new Error("muxAnimatedWebP: input is not a WebP file");

@@ -54,7 +54,7 @@ export async function enrichFilesWithStreamUrls(env: Env, files: PublicFile[]): 
       // direct R2 path; strip quotes/backslashes/control chars from the name.
       const safeName = f.name.replace(/["\\\r\n\t]/g, "_");
       // A presign failure must degrade to the in-Worker route for that one file
-      // (content_stream_url: null), never reject the whole list — otherwise a
+      // (content_stream_url: null), never reject the whole list - otherwise a
       // single signing error would 500 the entire published page (nav + docs +
       // files), not just the offending video.
       try {
@@ -79,7 +79,7 @@ export async function handlePublic(
 
   const parts = url.pathname.replace(/^\/public\/?/, "").split("/");
 
-  // /public/site-by-host?host=docs.acme.com — resolve a mapped custom domain to
+  // /public/site-by-host?host=docs.acme.com - resolve a mapped custom domain to
   // its (published) site so the frontend can render it at the domain root. Only
   // resolves published sites; an unpublished/unmapped host returns 404.
   if (parts[0] === "site-by-host") {
@@ -95,7 +95,7 @@ export async function handlePublic(
     return okResponse({ projectId: row.id, vanitySlug: row.vanity_slug, name: row.name });
   }
 
-  // /public/projects/:id/logo/:variant — serve the site logo for a published project.
+  // /public/projects/:id/logo/:variant - serve the site logo for a published project.
   // variant ∈ {"square","wide"}.
   if (parts[0] === "projects" && parts[1] && parts[2] === "logo" && parts[3]) {
     const variant = parts[3];
@@ -198,7 +198,7 @@ export async function handlePublic(
     });
   }
 
-  // /public/files/:id/stream-url — mint a FRESH presigned direct-from-R2 URL for
+  // /public/files/:id/stream-url - mint a FRESH presigned direct-from-R2 URL for
   // an inline-safe video on a published site. The URLs baked into the file lists
   // carry the PRESIGN_URL_TTL_SECONDS (3h) TTL and a published page can sit open
   // longer than that, so the player re-signs here on a playback error instead of
@@ -219,7 +219,7 @@ export async function handlePublic(
     return okResponse({ url: enriched.content_stream_url ?? null });
   }
 
-  // /public/files/:id/content — serve a file from a published project. Drawings
+  // /public/files/:id/content - serve a file from a published project. Drawings
   // (mutable files) version their ETag with updated_at and serve no-cache so an
   // edit shows up on the published site; immutable media keep the long cache.
   if (parts[0] === "files" && parts[1] && parts[2] === "content") {

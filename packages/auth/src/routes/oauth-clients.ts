@@ -5,7 +5,7 @@ import type { Env } from "../index";
 
 // Admin-only management of "Sign in with Annex" OIDC clients. These endpoints
 // live on the auth worker (which owns auth-DB writes) and are reached only via
-// the admin worker's AUTH service binding — they are NOT on the public
+// the admin worker's AUTH service binding - they are NOT on the public
 // auth.cubityfir.st routes (only /oauth/* and /.well-known/* are). Every
 // handler still re-checks the admin session as defence in depth.
 

@@ -41,7 +41,7 @@ export function resolveDoc(
 ): DocInfo | undefined {
   const trimmed = rawTitle.trim();
 
-  // [[id:UUID]] — direct lookup by document ID
+  // [[id:UUID]] - direct lookup by document ID
   if (/^id:/i.test(trimmed)) {
     const id = trimmed.slice(3).trim();
     return docs.find(d => d.id === id);

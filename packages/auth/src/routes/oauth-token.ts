@@ -86,13 +86,13 @@ async function parseTokenRequest(request: Request): Promise<{
         basicSecret = dec(decoded.slice(idx + 1));
       }
     } catch {
-      /* malformed Basic header — ignored, falls through to invalid_client */
+      /* malformed Basic header - ignored, falls through to invalid_client */
     }
   }
   return { params, basicId, basicSecret };
 }
 
-// POST /oauth/token  (public, on the issuer origin — server-to-server)
+// POST /oauth/token  (public, on the issuer origin - server-to-server)
 //
 // Exchanges a single-use authorization code for an id_token + access_token.
 // Authenticates the client (secret for confidential clients; PKCE for all),
@@ -135,14 +135,14 @@ export async function handleOAuthToken(request: Request, env: Env): Promise<Resp
   if (!codeRow) return tokenError("invalid_grant", 400);
 
   // PKCE proof-of-possession is verified BEFORE the code is consumed. A request
-  // with a bad verifier must not be able to burn a still-unredeemed code — for a
+  // with a bad verifier must not be able to burn a still-unredeemed code - for a
   // public (PKCE-only) client the code is observable in the redirect URL, so a
   // consume-then-verify order would let an observer DoS that client's logins.
   if (!(await verifyPkceS256(codeVerifier, codeRow.code_challenge))) {
     return tokenError("invalid_grant", 400);
   }
 
-  // Atomically consume — exactly one caller can win, so a replayed code (or a
+  // Atomically consume - exactly one caller can win, so a replayed code (or a
   // concurrent double-submit with the correct verifier) fails here with 0 rows.
   const consume = await env.DB.prepare(
     "UPDATE oauth_codes SET consumed_at = ? WHERE code = ? AND consumed_at IS NULL",

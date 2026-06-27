@@ -1,6 +1,6 @@
 // Font-stack catalogue used by both the wysiwyg editor (via CSS variables
 // on :root) and the user-settings preview. Keep these stacks in sync with
-// the auth FONT_CHOICES list (packages/auth/src/fonts.ts) — a row added
+// the auth FONT_CHOICES list (packages/auth/src/fonts.ts) - a row added
 // there needs a stack entry here.
 //
 // OpenDyslexic woff2 files are self-hosted under /public/fonts/ with an
@@ -38,9 +38,9 @@ export function resolveFontChoice(value: string | null | undefined, fallback: Fo
 // Cookie persistence so published-doc pages (which never hit /api/me) and the
 // pre-/api/me boot phase of authenticated pages render with the user's chosen
 // font instead of flashing the default. Same origin as the SPA, so a single
-// cookie with path=/ is enough — no Domain= needed.
+// cookie with path=/ is enough - no Domain= needed.
 //
-// Format: `r:<readingChoice>|e:<editingChoice>` — kept short and human-readable
+// Format: `r:<readingChoice>|e:<editingChoice>` - kept short and human-readable
 // so dev-tooling cookie inspectors stay legible. Unknown choices are ignored
 // and fall back to defaults at parse time.
 const COOKIE_NAME = "cd_fonts";

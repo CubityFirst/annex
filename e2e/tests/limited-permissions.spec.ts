@@ -146,7 +146,7 @@ test("owner invites the second account with the Limited role", async () => {
 
   await ownerPage.getByPlaceholder("user@example.com").fill(LIMITED.email);
 
-  // Default invite role is "Editor" — switch to "Limited". Scope the combobox
+  // Default invite role is "Editor" - switch to "Limited". Scope the combobox
   // to the invite form so we don't pick up the invite-link role select.
   const inviteForm = ownerPage.locator("form").filter({
     has: ownerPage.getByPlaceholder("user@example.com"),
@@ -199,7 +199,7 @@ test("owner creates a doc with content", async () => {
 test("by default the limited user does NOT see the doc in the file list", async () => {
   await limitedPage.goto(`/projects/${projectId}`);
   // Wait for the FileManager request to settle. The project page renders
-  // some chrome immediately, so we can't rely on a "loaded" sentinel — the
+  // some chrome immediately, so we can't rely on a "loaded" sentinel - the
   // assertion timeout is the wait.
   await expect(limitedPage.getByText(DOC_TITLE)).not.toBeVisible({ timeout: 5000 });
 });
@@ -213,10 +213,10 @@ test("owner grants the limited user VIEW access on the doc", async () => {
   const dialog = ownerPage.getByRole("dialog", { name: "Document Access" });
   await expect(dialog).toBeVisible({ timeout: 5000 });
 
-  // Sanity: no shares yet — the empty-state copy is visible.
+  // Sanity: no shares yet - the empty-state copy is visible.
   await expect(dialog.getByText("No users have been granted discrete access yet.")).toBeVisible();
 
-  // Default permission for an addable limited member is already "View" — just
+  // Default permission for an addable limited member is already "View" - just
   // click the per-row "Grant access" button.
   await dialog.getByTitle("Grant access").click();
 
@@ -232,7 +232,7 @@ test("owner grants the limited user VIEW access on the doc", async () => {
 
 // ── With view share: read-only access ────────────────────────────────────────
 
-test("with VIEW share — limited user sees the doc and the body content", async () => {
+test("with VIEW share - limited user sees the doc and the body content", async () => {
   await limitedPage.goto(`/projects/${projectId}`);
   await expect(limitedPage.getByText(DOC_TITLE)).toBeVisible({ timeout: 5000 });
 
@@ -244,7 +244,7 @@ test("with VIEW share — limited user sees the doc and the body content", async
   await expect(limitedPage.getByText(DOC_CONTENT_PHRASE).first()).toBeVisible({ timeout: 5000 });
 });
 
-test("with VIEW share — limited user does NOT see the Edit affordance", async () => {
+test("with VIEW share - limited user does NOT see the Edit affordance", async () => {
   // Edit pencil is gated on `isEditor`, which is false for myPermission==="view".
   await expect(limitedPage.getByTitle("Edit document")).not.toBeVisible();
 });
@@ -258,7 +258,7 @@ test("owner uplifts the share from VIEW to EDIT", async () => {
   const dialog = ownerPage.getByRole("dialog", { name: "Document Access" });
   await expect(dialog).toBeVisible({ timeout: 5000 });
 
-  // Single existing share row — its permission combobox is the only
+  // Single existing share row - its permission combobox is the only
   // combobox in the dialog at this point.
   await dialog.getByRole("combobox").click();
   await ownerPage.getByRole("option", { name: "Edit", exact: true }).click();
@@ -272,7 +272,7 @@ test("owner uplifts the share from VIEW to EDIT", async () => {
 
 // ── With edit share: editing works ───────────────────────────────────────────
 
-test("with EDIT share — limited user CAN see the Edit affordance and save changes", async () => {
+test("with EDIT share - limited user CAN see the Edit affordance and save changes", async () => {
   await limitedPage.goto(`/projects/${projectId}/docs/${docId}`);
 
   const editBtn = limitedPage.getByTitle("Edit document");
@@ -284,7 +284,7 @@ test("with EDIT share — limited user CAN see the Edit affordance and save chan
   await editor.click();
   // Move to end of doc so we append rather than overwrite.
   await limitedPage.keyboard.press("Control+End");
-  await limitedPage.keyboard.type(" — edited by limited user");
+  await limitedPage.keyboard.type(" - edited by limited user");
 
   await limitedPage.getByRole("button", { name: "Save" }).click();
   // Successful save returns the page to reading mode (pencil visible again).

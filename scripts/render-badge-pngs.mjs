@@ -56,7 +56,7 @@ const CAP_PAD = 1.5;
 
 function buildSvg({ paths, bbox, stroke, defs = "" }) {
   // Pad the path bbox with the cap radius, then expand the shorter axis
-  // so the viewBox is square — the icon stays centered in the 1:1 PNG
+  // so the viewBox is square - the icon stays centered in the 1:1 PNG
   // canvas and keeps its natural proportions.
   const padded = {
     x: bbox.x - CAP_PAD,

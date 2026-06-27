@@ -6,7 +6,7 @@ import type { Env } from "../index";
 // A key is a Bearer credential, but it is DELIBERATELY never routed through the
 // shared JWT authenticate(). authenticateApiKey() below is the only acceptor,
 // and it is wired in exclusively for the /v1 surface (see routes/v1.ts). A key
-// sent to any other (JWT-only) route fails JWT parsing and yields 401 — it can
+// sent to any other (JWT-only) route fails JWT parsing and yields 401 - it can
 // never reach /me, /projects, /docs, etc., so its site/scope ceiling cannot be
 // bypassed by aiming it at a broader handler.
 
@@ -19,7 +19,7 @@ export const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"]
 
 export interface ApiKeyAuth {
   keyId: string;
-  userId: string;   // the owning user — all live permission checks run as them
+  userId: string;   // the owning user - all live permission checks run as them
   projectId: string; // the single site this key is bound to
   scope: ApiKeyScope;
   canInvite: boolean;
@@ -68,7 +68,7 @@ export function scopeAllowsWrite(scope: ApiKeyScope): boolean {
 // Pure authorization rule for inviting/assigning a role via an API key.
 // Hardens the members.ts admin gate for the programmatic surface: the caller
 // must be admin+, the target role must be assignable (never owner), and the
-// caller can never assign a role above their own — so a leaked key cannot be
+// caller can never assign a role above their own - so a leaked key cannot be
 // used to escalate privilege beyond what its owner already holds.
 export function apiKeyInviteRoleAllowed(callerRole: Role, targetRole: Role): boolean {
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return false;

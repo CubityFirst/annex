@@ -11,7 +11,7 @@ import { ROLE_RANK, type Role } from "../lib";
 //
 // Org roles never include 'limited' (a per-doc-share concept with no org
 // meaning), so a direct-'limited' member who is ALSO an org viewer+ is correctly
-// elevated out of the per-doc-share gate — exactly the intended trickle-down.
+// elevated out of the per-doc-share gate - exactly the intended trickle-down.
 //
 // Resolved at read time (NOT materialized into project_members rows): one
 // source of truth, no fan-out writes on membership/attach changes, and
@@ -23,7 +23,7 @@ import { ROLE_RANK, type Role } from "../lib";
 // target-row escalation guards (members/docShares), attribution joins
 // (author_id/uploaded_by), the GET /projects "Your Sites" list, the site
 // members-list CONTENTS, and attach's site-owner check (which must be direct,
-// not effective — see routes/organizations.ts).
+// not effective - see routes/organizations.ts).
 
 export interface EffectiveAccess {
   /** Higher-ranked of the direct vs. org role. */
@@ -34,12 +34,12 @@ export interface EffectiveAccess {
   projectRole: Role | null;
   /** Raw organization_members role (null if the caller has no org row). */
   orgRole: Role | null;
-  /** Which membership won (ties resolve to org — identical effect). */
+  /** Which membership won (ties resolve to org - identical effect). */
   source: "project" | "org";
 }
 
 // ONE D1 read: projects is the anchor (PK lookup), both memberships are LEFT
-// JOINs on indexed columns. Same cost class as the old single-table query —
+// JOINs on indexed columns. Same cost class as the old single-table query -
 // don't split this into two reads.
 export async function resolveAccess(
   db: D1Database,
@@ -78,7 +78,7 @@ export async function resolveAccess(
   };
 }
 
-// Role-only convenience — the drop-in replacement for every former
+// Role-only convenience - the drop-in replacement for every former
 // getCallerRole(db, projectId, userId): Promise<Role | null>.
 export async function resolveRole(
   db: D1Database,

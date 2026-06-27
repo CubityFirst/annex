@@ -6,7 +6,7 @@ import { upsertFtsRow, deleteFtsRow } from "./fts";
 // Shared document write operations.
 //
 // These encapsulate the full side-effect chain for creating, updating and
-// deleting a doc — R2 body + version objects, the docs row, asset_revisions,
+// deleting a doc - R2 body + version objects, the docs row, asset_revisions,
 // FTS index, doc-link graph index, and the cached AI summary. Both the
 // interactive JWT handler (routes/docs.ts) and the public API-key handler
 // (routes/v1.ts) call these so the two surfaces can never drift apart (e.g.
@@ -173,7 +173,7 @@ export async function applyDocUpdate(
     await upsertFtsRow(env.DB, doc.id, doc.project_id, patch.title ?? doc.title, ftsContent);
   }
 
-  // Drop any cached AI summary when the body changed — its version is the doc's
+  // Drop any cached AI summary when the body changed - its version is the doc's
   // updated_at at cache time, and that just advanced.
   if (savedContent !== undefined) {
     await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(doc.id).run();
@@ -214,6 +214,6 @@ export async function deleteDoc(env: Env, docId: string, projectId: string): Pro
     try {
       const roomId = env.DOC_COLLAB.idFromName(`${projectId}:${docId}`);
       await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/", { method: "DELETE" }));
-    } catch { /* non-fatal — room may never have been created */ }
+    } catch { /* non-fatal - room may never have been created */ }
   }
 }

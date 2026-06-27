@@ -57,7 +57,7 @@ export async function handleWebauthnRegisterFinish(request: Request, env: Env): 
   // Transports the authenticator reported (e.g. ["internal","hybrid"] for a
   // password-manager / platform passkey). Echoed back in allowCredentials at
   // auth time so the browser surfaces the right authenticator UI. May be absent
-  // on some authenticators — store NULL and we fall back to a sensible default.
+  // on some authenticators - store NULL and we fall back to a sensible default.
   const transports = (body.response as { response?: { transports?: string[] } }).response?.transports;
   const transportsJson =
     Array.isArray(transports) && transports.length > 0 ? JSON.stringify(transports) : null;

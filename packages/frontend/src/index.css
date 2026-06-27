@@ -5,7 +5,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* OpenDyslexic — self-hosted under /public/fonts. SIL Open Font License.
+/* OpenDyslexic - self-hosted under /public/fonts. SIL Open Font License.
    font-display: swap so the page doesn't block on the font; the fallback
    sans stack in FONT_STACKS.dyslexic kicks in until the woff2 lands. */
 @font-face {
@@ -178,7 +178,7 @@ body {
 }
 
 /* Reading-mode wrapper used by DocPage and PublicDocPage on the <article>
-   that contains the rendered doc — title, meta, AI summary, wysiwyg. The
+   that contains the rendered doc - title, meta, AI summary, wysiwyg. The
    wysiwyg's own .cm-wysiwyg--reading rule is more specific so it still
    wins inside the editor; this rule catches the H1 title and any non-editor
    prose that sits in the article. */
@@ -186,7 +186,7 @@ body {
   font-family: var(--reading-font);
 }
 
-/* PDF print mirror — react-markdown render of the doc body used only for
+/* PDF print mirror - react-markdown render of the doc body used only for
    printing. @tailwindcss/typography sets --tw-prose-hr / --tw-prose-*-borders
    to near-white via `prose-neutral`, and never adds column separators on
    table cells at all. We force solid borders with !important so they win
@@ -259,7 +259,7 @@ body {
   content: none;
 }
 
-/* Sonner's stylesheet sets font-family on :where([data-sonner-toaster]) — a
+/* Sonner's stylesheet sets font-family on :where([data-sonner-toaster]) - a
    zero-specificity selector, so it doesn't lose to body inheritance, it just
    overrides nothing in particular and ships its own stack. Bump specificity
    by dropping :where() and we win, picking up --ui-font like the rest of the
@@ -270,7 +270,7 @@ body {
 
 /* Print mirror: a static react-markdown render of the doc body that exists
    only for printing. CodeMirror's reading view virtualizes off-screen lines,
-   so we can't paginate the live editor — we paginate this mirror instead.
+   so we can't paginate the live editor - we paginate this mirror instead.
    Hidden in the React tree on screen; pdf-export.ts clones the article into
    a standalone print container under <body> and force-shows the mirror in
    the clone. */
@@ -301,7 +301,7 @@ body {
   /* Hide everything at the body level except our print container. This
      covers #app AND any Radix Portal overlays (dialog backdrops, popovers,
      tooltips) that may still be in the DOM during their exit animation
-     when window.print() is called — those overlays are rendered as
+     when window.print() is called - those overlays are rendered as
      siblings of #app, not inside it, and a lingering black dialog overlay
      would otherwise paint on every printed page. */
   body.pdf-printing > *:not(#pdf-print-root) {
@@ -326,7 +326,7 @@ body {
   body.pdf-printing [data-callout] {
     break-inside: avoid;
   }
-  /* On-screen, fenced code blocks scroll horizontally — fine for a viewport
+  /* On-screen, fenced code blocks scroll horizontally - fine for a viewport
      but in print the off-screen portion is silently clipped at the page
      margin. Force long lines to wrap so they're visible in the PDF even if
      it breaks code aesthetics. Applies to both Shiki output (.shiki <pre>)
@@ -344,7 +344,7 @@ body {
 /* Radix ScrollArea wraps its viewport's content in `<div style="display:table">`
    so horizontal-scroll cases work, but for the public-doc reader we only want
    vertical scrolling and that wrapper collapses to ~32px regardless of how
-   tall the WysiwygEditor inside is — which breaks scroll-to-heading by
+   tall the WysiwygEditor inside is - which breaks scroll-to-heading by
    making the viewport think there's nothing to scroll. Force a block layout
    on the public-doc scroller only.
 

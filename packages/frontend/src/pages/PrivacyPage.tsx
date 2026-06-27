@@ -36,7 +36,7 @@ export function PrivacyPage() {
               </p>
               <p>
                 If you subscribe to a paid plan (such as Annex Ink), we store identifiers that link
-                your account to our payment processor — specifically a Stripe customer ID, a Stripe
+                your account to our payment processor - specifically a Stripe customer ID, a Stripe
                 subscription ID, which plan you're on and its current status, the end of your current
                 billing period, any pending cancellation date, and the date your supporter status
                 began. If an administrator grants you complimentary supporter status, we also store
@@ -110,7 +110,7 @@ export function PrivacyPage() {
               </p>
               <p>
                 Payments are processed by Stripe, Inc. When you start a checkout, we send Stripe a
-                reference to your account — and, on your first checkout, your email address — so the
+                reference to your account - and, on your first checkout, your email address - so the
                 resulting subscription can be tied back to you. Stripe collects payment details (card number, expiry, billing
                 address) directly. Stripe's handling of that data is governed by their own privacy
                 policy, available at{" "}
@@ -124,7 +124,7 @@ export function PrivacyPage() {
                 AI features (such as document summarisation) are <strong>off by default</strong>{" "}
                 for every project. They only operate after a project admin explicitly turns them
                 on in project settings. By default, even with the feature enabled, AI actions are
-                manual — summaries are only generated when a user clicks the "summarise" button on
+                manual - summaries are only generated when a user clicks the "summarise" button on
                 a document. A project admin can additionally opt the project in to automatic
                 summarisation; in that mode content is sent to the AI provider when a document is
                 viewed. Automatic summarisation is a separate, deliberate setting and is not enabled

@@ -85,7 +85,7 @@ async function createKey(
   return { status: res.status, secret: body.data?.secret, id: body.data?.id };
 }
 
-describe.skipIf(!apiServerUp)("API keys — management endpoints", () => {
+describe.skipIf(!apiServerUp)("API keys - management endpoints", () => {
   let ownerToken = "";
   let outsiderToken = "";
   let projectId = "";
@@ -147,7 +147,7 @@ describe.skipIf(!apiServerUp)("API keys — management endpoints", () => {
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — /v1 auth boundary (no leaks)", () => {
+describe.skipIf(!apiServerUp)("API keys - /v1 auth boundary (no leaks)", () => {
   let ownerToken = "";
   let projectId = "";
   let readSecret = "";
@@ -171,12 +171,12 @@ describe.skipIf(!apiServerUp)("API keys — /v1 auth boundary (no leaks)", () =>
     expect((await fetch(`${API_URL}/v1/docs`, { headers: key("totally-bogus") })).status).toBe(401);
   });
 
-  it("rejects a valid JWT on /v1 — JWTs are not accepted there (401)", async () => {
+  it("rejects a valid JWT on /v1 - JWTs are not accepted there (401)", async () => {
     const res = await fetch(`${API_URL}/v1/docs`, { headers: jwt(ownerToken) });
     expect(res.status).toBe(401);
   });
 
-  it("rejects an API key on a JWT-only route — keys can't escape /v1 (401)", async () => {
+  it("rejects an API key on a JWT-only route - keys can't escape /v1 (401)", async () => {
     // The critical isolation test: a scoped key aimed at the broad /projects
     // route must NOT be honoured (which would bypass its site/scope ceiling).
     expect((await fetch(`${API_URL}/projects`, { headers: key(readSecret) })).status).toBe(401);
@@ -185,7 +185,7 @@ describe.skipIf(!apiServerUp)("API keys — /v1 auth boundary (no leaks)", () =>
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — scope enforcement (read vs read-write)", () => {
+describe.skipIf(!apiServerUp)("API keys - scope enforcement (read vs read-write)", () => {
   let ownerToken = "";
   let projectId = "";
   let docId = "";
@@ -226,7 +226,7 @@ describe.skipIf(!apiServerUp)("API keys — scope enforcement (read vs read-writ
     expect(del.status).toBe(403);
   });
 
-  it("read key cannot touch members (403 — no canInvite)", async () => {
+  it("read key cannot touch members (403 - no canInvite)", async () => {
     expect((await fetch(`${API_URL}/v1/members`, { headers: key(readSecret) })).status).toBe(403);
     const post = await fetch(`${API_URL}/v1/members`, { method: "POST", headers: key(readSecret), body: JSON.stringify({ email: "x@y.z", role: "viewer" }) });
     expect(post.status).toBe(403);
@@ -256,7 +256,7 @@ describe.skipIf(!apiServerUp)("API keys — scope enforcement (read vs read-writ
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — cross-site isolation", () => {
+describe.skipIf(!apiServerUp)("API keys - cross-site isolation", () => {
   let aToken = "";
   let bToken = "";
   let projectA = "";
@@ -288,7 +288,7 @@ describe.skipIf(!apiServerUp)("API keys — cross-site isolation", () => {
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — key is only a ceiling on the owner's live role", () => {
+describe.skipIf(!apiServerUp)("API keys - key is only a ceiling on the owner's live role", () => {
   it("a read-write key owned by a viewer cannot write, and dies when the owner is removed", async () => {
     const owner = await registerAndLogin("ceil-owner");
     const viewer = await registerAndLogin("ceil-viewer");
@@ -303,13 +303,13 @@ describe.skipIf(!apiServerUp)("API keys — key is only a ceiling on the owner's
     const accept = await fetch(`${API_URL}/pending-invites/${inviteId}/accept`, { method: "POST", headers: jwt(viewer.token) });
     expect(accept.status).toBe(200);
 
-    // A non-admin cannot mint an invite-capable key at all — the management
+    // A non-admin cannot mint an invite-capable key at all - the management
     // endpoint rejects canInvite when the creator's role is below admin.
     const inviteAttempt = await createKey(viewer.token, projectId, { scope: "readwrite", canInvite: true });
     expect(inviteAttempt.status).toBe(403);
 
     // The viewer can still mint a read-write key (the scope is a ceiling, not a
-    // grant — it can't actually write while their live role is below editor).
+    // grant - it can't actually write while their live role is below editor).
     const rw = await createKey(viewer.token, projectId, { scope: "readwrite", canInvite: false });
     expect(rw.status).toBe(201);
 
@@ -327,7 +327,7 @@ describe.skipIf(!apiServerUp)("API keys — key is only a ceiling on the owner's
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — invites via /v1/members", () => {
+describe.skipIf(!apiServerUp)("API keys - invites via /v1/members", () => {
   let ownerToken = "";
   let projectId = "";
   let inviteeEmail = "";
@@ -376,7 +376,7 @@ describe.skipIf(!apiServerUp)("API keys — invites via /v1/members", () => {
   });
 });
 
-describe.skipIf(!apiServerUp)("API keys — rate limiting", () => {
+describe.skipIf(!apiServerUp)("API keys - rate limiting", () => {
   it("a burst on /v1 only ever yields 200 or 429 (never 5xx)", async () => {
     const owner = await registerAndLogin("rl-owner");
     const projectId = (await (await fetch(`${API_URL}/projects`, { method: "POST", headers: jwt(owner.token), body: JSON.stringify({ name: "RL Project" }) })).json<{ data: { id: string } }>()).data.id;

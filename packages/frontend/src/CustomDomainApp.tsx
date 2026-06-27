@@ -7,7 +7,7 @@ import { devForcedSite } from "@/lib/siteUrl";
 import { Toaster } from "@/components/ui/sonner";
 
 // The app rendered when a visitor lands on a mapped custom domain (Cloudflare
-// for SaaS — see the API worker's routes/customDomains.ts). It resolves the
+// for SaaS - see the API worker's routes/customDomains.ts). It resolves the
 // current host → project once, then serves ONLY that site's public pages at
 // clean root URLs. No auth/app routes exist here; the custom domain is a
 // read-only front door to one published site.

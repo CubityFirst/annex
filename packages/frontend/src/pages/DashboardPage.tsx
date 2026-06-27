@@ -48,7 +48,7 @@ export function DashboardPage() {
   async function handleToggleFavourite(e: React.MouseEvent, projectId: string) {
     e.stopPropagation();
     const token = getToken();
-    // Favouriting unhides (the two are mutually exclusive — mirrors the server).
+    // Favouriting unhides (the two are mutually exclusive - mirrors the server).
     setProjects(prev => sortByFavourite(prev.map(p => p.id === projectId
       ? { ...p, is_favourite: p.is_favourite ? 0 : 1, is_hidden: p.is_favourite ? p.is_hidden : 0 }
       : p)));
@@ -63,7 +63,7 @@ export function DashboardPage() {
   async function handleToggleHidden(e: React.MouseEvent, projectId: string) {
     e.stopPropagation();
     const token = getToken();
-    // Hiding clears the favourite flag (mutually exclusive — mirrors the server).
+    // Hiding clears the favourite flag (mutually exclusive - mirrors the server).
     setProjects(prev => sortByFavourite(prev.map(p => p.id === projectId
       ? { ...p, is_hidden: p.is_hidden ? 0 : 1, is_favourite: p.is_hidden ? p.is_favourite : 0 }
       : p)));

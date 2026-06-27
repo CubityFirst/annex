@@ -259,7 +259,7 @@ export function SiteSettingsPage() {
   const [savingSlug, setSavingSlug] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
 
-  // ── Custom domain (Cloudflare for SaaS) — gated by the same CUSTOM_LINK flag ──
+  // ── Custom domain (Cloudflare for SaaS) - gated by the same CUSTOM_LINK flag ──
   const [domain, setDomain] = useState<CustomDomain | null>(null);
   const [domainConfigured, setDomainConfigured] = useState(true);
   const [domainCnameTarget, setDomainCnameTarget] = useState<string | null>(null);
@@ -915,7 +915,7 @@ export function SiteSettingsPage() {
 
   // Wide-slot upload: validate then upload the raw file.
   // Square-slot upload arrives here pre-cropped from AvatarCropDialog as a
-  // 512×512 WebP blob — static for stills, animated for animated GIF input
+  // 512×512 WebP blob - static for stills, animated for animated GIF input
   // (the crop dialog re-encodes every frame and muxes them).
   async function uploadLogoBlob(variant: LogoVariant, file: File | Blob, filename: string) {
     if (!projectId) return;
@@ -1317,7 +1317,7 @@ export function SiteSettingsPage() {
         )}
       </div>
 
-      {/* Publishing section — admins and owners only */}
+      {/* Publishing section - admins and owners only */}
       {isAdminOrOwner && (
         <>
           <Separator className="my-10" />
@@ -1385,8 +1385,8 @@ export function SiteSettingsPage() {
                     : `${unpublishedDocCount} documents are marked unpublished`}
                 </AlertTitle>
                 <AlertDescription>
-                  This site is published, so every document — including{" "}
-                  {unpublishedDocCount === 1 ? "this one" : "these"} — is publicly
+                  This site is published, so every document - including{" "}
+                  {unpublishedDocCount === 1 ? "this one" : "these"} - is publicly
                   visible. A document's individual publish setting does not hide it
                   while the whole site is published. Unpublish the site if any of
                   these should stay private.
@@ -1397,7 +1397,7 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* Branding section — admins and owners only */}
+      {/* Branding section - admins and owners only */}
       {isAdminOrOwner && (
         <>
           <Separator className="my-10" />
@@ -1408,7 +1408,7 @@ export function SiteSettingsPage() {
                 Customize how your published site looks and is shared.
               </p>
             </div>
-            {/* Square icon — used in the projects sidebar, favourites, profile cards.
+            {/* Square icon - used in the projects sidebar, favourites, profile cards.
                 Cropped client-side to 512×512 via AvatarCropDialog. */}
             <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
@@ -1466,7 +1466,7 @@ export function SiteSettingsPage() {
               </Alert>
             )}
 
-            {/* Wide wordmark — used at the top-left of the published-site
+            {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
             <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
               <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
@@ -1535,7 +1535,7 @@ export function SiteSettingsPage() {
                 }}
               />
             )}
-            {/* Custom Link & Domain — both gated by the CUSTOM_LINK flag */}
+            {/* Custom Link & Domain - both gated by the CUSTOM_LINK flag */}
             {!!(project.features & 1) && (
               <>
               <div id="custom-link" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
@@ -1592,7 +1592,7 @@ export function SiteSettingsPage() {
                 </form>
               </div>
 
-              {/* Custom Domain — map the site to the owner's own domain (Cloudflare for SaaS) */}
+              {/* Custom Domain - map the site to the owner's own domain (Cloudflare for SaaS) */}
               <div id="custom-domain" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
                 <div>
                   <p className="text-sm font-medium flex items-center gap-2">
@@ -1663,7 +1663,7 @@ export function SiteSettingsPage() {
                     {domain.status !== "active" && domain.dnsRecords.length > 0 && (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-muted-foreground">
-                          Add these records at your DNS provider. We re-check automatically — click Refresh once they've propagated (this can take a few minutes).
+                          Add these records at your DNS provider. We re-check automatically - click Refresh once they've propagated (this can take a few minutes).
                         </p>
                         <div className="overflow-x-auto rounded-md border border-border">
                           <table className="w-full text-xs">
@@ -1743,7 +1743,7 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* Features section — admins and owners only */}
+      {/* Features section - admins and owners only */}
       {isAdminOrOwner && (
         <>
           <Separator className="my-10" />
@@ -1969,7 +1969,7 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* Members section — admins and owners only */}
+      {/* Members section - admins and owners only */}
       {isAdminOrOwner && (
         <>
           <Separator className="my-10" />
@@ -2209,7 +2209,7 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* API keys — any member; scope is a ceiling enforced live on every request */}
+      {/* API keys - any member; scope is a ceiling enforced live on every request */}
       {myRole !== null && (
         <>
           <Separator className="my-10" />
@@ -2220,7 +2220,7 @@ export function SiteSettingsPage() {
                 <h3 className="text-base font-semibold">API Keys</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Scoped keys for the <span className="font-medium text-foreground">/v1</span> REST API. Each key is
-                  bound to this site and can never do more than your own role allows. Keep them secret — treat a key
+                  bound to this site and can never do more than your own role allows. Keep them secret - treat a key
                   like a password.
                 </p>
               </div>
@@ -2233,7 +2233,7 @@ export function SiteSettingsPage() {
                     <DialogHeader>
                       <DialogTitle>Create API key</DialogTitle>
                       <DialogDescription>
-                        The secret is shown once, right after creation. Store it somewhere safe — it can't be retrieved again.
+                        The secret is shown once, right after creation. Store it somewhere safe - it can't be retrieved again.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col gap-4 py-4">

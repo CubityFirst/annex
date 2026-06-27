@@ -43,7 +43,7 @@ interface AvatarCropDialogProps {
   onApply: (blob: Blob) => Promise<void>;
   onClose: () => void;
   /** Visual shape of the crop overlay. The output is always a square 512×512
-   * blob — `shape` only changes the mask cutout + border the user sees while
+   * blob - `shape` only changes the mask cutout + border the user sees while
    * cropping. Default "circle" for user avatars; pass "square" for project
    * icons where the rendered image is shown un-clipped. */
   shape?: "circle" | "square";
@@ -128,7 +128,7 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
 
           // Composite the frame patch via a temp canvas so alpha=0 pixels
           // don't overwrite the cumulative state (putImageData ignores
-          // existing pixels — drawImage respects them).
+          // existing pixels - drawImage respects them).
           const patchData = new ImageData(new Uint8ClampedArray(frame.patch), frame.dims.width, frame.dims.height);
           const patchCanvas = document.createElement("canvas");
           patchCanvas.width = frame.dims.width;
@@ -281,7 +281,7 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
     const encoded: { webp: Uint8Array; delayMs: number }[] = [];
     for (let i = 0; i < frames.length; i++) {
       const f = frames[i];
-      // Match the static path's implicit black background — the preview
+      // Match the static path's implicit black background - the preview
       // shows the same and the avatar gets clipped to a circle anyway.
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = "black";
@@ -296,13 +296,13 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
       );
       encoded.push({ webp: new Uint8Array(await blob.arrayBuffer()), delayMs: f.delayMs });
       setEncodeProgress({ done: i + 1, total: frames.length });
-      // Yield so the UI can repaint between frames — the per-frame WebP
+      // Yield so the UI can repaint between frames - the per-frame WebP
       // encode is the slow step; without a yield a 100-frame avatar would
       // freeze the dialog for several seconds with no feedback.
       await new Promise<void>(r => setTimeout(r, 0));
     }
     const muxed = muxAnimatedWebP(encoded, OUTPUT_SIZE, OUTPUT_SIZE);
-    // Copy into a fresh ArrayBuffer — TS's lib.dom narrows BlobPart to an
+    // Copy into a fresh ArrayBuffer - TS's lib.dom narrows BlobPart to an
     // ArrayBuffer-backed view, not a generic ArrayBufferLike.
     const buf = new ArrayBuffer(muxed.byteLength);
     new Uint8Array(buf).set(muxed);

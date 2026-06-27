@@ -46,7 +46,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     .bind(newHash, session.userId)
     .run();
 
-  // Kill every other device's session — anyone with a stolen JWT loses
+  // Kill every other device's session - anyone with a stolen JWT loses
   // access on their next request. Current session stays alive so the user
   // doesn't get bounced out of the page they just changed the password on.
   await revokeAllSessions(env, session.userId, session.sid);

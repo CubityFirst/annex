@@ -5,7 +5,7 @@
 -- frontend derives the full palette from it.
 --
 -- This is gated to global site admins (see routes/update-theme.ts). Same
--- caveat as 0020/0021 — read by loadCurrentSession, so a schema change here
+-- caveat as 0020/0021 - read by loadCurrentSession, so a schema change here
 -- requires redeploying auth + api + admin.
 ALTER TABLE user_preferences ADD COLUMN theme_mode TEXT;
 ALTER TABLE user_preferences ADD COLUMN theme_custom_color TEXT;

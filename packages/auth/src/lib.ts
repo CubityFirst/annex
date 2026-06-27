@@ -61,8 +61,8 @@ export function clientIp(request: Request): string | null {
 }
 
 // Canonical email normalization for every auth entry point (register, login,
-// resend-verification, webauthn). Trim surrounding whitespace — addresses can't
-// contain spaces, so a stray leading/trailing space is always user error — then
+// resend-verification, webauthn). Trim surrounding whitespace - addresses can't
+// contain spaces, so a stray leading/trailing space is always user error - then
 // lowercase so case differences map to the same account. Must be applied
 // identically on the write (register) and read (login/lookup) paths or a user
 // could register one way and fail to authenticate the other.

@@ -5,7 +5,7 @@ import { getToken } from "@/lib/auth";
 
 interface Props {
   projectId: string;
-  /** ISO timestamp from `projects.logo_square_updated_at`. Null/undefined means no square logo uploaded — render the BookOpen fallback. */
+  /** ISO timestamp from `projects.logo_square_updated_at`. Null/undefined means no square logo uploaded - render the BookOpen fallback. */
   logoSquareUpdatedAt: string | null | undefined;
   /** Tailwind size classes for both the `<img>` and the BookOpen fallback (e.g. "h-4 w-4"). */
   className?: string;

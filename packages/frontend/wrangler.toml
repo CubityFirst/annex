@@ -10,7 +10,7 @@ binding = "ASSETS"
 binding = "API"
 service = "annex-api"
 
-# Service binding to the auth worker — used only for Stripe webhook
+# Service binding to the auth worker - used only for Stripe webhook
 # forwarding (/stripe/webhook). The auth worker is otherwise reached
 # via the api worker's own AUTH binding for authenticated calls.
 [[services]]
@@ -24,13 +24,13 @@ custom_domain = true
 # Cloudflare-for-SaaS catch-all, on the DEDICATED `yourannex.com` zone. Customer
 # custom domains (their.domain -> publish.yourannex.com) arrive as custom hostnames
 # on that zone; this `*/*` route hands them to annex-frontend in host-mode.
-# Required — without it, custom hostnames hit the originless fallback origin and
+# Required - without it, custom hostnames hit the originless fallback origin and
 # return 522. The zone is dedicated to SaaS routing (nothing else lives on it),
 # so `*/*` is safe here: it can't shadow our own infra the way it did on
 # cubityfir.st (where it once hijacked i.cubityfir.st). The app itself still
 # serves on docs.cubityfir.st via the exact custom_domain route above.
 # NOTE: the OLD `*/*` route on the cubityfir.st zone must be deleted in the
-# dashboard — wrangler only manages the routes in this file and won't remove it.
+# dashboard - wrangler only manages the routes in this file and won't remove it.
 # See memories/Custom-Domains.md.
 [[routes]]
 pattern = "*/*"

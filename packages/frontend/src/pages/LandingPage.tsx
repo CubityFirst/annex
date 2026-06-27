@@ -96,7 +96,7 @@ const TABS: Record<TabKey, {
   },
   "dnd-campaign.md": {
     h: "The Curse of Thornwall Keep",
-    p: "Session 4 — the party arrives at Ironhaven and discovers the cult's true motives...",
+    p: "Session 4 - the party arrives at Ironhaven and discovers the cult's true motives...",
     code: [
       { c: "#555", t: "Location: Ironhaven, Dusk Quarter" },
       { c: "#444", t: "Party level: 6  ·  Players: 4" },
@@ -167,7 +167,7 @@ const FEATURES: {
   soon?: boolean;
   link?: string;
 }[] = [
-  { Icon: History, title: "Version History", desc: "Every edit is recorded. Roll back, branch off, compare — nothing is ever lost." },
+  { Icon: History, title: "Version History", desc: "Every edit is recorded. Roll back, branch off, compare - nothing is ever lost." },
   { Icon: Layers, title: "Flexible Structure", desc: "Nested pages, tags, cross-links. Build any hierarchy that fits your content." },
   {
     Icon: Paintbrush,

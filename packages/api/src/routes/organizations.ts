@@ -6,14 +6,14 @@ import { loadMemberPlans } from "./members";
 //
 // An org is a collection of sites (projects) with trickle-down roles: an org
 // member's role applies to every site in the org (resolved at read time in
-// lib/access.ts — NOT materialized here). This module owns org CRUD, org
+// lib/access.ts - NOT materialized here). This module owns org CRUD, org
 // membership, the list of sites in an org, and attach/detach. Org roles are
 // viewer/editor/admin/owner (never 'limited').
 //
 // IMPORTANT: org-level gates use getOrgRole (the org's own membership table).
 // Site-level effective access still goes through resolveAccess elsewhere. The
 // ONE place this module touches project_members directly is attach's site-owner
-// check, which MUST be the caller's DIRECT site role — not their effective role
+// check, which MUST be the caller's DIRECT site role - not their effective role
 // (an effective-owner via some OTHER org must not be able to move the site).
 
 // Org roles reuse the shared ROLE_RANK ladder (viewer/editor/admin/owner).
@@ -24,7 +24,7 @@ interface OrgMemberRow {
   role: Role; invited_by: string; created_at: string; accepted: number;
 }
 
-// Caller's accepted role in the org (org membership only — no trickle-down).
+// Caller's accepted role in the org (org membership only - no trickle-down).
 export async function getOrgRole(db: D1Database, orgId: string, userId: string): Promise<Role | null> {
   const row = await db.prepare(
     "SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ? AND accepted = 1",
@@ -62,7 +62,7 @@ export async function handleOrganizations(
 
   // ── /organizations ────────────────────────────────────────────────────────
   if (!orgId) {
-    // GET /organizations — orgs the caller is an accepted member of.
+    // GET /organizations - orgs the caller is an accepted member of.
     if (request.method === "GET") {
       const rows = await env.DB.prepare(
         `SELECT o.id, o.name, o.owner_id, o.created_at, om.role,
@@ -76,7 +76,7 @@ export async function handleOrganizations(
       return okResponse(rows.results);
     }
 
-    // POST /organizations — create an org + the creator's owner membership.
+    // POST /organizations - create an org + the creator's owner membership.
     if (request.method === "POST") {
       const body = await request.json<{ name?: string }>().catch(() => ({} as { name?: string }));
       if (!body.name || !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
@@ -103,7 +103,7 @@ export async function handleOrganizations(
     if (subId && action === "attach") {
       return handleAttach(request, env, user, orgId, subId);
     }
-    // GET /organizations/:id/projects — sites in the org (any org member).
+    // GET /organizations/:id/projects - sites in the org (any org member).
     if (!subId && request.method === "GET") {
       const orgRole = await getOrgRole(env.DB, orgId, user.userId);
       if (orgRole === null) return errorResponse(Errors.NOT_FOUND);
@@ -130,7 +130,7 @@ export async function handleOrganizations(
   if (!sub) {
     const callerRole = await getOrgRole(env.DB, orgId, user.userId);
 
-    // GET /organizations/:id — detail (any member). 404 hides existence.
+    // GET /organizations/:id - detail (any member). 404 hides existence.
     if (request.method === "GET") {
       if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
       const org = await env.DB.prepare("SELECT id, name, owner_id, created_at FROM organizations WHERE id = ?")
@@ -139,7 +139,7 @@ export async function handleOrganizations(
       return okResponse({ ...org, role: callerRole });
     }
 
-    // PATCH /organizations/:id — rename (admin+).
+    // PATCH /organizations/:id - rename (admin+).
     if (request.method === "PATCH") {
       if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
       if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
@@ -151,7 +151,7 @@ export async function handleOrganizations(
       return okResponse(updated);
     }
 
-    // DELETE /organizations/:id — owner only. CASCADE wipes org_members; the
+    // DELETE /organizations/:id - owner only. CASCADE wipes org_members; the
     // projects.organization_id FK is ON DELETE SET NULL, so member sites are
     // DETACHED (they survive), not deleted.
     if (request.method === "DELETE") {
@@ -167,8 +167,8 @@ export async function handleOrganizations(
   return errorResponse(Errors.NOT_FOUND);
 }
 
-// POST   /organizations/:id/projects/:projectId/attach — attach an existing site
-// DELETE /organizations/:id/projects/:projectId/attach — detach it
+// POST   /organizations/:id/projects/:projectId/attach - attach an existing site
+// DELETE /organizations/:id/projects/:projectId/attach - detach it
 async function handleAttach(
   request: Request, env: Env, user: Session, orgId: string, projectId: string,
 ): Promise<Response> {
@@ -186,7 +186,7 @@ async function handleAttach(
   // Hide the org from total strangers (neither an org member nor the site's
   // owner). A direct site owner who is NOT an org member is still allowed
   // through so they can DETACH their own site (e.g. after being removed from
-  // the org) — the per-method gates below enforce who may do what.
+  // the org) - the per-method gates below enforce who may do what.
   if (orgRole === null && !isSiteOwner) return errorResponse(Errors.NOT_FOUND);
 
   if (request.method === "POST") {
@@ -212,7 +212,7 @@ async function handleAttach(
   return errorResponse(Errors.NOT_FOUND);
 }
 
-// /organizations/:id/members[/:userId] — mirrors routes/members.ts, including
+// /organizations/:id/members[/:userId] - mirrors routes/members.ts, including
 // the privilege-escalation guards, against organization_members.
 async function handleOrgMembers(
   request: Request, env: Env, user: Session, orgId: string, targetUserId: string | null,
@@ -220,7 +220,7 @@ async function handleOrgMembers(
   const callerRole = await getOrgRole(env.DB, orgId, user.userId);
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
 
-  // GET /organizations/:id/members — admin+ can list.
+  // GET /organizations/:id/members - admin+ can list.
   if (!targetUserId && request.method === "GET") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
     const rows = await env.DB.prepare(
@@ -238,7 +238,7 @@ async function handleOrgMembers(
     }));
   }
 
-  // POST /organizations/:id/members — admin+ can invite by email.
+  // POST /organizations/:id/members - admin+ can invite by email.
   if (!targetUserId && request.method === "POST") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
     const body = await request.json<{ email?: string; role?: Role }>().catch(() => ({} as { email?: string; role?: Role }));
@@ -277,7 +277,7 @@ async function handleOrgMembers(
     return okResponse({ id, organizationId: orgId, userId: inviteeId, email: inviteeEmail, name: inviteeName, role: body.role, accepted: false, invitedBy: user.userId, createdAt: now }, 201);
   }
 
-  // PATCH /organizations/:id/members/:userId — admin+ can change roles.
+  // PATCH /organizations/:id/members/:userId - admin+ can change roles.
   if (targetUserId && request.method === "PATCH") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
     const body = await request.json<{ role?: Role }>().catch(() => ({} as { role?: Role }));
@@ -303,7 +303,7 @@ async function handleOrgMembers(
     });
   }
 
-  // DELETE /organizations/:id/members/:userId — admin+ removes; any non-owner self-leaves.
+  // DELETE /organizations/:id/members/:userId - admin+ removes; any non-owner self-leaves.
   if (targetUserId && request.method === "DELETE") {
     const isSelf = targetUserId === user.userId;
     if (isSelf) {

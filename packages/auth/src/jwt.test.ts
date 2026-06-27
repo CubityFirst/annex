@@ -82,7 +82,7 @@ describe("signJwt / verifyJwt", () => {
     const token = await signJwt(PAYLOAD, SECRET);
     const [, body, sig] = token.split(".");
     // Replace the header with one that claims `alg: none` while keeping the
-    // body and (now-invalid) signature — the alg check must reject before
+    // body and (now-invalid) signature - the alg check must reject before
     // the signature is consulted.
     const noneHeader = btoa(JSON.stringify({ alg: "none", typ: "JWT" }))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");

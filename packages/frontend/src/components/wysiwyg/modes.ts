@@ -6,7 +6,7 @@ import { rendererCtxFacet, type RendererCtx } from "./context/RendererContext";
 
 // Clicking at the visible end of inline markdown formatting (e.g. `**bold**`)
 // lands the cursor between the visible inner text and the hidden trailing
-// marker — so typing two trailing spaces lands them *inside* the formatting
+// marker - so typing two trailing spaces lands them *inside* the formatting
 // (`**bold  **`) instead of after it. After every click, if the cursor sits at
 // the start of a contiguous chain of hidden inline markers, snap it past them.
 function snapPastTrailingHiddenMarkers(view: EditorView) {
@@ -46,7 +46,7 @@ const fixClickAtTrailingHidden = EditorView.domEventHandlers({
 // minimum height on the scroller that matches the doc's true height, so CM's
 // viewport spans the whole document and every line stays in the DOM. We iterate
 // because each minHeight bump can cause CM to render more lines, which can
-// extend the height further — we stop when the height stops growing.
+// extend the height further - we stop when the height stops growing.
 const enforceFullHeightInReadingMode = ViewPlugin.fromClass(class {
   view: EditorView;
   applied = 0;

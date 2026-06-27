@@ -39,7 +39,7 @@ function isAppHost(host: string): boolean {
 }
 
 // In dev you can exercise the host-mode code path without a real custom domain
-// by appending ?__site=<projectIdOrSlug> to the URL — it forces host mode for
+// by appending ?__site=<projectIdOrSlug> to the URL - it forces host mode for
 // that project. Ignored outside dev.
 export function devForcedSite(): string | null {
   if (!import.meta.env.DEV) return null;

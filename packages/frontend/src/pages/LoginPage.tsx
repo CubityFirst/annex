@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { startAuthentication } from "@simplewebauthn/browser";
 import { KeyRound, Smartphone, Hash } from "lucide-react";
+import { startWebauthnAuth } from "@/lib/webauthn";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -190,8 +190,7 @@ export function LoginPage() {
       const { options, challengeId } = startJson.data;
       let assertion;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        assertion = await startAuthentication(options as any);
+        assertion = await startWebauthnAuth(options);
       } catch {
         setError("Security key authentication was cancelled or failed. Please try again.");
         return;

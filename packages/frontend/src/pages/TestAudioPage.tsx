@@ -23,7 +23,7 @@ export function TestAudioPage() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [selected, setSelected] = useState<SourceKey>("warframe");
 
-  // Swap the audio element's src without remounting it — the MediaElementSource
+  // Swap the audio element's src without remounting it - the MediaElementSource
   // wiring inside AudioVisualizer is keyed to the element, and the visualizer's
   // tuning state lives inside the component, so neither resets on source change.
   function pick(key: SourceKey) {

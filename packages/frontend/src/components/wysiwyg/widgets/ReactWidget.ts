@@ -14,7 +14,7 @@ export abstract class ReactWidget extends WidgetType {
    * Block widgets (code fence, image, callout, frontmatter, hr) override this to true.
    * When true, mousedown/click events fall through to CodeMirror so the cursor moves
    * into the widget's range, which causes the cursor-touches-block reveal to kick in.
-   * Interactive widgets (dice, wikilinks) keep this false — their React handlers
+   * Interactive widgets (dice, wikilinks) keep this false - their React handlers
    * own the click behavior.
    */
   protected revealOnClick(): boolean {
@@ -35,7 +35,7 @@ export abstract class ReactWidget extends WidgetType {
     // outside the replaced range. We force the cursor inside the widget range
     // so the visitor's cursor-touches check fires and reveals the markdown.
     if (this.revealOnClick()) {
-      // pointerdown (not mousedown) so taps on mobile/touch also reveal —
+      // pointerdown (not mousedown) so taps on mobile/touch also reveal -
       // pointer events fire for mouse, touch, and pen and arrive before any
       // synthesized mouse events.
       el.addEventListener("pointerdown", (event) => {

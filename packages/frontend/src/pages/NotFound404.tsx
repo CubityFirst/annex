@@ -38,7 +38,7 @@ function CtaLink({ href, className, children }: { href: string; className: strin
 
 /**
  * Terminal-style 404, ported from the Claude Design handoff. Used for the
- * global catch-all route and the public-reader "no published document" state —
+ * global catch-all route and the public-reader "no published document" state -
  * same shell, swappable subtitle + CTA target (per the design's content slots).
  */
 export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, status = "404" }: Props) {
@@ -48,7 +48,7 @@ export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, st
         <div className="v404-grid" aria-hidden="true" />
 
         <div className="v404-content">
-          <div className="v404-numeral" role="heading" aria-level={1} aria-label={`${status} — page not found`}>
+          <div className="v404-numeral" role="heading" aria-level={1} aria-label={`${status} - page not found`}>
             <span aria-hidden="true">4</span>
             <span aria-hidden="true">0</span>
             <span aria-hidden="true">4</span>

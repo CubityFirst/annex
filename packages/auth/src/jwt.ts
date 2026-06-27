@@ -43,7 +43,7 @@ export async function verifyJwt(token: string, secret: string): Promise<Session 
   }
   if (header.alg !== "HS256" || header.typ !== "JWT") return null;
 
-  // atob throws on non-base64 input — a garbage signature must read as an
+  // atob throws on non-base64 input - a garbage signature must read as an
   // invalid token (401), not bubble up as an internal error (500).
   let sigBytes: Uint8Array;
   try {

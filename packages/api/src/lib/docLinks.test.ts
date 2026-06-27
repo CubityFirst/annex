@@ -153,7 +153,7 @@ describe("resolveDoc", () => {
   });
 
   it("resolves a doc by partial folder path", () => {
-    // "Reference/API Reference" — two-segment match
+    // "Reference/API Reference" - two-segment match
     expect(resolveDoc("Reference/API Reference", ctx)).toBe(docs[1]);
   });
 

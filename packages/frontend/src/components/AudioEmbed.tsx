@@ -14,7 +14,7 @@ interface Props {
   size?: AudioSize;
   projectId?: string;
   isPublic?: boolean;
-  /** Forwarded inline style (width/height/align) — only honored on the full-size container. */
+  /** Forwarded inline style (width/height/align) - only honored on the full-size container. */
   style?: React.CSSProperties;
   className?: string;
 }
@@ -110,7 +110,7 @@ export function AudioEmbed({ src, alt, size = "full", projectId, isPublic, style
 // Stops a set of events from bubbling out of an element via NATIVE listeners.
 // React's synthetic handlers run after the widget-root's native pointerdown
 // listener (and after CM's own click handler), so they're too late to win
-// the race — useEffect + addEventListener does. Note: never include "click"
+// the race - useEffect + addEventListener does. Note: never include "click"
 // for an element whose onClick needs to run (React delegates onClick to the
 // root container, which the native stop would prevent reaching).
 const POINTER_ONLY = ["pointerdown", "mousedown"] as const;
@@ -131,7 +131,7 @@ function useStopBubble<T extends HTMLElement>(events: readonly string[] = POINTE
 }
 
 function AudioFull({ src, alt, style, onError, className }: { src: string; alt?: string; style?: React.CSSProperties; onError?: () => void; className?: string }) {
-  // Native <audio controls> dispatches click events out of its shadow DOM —
+  // Native <audio controls> dispatches click events out of its shadow DOM -
   // those need stopping too, otherwise CM's click handler interprets them as
   // "click on the widget area" and reveals.
   const audioRef = useStopBubble<HTMLAudioElement>(POINTER_AND_CLICK);
@@ -353,7 +353,7 @@ function AudioSmall({ src, alt, onError, className }: { src: string; alt?: strin
             step={1}
             // Slider's base styles force data-[orientation=vertical]:h-full
             // and min-h-44 (176px). Override both with the same variant so
-            // tailwind-merge replaces them — otherwise the height is ignored.
+            // tailwind-merge replaces them - otherwise the height is ignored.
             className="data-[orientation=vertical]:h-8 data-[orientation=vertical]:min-h-0"
           />
         </PopoverContent>
@@ -368,7 +368,7 @@ function AudioSmall({ src, alt, onError, className }: { src: string; alt?: strin
           // Acts as the playhead indicator AND the scrub target. Two visualizers
           // are stacked: a grey base, and a white "played" copy clipped from the
           // right so it fills left→right as currentTime advances. clip-path
-          // doesn't shrink the canvas's layout — the inner visualizer keeps its
+          // doesn't shrink the canvas's layout - the inner visualizer keeps its
           // full width so bar geometry matches the base exactly.
           className="absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 cursor-pointer"
           role="slider"

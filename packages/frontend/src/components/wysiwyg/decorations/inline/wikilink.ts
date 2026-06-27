@@ -9,7 +9,7 @@ export const visitWikilink: Visitor = ({ node, state, sel, reveal, decos }) => {
     return;
   }
 
-  // Strip the surrounding [[ ]] — they're WikilinkMark children but for parsing
+  // Strip the surrounding [[ ]] - they're WikilinkMark children but for parsing
   // we just slice 2 chars off each side.
   const inner = state.doc.sliceString(node.from + 2, node.to - 2);
   const parsed = parseWikilink(inner);

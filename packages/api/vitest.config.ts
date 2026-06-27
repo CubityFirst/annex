@@ -10,7 +10,7 @@ export default defineConfig({
     // run in order. The unit suites are fast, so the cost is negligible.
     fileParallelism: false,
     // Integration suites require a live `pnpm dev` stack: they probe
-    // localhost:8787/8788 at module load and self-skip when it's down — but
+    // localhost:8787/8788 at module load and self-skip when it's down - but
     // headless that skip surfaces as a suite-load error, not a clean skip, so
     // they'd fail CI. Exclude them from the default unit run; they run on demand
     // against a live stack via `pnpm test:integration` (vitest.integration.config.ts).

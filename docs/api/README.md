@@ -5,7 +5,7 @@ managing members, on a single site. It is authenticated with **API keys** that
 you generate in **Site Settings → Developer → API Keys**.
 
 > The public API is intentionally narrow and isolated. Keys work **only** on the
-> `/v1` surface described here — they are rejected everywhere else.
+> `/v1` surface described here - they are rejected everywhere else.
 
 ---
 
@@ -35,11 +35,11 @@ Send your key as a Bearer token:
 Authorization: Bearer annx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-* Keys are prefixed `annx_`. The full secret is shown **once**, at creation — it
+* Keys are prefixed `annx_`. The full secret is shown **once**, at creation - it
   is stored only as a hash and can never be retrieved again. If you lose it,
   revoke the key and create a new one.
 * A missing, malformed, unknown, revoked, or expired key always returns a single
-  opaque `401` — the API never reveals whether a key exists or why it was
+  opaque `401` - the API never reveals whether a key exists or why it was
   rejected.
 * JWT/session tokens are **not** accepted on `/v1`. API keys are **not** accepted
   on any other route.
@@ -99,10 +99,10 @@ All responses use a JSON envelope:
 | `400`  | Bad request (missing/invalid fields, invalid folder, invalid role)    |
 | `401`  | Unauthenticated (missing/invalid/revoked/expired key)                 |
 | `403`  | Forbidden (scope or live-role check failed)                           |
-| `404`  | Not found (or not visible to this key — e.g. a doc in another site)   |
+| `404`  | Not found (or not visible to this key - e.g. a doc in another site)   |
 | `409`  | Conflict (e.g. user is already a member)                              |
 | `429`  | Rate limited                                                          |
-| `503`  | API temporarily disabled (`{"error":"api_disabled"}`) — global killswitch |
+| `503`  | API temporarily disabled (`{"error":"api_disabled"}`) - global killswitch |
 
 ---
 
@@ -281,7 +281,7 @@ Keys are created and revoked from the app, not the API:
 * Choose **Read only** or **Read & write** (read-only is the only option if your
   role on the site is below editor).
 * Optionally enable **Manage members** (admins/owners only).
-* Copy the secret immediately — it is shown once.
+* Copy the secret immediately - it is shown once.
 * Revoke a key at any time; integrations using it stop working instantly.
 
 Programmatic management endpoints (JWT/session-authenticated, used by the UI):

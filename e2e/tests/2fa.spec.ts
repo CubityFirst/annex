@@ -5,7 +5,7 @@
  *   - TOTP: enable, login with code, disable
  *   - WebAuthn: register a virtual passkey, login with it, remove it
  *
- * Prerequisites — run from the monorepo root:
+ * Prerequisites - run from the monorepo root:
  *   pnpm dev
  *
  * packages/auth/.dev.vars must contain:
@@ -146,7 +146,7 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
 });
 
-// Account cleanup runs in globalTeardown. The "deletes the account — 2FA
+// Account cleanup runs in globalTeardown. The "deletes the account - 2FA
 // confirmation required" test exercises the UI delete flow itself.
 test.afterAll(async () => {
   if (cdpSession) {
@@ -180,7 +180,7 @@ test("logs in after registration", async () => {
 // TOTP
 // ════════════════════════════════════════════════════════════════════════════
 
-test("TOTP — enables authenticator app", async () => {
+test("TOTP - enables authenticator app", async () => {
   await page.goto("/settings");
   await page.getByRole("button", { name: "Set up authenticator app" }).click();
 
@@ -198,7 +198,7 @@ test("TOTP — enables authenticator app", async () => {
   await expect(page.getByRole("button", { name: "Disable authenticator app" })).toBeVisible({ timeout: 10000 });
 });
 
-test("TOTP — login prompts for the authenticator code", async () => {
+test("TOTP - login prompts for the authenticator code", async () => {
   await logout(page);
   await loginWithPassword(page);
   // Server returns totp_required → login page switches to the TOTP step.
@@ -206,7 +206,7 @@ test("TOTP — login prompts for the authenticator code", async () => {
   await expect(page.getByText(/authenticator code/i)).toBeVisible({ timeout: 3000 });
 });
 
-test("TOTP — entering a valid code completes login", async () => {
+test("TOTP - entering a valid code completes login", async () => {
   // Still on the TOTP challenge screen from the previous test.
   const code = await computeTOTP(totpSecret);
   await fillOTP(page, code);
@@ -215,7 +215,7 @@ test("TOTP — entering a valid code completes login", async () => {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 });
 
-test("TOTP — disables authenticator app (requires TOTP confirmation)", async () => {
+test("TOTP - disables authenticator app (requires TOTP confirmation)", async () => {
   await page.goto("/settings");
   await page.getByRole("button", { name: "Disable authenticator app" }).click();
 
@@ -231,7 +231,7 @@ test("TOTP — disables authenticator app (requires TOTP confirmation)", async (
   totpSecret = ""; // no longer valid
 });
 
-test("TOTP — login no longer requires a code after disabling", async () => {
+test("TOTP - login no longer requires a code after disabling", async () => {
   await logout(page);
   await loginWithPassword(page);
   // Should go straight to the dashboard without a TOTP prompt.
@@ -243,7 +243,7 @@ test("TOTP — login no longer requires a code after disabling", async () => {
 // WebAuthn (Playwright virtual authenticator)
 // ════════════════════════════════════════════════════════════════════════════
 
-test("WebAuthn — registers a virtual passkey", async ({ browserName }) => {
+test("WebAuthn - registers a virtual passkey", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   // Chrome DevTools Protocol is the current way to add a virtual authenticator
   // (Playwright's high-level addVirtualAuthenticator wrapper is not available in
@@ -274,7 +274,7 @@ test("WebAuthn — registers a virtual passkey", async ({ browserName }) => {
   await expect(page.getByText("Playwright Virtual Key")).toBeVisible({ timeout: 10000 });
 });
 
-test("WebAuthn — login triggers the passkey ceremony", async ({ browserName }) => {
+test("WebAuthn - login triggers the passkey ceremony", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
   await loginWithPassword(page);
@@ -285,7 +285,7 @@ test("WebAuthn — login triggers the passkey ceremony", async ({ browserName })
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
 });
 
-test("WebAuthn — removes the passkey (requires WebAuthn confirmation)", async ({ browserName }) => {
+test("WebAuthn - removes the passkey (requires WebAuthn confirmation)", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await page.goto("/settings");
 
@@ -300,7 +300,7 @@ test("WebAuthn — removes the passkey (requires WebAuthn confirmation)", async 
   await expect(page.getByText("Playwright Virtual Key")).not.toBeVisible({ timeout: 10000 });
 });
 
-test("WebAuthn — login no longer requires a key after removal", async ({ browserName }) => {
+test("WebAuthn - login no longer requires a key after removal", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
   await loginWithPassword(page);
@@ -324,7 +324,7 @@ test("re-enables TOTP before account deletion", async () => {
   await expect(page.getByRole("button", { name: "Disable authenticator app" })).toBeVisible({ timeout: 10000 });
 });
 
-test("deletes the account — 2FA confirmation required", async () => {
+test("deletes the account - 2FA confirmation required", async () => {
   // "Delete account" → confirmation dialog → "Yes, delete my account"
   // → runWithTwoFA fires because TOTP is active → "Confirm identity" dialog
   await page.getByRole("button", { name: /delete account/i }).click();

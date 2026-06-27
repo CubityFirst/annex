@@ -1,5 +1,5 @@
 /**
- * E2E tests for project member inviting — by email and by invite link.
+ * E2E tests for project member inviting - by email and by invite link.
  *
  * Prerequisites:
  *   pnpm dev  (from the monorepo root)
@@ -140,7 +140,7 @@ test("owner creates a project", async () => {
 // Email invite
 // ════════════════════════════════════════════════════════════════════════════
 
-test("email invite — owner invites by email address", async () => {
+test("email invite - owner invites by email address", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
   await ownerPage.getByPlaceholder("user@example.com").fill(EMAIL_USER.email);
   await ownerPage.getByRole("button", { name: "Add" }).click();
@@ -149,24 +149,24 @@ test("email invite — owner invites by email address", async () => {
   ).toBeVisible({ timeout: 8000 });
 });
 
-test("email invite — invited member shows as pending in the members list", async () => {
+test("email invite - invited member shows as pending in the members list", async () => {
   await expect(ownerPage.getByText("Pending", { exact: true })).toBeVisible({ timeout: 5000 });
 });
 
-test("email invite — invitee sees the pending invite", async () => {
+test("email invite - invitee sees the pending invite", async () => {
   await login(inviteePage, EMAIL_USER);
   await inviteePage.goto("/invites/pending");
   await expect(inviteePage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
   await expect(inviteePage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
 });
 
-test("email invite — invitee accepts and is redirected to the project", async () => {
+test("email invite - invitee accepts and is redirected to the project", async () => {
   await inviteePage.getByRole("button", { name: "Accept" }).click();
   // Acceptance navigates straight to the project page.
   await expect(inviteePage).toHaveURL(/\/projects\//, { timeout: 8000 });
 });
 
-test("email invite — project appears in invitee's dashboard", async () => {
+test("email invite - project appears in invitee's dashboard", async () => {
   await inviteePage.goto("/dashboard");
   // Use heading role to avoid matching the sidebar nav button with the same text.
   await expect(inviteePage.getByRole("heading", { name: PROJECT_NAME })).toBeVisible({ timeout: 5000 });
@@ -176,7 +176,7 @@ test("email invite — project appears in invitee's dashboard", async () => {
 // Invite link
 // ════════════════════════════════════════════════════════════════════════════
 
-test("invite link — owner creates a link and token is captured", async () => {
+test("invite link - owner creates a link and token is captured", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
 
   // Register the response listener before triggering the request.
@@ -198,38 +198,38 @@ test("invite link — owner creates a link and token is captured", async () => {
   await expect(ownerPage.getByText("Invite link created.", { exact: true })).toBeVisible({ timeout: 5000 });
 });
 
-test("invite link — link appears in the list with copy and revoke buttons", async () => {
+test("invite link - link appears in the list with copy and revoke buttons", async () => {
   await expect(ownerPage.getByRole("button", { name: "Copy" })).toBeVisible({ timeout: 5000 });
   await expect(ownerPage.getByRole("button", { name: "Revoke" })).toBeVisible({ timeout: 5000 });
 });
 
-test("invite link — link-invitee sees the invite page", async () => {
+test("invite link - link-invitee sees the invite page", async () => {
   await login(linkPage, LINK_USER);
   await linkPage.goto(`/invite/${inviteLinkToken}`);
   await expect(linkPage.getByText("You've been invited to join")).toBeVisible({ timeout: 5000 });
   await expect(linkPage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
 });
 
-test("invite link — link-invitee accepts and is redirected to the project", async () => {
+test("invite link - link-invitee accepts and is redirected to the project", async () => {
   await linkPage.getByRole("button", { name: "Accept" }).click();
   await expect(linkPage).toHaveURL(/\/projects\//, { timeout: 10000 });
 });
 
-test("invite link — project appears in link-invitee's dashboard", async () => {
+test("invite link - project appears in link-invitee's dashboard", async () => {
   await linkPage.goto("/dashboard");
   await expect(linkPage.getByRole("heading", { name: PROJECT_NAME })).toBeVisible({ timeout: 5000 });
 });
 
 // ── Revoke ────────────────────────────────────────────────────────────────────
 
-test("invite link — owner revokes the link", async () => {
+test("invite link - owner revokes the link", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
   await ownerPage.getByRole("button", { name: "Revoke" }).click();
   await expect(ownerPage.getByText("Invite link revoked.", { exact: true })).toBeVisible({ timeout: 5000 });
   await expect(ownerPage.getByText("No invite links yet.")).toBeVisible({ timeout: 5000 });
 });
 
-test("invite link — revoked link shows an error when visited", async () => {
+test("invite link - revoked link shows an error when visited", async () => {
   await linkPage.goto(`/invite/${inviteLinkToken}`);
   await expect(linkPage.getByText("Invalid invite")).toBeVisible({ timeout: 5000 });
   await expect(linkPage.getByText("This invite link has been revoked.")).toBeVisible({ timeout: 5000 });

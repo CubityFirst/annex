@@ -17,13 +17,13 @@ if (!import.meta.env.DEV) {
         lastCheck = Date.now();
         void registration.update();
       };
-      // Poll only while the tab is foregrounded — background timers are
+      // Poll only while the tab is foregrounded - background timers are
       // throttled/frozen anyway, and this avoids needless requests.
       setInterval(() => {
         if (document.visibilityState === "visible") check();
       }, STALE_MS);
       // Returning to a tab that's been idle/backgrounded for a while: the
-      // interval was throttled, so check right away — but debounce so rapid
+      // interval was throttled, so check right away - but debounce so rapid
       // tab-switching doesn't fire a burst.
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible" && Date.now() - lastCheck > STALE_MS) {

@@ -43,7 +43,7 @@ export function useSwipeGesture({ onSwipeLeft, onSwipeRight, threshold = 50 }: S
     }
 
     // When the browser cancels a touch (e.g. it claimed the gesture for native
-    // scrolling), changedTouches may be empty — fall back to the last tracked position.
+    // scrolling), changedTouches may be empty - fall back to the last tracked position.
     function onTouchCancel(e: TouchEvent) {
       const x = e.changedTouches[0]?.clientX ?? lastX.current;
       const y = e.changedTouches[0]?.clientY ?? lastY.current;

@@ -33,7 +33,7 @@ export async function handleTotpEnable(request: Request, env: Env): Promise<Resp
   });
   if (mfaError) return mfaError;
 
-  // Plain verify — the enrollment code's step is deliberately NOT consumed, so
+  // Plain verify - the enrollment code's step is deliberately NOT consumed, so
   // the user can enable TOTP and sign in within the same 30s code window. The
   // login path's replay guard starts consuming from the first login onward.
   const valid = await verifyTOTP(body.secret, body.code);

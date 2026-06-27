@@ -12,7 +12,7 @@ interface Entry {
   val: string;
 }
 
-// Generic top-level YAML key/value extractor — shows whatever the user wrote
+// Generic top-level YAML key/value extractor - shows whatever the user wrote
 // rather than restricting to the strict app-metadata keys handled by
 // lib/frontmatter.ts (which is intentionally narrow for app behavior).
 function parseEntries(source: string): Entry[] {
@@ -77,7 +77,7 @@ function FrontmatterInner({ source }: Props) {
           { className: "cm-frontmatter-card__list" },
           ...entries.flatMap((e) => [
             createElement("dt", { key: `k-${e.key}`, className: "cm-frontmatter-card__key" }, e.key),
-            createElement("dd", { key: `v-${e.key}`, className: "cm-frontmatter-card__val" }, e.val || createElement("span", { className: "cm-frontmatter-card__empty-val" }, "—")),
+            createElement("dd", { key: `v-${e.key}`, className: "cm-frontmatter-card__val" }, e.val || createElement("span", { className: "cm-frontmatter-card__empty-val" }, "-")),
           ]),
         ),
   );

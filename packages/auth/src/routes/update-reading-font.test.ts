@@ -117,8 +117,8 @@ describe("handleUpdateReadingFont", () => {
     expect(bind).toHaveBeenCalledWith("user-1", null);
   });
 
-  it("does not consult plan / Ink gate — any user can change fonts", async () => {
-    // The handler never reads personal_plan / granted_plan — so a free user
+  it("does not consult plan / Ink gate - any user can change fonts", async () => {
+    // The handler never reads personal_plan / granted_plan - so a free user
     // (no extra setup needed) should succeed. If we ever add a gate, this
     // test should fail and prompt a review.
     const { env } = makeEnv();

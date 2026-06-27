@@ -49,7 +49,7 @@ describe("looksLikeAudio", () => {
   });
 
   it("falls back to the alt text when the URL has no extension", () => {
-    // Copy-markdown emits ![filename.mp3](/api/files/UUID/content) — the URL
+    // Copy-markdown emits ![filename.mp3](/api/files/UUID/content) - the URL
     // path has no extension because /content is the route suffix.
     expect(looksLikeAudio("/api/files/abc/content", "track.mp3")).toBe(true);
   });
@@ -60,7 +60,7 @@ describe("looksLikeAudio", () => {
   });
 
   it("does not promote an image URL to audio because of an audio-named alt", () => {
-    // The URL has an unambiguous image extension — trust it over the alt.
+    // The URL has an unambiguous image extension - trust it over the alt.
     expect(looksLikeAudio("photo.png", "song.mp3")).toBe(false);
     expect(looksLikeAudio("photo.png", "caption")).toBe(false);
   });

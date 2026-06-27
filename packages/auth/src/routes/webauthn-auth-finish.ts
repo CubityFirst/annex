@@ -31,7 +31,7 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
   if (assertionError) return assertionError;
 
   if (user.force_password_change) {
-    // Same single-use nonce flow as /login — see that handler for context.
+    // Same single-use nonce flow as /login - see that handler for context.
     const cti = crypto.randomUUID();
     await env.DB.prepare("UPDATE users SET change_token_id = ? WHERE id = ?")
       .bind(cti, user.id).run();

@@ -31,7 +31,7 @@ interface MemberPlanInfo {
 }
 
 // One D1 read against AUTH_DB returns the plan columns for every user
-// id in the list. Empty list short-circuits — D1 doesn't accept zero
+// id in the list. Empty list short-circuits - D1 doesn't accept zero
 // placeholders in IN(). Map keys are user ids; values include the
 // resolved plan plus the chosen ring style so the members list can
 // render each supporter's customised avatar.
@@ -84,7 +84,7 @@ export async function handleMembers(
   const callerRole = await resolveRole(env.DB, projectId, user.userId);
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
 
-  // GET /projects/:id/members — admin/owner can list
+  // GET /projects/:id/members - admin/owner can list
   if (!targetUserId && request.method === "GET") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -112,7 +112,7 @@ export async function handleMembers(
     }));
   }
 
-  // POST /projects/:id/members — admin/owner can invite
+  // POST /projects/:id/members - admin/owner can invite
   if (!targetUserId && request.method === "POST") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -159,7 +159,7 @@ export async function handleMembers(
     return okResponse({ id, projectId, userId: inviteeId, email: inviteeEmail, name: inviteeName, role: body.role, accepted: false, invitedBy: user.userId, createdAt: now }, 201);
   }
 
-  // PATCH /projects/:id/members/:userId — admin/owner can change roles
+  // PATCH /projects/:id/members/:userId - admin/owner can change roles
   if (targetUserId && request.method === "PATCH") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -204,7 +204,7 @@ export async function handleMembers(
     });
   }
 
-  // DELETE /projects/:id/members/:userId — admin/owner can remove; any non-owner can remove themselves
+  // DELETE /projects/:id/members/:userId - admin/owner can remove; any non-owner can remove themselves
   if (targetUserId && request.method === "DELETE") {
     const isSelf = targetUserId === user.userId;
 

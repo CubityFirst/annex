@@ -3,7 +3,7 @@
  *
  * Prerequisites:
  *   1. Start both workers from the repo root:  pnpm dev
- *   2. wrangler CLI must be available from packages/api (already a dev dep) — the test
+ *   2. wrangler CLI must be available from packages/api (already a dev dep) - the test
  *      uses it to flip the REALTIME flag on the test project, since there's no API
  *      route for that today (see CLAUDE.md, "Enabling for a project locally").
  *
@@ -27,7 +27,7 @@ let serversUp = false;
 try {
   const res = await fetch(`${API_URL}/projects`, { signal: AbortSignal.timeout(1500) });
   serversUp = res.status < 500;
-  // Probe auth too — collab tests need register/login to work.
+  // Probe auth too - collab tests need register/login to work.
   const authRes = await fetch(`${AUTH_URL}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -49,7 +49,7 @@ function encodeSyncStep2(update: Uint8Array): Uint8Array {
 }
 
 // Flip the REALTIME bit (= 4) on a project's `features` column. There's no API route for
-// this — production toggling happens via an admin script — so the test shells out to wrangler.
+// this - production toggling happens via an admin script - so the test shells out to wrangler.
 function enableRealtime(projectId: string): void {
   execSync(
     `npx wrangler d1 execute cubedocs-main --local --persist-to ../../.wrangler/state --command "UPDATE projects SET features = features | 4 WHERE id = '${projectId}';"`,
@@ -75,7 +75,7 @@ function waitForOpen(ws: WebSocket, timeoutMs = 5_000): Promise<void> {
     const timer = setTimeout(() => reject(new Error("WS did not open within timeout")), timeoutMs);
     ws.addEventListener("open", () => { clearTimeout(timer); resolve(); });
     ws.addEventListener("close", (ev) => {
-      // Closed before opening — auth/upgrade rejected. Surface the close so tests fail fast
+      // Closed before opening - auth/upgrade rejected. Surface the close so tests fail fast
       // rather than timing out.
       clearTimeout(timer);
       const e = ev as CloseEvent;
@@ -89,7 +89,7 @@ function waitForOpen(ws: WebSocket, timeoutMs = 5_000): Promise<void> {
 // to it for the test.
 const WSCtor = WebSocket as unknown as new (url: string) => WebSocket;
 
-describe.skipIf(!serversUp)("collab — size caps + reset", () => {
+describe.skipIf(!serversUp)("collab - size caps + reset", () => {
   let token = "";
   let projectId = "";
   let docId = "";
@@ -154,7 +154,7 @@ describe.skipIf(!serversUp)("collab — size caps + reset", () => {
     // Wait briefly so the server's initial step1 is sent (and ignored by us).
     await new Promise(r => setTimeout(r, 100));
 
-    // 600 KB > 512 KB MAX_MESSAGE_BYTES. Contents are arbitrary — server rejects on size,
+    // 600 KB > 512 KB MAX_MESSAGE_BYTES. Contents are arbitrary - server rejects on size,
     // before parsing.
     const big = new Uint8Array(600 * 1024);
     ws.send(big);
@@ -164,7 +164,7 @@ describe.skipIf(!serversUp)("collab — size caps + reset", () => {
   });
 
   // Streams ~2 MB of state in via small updates; each Y.encodeStateAsUpdate check on the
-  // server is O(state size), so the cumulative work is meaningful — bump the per-test timeout
+  // server is O(state size), so the cumulative work is meaningful - bump the per-test timeout
   // well past vitest's 5s default.
   it("closes with 1008 + freezes the room when total Y.Doc state exceeds the cap", { timeout: 60_000 }, async () => {
     // Reset first so this test is independent of any leftover state.
@@ -207,7 +207,7 @@ describe.skipIf(!serversUp)("collab — size caps + reset", () => {
     const close = await closePromise;
     expect(close.code).toBe(1008);
 
-    // Reconnect should SUCCEED — `persist()` is a no-op while frozen, and `teardown()`
+    // Reconnect should SUCCEED - `persist()` is a no-op while frozen, and `teardown()`
     // clears the flag once the last socket disconnects, so the next load reads the pre-bloat
     // snapshot from DO storage. This is the room's automatic recovery path.
     const ws2 = new WSCtor(`${WS_URL}/docs/${docId}/collab?token=${encodeURIComponent(token)}`);
@@ -229,7 +229,7 @@ describe.skipIf(!serversUp)("collab — size caps + reset", () => {
     });
     expect(resetRes.status).toBe(200);
 
-    // Reconnect — should NOT close immediately. Stay-open verified by racing the close
+    // Reconnect - should NOT close immediately. Stay-open verified by racing the close
     // event against a 500 ms timer; if the timer wins, the room is healthy.
     const ws = new WSCtor(`${WS_URL}/docs/${docId}/collab?token=${encodeURIComponent(token)}`);
     ws.binaryType = "arraybuffer";

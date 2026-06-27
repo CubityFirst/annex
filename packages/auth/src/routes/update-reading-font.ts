@@ -7,7 +7,7 @@ import type { Env } from "../index";
 // fields are optional in the body; pass `null` to reset to the default
 // (NULL on the row → frontend falls back to the default sans stack).
 //
-// Unlike update-ink-prefs, this is NOT gated on the Ink plan — OpenDyslexic
+// Unlike update-ink-prefs, this is NOT gated on the Ink plan - OpenDyslexic
 // in particular is an accessibility feature, so every user can pick it.
 export async function handleUpdateReadingFont(request: Request, env: Env): Promise<Response> {
   const session = await requireAuthenticatedSession(request, env);

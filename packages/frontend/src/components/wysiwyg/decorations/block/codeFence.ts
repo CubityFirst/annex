@@ -11,7 +11,7 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
   const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
 
   if (cursorIn) {
-    // Cursor inside — show raw lines so the user can edit. Each line gets
+    // Cursor inside - show raw lines so the user can edit. Each line gets
     // monospace + tinted bg so it reads as code while editing.
     for (let n = startLine.number; n <= endLine.number; n++) {
       const line = state.doc.line(n);
@@ -25,7 +25,7 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
     return;
   }
 
-  // Cursor outside — render Shiki-highlighted widget for the whole block.
+  // Cursor outside - render Shiki-highlighted widget for the whole block.
   let lang = "text";
   let codeFrom: number | null = null;
   let codeTo: number | null = null;

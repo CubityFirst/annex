@@ -25,7 +25,7 @@ import remarkBreaks from "remark-breaks";
 
 // Constrained inline-ish markdown for Ink supporter bios. Raw HTML is never
 // rendered (react-markdown's default) and `javascript:` URLs are filtered by
-// the default urlTransform — so the allowlist below is purely about layout,
+// the default urlTransform - so the allowlist below is purely about layout,
 // not safety. Blocks like headings/lists/tables are unwrapped so their text
 // content survives but doesn't add huge vertical spacing in the profile card.
 const BIO_ALLOWED_ELEMENTS = ["p", "a", "strong", "em", "code", "del", "br"];
@@ -181,7 +181,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
 
         {/* Header */}
         <div className="relative overflow-hidden flex items-center gap-5 px-6 pt-6 pb-5">
-          {/* Map background — only when timezone is known */}
+          {/* Map background - only when timezone is known */}
           {profile?.timezone && (() => {
             const g = getTimezoneGroup(profile.timezone);
             if (!g) return null;
@@ -283,7 +283,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
           <Separator />
         )}
 
-        {/* Shared sites — or quick self-actions when viewing your own card */}
+        {/* Shared sites - or quick self-actions when viewing your own card */}
         {!showPublicView ? (
           <div className="flex flex-col gap-1 px-3 py-3">
             <button

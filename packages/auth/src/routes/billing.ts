@@ -61,7 +61,7 @@ export async function handleBillingCheckout(request: Request, env: Env): Promise
 // POST /billing/portal
 // Creates a Stripe Customer Portal session so the user can manage their
 // subscription (update card, cancel, view invoices). Requires that we've
-// already linked a stripe_customer_id — i.e. they've completed at least
+// already linked a stripe_customer_id - i.e. they've completed at least
 // one Checkout. Free users get a 400.
 export async function handleBillingPortal(request: Request, env: Env): Promise<Response> {
   if (!env.STRIPE_SECRET_KEY) return errorResponse(Errors.INTERNAL);

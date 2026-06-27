@@ -16,7 +16,7 @@ import "./pwa";
 // whenever font state changes.
 applyFontVarsToRoot(readFontPrefsCookie());
 
-// Same rationale for the theme — but the saved theme is in-app only. The
+// Same rationale for the theme - but the saved theme is in-app only. The
 // landing/auth routes always boot to the default (dark) brand look; App keeps
 // them there across client-side navigation. index.html hard-codes
 // class="dark" so the default case still has zero flash.

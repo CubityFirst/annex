@@ -7,13 +7,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 
 // The drawing canvas. Lazily code-split (default export) because
-// @excalidraw/excalidraw is a heavy chunk — it must never land in the main
+// @excalidraw/excalidraw is a heavy chunk - it must never land in the main
 // bundle. One component, two modes:
 //   • readOnly  → <Excalidraw viewModeEnabled> for viewers and the public site
 //                 (a live, pannable/zoomable canvas).
 //   • editable  → editor+ get the full editor plus a single floating Save button
 //                 that PUTs the serialized scene to the file's content URL.
-// We deliberately add NO toolbar of our own — Excalidraw's built-in menu handles
+// We deliberately add NO toolbar of our own - Excalidraw's built-in menu handles
 // export/download/zoom; the only thing we layer on is the Save action. No
 // realtime collaboration: a single-editor save/load surface.
 
@@ -32,7 +32,7 @@ interface Scene {
 }
 
 interface Props {
-  /** Content URL — GET loads the scene; PUT (editable only) saves it. */
+  /** Content URL - GET loads the scene; PUT (editable only) saves it. */
   contentUrl: string;
   /** apiFetch for the authed app; plain fetch for the public site. */
   fetcher: (url: string, init?: RequestInit) => Promise<Response>;

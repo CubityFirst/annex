@@ -8,7 +8,7 @@ export const visitTable: Visitor = ({ node, state, sel, reveal, decos }) => {
   const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
 
   if (cursorIn) {
-    // Cursor inside — show raw lines so columns align by monospace, and the
+    // Cursor inside - show raw lines so columns align by monospace, and the
     // user can edit the markdown directly.
     for (let n = startLine.number; n <= endLine.number; n++) {
       const line = state.doc.line(n);

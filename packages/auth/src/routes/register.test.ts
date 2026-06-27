@@ -34,7 +34,7 @@ describe("handleRegister signup flag gate", () => {
     const body = await res.json<{ ok: boolean; error: string }>();
     expect(body.ok).toBe(false);
     expect(body.error).toBe("New sign-ups are currently disabled.");
-    // The gate is checked before any parsing/DB work — nothing should be touched.
+    // The gate is checked before any parsing/DB work - nothing should be touched.
     expect(getBooleanValue).toHaveBeenCalledWith("signup", true);
     expect(prepare).not.toHaveBeenCalled();
   });

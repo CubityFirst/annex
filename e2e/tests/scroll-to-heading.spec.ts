@@ -1,7 +1,7 @@
 /**
  * E2E test for scroll-to-heading behaviour on published docs.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -157,10 +157,10 @@ test("sets up a published doc with multiple headings", async () => {
   if (!docMatch) throw new Error("could not parse doc id from URL");
   const docId = docMatch[1];
 
-  // Build the doc body. Many short paragraphs (not one long line — Lezer's
+  // Build the doc body. Many short paragraphs (not one long line - Lezer's
   // markdown parser drops subsequent headings after very long single-line
   // paragraphs) so the doc is taller than the viewport but parses cleanly.
-  // 30 paragraphs per section gives roughly 1500px below the last heading —
+  // 30 paragraphs per section gives roughly 1500px below the last heading -
   // enough that even the bottom-most heading can scroll flush to the top of
   // the viewport rather than bumping against max-scroll.
   const sectionFiller = Array.from({ length: 30 }, () =>
@@ -230,7 +230,7 @@ test("outline click scrolls to heading and updates URL hash", async () => {
 
 test("consecutive outline clicks each scroll to their heading", async () => {
   // Back-to-back outline clicks would expose state leaks between scroll
-  // attempts — earlier we had inconsistent behaviour from this exact pattern.
+  // attempts - earlier we had inconsistent behaviour from this exact pattern.
   const outline = page.locator("aside", { hasText: "Outline" });
 
   await outline.getByRole("button", { name: "Beta Section" }).click();
@@ -253,7 +253,7 @@ test("clicking outline after manually scrolling to the bottom still scrolls back
   await page.goto(publicDocUrl);
   await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
 
-  // Drive the viewport to the bottom directly — we don't care how it got
+  // Drive the viewport to the bottom directly - we don't care how it got
   // there, only that scrolling back to a top heading works.
   await page.evaluate(() => {
     const vp = document.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;

@@ -1,10 +1,10 @@
-/* Annex Ink supporter cosmetic — animated ring around the avatar.
+/* Annex Ink supporter cosmetic - animated ring around the avatar.
    Applied via the .ink-border class. The element should already be
    (or contain) a circular shape; the pseudo-element sits behind it
    and rotates.
 
    Default style is .ink-border with no extra modifier (= shimmer).
-   Other styles add a sibling class — .ink-border.ink-style-aurora etc.
+   Other styles add a sibling class - .ink-border.ink-style-aurora etc.
    Allowed ids are kept in sync with INK_RING_STYLES in
    packages/auth/src/plan.ts. */
 
@@ -35,7 +35,7 @@
   filter: blur(0.5px);
 }
 
-/* Aurora — slower, cooler greens/blues sweep. */
+/* Aurora - slower, cooler greens/blues sweep. */
 .ink-border.ink-style-aurora::before {
   background: conic-gradient(
     from 0deg,
@@ -47,7 +47,7 @@
   animation-duration: 8s;
 }
 
-/* Ember — warm reds/oranges, faster. */
+/* Ember - warm reds/oranges, faster. */
 .ink-border.ink-style-ember::before {
   background: conic-gradient(
     from 0deg,
@@ -59,7 +59,7 @@
   animation-duration: 3s;
 }
 
-/* Mono — subtle monochrome pulse instead of a hue rotation.
+/* Mono - subtle monochrome pulse instead of a hue rotation.
    Keeps the spinning conic-gradient but in greys, with a
    gentle scale pulse so it still feels alive. */
 @keyframes ink-mono-pulse {
@@ -100,7 +100,7 @@
   .ink-icon { animation: none; }
 }
 
-/* Annex Ink supporter cosmetic — sparkle burst on dice critical successes.
+/* Annex Ink supporter cosmetic - sparkle burst on dice critical successes.
    Rendered by DiceRoll only when the viewing user is an Ink supporter AND
    the roll satisfies a `cs` condition or hits its maximum total. */
 .ink-crit-sparkles {

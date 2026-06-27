@@ -20,7 +20,7 @@ describe("fileKind", () => {
   });
 
   it("uses the file name when the browser MIME is misleading", () => {
-    // .ts source commonly uploads as video/mp2t — must not render as a video.
+    // .ts source commonly uploads as video/mp2t - must not render as a video.
     expect(fileKind("video/mp2t", "module.ts")).toBe("text");
     // config/source files often arrive as octet-stream.
     expect(fileKind("application/octet-stream", "config.yaml")).toBe("text");
@@ -41,7 +41,7 @@ describe("fileKind", () => {
   });
 
   it("classifies .excalidraw drawings by extension, never as text", () => {
-    // Browsers hand .excalidraw up as JSON or octet-stream — neither must win
+    // Browsers hand .excalidraw up as JSON or octet-stream - neither must win
     // over the drawing classification (else it'd render as a JSON code block).
     expect(fileKind("application/json", "diagram.excalidraw")).toBe("drawing");
     expect(fileKind("application/octet-stream", "diagram.excalidraw")).toBe("drawing");

@@ -11,7 +11,7 @@ export const ATTR_BLOCK_RE = /^\{([^}\n]*)\}/;
 
 // Matches an INCOMPLETE attribute block at the start: an opening `{` with
 // no closing `}` before the end of the line. Used so the visitor can consume
-// the partial text while the user is still typing — otherwise the rendered
+// the partial text while the user is still typing - otherwise the rendered
 // image and the unfinished `{…` show side-by-side. Multiline `m` so `$`
 // matches end-of-line within the lookahead slice.
 export const PARTIAL_ATTR_BLOCK_RE = /^\{[^}\n]*$/m;
@@ -20,7 +20,7 @@ export const PARTIAL_ATTR_BLOCK_RE = /^\{[^}\n]*$/m;
 // {size:small} reads naturally alongside Pandoc's existing {width=50%}).
 const KV_RE = /(\w+)[=:](?:"([^"]*)"|'([^']*)'|(\S+))/g;
 
-// Bare numeric value (integer or decimal) — defaults to px so `width=200`
+// Bare numeric value (integer or decimal) - defaults to px so `width=200`
 // behaves the same as `width=200px`.
 const UNITLESS_NUMERIC_RE = /^\d+(?:\.\d+)?$/;
 

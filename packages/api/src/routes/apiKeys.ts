@@ -7,7 +7,7 @@ import { generateApiKeySecret, hashApiKey, keyDisplayPrefix, type ApiKeyScope } 
 // they belong to (the settings UI). A key is owned by its creator and bound to
 // exactly one site; because the /v1 surface re-checks the owner's live role on
 // every request, a key is only ever a CEILING and grants no access the owner
-// doesn't already have — so any accepted member may mint one. Listing and
+// doesn't already have - so any accepted member may mint one. Listing and
 // revocation are restricted to the caller's own keys, so one member can never
 // see or revoke another's. (Removing a member from the site separately neuters
 // their keys, since /v1 requires live membership.)
@@ -51,7 +51,7 @@ export async function handleApiKeys(request: Request, env: Env, user: Session, u
   const membership = await resolveAccess(env.DB, projectId, user.userId);
   if (!membership) return errorResponse(Errors.NOT_FOUND);
 
-  // GET /projects/:id/api-keys — list the caller's OWN active keys for this site.
+  // GET /projects/:id/api-keys - list the caller's OWN active keys for this site.
   if (!keyId && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT id, name, key_prefix, scope, can_invite, created_at, last_used_at, expires_at
@@ -62,7 +62,7 @@ export async function handleApiKeys(request: Request, env: Env, user: Session, u
     return okResponse(rows.results.map(serializeKey));
   }
 
-  // POST /projects/:id/api-keys — mint a key. The full secret is returned ONCE.
+  // POST /projects/:id/api-keys - mint a key. The full secret is returned ONCE.
   if (!keyId && request.method === "POST") {
     const body = await request.json<{ name?: unknown; scope?: unknown; canInvite?: unknown; expiresAt?: unknown }>().catch(() => null);
     if (!body) return errorResponse(Errors.BAD_REQUEST);
@@ -114,12 +114,12 @@ export async function handleApiKeys(request: Request, env: Env, user: Session, u
       createdAt: now,
       lastUsedAt: null,
       expiresAt,
-      // The plaintext secret. Shown exactly once — never stored or retrievable again.
+      // The plaintext secret. Shown exactly once - never stored or retrievable again.
       secret,
     }, 201);
   }
 
-  // DELETE /projects/:id/api-keys/:keyId — revoke one of the caller's OWN keys.
+  // DELETE /projects/:id/api-keys/:keyId - revoke one of the caller's OWN keys.
   if (keyId && request.method === "DELETE") {
     const res = await env.DB.prepare(
       "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND project_id = ? AND user_id = ? AND revoked_at IS NULL",

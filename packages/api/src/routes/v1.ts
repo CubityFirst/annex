@@ -19,11 +19,11 @@ import { parseFrontmatter } from "../lib/frontmatter";
 // ever act here, on the single site they are bound to.
 //
 // Authorization is layered, and EVERY layer must pass:
-//   1. Killswitch  — the Flagship "api" flag can disable the whole surface.
-//   2. Key         — valid, unrevoked, unexpired key resolves to its owner +
+//   1. Killswitch  - the Flagship "api" flag can disable the whole surface.
+//   2. Key         - valid, unrevoked, unexpired key resolves to its owner +
 //                    site + scope (read|readwrite) + canInvite.
-//   3. Scope ceiling — read keys can never mutate; member ops need canInvite.
-//   4. Live role floor — the owner's CURRENT project_members role is re-checked
+//   3. Scope ceiling - read keys can never mutate; member ops need canInvite.
+//   4. Live role floor - the owner's CURRENT project_members role is re-checked
 //                    on every request. The key is only a ceiling: it can never
 //                    grant more than its owner currently has, and removing the
 //                    owner from the site instantly neuters the key.
@@ -33,7 +33,7 @@ interface CallerInfo {
   name: string;
 }
 
-// The owner's live membership on the key's site (accepted members only — a
+// The owner's live membership on the key's site (accepted members only - a
 // pending invite grants nothing). This is the authorization floor.
 async function liveCaller(env: Env, projectId: string, userId: string): Promise<CallerInfo | null> {
   // Effective role: includes org trickle-down (a key's floor reflects the
@@ -85,7 +85,7 @@ function safeParseTags(raw: string): string[] {
 export async function handlePublicApi(request: Request, env: Env, url: URL): Promise<Response> {
   // 1. Killswitch. Checked before any auth/DB work so a kill takes effect with
   // zero load. Defaults to enabled when the flag/binding is unavailable (local
-  // dev or a flag-service outage) — this is a deliberate-off switch, not
+  // dev or a flag-service outage) - this is a deliberate-off switch, not
   // fail-closed.
   const apiEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("api", true) : true;
   if (!apiEnabled) {
@@ -260,7 +260,7 @@ async function handleV1Members(request: Request, env: Env, auth: ApiKeyAuth, res
   if (!auth.canInvite) return errorResponse(Errors.FORBIDDEN);
   if (ROLE_RANK[caller.role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-  // GET /v1/members — list members + pending invites
+  // GET /v1/members - list members + pending invites
   if (!targetUserId && request.method === "GET") {
     const rows = await env.DB.prepare(
       "SELECT user_id, email, name, role, accepted, created_at FROM project_members WHERE project_id = ? ORDER BY created_at ASC",
@@ -275,7 +275,7 @@ async function handleV1Members(request: Request, env: Env, auth: ApiKeyAuth, res
     })));
   }
 
-  // POST /v1/members — invite a user by email
+  // POST /v1/members - invite a user by email
   if (!targetUserId && request.method === "POST") {
     const body = await readJson<{ email?: unknown; role?: unknown }>(request);
     if (!body || typeof body.email !== "string" || typeof body.role !== "string") return errorResponse(Errors.BAD_REQUEST);
@@ -326,7 +326,7 @@ async function handleV1Members(request: Request, env: Env, auth: ApiKeyAuth, res
     }, 201);
   }
 
-  // DELETE /v1/members/:userId — revoke a pending invite or remove a member
+  // DELETE /v1/members/:userId - revoke a pending invite or remove a member
   if (targetUserId && request.method === "DELETE") {
     const row = await env.DB.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(auth.projectId, targetUserId).first<{ role: Role }>();

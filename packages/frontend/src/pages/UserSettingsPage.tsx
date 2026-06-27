@@ -46,7 +46,7 @@ import { useAvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
 // Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
-// display order in the picker. 'shimmer' is the default — selecting it
+// display order in the picker. 'shimmer' is the default - selecting it
 // stores NULL on the row.
 const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "none"; label: string }[] = [
   { id: "shimmer", label: "Shimmer" },
@@ -189,7 +189,7 @@ export function UserSettingsPage() {
   // Annex Ink billing state. personalPlanStatus === "granted" means a comp
   // grant (no Stripe linkage); we hide the Manage button in that case.
   // personalPlanCancelAt is non-null when the user has scheduled a
-  // cancel-at-period-end via Customer Portal — UI shows the expiry date.
+  // cancel-at-period-end via Customer Portal - UI shows the expiry date.
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanSince, setPersonalPlanSince] = useState<number | null>(null);
   const [personalPlanStatus, setPersonalPlanStatus] = useState<string | null>(null);
@@ -216,7 +216,7 @@ export function UserSettingsPage() {
   const [favouriteSearchResults, setFavouriteSearchResults] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }>>([]);
   const [favouriteSearchLoading, setFavouriteSearchLoading] = useState(false);
   const [favouriteAddingId, setFavouriteAddingId] = useState<string | null>(null);
-  // Draft notes keyed by project id — separate from server state so we can
+  // Draft notes keyed by project id - separate from server state so we can
   // show a save/reset affordance only while the draft differs.
   const [favouriteNoteDrafts, setFavouriteNoteDrafts] = useState<Record<string, string>>({});
   const [favouriteNoteSavingId, setFavouriteNoteSavingId] = useState<string | null>(null);
@@ -774,7 +774,7 @@ export function UserSettingsPage() {
   }
 
   // Persists Ink cosmetic prefs through the api worker, which proxies to
-  // the auth worker. Optimistic local state — we mirror the value into
+  // the auth worker. Optimistic local state - we mirror the value into
   // the picker before the request returns so the avatar updates instantly,
   // and roll it back on failure.
   async function saveInkPrefs(patch: { style?: string | null; presenceColor?: string | null; critSparkles?: boolean | null }) {
@@ -783,7 +783,7 @@ export function UserSettingsPage() {
     const prevStyle = personalPlanStyle;
     const prevColor = personalPresenceColor;
     const prevCritSparkles = personalCritSparkles;
-    // Optimistic — update both this page and the layout so the sidebar
+    // Optimistic - update both this page and the layout so the sidebar
     // avatar reflects the change immediately. If the save fails we roll
     // both back together.
     const layoutPatch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean } = {};
@@ -830,7 +830,7 @@ export function UserSettingsPage() {
   }
 
   // Persists the user's reading / editing prose-font choice. Optimistic
-  // update via DocsLayout's updateFontAppearance — that's the source of
+  // update via DocsLayout's updateFontAppearance - that's the source of
   // truth for the CSS variables, so writing it immediately flips the
   // wysiwyg viewport without waiting for the round-trip. Rolls back the
   // same way on failure.
@@ -869,7 +869,7 @@ export function UserSettingsPage() {
     }
   }
 
-  // Reset all three tiers to NULL on the row — frontend treats that as the
+  // Reset all three tiers to NULL on the row - frontend treats that as the
   // default sans stack. Same optimistic-update pattern as saveFontPrefs.
   async function resetFontPrefs() {
     if (fontPrefsBusy) return;
@@ -899,7 +899,7 @@ export function UserSettingsPage() {
   }
 
   // Persists the site theme. Admin-only (the section is hidden otherwise and
-  // the route is 403-guarded). Optimistic via DocsLayout's updateTheme — that
+  // the route is 403-guarded). Optimistic via DocsLayout's updateTheme - that
   // owns the .dark class + inline CSS vars, so the UI reskins immediately and
   // rolls back the same way on failure. Switching to Custom with no colour yet
   // falls back to the current/seed colour.
@@ -1296,7 +1296,7 @@ export function UserSettingsPage() {
                   const g = getTimezoneGroup(timezone);
                   return (
                     <p className="text-xs text-muted-foreground">
-                      Currently {formatTimeInZone(timezone)} — {g?.offset ?? timezone}
+                      Currently {formatTimeInZone(timezone)} - {g?.offset ?? timezone}
                     </p>
                   );
                 })()}
@@ -1336,7 +1336,7 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
-          {/* Favourite sites — published projects the user has bookmarked.
+          {/* Favourite sites - published projects the user has bookmarked.
               Surfaces on their profile card; managed here. */}
           <section id="favourites">
             <h2 className="text-base font-semibold">Favourite sites</h2>
@@ -1534,7 +1534,7 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
-          {/* Billing section — Annex Ink supporter tier */}
+          {/* Billing section - Annex Ink supporter tier */}
           <section id="billing">
             <h2 className="text-base font-semibold flex items-center gap-1.5">
               Billing
@@ -1615,7 +1615,7 @@ export function UserSettingsPage() {
                   )}
                 </div>
 
-                {/* Cosmetic prefs — Ink-only. Hidden by default; expanded
+                {/* Cosmetic prefs - Ink-only. Hidden by default; expanded
                     via the Customise toggle. Ring style swaps the conic
                     gradient on the avatar; presence colour overrides the
                     deterministic per-user collab cursor colour. */}
@@ -1755,7 +1755,7 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
-          {/* Reading font — picks the prose font used in document reading and
+          {/* Reading font - picks the prose font used in document reading and
               editing views. Free for all users (not Ink-gated); OpenDyslexic
               is an accessibility option. Each column is a radio across the
               three font rows; code lines stay monospace either way. */}
@@ -1773,7 +1773,7 @@ export function UserSettingsPage() {
                     {([
                       { label: "Reading", help: "Used when you're viewing a document, including the document title." },
                       { label: "Editing", help: "Used when you're editing a document." },
-                      { label: "Other", help: "Used everywhere else — sidebar, settings, outline, and the rest of the app." },
+                      { label: "Other", help: "Used everywhere else - sidebar, settings, outline, and the rest of the app." },
                     ] as const).map(col => (
                       <th key={col.label} className="w-20 px-2 py-2 text-center font-medium">
                         <span className="inline-flex items-center gap-1">
@@ -1854,7 +1854,7 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
-          {/* Theme — admins always see this; other users see it when the
+          {/* Theme - admins always see this; other users see it when the
               custom-theming Flagship flag is enabled for them. Dark is the
               default; Light drops .dark; Custom derives a palette from one
               colour. Server enforces the same logic. */}
@@ -1863,7 +1863,7 @@ export function UserSettingsPage() {
               <section id="theme">
                 <h2 className="text-base font-semibold">Theme</h2>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour.
+                  Choose how the app looks. Custom derives a full palette - surfaces, borders and accents - from a single colour.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   {([

@@ -46,7 +46,7 @@ function buildRedirect(redirectUri: string, params: Record<string, string | unde
 //
 // Errors are split deliberately:
 //   - Pre-validation failures (unknown/disabled client, redirect not on the
-//     allowlist) return a plain 400 — we must NEVER redirect to an unvalidated
+//     allowlist) return a plain 400 - we must NEVER redirect to an unvalidated
 //     URI, or we become an open redirector / token-leak vector.
 //   - Post-validation failures (bad scope, missing PKCE, denial) come back as a
 //     `redirectTo` carrying `error=...&state=...`, per the OAuth spec.

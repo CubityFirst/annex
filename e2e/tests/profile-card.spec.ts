@@ -1,7 +1,7 @@
 /**
  * E2E test for the user profile card and public profile page.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Covers:

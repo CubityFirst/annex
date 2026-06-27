@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -7,6 +6,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { startWebauthnAuth } from "@/lib/webauthn";
 import { KeyRound, Smartphone, Hash } from "lucide-react";
 
 export type TwoFAVerification = {
@@ -74,8 +74,7 @@ export function use2FA({
       const { options, challengeId } = startJson.data;
       let assertion;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        assertion = await startAuthentication(options as any);
+        assertion = await startWebauthnAuth(options);
       } catch {
         setFieldError("Security key verification was cancelled. Try again or use your authenticator app.");
         setWebauthnStatus("error");
@@ -126,7 +125,7 @@ export function use2FA({
       });
     }
 
-    // No MFA set up — proceed directly
+    // No MFA set up - proceed directly
     await action({});
   }
 

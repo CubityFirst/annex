@@ -1,4 +1,4 @@
-// Parser for the `juxtapose` fenced-code block — a before/after image
+// Parser for the `juxtapose` fenced-code block - a before/after image
 // comparison slider (à la juxtapose.knightlab.com). The block body is a small
 // `key: value` config:
 //

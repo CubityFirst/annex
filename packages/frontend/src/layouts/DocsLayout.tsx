@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from "react";
+import { useState, useEffect, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { SearchPalette } from "@/components/SearchPalette";
 import { cn } from "@/lib/utils";
@@ -8,8 +8,10 @@ import { Separator } from "@/components/ui/separator";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
@@ -34,6 +36,9 @@ import {
   FileCode,
   FileArchive,
   File,
+  Plus,
+  Upload,
+  Building2,
 } from "lucide-react";
 import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -54,6 +59,14 @@ interface Project {
   is_hidden: number;
   features: number;
   logo_square_updated_at: string | null;
+}
+
+// Orgs the current user can create a site under (admin+ only - the API gates
+// site creation in an org at admin rank). Used to populate the New Site picker.
+interface CreatableOrg {
+  id: string;
+  name: string;
+  role: string;
 }
 
 interface Doc {
@@ -237,12 +250,28 @@ export function DocsLayout() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Org placement - "" = personal (no org). Populated lazily when the dialog opens.
+  const [siteOrgId, setSiteOrgId] = useState("");
+  const [creatableOrgs, setCreatableOrgs] = useState<CreatableOrg[]>([]);
+  // Optional branding picked before the site exists; uploaded after creation.
+  // Square arrives pre-cropped to a 512×512 WebP blob from AvatarCropDialog.
+  const [squareBlob, setSquareBlob] = useState<Blob | null>(null);
+  const [squarePreviewUrl, setSquarePreviewUrl] = useState<string | null>(null);
+  const [wideFile, setWideFile] = useState<File | null>(null);
+  const [widePreviewUrl, setWidePreviewUrl] = useState<string | null>(null);
+  const [squareCropFile, setSquareCropFile] = useState<File | null>(null);
+  const squareInputRef = useRef<HTMLInputElement>(null);
+  const wideInputRef = useRef<HTMLInputElement>(null);
 
   // org creation
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [orgError, setOrgError] = useState<string | null>(null);
   const [orgSaving, setOrgSaving] = useState(false);
+  // True when the org dialog was opened from the New Site "Owner" picker - on
+  // success we return to the still-open site dialog with the new org selected
+  // instead of navigating away to the org page.
+  const [orgFromSite, setOrgFromSite] = useState(false);
 
   // doc creation (instant, no form)
   const [creatingDoc, setCreatingDoc] = useState(false);
@@ -256,7 +285,7 @@ export function DocsLayout() {
   const [personalCritSparkles, setPersonalCritSparkles] = useState<boolean>(true);
   // Seed from the cookie (written on every prior change) so we render with the
   // user's choice immediately instead of flashing the default while /api/me is
-  // in flight. /api/me overrides if it disagrees — the cookie is best-effort,
+  // in flight. /api/me overrides if it disagrees - the cookie is best-effort,
   // the server row is authoritative.
   const [readingFont, setReadingFont] = useState<FontChoice>(() => readFontPrefsCookie().readingFont);
   const [editingFont, setEditingFont] = useState<FontChoice>(() => readFontPrefsCookie().editingFont);
@@ -283,7 +312,7 @@ export function DocsLayout() {
   const visibleProjects = projects.filter(p => !p.is_hidden || p.id === projectId);
 
   // Recently accessed docs/files for the current project. Re-read on route
-  // change AND when DocPage / FilePage push a new entry — pushes happen
+  // change AND when DocPage / FilePage push a new entry - pushes happen
   // after the fetch resolves, so they land later than the pathname change.
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   useEffect(() => {
@@ -337,7 +366,7 @@ export function DocsLayout() {
   // pair in a cookie so unauthenticated/published-doc pages can apply the
   // user's choice without an /api/me round-trip. wysiwyg/styles.css reads
   // --reading-font on .cm-wysiwyg--reading .cm-content and --editing-font on
-  // the not-reading variant. No cleanup that removes the vars — we want them
+  // the not-reading variant. No cleanup that removes the vars - we want them
   // to persist across route changes (PublicDocPage doesn't re-set them).
   useEffect(() => {
     const prefs = { readingFont, editingFont, uiFont };
@@ -369,7 +398,7 @@ export function DocsLayout() {
     if (!getToken()) return;
     apiFetchJson<Doc[]>(`/api/docs?projectId=${projectId}`)
       .then(result => {
-        // apiFetch already triggered window.location.replace — don't fight it
+        // apiFetch already triggered window.location.replace - don't fight it
         // by also calling React Router navigate.
         if (result.redirected) return;
         if (result.status === 403 || result.status === 404) {
@@ -384,6 +413,60 @@ export function DocsLayout() {
       .catch(() => {});
   }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Lazily load the orgs the user can place a new site under, the first time
+  // the dialog opens. The API only lets admin+ create sites in an org, so we
+  // filter to that here and skip the picker entirely when there are none.
+  const [orgsLoaded, setOrgsLoaded] = useState(false);
+  useEffect(() => {
+    if (!creating || orgsLoaded) return;
+    setOrgsLoaded(true);
+    apiFetchJson<CreatableOrg[]>("/api/organizations")
+      .then(result => {
+        if (result.ok && result.data) {
+          setCreatableOrgs(result.data.filter(o => o.role === "owner" || o.role === "admin"));
+        }
+      })
+      .catch(() => {});
+  }, [creating, orgsLoaded]);
+
+  function resetCreateForm() {
+    setCreating(false);
+    setError(null);
+    setName("");
+    setDescription("");
+    setSiteOrgId("");
+    setSquareBlob(null);
+    setWideFile(null);
+    setSquareCropFile(null);
+    setSquarePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setWidePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }
+
+  // Picked-file validation shared by both variants - mirrors the server's allow-list.
+  function validateLogoFile(file: File): string | null {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) return "Invalid file type. Allowed: JPEG, PNG, WebP, GIF.";
+    if (file.size > 2 * 1024 * 1024) return "File too large. Maximum size is 2MB.";
+    return null;
+  }
+
+  // Upload one branding variant to a freshly-created site. Returns the updated
+  // project row (so the caller can pick up logo_*_updated_at) or null on failure.
+  async function uploadSiteLogo(id: string, variant: "square" | "wide", file: File | Blob, filename: string): Promise<Partial<Project> | null> {
+    try {
+      const form = new FormData();
+      // NB: `File` is shadowed by the lucide-react icon import above, so reach
+      // the DOM constructor via globalThis.
+      form.append("file", file instanceof globalThis.File ? file : new globalThis.File([file], filename, { type: file.type || "image/webp" }));
+      const res = await apiFetch(`/api/projects/${id}/logo/${variant}`, { method: "POST", body: form });
+      if (!res.ok) return null;
+      const json = await res.json() as { ok: boolean; data?: Partial<Project> };
+      return json.ok ? json.data ?? null : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -392,17 +475,27 @@ export function DocsLayout() {
       const result = await apiFetchJson<Project>("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description: description || undefined }),
+        body: JSON.stringify({ name, description: description || undefined, organizationId: siteOrgId || undefined }),
       });
-      if (result.ok && result.data) {
-        setProjects(prev => [result.data!, ...prev]);
-        setCreating(false);
-        setName("");
-        setDescription("");
-        navigate(`/projects/${result.data.id}`);
-      } else {
+      if (!result.ok || !result.data) {
         setError(result.error ?? "Failed to create site.");
+        return;
       }
+      // Site exists now - upload any optional branding to its id, then merge the
+      // returned logo timestamps so the sidebar icon shows up immediately.
+      const newId = result.data.id;
+      let created: Project = result.data;
+      if (squareBlob) {
+        const updated = await uploadSiteLogo(newId, "square", squareBlob, "logo-square.webp");
+        if (updated) created = { ...created, ...updated };
+      }
+      if (wideFile) {
+        const updated = await uploadSiteLogo(newId, "wide", wideFile, wideFile.name);
+        if (updated) created = { ...created, ...updated };
+      }
+      setProjects(prev => [created, ...prev]);
+      resetCreateForm();
+      navigate(`/projects/${newId}`);
     } catch {
       setError("Could not connect to the server.");
     } finally {
@@ -421,9 +514,18 @@ export function DocsLayout() {
         body: JSON.stringify({ name: orgName }),
       });
       if (result.ok && result.data) {
+        const newOrg = { id: result.data.id, name: orgName, role: "owner" };
         setCreatingOrg(false);
         setOrgName("");
-        navigate(`/orgs/${result.data.id}`);
+        if (orgFromSite) {
+          // Came from the New Site picker - keep that dialog open, add the org
+          // to the list and select it, rather than navigating to the org page.
+          setOrgFromSite(false);
+          setCreatableOrgs(prev => [...prev, newOrg]);
+          setSiteOrgId(newOrg.id);
+        } else {
+          navigate(`/orgs/${newOrg.id}`);
+        }
       } else {
         setOrgError(result.error ?? "Failed to create organization.");
       }
@@ -448,7 +550,7 @@ export function DocsLayout() {
         navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true } });
       }
     } catch {
-      // fail silently — user can retry
+      // fail silently - user can retry
     } finally {
       setCreatingDoc(false);
     }
@@ -519,7 +621,7 @@ export function DocsLayout() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-      {/* Backdrop — mobile only: closes sidebar when tapping the content area */}
+      {/* Backdrop - mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
           className="absolute inset-0 z-10 md:hidden"
@@ -536,7 +638,7 @@ export function DocsLayout() {
         "md:relative md:inset-auto md:translate-x-0 md:transition-[width] md:duration-200",
         sidebarOpen ? "md:w-64" : "md:w-0 md:border-r-0",
       )}>
-        {/* Inner wrapper — clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
+        {/* Inner wrapper - clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
         <div className={cn("flex flex-col flex-1 min-h-0 w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
         {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
@@ -573,7 +675,7 @@ export function DocsLayout() {
               aria-label="Go to dashboard"
             >
               {/* Wordmark artwork is black. dark:invert flips it white only
-                  when the effective theme is dark — .dark now tracks the true
+                  when the effective theme is dark - .dark now tracks the true
                   polarity, incl. custom-dark (see applyThemeToRoot). */}
               <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto dark:invert" />
             </button>
@@ -689,7 +791,7 @@ export function DocsLayout() {
             ) : (
               <>
                 <div className="size-7 shrink-0 rounded-full bg-muted" />
-                <span className="flex-1 truncate text-sm font-medium">—</span>
+                <span className="flex-1 truncate text-sm font-medium">-</span>
               </>
             )}
             <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "hidden")}>
@@ -737,9 +839,9 @@ export function DocsLayout() {
         </button>
       </aside>
 
-      {/* Main content — full-width and static; the sidebar overlays it on mobile */}
+      {/* Main content - full-width and static; the sidebar overlays it on mobile */}
       <main className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Breadcrumb bar — always at the top */}
+        {/* Breadcrumb bar - always at the top */}
         {breadcrumbs.length > 0 && (
           <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">
             {breadcrumbs.map((crumb, i) => {
@@ -779,12 +881,20 @@ export function DocsLayout() {
           projectId={projectId}
         />
       )}
-      <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); setDescription(""); } }}>
-        <DialogContent className="sm:max-w-md" hideClose>
-          <DialogHeader className="pb-2">
-            <DialogTitle>New site</DialogTitle>
+      <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
+        <DialogContent className="sm:max-w-lg" hideClose>
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <BookOpen className="size-5" />
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <DialogTitle>Create a new site</DialogTitle>
+                <DialogDescription>You can change any of this later in Site Settings.</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleCreate} className="flex flex-col gap-5 py-2">
+          <form onSubmit={handleCreate} className="flex flex-col gap-5 py-1">
             <div className="flex flex-col gap-2">
               <Label htmlFor="site-name">Name</Label>
               <Input
@@ -807,21 +917,139 @@ export function DocsLayout() {
                 className="resize-none"
               />
             </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="site-org">Owner</Label>
+              <Select
+                value={siteOrgId || "personal"}
+                onValueChange={v => {
+                  if (v === "__new_org__") { setOrgFromSite(true); setCreatingOrg(true); return; }
+                  setSiteOrgId(v === "personal" ? "" : v);
+                }}
+              >
+                <SelectTrigger id="site-org">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="personal">
+                    <span className="flex items-center gap-2"><BookOpen className="size-3.5 text-muted-foreground" /> Personal</span>
+                  </SelectItem>
+                  {creatableOrgs.map(org => (
+                    <SelectItem key={org.id} value={org.id}>
+                      <span className="flex items-center gap-2"><Building2 className="size-3.5 text-muted-foreground" /> {org.name}</span>
+                    </SelectItem>
+                  ))}
+                  <SelectSeparator />
+                  <SelectItem value="__new_org__" className="text-primary focus:text-primary">
+                    <span className="flex items-center gap-2"><Plus className="size-3.5" /> New org</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {siteOrgId ? "Org members inherit access to this site." : "A personal site you own directly."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Branding <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <div className="flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-start">
+                {/* Square icon - cropped to 512×512 via AvatarCropDialog. */}
+                <div className="flex flex-1 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => squareInputRef.current?.click()}
+                    className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
+                  >
+                    {squarePreviewUrl
+                      ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
+                      : <Image className="size-5 text-muted-foreground" />}
+                  </button>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="text-sm font-medium">Square icon</p>
+                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => squareInputRef.current?.click()}>
+                      {squareBlob ? "Change" : "Upload"}
+                    </button>
+                    <p className="text-xs text-muted-foreground">Sidebar &amp; favourites.</p>
+                  </div>
+                  <input
+                    ref={squareInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const err = validateLogoFile(file);
+                      if (err) { setError(err); return; }
+                      setError(null);
+                      setSquareCropFile(file);
+                    }}
+                  />
+                </div>
+                {/* Wide wordmark - native aspect, no crop. */}
+                <div className="flex flex-1 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => wideInputRef.current?.click()}
+                    className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
+                  >
+                    {widePreviewUrl
+                      ? <img src={widePreviewUrl} alt="" className="max-h-full max-w-full object-contain" />
+                      : <Image className="size-5 text-muted-foreground" />}
+                  </button>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="text-sm font-medium">Wordmark</p>
+                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => wideInputRef.current?.click()}>
+                      {wideFile ? "Change" : "Upload"}
+                    </button>
+                    <p className="text-xs text-muted-foreground">Published header.</p>
+                  </div>
+                  <input
+                    ref={wideInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const err = validateLogoFile(file);
+                      if (err) { setError(err); return; }
+                      setError(null);
+                      setWideFile(file);
+                      setWidePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+                      if (wideInputRef.current) wideInputRef.current.value = "";
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-1">
               <DialogClose asChild>
                 <Button type="button" variant="outline" disabled={saving}>
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving} className="gap-1.5">
+                <Plus className="size-4" />
                 {saving ? "Creating…" : "Create site"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-      <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); } }}>
+      {squareCropFile && (
+        <AvatarCropDialog
+          file={squareCropFile}
+          shape="square"
+          onClose={() => { setSquareCropFile(null); if (squareInputRef.current) squareInputRef.current.value = ""; }}
+          onApply={async blob => {
+            setSquareBlob(blob);
+            setSquarePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+            setSquareCropFile(null);
+            if (squareInputRef.current) squareInputRef.current.value = "";
+          }}
+        />
+      )}
+      <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); setOrgFromSite(false); } }}>
         <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader className="pb-2">
             <DialogTitle>New organization</DialogTitle>

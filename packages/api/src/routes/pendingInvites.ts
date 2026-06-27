@@ -33,7 +33,7 @@ export async function handlePendingInvites(
   user: Session,
   url: URL,
 ): Promise<Response> {
-  // GET /pending-invites — site + org invites, merged, newest first.
+  // GET /pending-invites - site + org invites, merged, newest first.
   if (request.method === "GET" && url.pathname === "/pending-invites") {
     const [projectRes, orgRes] = await env.DB.batch([
       env.DB.prepare(

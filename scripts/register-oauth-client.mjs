@@ -4,7 +4,7 @@
 // Generates a client_id + client_secret, hashes the secret the same way the
 // worker does (SHA-256 → base64url; see packages/auth/src/oidc.ts), and writes
 // a ready-to-run .sql file that inserts the oauth_clients row. The plaintext
-// secret is printed ONCE — store it in the connected service's config now.
+// secret is printed ONCE - store it in the connected service's config now.
 //
 // Usage:
 //   node scripts/register-oauth-client.mjs \
@@ -90,9 +90,9 @@ console.log(line);
 console.log(`  client_id:      ${clientId}`);
 if (clientSecret) {
   console.log(`  client_secret:  ${clientSecret}`);
-  console.log("                  ^ shown ONCE — copy into the service's config now");
+  console.log("                  ^ shown ONCE - copy into the service's config now");
 } else {
-  console.log("  client_secret:  (none — public client, PKCE only)");
+  console.log("  client_secret:  (none - public client, PKCE only)");
 }
 console.log(`  client_name:    ${args.name}`);
 console.log(`  redirect_uris:  ${redirectJson}`);

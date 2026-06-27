@@ -3,7 +3,7 @@ export interface TimezoneGroup {
   offsetMinutes: number;
   iana: string;
   cities: string[];
-  coords: [number, number]; // [lon, lat] — d3-geo convention
+  coords: [number, number]; // [lon, lat] - d3-geo convention
 }
 
 export const TIMEZONE_GROUPS: TimezoneGroup[] = [

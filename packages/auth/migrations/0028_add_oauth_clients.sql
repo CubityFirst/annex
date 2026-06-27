@@ -1,14 +1,14 @@
--- "Sign in with Annex" — OIDC identity provider (authorization-code + PKCE).
+-- "Sign in with Annex" - OIDC identity provider (authorization-code + PKCE).
 -- Generalizes the single-purpose admin_handoffs flow (0009) into a real
 -- OAuth2 / OpenID Connect provider so other first-party services can
 -- authenticate users against their Annex account.
 --
--- oauth_clients — registry of services allowed to use the flow. One row per
+-- oauth_clients - registry of services allowed to use the flow. One row per
 --   connected app. `redirect_uris` is a JSON array of EXACT allowed callback
---   URLs (no wildcards — the token/authorize paths only ever accept an exact
+--   URLs (no wildcards - the token/authorize paths only ever accept an exact
 --   string match against this list). `client_secret_hash` is NULL for public
 --   clients (SPA / native) that authenticate with PKCE alone.
--- oauth_codes — short-lived, single-use authorization codes. Generalizes
+-- oauth_codes - short-lived, single-use authorization codes. Generalizes
 --   admin_handoffs: adds the client binding, the PKCE S256 challenge, the
 --   granted scope, and the OIDC nonce. Consumed atomically at the token
 --   endpoint (UPDATE … WHERE consumed_at IS NULL) so a code can't be replayed.

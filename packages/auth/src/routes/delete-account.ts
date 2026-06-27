@@ -27,7 +27,7 @@ export async function handleDeleteAccount(request: Request, env: Env): Promise<R
   // row. Deleting a customer auto-cancels every active subscription on
   // it, so this single call handles both the cancel and the GDPR-ish
   // cleanup of customer-side personal data (email, payment methods).
-  // We swallow Stripe failures rather than block account deletion —
+  // We swallow Stripe failures rather than block account deletion -
   // worst case is an orphan customer in Stripe that the user can't
   // reach. If STRIPE_SECRET_KEY isn't set we skip the call entirely
   // (e.g. in environments where billing isn't configured).

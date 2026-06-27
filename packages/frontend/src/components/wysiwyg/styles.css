@@ -1,4 +1,4 @@
-/* Reading mode — flows in normal document layout (height auto, no scroll). */
+/* Reading mode - flows in normal document layout (height auto, no scroll). */
 .cm-wysiwyg--reading,
 .cm-wysiwyg--reading .cm-editor,
 .cm-wysiwyg--reading .cm-scroller {
@@ -9,7 +9,7 @@
   padding: 0 !important;
   /* `enforceFullHeightInReadingMode` writes `min-height` here to keep CM's
      viewport open while lines are still being measured. As measurements
-     tighten the heightmap, min-height shrinks — animate the change so the
+     tighten the heightmap, min-height shrinks - animate the change so the
      gap below the editor slides closed rather than snapping. */
   transition: min-height 220ms ease-out;
 }
@@ -34,7 +34,7 @@
 /* Reading mode uses --reading-font; everything else (editing, raw) uses
    --editing-font. The CSS variables are set on :root by DocsLayout based
    on the user's per-account preference. Code lines / inline-code keep
-   their own monospace rule further down — those are deliberately not
+   their own monospace rule further down - those are deliberately not
    overridden so inline code stays legible under any prose font. */
 .cm-wysiwyg--reading .cm-content {
   font-family: var(--reading-font);
@@ -46,7 +46,7 @@
 /*
  * Headings: use padding (not margin) so the rendered height stays inside the
  * line's bounding rect. CM6's heightmap measures lines via getBoundingClientRect,
- * which excludes margins — using margin here causes click coordinates to map
+ * which excludes margins - using margin here causes click coordinates to map
  * to the wrong line.
  */
 .cm-wysiwyg .cm-content .cm-line.cm-h1 {
@@ -86,7 +86,7 @@
   padding: 0.3em 0 0.05em;
 }
 
-/* Heading anchor — chain icon shown on hover in reading mode */
+/* Heading anchor - chain icon shown on hover in reading mode */
 .cm-wysiwyg--reading .cm-h-anchor {
   display: inline-flex;
   align-items: center;
@@ -140,7 +140,7 @@
   font-style: italic;
 }
 
-/* Blockquote — italic prose with a thin gray rule on the left, no background.
+/* Blockquote - italic prose with a thin gray rule on the left, no background.
    Selector includes .cm-line so it beats CM6's `.cm-line { padding: 0 }`
    theme rule. */
 .cm-wysiwyg .cm-content .cm-line.cm-blockquote {
@@ -172,7 +172,7 @@
   border-top-color: #b0b0b0;
 }
 
-/* Code fence — keep every code line the SAME height as surrounding prose so
+/* Code fence - keep every code line the SAME height as surrounding prose so
    CM6's click→position math stays in sync. Just monospace + tinted bg. No
    font-size change, no padding-top/bottom on first/last (those were making
    lines variable-height and drifting click coords). */
@@ -184,7 +184,7 @@
 }
 
 /* CodeFenceWidget DOM (Shiki-rendered block when cursor is outside the fence).
-   CodeBlock applies my-4 — margins live outside the widget's bounding rect,
+   CodeBlock applies my-4 - margins live outside the widget's bounding rect,
    which CM6 doesn't measure. We override to use padding, which is included in
    getBoundingClientRect, so heights stay aligned with click coordinates. */
 .cm-wysiwyg .cm-content .cm-codefence-widget-root {
@@ -196,7 +196,7 @@
 }
 /* Reading mode: wrap long code lines instead of overflowing horizontally.
    Shiki's <pre> is a grandchild of CodeBlock's wrapper, so CodeBlock's
-   `[&>pre]:overflow-x-auto` never matches it — without this rule, a single
+   `[&>pre]:overflow-x-auto` never matches it - without this rule, a single
    long line pushes the document wider and breaks surrounding layout. */
 .cm-wysiwyg--reading .cm-codefence-widget-root pre,
 .cm-wysiwyg--reading .cm-codefence-widget-root pre code,
@@ -216,14 +216,14 @@
   opacity: 0.7;
 }
 
-/* Tables — when the cursor is inside, raw lines render monospace for column
+/* Tables - when the cursor is inside, raw lines render monospace for column
    alignment. Same height as surrounding prose (no font-size change) so click
    coords stay in sync with the heightmap. */
 .cm-wysiwyg .cm-content .cm-line.cm-table-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Rendered table widget — padding (not margin) so the spacing lives inside
+/* Rendered table widget - padding (not margin) so the spacing lives inside
    the widget's bounding rect (CM6 measures via getBoundingClientRect). */
 .cm-wysiwyg .cm-content .cm-table-widget-root {
   padding: 0.5em 0;
@@ -291,7 +291,7 @@
   border-radius: 4px;
 }
 
-/* Wikilink + standard link — inherit foreground color (white in dark mode),
+/* Wikilink + standard link - inherit foreground color (white in dark mode),
    underline only. */
 .cm-wysiwyg .cm-content .cm-wikilink-source,
 .cm-wysiwyg .cm-content .cm-link-source {
@@ -330,7 +330,7 @@
   color: hsl(var(--muted-foreground));
   font-weight: 600;
 }
-/* Custom-styled task checkbox — appearance:none drops the platform UI so we
+/* Custom-styled task checkbox - appearance:none drops the platform UI so we
    can render a themed box and check mark. */
 .cm-wysiwyg .cm-content .cm-task-checkbox {
   appearance: none;
@@ -411,7 +411,7 @@
   font-style: italic;
 }
 
-/* Callouts — header line and body lines stay as real CM6 text so clicks land
+/* Callouts - header line and body lines stay as real CM6 text so clicks land
    precisely. The icon is an inline replace widget at the start of the header. */
 .cm-wysiwyg .cm-content .cm-callout-icon {
   display: inline-flex;
@@ -485,10 +485,10 @@
   color: inherit;
 }
 
-/* Search panel — @codemirror/search injects .cm-panels + .cm-search into the
+/* Search panel - @codemirror/search injects .cm-panels + .cm-search into the
    editor's DOM. Theme them to match the editor chrome. The CSS custom
    properties here are oklch() values (see index.css), so they're used
-   directly with var() — wrapping them in hsl() produces invalid CSS and
+   directly with var() - wrapping them in hsl() produces invalid CSS and
    drops the rule. */
 .cm-wysiwyg .cm-panels {
   background-color: var(--background);
@@ -522,7 +522,7 @@
    onto every `.cm-button`, which would sit on top of our background-color.
    Reset `background-image: none` (and use the `background` shorthand so it
    wins specificity-wise) to kill the gradient. Same goes for the explicit
-   font-size: 70% that .cm-button sets — override with our own size. */
+   font-size: 70% that .cm-button sets - override with our own size. */
 .cm-wysiwyg .cm-search button {
   background: var(--secondary);
   background-image: none;

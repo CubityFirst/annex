@@ -1,7 +1,7 @@
 /**
  * E2E test for image paste into the wysiwyg editor.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Covers:

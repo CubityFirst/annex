@@ -11,7 +11,7 @@ export function isAudioUrl(url: string | undefined | null): boolean {
 }
 
 // Internal file URLs (`/api/files/:id/content`) carry the mime type only at
-// request time — the path has no extension. Copy-markdown fills the alt with
+// request time - the path has no extension. Copy-markdown fills the alt with
 // the original filename, so we fall back to the alt extension when the URL
 // has no extension of its own. URLs that already have an extension are
 // trusted (we don't promote `photo.png` to audio because someone wrote

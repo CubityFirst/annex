@@ -97,7 +97,7 @@ export async function requireMFA(
 // replayed to LOG IN within its ±1-step validity window. The conditional
 // UPDATE is the consume: it only succeeds for a step strictly later than the
 // last accepted one, and concurrent requests race on the row so exactly one
-// wins. Only the unauthenticated login path consumes — enroll and the
+// wins. Only the unauthenticated login path consumes - enroll and the
 // authenticated requireMFA confirmations deliberately don't, so enabling TOTP
 // and signing in (or confirming several settings actions) within one code
 // window keeps working.

@@ -14,8 +14,8 @@ export interface ColumnDef {
   label: string;
   defaultSize: number; // % for resizable columns; ignored for constrained (minWidth) columns
   minSize?: number;    // % minimum for resizable columns
-  minWidth?: number;   // px — if set, column becomes a standalone fixed-width segment
-  maxWidth?: number;   // px — maximum width for constrained columns (only used with minWidth)
+  minWidth?: number;   // px - if set, column becomes a standalone fixed-width segment
+  maxWidth?: number;   // px - maximum width for constrained columns (only used with minWidth)
   sortable?: boolean;  // when true (with onSort), the header is a clickable sort toggle
 }
 
@@ -37,13 +37,13 @@ interface ResizableTableProps {
    * Opaque token derived from the rendered rows' content. When it changes, the
    * table re-measures and re-fits its constrained columns (see the auto-fit
    * effect). Pass a string/number that varies with the data shown in any
-   * constrained (minWidth) column — e.g. a join of that column's cell text.
+   * constrained (minWidth) column - e.g. a join of that column's cell text.
    */
   measureKey?: string | number;
   children: React.ReactNode;
 }
 
-// Header cell — a plain label, or a clickable sort toggle when the column is
+// Header cell - a plain label, or a clickable sort toggle when the column is
 // sortable and an onSort handler is provided. Used by both header branches
 // (constrained segment and resizable-panel segment) so they stay consistent.
 function HeaderCell({
@@ -315,7 +315,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
             <React.Fragment key={`seg-${seg.segIdx}`}>
               <div data-seg={seg.segIdx} style={wrapperStyle} className="h-full flex">
                 {seg.constrained ? (
-                  // Constrained (standalone) segment — no internal panel group needed
+                  // Constrained (standalone) segment - no internal panel group needed
                   <HeaderCell col={seg.cols[0].col} idx={seg.cols[0].idx} sort={sort} onSort={onSort} />
                 ) : (
                   <ResizablePanelGroup

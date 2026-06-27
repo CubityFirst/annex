@@ -59,7 +59,7 @@ export async function createRegistrationOptions(
     authenticatorSelection: {
       residentKey: "preferred",
       // "required" means the authenticator must verify the user (PIN /
-      // biometric) — important because we treat WebAuthn as passwordless,
+      // biometric) - important because we treat WebAuthn as passwordless,
       // so the key alone authenticates without a second factor.
       userVerification: "required",
     },

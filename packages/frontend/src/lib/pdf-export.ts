@@ -31,7 +31,7 @@ export function runPdfExport(opts: PdfExportOptions): void {
   // Clone the article into a standalone print container appended to <body>.
   // The clone is static DOM (no CodeMirror virtualization), and lives outside
   // the SPA tree so the body's height during print equals the clone's full
-  // height — the print engine paginates that correctly. Inside the clone we
+  // height - the print engine paginates that correctly. Inside the clone we
   // strip the live editor and force the static markdown mirror visible.
   const clone = target.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".pdf-print-hide").forEach(el => el.remove());

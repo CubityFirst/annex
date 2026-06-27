@@ -13,7 +13,7 @@ export async function handleAi(
   if (action === "summarize" && request.method === "POST") {
     // Killswitch for the paid, external OpenAI dependency. Checked before any
     // DB/R2 work so a kill takes effect with zero load. Defaults to enabled when
-    // the flag/binding is unavailable (local dev or a flag-service outage) — a
+    // the flag/binding is unavailable (local dev or a flag-service outage) - a
     // deliberate-off switch, not fail-closed. The frontend degrades gracefully
     // (it only renders the summary block when a summary is present).
     const aiEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("ai-summaries", true) : true;
@@ -50,7 +50,7 @@ export async function handleAi(
     const access = await resolveAccess(env.DB, doc.project_id, user.userId);
     if (!access) return errorResponse(Errors.NOT_FOUND);
 
-    // A `limited` member has no project-wide read access — a doc_share is
+    // A `limited` member has no project-wide read access - a doc_share is
     // required to read this doc (mirrors the gate in docs.ts). Without this,
     // summarizing would leak the body of any project doc to a limited member.
     if (access.role === "limited") {
@@ -91,7 +91,7 @@ export async function handleAi(
           {
             role: "system",
             content:
-              "You are summarizing a documentation page so a reader can decide whether to open it. Write 1–3 short markdown bullets, under 100 words total. Lead with what the doc covers and what someone would do with it.\n\nRules:\n- Don't restate the title (it's shown above the summary).\n- Don't start with \"This document…\", \"Here is a summary\", or similar preambles — go straight to the content.\n- If the doc is a stub or mostly a list/table, say so in one bullet instead of inventing detail.",
+              "You are summarizing a documentation page so a reader can decide whether to open it. Write 1–3 short markdown bullets, under 100 words total. Lead with what the doc covers and what someone would do with it.\n\nRules:\n- Don't restate the title (it's shown above the summary).\n- Don't start with \"This document…\", \"Here is a summary\", or similar preambles - go straight to the content.\n- If the doc is a stub or mostly a list/table, say so in one bullet instead of inventing detail.",
           },
           {
             role: "user",

@@ -2,7 +2,7 @@
 // Parallel-worktree dev helper for Annex.
 //
 // Model: the main checkout runs the full stack via `pnpm dev` (frontend 5173 + api 8787
-// + auth 8788 + admin 8789), owning the shared .wrangler/state D1 — that's the ONE backend.
+// + auth 8788 + admin 8789), owning the shared .wrangler/state D1 - that's the ONE backend.
 // Each worktree adds ANOTHER frontend `vite` on its own port; the Vite /api proxy (hardcoded
 // to :8787) makes every worktree frontend talk to that single backend and share the one dev DB.
 //
@@ -109,7 +109,7 @@ function saveRegistry(reg) {
 // ---------- ports ----------
 
 // Is something currently serving on the port (accepts connections)? Try both IPv4
-// and IPv6 loopback — Vite binds `localhost`, which is `::1` on Windows.
+// and IPv6 loopback - Vite binds `localhost`, which is `::1` on Windows.
 function isPortServing(port) {
   const tryHost = (host) =>
     new Promise((res) => {
@@ -139,7 +139,7 @@ async function allocPort(reg, name) {
 
 // Registry-free: first port in range with nothing serving on it. Used by `serve`, which
 // runs from any checkout (incl. an agent's own worktree) where the root registry can't
-// coordinate ports — the live probe avoids collisions across independent checkouts.
+// coordinate ports - the live probe avoids collisions across independent checkouts.
 async function findFreePort() {
   for (let p = PORT_MIN; p <= PORT_MAX; p++) {
     if (!(await isPortServing(p))) return p;
@@ -217,7 +217,7 @@ async function cmdNew(name, opts) {
   try {
     step("pnpm install --frozen-lockfile", "pnpm install --frozen-lockfile", wtPath);
   } catch {
-    console.warn("⚠ frozen install failed — branch may add new deps. Retrying with a normal install…");
+    console.warn("⚠ frozen install failed - branch may add new deps. Retrying with a normal install…");
     step("pnpm install", "pnpm install", wtPath);
   }
 
@@ -305,7 +305,7 @@ function cmdRm(name, opts) {
   try {
     forceRemoveDir(wtPath);
   } catch {
-    console.warn(`⚠ Could not fully delete ${wtPath} — remove it manually if it lingers.`);
+    console.warn(`⚠ Could not fully delete ${wtPath} - remove it manually if it lingers.`);
   }
   try {
     sh("git worktree prune", root);
@@ -313,12 +313,12 @@ function cmdRm(name, opts) {
   if (reg[name]) {
     delete reg[name];
     saveRegistry(reg);
-    console.log(`✓ Freed port from registry. (Branch "${name}" still exists — delete/merge it separately.)`);
+    console.log(`✓ Freed port from registry. (Branch "${name}" still exists - delete/merge it separately.)`);
   }
 }
 
 // Run the frontend for review from the CURRENT checkout (this worktree), against the
-// shared backend on :8787. Creates no worktree and touches no registry — meant to be the
+// shared backend on :8787. Creates no worktree and touches no registry - meant to be the
 // one-liner an isolated agent (e.g. an agent-view session in its own .claude/worktrees/
 // checkout) runs to expose a reviewable port. Auto-picks a free port unless --port is given.
 async function cmdServe(opts) {
@@ -342,7 +342,7 @@ async function cmdServe(opts) {
     try {
       step("pnpm install --frozen-lockfile", "pnpm install --frozen-lockfile", root);
     } catch {
-      console.warn("⚠ frozen install failed — retrying with a normal install…");
+      console.warn("⚠ frozen install failed - retrying with a normal install…");
       step("pnpm install", "pnpm install", root);
     }
   }
@@ -359,7 +359,7 @@ async function cmdServe(opts) {
 
 function usage() {
   console.log(
-    `Annex worktree helper — parallel frontend dev servers against the shared backend on :${BACKEND_PORT}\n` +
+    `Annex worktree helper - parallel frontend dev servers against the shared backend on :${BACKEND_PORT}\n` +
       `\nUsage:\n` +
       `  node scripts/worktree.mjs new <name> [--base <branch>] [--start]\n` +
       `  node scripts/worktree.mjs serve [--port <n>]\n` +
@@ -367,7 +367,7 @@ function usage() {
       `  node scripts/worktree.mjs rm <name> [--force]\n` +
       `\n  new   Create a worktree on the repo's drive, install (hardlinked from the warm\n` +
       `        pnpm store), assign a stable frontend port, and print/run the dev command.\n` +
-      `  serve Run the frontend from the CURRENT checkout on a free (or --port) port — no\n` +
+      `  serve Run the frontend from the CURRENT checkout on a free (or --port) port - no\n` +
       `        worktree created. The one-liner for an isolated agent to expose a review port.\n` +
       `  list  Show worktrees, assigned ports, and whether each port is serving.\n` +
       `  rm    Remove a worktree and free its port (--force for a dirty worktree).\n` +

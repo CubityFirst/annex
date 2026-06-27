@@ -39,7 +39,7 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
 
   syntaxTree(state).iterate({
     enter: (node) => {
-      // Skip any node fully inside the frontmatter range — the frontmatter
+      // Skip any node fully inside the frontmatter range - the frontmatter
       // pass owns that region and Lezer would otherwise see the `---` lines
       // as HorizontalRule nodes.
       if (fmRange && node.from >= fmRange.from && node.to <= fmRange.to) {

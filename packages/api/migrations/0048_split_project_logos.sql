@@ -6,7 +6,7 @@
 -- and admins re-upload a square icon when they want one.
 --
 -- R2 keys move from `site-logos/{id}` to `site-logos/{id}-square` /
--- `site-logos/{id}-wide` — handled out-of-band by
+-- `site-logos/{id}-wide` - handled out-of-band by
 -- packages/api/scripts/backfill-logo-keys.ts.
 ALTER TABLE projects ADD COLUMN logo_square_updated_at TEXT;
 ALTER TABLE projects ADD COLUMN logo_wide_updated_at TEXT;

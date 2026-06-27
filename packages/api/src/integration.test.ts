@@ -55,7 +55,7 @@ const serversUp = authServerUp && apiServerUp;
 
 // ── Auth worker ──────────────────────────────────────────────────────────────
 
-describe.skipIf(!authServerUp)("auth worker — /register and /login", () => {
+describe.skipIf(!authServerUp)("auth worker - /register and /login", () => {
   it("rejects register with missing fields", async () => {
     const res = await fetch(`${AUTH_URL}/register`, {
       method: "POST",
@@ -110,7 +110,7 @@ describe.skipIf(!authServerUp)("auth worker — /register and /login", () => {
 
 // ── Full API flow ────────────────────────────────────────────────────────────
 
-describe.skipIf(!serversUp)("API — authenticated project + doc flow", () => {
+describe.skipIf(!serversUp)("API - authenticated project + doc flow", () => {
   let token = "";
   let projectId = "";
   let docId = "";
@@ -218,12 +218,12 @@ describe.skipIf(!serversUp)("API — authenticated project + doc flow", () => {
   });
 });
 
-// ── Drawing files — mutable content (PUT /files/:id/content) ─────────────────
+// ── Drawing files - mutable content (PUT /files/:id/content) ─────────────────
 // Drawings are the one file kind whose R2 blob may be overwritten in place. The
 // route must accept overwrites only for the Excalidraw vendor MIME, bust the
 // content ETag on save, and reject overwrites of immutable media.
 
-describe.skipIf(!serversUp)("API — drawing file content overwrite", () => {
+describe.skipIf(!serversUp)("API - drawing file content overwrite", () => {
   let token = "";
   let projectId = "";
   let drawingId = "";
@@ -323,19 +323,19 @@ describe.skipIf(!serversUp)("API — drawing file content overwrite", () => {
   });
 });
 
-// ── Public doc access — published-site semantics ─────────────────────────────
+// ── Public doc access - published-site semantics ─────────────────────────────
 // A published *site* intentionally exposes ALL of its docs regardless of the
 // per-doc published_at flag (which exists for other reasons). A doc is only
 // hidden from /public when neither the site nor the doc is published. This
 // suite locks in that intended behavior so it is not mistaken for an IDOR.
 
-describe.skipIf(!serversUp)("API — public doc access (published-site semantics)", () => {
+describe.skipIf(!serversUp)("API - public doc access (published-site semantics)", () => {
   let token = "";
   let projectId = "";
   let docId = "";
 
   // Distinct CF-Connecting-IP so this suite gets its own auth rate-limit
-  // bucket — the other suites already burn most of the shared FAKE_IP budget.
+  // bucket - the other suites already burn most of the shared FAKE_IP budget.
   const suiteHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({
     "Content-Type": "application/json",
     "CF-Connecting-IP": `172.16.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`,

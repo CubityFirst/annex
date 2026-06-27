@@ -1,9 +1,9 @@
 // Avatar variant storage + resolution.
 //
 // Keys in the ASSETS bucket:
-//   avatars/{userId}-dark   — dark-background variant (default)
-//   avatars/{userId}-light  — light-background variant
-//   avatars/{userId}        — legacy pre-variant object; treated as dark and
+//   avatars/{userId}-dark   - dark-background variant (default)
+//   avatars/{userId}-light  - light-background variant
+//   avatars/{userId}        - legacy pre-variant object; treated as dark and
 //                             lazily migrated to -dark on first fetch, then deleted.
 //
 // The displayed variant is purely client-derived (no DB). If a requested

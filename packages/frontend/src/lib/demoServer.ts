@@ -1,5 +1,5 @@
 // In-memory fake API for demo mode. installDemoServer() patches window.fetch
-// so every /api/* request is answered from the local dataset below — the real
+// so every /api/* request is answered from the local dataset below - the real
 // Dashboard, FileManager, DocPage and WysiwygEditor run unmodified, and every
 // "save" only mutates this module's state, which is gone on reload.
 //
@@ -7,7 +7,7 @@
 // none of this ships on the normal boot path. The patch checks isDemoMode()
 // per-request, so exiting demo (clearToken) immediately restores passthrough.
 //
-// Deliberate limits: exactly one site ("Demo Site") — site/org creation is
+// Deliberate limits: exactly one site ("Demo Site") - site/org creation is
 // refused; everything inside the site (docs, folders, files) is fully mutable.
 
 import { isDemoMode, DEMO_USER_ID, DEMO_USER_NAME, DEMO_USER_EMAIL } from "./demo";
@@ -336,7 +336,7 @@ function docListing(d: DemoDoc) {
     title: d.title,
     display_title: null,
     folder_id: d.folder_id,
-    // The real API stores tags as a JSON-encoded array string — DocPage and
+    // The real API stores tags as a JSON-encoded array string - DocPage and
     // TagPage JSON.parse this field.
     tags: d.tags.length ? JSON.stringify(d.tags) : null,
     updated_at: d.updated_at,
@@ -466,7 +466,7 @@ function buildExcerpt(content: string, term: string): string {
 // ---------------------------------------------------------------------------
 
 // Anonymous auth/public endpoints keep hitting the real network even while the
-// demo flag is set — e.g. someone opening /login mid-demo should still be able
+// demo flag is set - e.g. someone opening /login mid-demo should still be able
 // to sign in for real (setToken exits demo mode).
 const PASSTHROUGH_PREFIXES = [
   "/api/login",
@@ -714,7 +714,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     if (seg[2] === "content" && method === "GET") {
       return new Response(file.blob, { status: 200, headers: { "Content-Type": file.mime_type } });
     }
-    // Drawings save in place — overwrite the in-memory blob so a reopen shows the
+    // Drawings save in place - overwrite the in-memory blob so a reopen shows the
     // edits (mirrors PUT /files/:id/content on the real API).
     if (seg[2] === "content" && method === "PUT") {
       const text = typeof init?.body === "string" ? init.body : "";

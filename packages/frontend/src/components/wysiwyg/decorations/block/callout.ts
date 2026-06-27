@@ -28,7 +28,7 @@ export function tryVisitCallout(
 
   const foldable = parsed.fold === "+" || parsed.fold === "-";
   // When the cursor is anywhere in the callout, leave the source raw so the
-  // user can edit it — never collapse under the cursor.
+  // user can edit it - never collapse under the cursor.
   const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
   const collapsed =
     foldable && !cursorIn && isCalloutCollapsed(state, firstLine.from, parsed.fold);
@@ -55,7 +55,7 @@ export function tryVisitCallout(
       );
     }
 
-    // Hide every body line as a single block — the following content flows
+    // Hide every body line as a single block - the following content flows
     // straight after the header (same approach as the frontmatter hide).
     if (endLine > startLine) {
       const bodyStart = state.doc.line(startLine + 1);
@@ -81,7 +81,7 @@ export function tryVisitCallout(
     decos.push(Decoration.line({ class: classes }).range(line.from));
   }
 
-  // Cursor inside — leave the source raw so the user can edit. Don't replace
+  // Cursor inside - leave the source raw so the user can edit. Don't replace
   // the prefix with the icon widget.
   if (cursorIn) return "open";
 

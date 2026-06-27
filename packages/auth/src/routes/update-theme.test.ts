@@ -44,7 +44,7 @@ describe("handleUpdateTheme", () => {
   });
 
   // The admin / custom-theming gate intentionally lives in the API worker's
-  // PATCH /me/theme, NOT in this handler — so a non-admin session still writes
+  // PATCH /me/theme, NOT in this handler - so a non-admin session still writes
   // here. This guards against the handler accidentally growing its own gate.
   it("does not self-gate on admin (gate lives in the API worker's PATCH /me/theme)", async () => {
     vi.mocked(requireAuthenticatedSession).mockResolvedValue({ ...adminSession, isAdmin: false });

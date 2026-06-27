@@ -4,7 +4,7 @@ import { writeAdminAudit } from "../audit";
 import type { AppEnv } from "../index";
 
 // OIDC client management for the admin dashboard. The admin worker is a thin
-// authenticated proxy here — the oauth_clients table lives in the auth DB,
+// authenticated proxy here - the oauth_clients table lives in the auth DB,
 // which the admin worker binds read-only by convention, so every read and
 // write is forwarded to the auth worker (which owns auth-DB writes and the
 // client-secret hashing). `enforceAdmin` has already validated the session;
@@ -12,7 +12,7 @@ import type { AppEnv } from "../index";
 
 const oauthRouter = new Hono<AppEnv>();
 
-// List — read-only, no audit. Forwarded verbatim.
+// List - read-only, no audit. Forwarded verbatim.
 oauthRouter.get("/", (c) => {
   const auth = c.req.raw.headers.get("Authorization");
   return c.env.AUTH.fetch("https://auth/admin/oauth/clients", {
@@ -21,12 +21,12 @@ oauthRouter.get("/", (c) => {
   });
 });
 
-// Forward a POST mutation to the auth worker, then — only if it succeeded —
+// Forward a POST mutation to the auth worker, then - only if it succeeded -
 // write an actor-attributed admin_audit_log row, mirroring the other admin
 // mutation routes. `clientIdFrom` says where the affected client_id lives:
 // the success response (create mints a new id) or the request (the rest).
 //
-// detailKeys is an explicit ALLOWLIST of fields copied into the audit detail —
+// detailKeys is an explicit ALLOWLIST of fields copied into the audit detail -
 // it must never include `client_secret`, which the create/rotate responses
 // carry (shown once to the operator, never logged).
 async function forwardMutation(
@@ -54,7 +54,7 @@ async function forwardMutation(
   try {
     responseJson = JSON.parse(resText);
   } catch {
-    /* non-JSON response — treat as failure, skip audit */
+    /* non-JSON response - treat as failure, skip audit */
   }
   let requestJson: Record<string, unknown> = {};
   try {

@@ -31,16 +31,16 @@ pattern = "admin.cubityfir.st"
 custom_domain = true
 
 [vars]
-# Cloudflare-for-SaaS custom domains — used to release a site's custom hostname
+# Cloudflare-for-SaaS custom domains - used to release a site's custom hostname
 # when an admin removes a domain or deletes the site (mirrors the api worker).
-# MUST match the api worker's values (the dedicated yourannex.com zone — see
+# MUST match the api worker's values (the dedicated yourannex.com zone - see
 # memories/Custom-Domains.md), and CF_API_TOKEN must be scoped to that zone.
 # When CF_ZONE_ID / CF_API_TOKEN are unset, the CF call is a safe no-op (the DB
 # row is still removed).
 CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"
 
-# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) —
+# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) -
 # same behavior, but simulated locally in wrangler dev. See auth wrangler.toml.
 [[ratelimits]]
 name = "RATE_LIMITER_ADMIN"
@@ -58,12 +58,12 @@ namespace_id = "2002"
 simple = { limit = 10, period = 60 }
 
 # Secrets (set via `wrangler secret put`):
-#   JWT_SECRET         (same value as the auth worker's JWT_SECRET — the
+#   JWT_SECRET         (same value as the auth worker's JWT_SECRET - the
 #                       admin worker verifies sessions inline against
 #                       AUTH_DB instead of calling auth's /verify route)
-#   STRIPE_SECRET_KEY  (sk_test_... or sk_live_... — same value as auth
+#   STRIPE_SECRET_KEY  (sk_test_... or sk_live_... - same value as auth
 #                       worker; only used for admin-driven cancellations
 #                       triggered from the user details panel)
-#   CF_API_TOKEN       (same token as the api worker — zone-scoped, SSL and
+#   CF_API_TOKEN       (same token as the api worker - zone-scoped, SSL and
 #                       Certificates: Edit; only used to release a custom
 #                       hostname on admin-driven site delete)

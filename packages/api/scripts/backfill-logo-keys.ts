@@ -13,7 +13,7 @@
  *   npx tsx packages/api/scripts/backfill-logo-keys.ts --remote
  *
  * Wrangler has no `r2 object list` CLI, so we derive the candidate keys
- * from the D1 `projects` table — we already know each project that had a
+ * from the D1 `projects` table - we already know each project that had a
  * logo (their old `logo_updated_at` was copied into `logo_wide_updated_at`).
  *
  * Idempotent: if the legacy `site-logos/{id}` key is already gone, the
@@ -90,7 +90,7 @@ for (const id of ids) {
   const tmpPath = join(dir, "blob");
   try {
     if (!tryGet(oldKey, tmpPath)) {
-      console.log(`  ${oldKey} — already migrated or missing, skipping.`);
+      console.log(`  ${oldKey} - already migrated or missing, skipping.`);
       skipped++;
       continue;
     }

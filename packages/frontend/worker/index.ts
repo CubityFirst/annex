@@ -134,7 +134,7 @@ export default {
     try {
       const url = new URL(request.url);
 
-      // Stripe webhook — forwarded to the auth worker via service binding
+      // Stripe webhook - forwarded to the auth worker via service binding
       // verbatim. The auth worker reads the raw body and verifies the
       // signature; we must not parse, alter, or strip headers along the
       // way or signature verification will fail.

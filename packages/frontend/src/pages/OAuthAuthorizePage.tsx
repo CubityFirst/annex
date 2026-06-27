@@ -10,7 +10,7 @@ import { clearToken, getToken } from "@/lib/auth";
 // with the standard query params; this page orchestrates the Annex login (if
 // needed), an optional consent gate, and the redirect back to the service with
 // a single-use `code`. All validation + code minting happens server-side at
-// /api/oauth/authorize — this page never constructs the redirect itself.
+// /api/oauth/authorize - this page never constructs the redirect itself.
 
 interface OidcParams {
   client_id: string;

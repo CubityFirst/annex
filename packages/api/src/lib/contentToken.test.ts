@@ -10,7 +10,7 @@ describe("contentToken", () => {
     expect(await verifyContentToken(SECRET, "file-abc", token, NOW)).toBe(true);
   });
 
-  it("is scoped to one file id — a token for A does not authorize B", async () => {
+  it("is scoped to one file id - a token for A does not authorize B", async () => {
     const token = await signContentToken(SECRET, "file-A", NOW);
     expect(await verifyContentToken(SECRET, "file-B", token, NOW)).toBe(false);
   });

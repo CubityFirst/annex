@@ -5,7 +5,7 @@ import type { Env } from "../index";
 
 // Patch Ink supporter cosmetic prefs: ring style + presence colour. Both
 // fields are optional in the body; pass `null` to reset back to default
-// (NULL on the row means "use the deterministic default" — see plan.ts).
+// (NULL on the row means "use the deterministic default" - see plan.ts).
 //
 // Gated on the caller having an active Ink plan via resolvePersonalPlan, so
 // expired-grant or canceled-paid users can't keep tweaking. Refusing here

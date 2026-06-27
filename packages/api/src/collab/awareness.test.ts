@@ -19,8 +19,8 @@ function encodeRaw(entries: Array<{ clientId: number; clock: number; state: unkn
 }
 
 // Builds a real y-protocols awareness update for a single client whose local
-// "user" state has the given id — exactly what WysiwygEditor.setLocalStateField
-// produces — so the validator is tested against the genuine wire format.
+// "user" state has the given id - exactly what WysiwygEditor.setLocalStateField
+// produces - so the validator is tested against the genuine wire format.
 function updateForUser(userId: string | null, clientId = 42): Uint8Array {
   const doc = new Y.Doc();
   doc.clientID = clientId;
@@ -48,7 +48,7 @@ describe("awarenessUpdateIdentityOk (presence-spoofing guard)", () => {
 
   it("rejects an update that injects a SECOND client's spoofed identity", () => {
     // Attacker's own (matching) entry plus an injected entry impersonating the
-    // victim — the realistic spoof. Must be rejected as a whole.
+    // victim - the realistic spoof. Must be rejected as a whole.
     const update = encodeRaw([
       { clientId: 1, clock: 1, state: { user: { id: "attacker-1", name: "Me", color: "#1" } } },
       { clientId: 999, clock: 1, state: { user: { id: "victim-2", name: "Victim", color: "#2" } } },

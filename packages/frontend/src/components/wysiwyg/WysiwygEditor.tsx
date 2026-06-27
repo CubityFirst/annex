@@ -71,7 +71,7 @@ interface Props {
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
   onAwarenessChange?: (editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink"; personalPlanStyle?: string | null }[]) => void;
-  // Terminal signal from collab server — reconnecting won't help (doc size cap exceeded
+  // Terminal signal from collab server - reconnecting won't help (doc size cap exceeded
   // server-side, or our last frame was too big and local state has diverged). The provider
   // stops reconnecting; the parent should drop out of collab mode.
   onCollabFatal?: (reason: string) => void;
@@ -366,7 +366,7 @@ export function WysiwygEditor({
 
       awareness = new Awareness(ydoc);
       // Ink supporters can override the deterministic per-user colour. We
-      // only apply it for the foreground colour — the soft "background"
+      // only apply it for the foreground colour - the soft "background"
       // colour used for selection highlights stays derived so it always
       // pairs cleanly with the foreground regardless of what hex they
       // picked.

@@ -38,7 +38,7 @@ function buildEmpty(row: ProjectDetailRow = BASE_ROW) {
   });
 }
 
-describe("buildProjectDetails — published flag", () => {
+describe("buildProjectDetails - published flag", () => {
   it("is a draft when published_at is null", () => {
     expect(buildEmpty().profile.published).toBe(false);
   });
@@ -49,7 +49,7 @@ describe("buildProjectDetails — published flag", () => {
   });
 });
 
-describe("buildProjectDetails — content stats", () => {
+describe("buildProjectDetails - content stats", () => {
   it("coalesces NULL aggregates to zero for an empty project", () => {
     const d = buildEmpty();
     expect(d.content.docs).toEqual({ total: 0, published: 0, drafts: 0, with_ai_summary: 0 });
@@ -78,7 +78,7 @@ describe("buildProjectDetails — content stats", () => {
   });
 });
 
-describe("buildProjectDetails — ownership & organization", () => {
+describe("buildProjectDetails - ownership & organization", () => {
   it("returns a null owner when the account is gone", () => {
     expect(buildEmpty().profile.owner).toBeNull();
   });
@@ -98,7 +98,7 @@ describe("buildProjectDetails — ownership & organization", () => {
   });
 });
 
-describe("buildProjectDetails — settings booleans", () => {
+describe("buildProjectDetails - settings booleans", () => {
   it("maps the 0/1 integer toggles to booleans", () => {
     const d = buildEmpty({
       ...BASE_ROW,
@@ -118,7 +118,7 @@ describe("buildProjectDetails — settings booleans", () => {
   });
 });
 
-describe("buildProjectDetails — members", () => {
+describe("buildProjectDetails - members", () => {
   it("maps the accepted integer flag to a boolean per member", () => {
     const d = buildProjectDetails({
       ...emptyInputs(),
@@ -134,7 +134,7 @@ describe("buildProjectDetails — members", () => {
   });
 });
 
-describe("buildProjectDetails — branding", () => {
+describe("buildProjectDetails - branding", () => {
   it("surfaces the mapped custom domain", () => {
     const d = buildProjectDetails({
       ...emptyInputs(),

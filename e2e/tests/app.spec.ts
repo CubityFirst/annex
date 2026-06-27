@@ -1,7 +1,7 @@
 /**
  * E2E test suite for the full application flow.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -108,7 +108,7 @@ test("registers a new account", async () => {
 test("logs in with the new account", async () => {
   // Registration may auto-log in (when the email-verification flag is off).
   // In that case the user is already on /dashboard and the login form is
-  // implicitly verified by the rest of the suite — only run the login flow
+  // implicitly verified by the rest of the suite - only run the login flow
   // if we actually landed on /login after registration.
   if (!page.url().includes("/login")) return;
 
@@ -260,7 +260,7 @@ test("drags a document back to root via the breadcrumb", async () => {
   await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
 });
 
-// ── FileManager: right-click context menu — rename ───────────────────────────
+// ── FileManager: right-click context menu - rename ───────────────────────────
 
 test("renames a folder via the context menu", async () => {
   await page.getByText("E2E Folder").click({ button: "right" });
@@ -276,7 +276,7 @@ test("renames a folder via the context menu", async () => {
   await expect(page.getByText("E2E Folder", { exact: true })).not.toBeVisible();
 });
 
-// ── FileManager: right-click context menu — delete ───────────────────────────
+// ── FileManager: right-click context menu - delete ───────────────────────────
 
 test("deletes a document via the context menu", async () => {
   await page.getByText("My E2E Document").click({ button: "right" });
@@ -321,6 +321,6 @@ test("deletes the project", async () => {
   projectSettingsUrl = ""; // signal afterAll that cleanup is done
 });
 
-// Account deletion runs in globalTeardown (e2e/global-teardown.ts) — the
+// Account deletion runs in globalTeardown (e2e/global-teardown.ts) - the
 // no-MFA delete path doesn't need a UI test here. The 2FA-gated path is
 // covered by 2fa.spec.ts.

@@ -11,7 +11,7 @@ replace the three `<…>` placeholders with the values from
 
 ```
 Add "Sign in with Annex" to this project. Annex is a standard OpenID Connect
-(OIDC) provider — use a well-maintained OIDC client library for this stack, not
+(OIDC) provider - use a well-maintained OIDC client library for this stack, not
 a hand-rolled flow.
 
 PROVIDER (everything else is discoverable):
@@ -20,17 +20,17 @@ PROVIDER (everything else is discoverable):
 - Flow:          Authorization Code + PKCE (S256). id_tokens are RS256; verify
                  offline via the provider's JWKS (in the discovery doc).
 - Scopes:        openid profile email
-- Claims you get: sub (stable unique user id — key your users on THIS, never on
+- Claims you get: sub (stable unique user id - key your users on THIS, never on
                   email), email, email_verified, name, picture (avatar URL; may
-                  404 if the user has no avatar — fall back to your own placeholder).
+                  404 if the user has no avatar - fall back to your own placeholder).
 
-CREDENTIALS (store the secret server-side only — never ship it to the browser):
+CREDENTIALS (store the secret server-side only - never ship it to the browser):
 - client_id:     <ANNEX_CLIENT_ID>
 - client_secret: <ANNEX_CLIENT_SECRET>     (omit if this is a public/SPA client)
 - redirect_uri:  <YOUR_EXACT_CALLBACK_URL> (e.g. https://app.example.com/api/auth/callback/annex)
 
 REQUIREMENTS:
-1. Configure the OIDC client from the discovery URL — do NOT hardcode the
+1. Configure the OIDC client from the discovery URL - do NOT hardcode the
    authorization/token/userinfo/jwks endpoints (the authorization endpoint is on
    a different host than the issuer; discovery handles that for you).
 2. Use Authorization Code flow with PKCE (code_challenge_method=S256).
@@ -39,14 +39,14 @@ REQUIREMENTS:
 5. On callback: exchange the code at the token endpoint (send the PKCE
    code_verifier; include the client_secret only for a confidential/server-side
    client), then VERIFY the id_token: signature against JWKS, and the iss, aud
-   (== client_id), exp, and nonce claims. Most OIDC libraries do this for you —
+   (== client_id), exp, and nonce claims. Most OIDC libraries do this for you -
    make sure it's enabled, not skipped.
 6. Establish your app's own session from the verified identity. Use `sub` as the
    primary key for the Annex identity; treat email as mutable.
 7. The redirect_uri registered with Annex must match byte-for-byte what your app
    sends (scheme, host, port, path).
 8. (If this client was granted the `roles` scope) the id_token / userinfo carry a
-   `roles` string array. Gate admin-only features on `roles.includes("admin")` —
+   `roles` string array. Gate admin-only features on `roles.includes("admin")` -
    do NOT hardcode a user id or email for admin access.
 
 STACK-SPECIFIC GUIDANCE (pick what fits this project):
@@ -62,7 +62,7 @@ STACK-SPECIFIC GUIDANCE (pick what fits this project):
   `server_metadata_url=".../.well-known/openid-configuration"`).
 - Go: `coreos/go-oidc` + `golang.org/x/oauth2` (provider via `oidc.NewProvider`,
   verify with `provider.Verifier`).
-- Anything else: any conformant OIDC/OAuth2-with-PKCE client works — point it at
+- Anything else: any conformant OIDC/OAuth2-with-PKCE client works - point it at
   the discovery URL.
 
 Then:

@@ -212,7 +212,7 @@ describe("removeCustomDomain", () => {
     const result = await removeCustomDomain({ ...CONFIG, DB }, "proj1");
     expect(result).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
-    // Only the lookup ran — no DELETE.
+    // Only the lookup ran - no DELETE.
     expect(calls.some(c => /DELETE FROM project_custom_domains/.test(c.sql))).toBe(false);
   });
 

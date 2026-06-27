@@ -7,7 +7,7 @@ import type { Env } from "../index";
 //
 // Public endpoint, signature-verified. Bad-signature requests get 400.
 // Logical no-ops (event references an unknown user, unsubscribed event
-// type, etc.) are acknowledged with 200 — retrying won't help and the
+// type, etc.) are acknowledged with 200 - retrying won't help and the
 // event is genuinely unprocessable. A *thrown* handler error returns 500
 // so Stripe redelivers; transient failures (a D1 blip) must not be
 // silently dropped.
@@ -26,7 +26,7 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
   const sig = request.headers.get("stripe-signature");
   if (!sig) return errorResponse(Errors.BAD_REQUEST);
 
-  // MUST read raw body before any .json() — signature is over the bytes.
+  // MUST read raw body before any .json() - signature is over the bytes.
   const rawBody = await request.text();
 
   const stripe = getStripe(env.STRIPE_SECRET_KEY);
@@ -73,14 +73,14 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
         await handleInvoicePaid(env, event.data.object as Stripe.Invoice);
         break;
       default:
-        // Unsubscribed event types are fine — Stripe sends what it's
+        // Unsubscribed event types are fine - Stripe sends what it's
         // configured to send. Just acknowledge and move on.
         break;
     }
   } catch (err) {
     // Most handler failures are transient (a D1 hiccup, a brief blip).
     // We have NOT recorded this event as processed, so 500 and let Stripe
-    // redeliver — the retry reprocesses cleanly. A deterministic handler
+    // redeliver - the retry reprocesses cleanly. A deterministic handler
     // bug will retry uselessly for Stripe's retry window then give up,
     // which is still far better than silently and permanently dropping a
     // billing state change.
@@ -88,7 +88,7 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
     return errorResponse(Errors.INTERNAL);
   }
 
-  // Handler succeeded — record the event so any later replay is a no-op.
+  // Handler succeeded - record the event so any later replay is a no-op.
   await env.DB.prepare(
     "INSERT OR IGNORE INTO webhook_events (event_id, type, processed_at) VALUES (?, ?, ?)",
   ).bind(event.id, event.type, Date.now()).run();
@@ -143,7 +143,7 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
   // priced subscription carrying metadata.userId (a future second product, a
   // sub created out-of-band on a different price) would flip the user to Ink.
   // Only the configured Ink price grants the plan. (A promo/100%-off code on
-  // the Ink price itself still counts — that's a legitimate Ink subscription.)
+  // the Ink price itself still counts - that's a legitimate Ink subscription.)
   const inkPriceId = env.STRIPE_INK_PRICE_ID;
   if (inkPriceId && !sub.items.data.some(item => item.price?.id === inkPriceId)) {
     console.warn(`subscription ${sub.id} for user ${userId} is not the Ink price; not granting Ink`);
@@ -152,7 +152,7 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
 
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   // Stripe moved current_period_end from the subscription to per-item in
-  // newer api versions. Try both — older SDK type defs still expose it
+  // newer api versions. Try both - older SDK type defs still expose it
   // on Subscription, newer payloads only have it on items.
   const periodEnd =
     (sub as unknown as { current_period_end?: number }).current_period_end
@@ -168,7 +168,7 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
   // transitions to canceled (which fires subscription.deleted).
   const cancelAt = sub.cancel_at ? sub.cancel_at * 1000 : null;
 
-  // Only set personal_plan_started_at if it's not already populated —
+  // Only set personal_plan_started_at if it's not already populated -
   // preserves the original supporter date across cancel/resub cycles.
   await env.DB.prepare(
     `INSERT INTO user_billing (
@@ -229,7 +229,7 @@ async function handleInvoicePaymentFailed(env: Env, invoice: Stripe.Invoice): Pr
 }
 
 // invoice.paid: confirm active status and refresh period_end. This is
-// also the renewal heartbeat — fired every billing cycle on success.
+// also the renewal heartbeat - fired every billing cycle on success.
 async function handleInvoicePaid(env: Env, invoice: Stripe.Invoice): Promise<void> {
   const subscriptionId = extractSubscriptionId(invoice);
   if (!subscriptionId) return;

@@ -12,7 +12,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   // New account creation is gated by the Flagship "signup" flag. Checked before
   // any parsing/DB work so a kill takes effect with zero load. Defaults to
   // enabled when the flag/binding is unavailable (local dev or a flag-service
-  // outage) — a deliberate-off switch, not fail-closed.
+  // outage) - a deliberate-off switch, not fail-closed.
   const signupEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("signup", true) : true;
   if (!signupEnabled) {
     return Response.json(

@@ -18,7 +18,7 @@ export interface Env {
   // schema change to users/sessions/user_billing/user_preferences columns
   // read by loadCurrentSession requires redeploying auth + api + admin.
   JWT_SECRET: string;
-  // IP-keyed rate limiters (Cloudflare unsafe bindings — see wrangler.toml).
+  // IP-keyed rate limiters (Cloudflare unsafe bindings - see wrangler.toml).
   // RATE_LIMITER_ADMIN gates every authenticated admin API route;
   // RATE_LIMITER_ADMIN_HANDOFF gates the unauthenticated exchange proxy.
   RATE_LIMITER_ADMIN: { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -101,7 +101,7 @@ app.get("/api/avatar/:userId", async (c) => {
 
   const userId = c.req.param("userId");
   // Admin only ever shows the dark variant. Read-only: fall back to a legacy
-  // object but do NOT migrate/delete here — the API worker owns that.
+  // object but do NOT migrate/delete here - the API worker owns that.
   const obj = (await c.env.ASSETS.get(`avatars/${userId}-dark`))
     ?? (await c.env.ASSETS.get(`avatars/${userId}`));
   if (!obj) return new Response(null, { status: 404 });

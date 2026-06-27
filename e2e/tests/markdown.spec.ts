@@ -1,7 +1,7 @@
 /**
  * E2E test covering rendering of the full markdown surface area on a real doc.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -10,7 +10,7 @@
  * Strategy: instead of typing each markdown element through the editor (which
  * is slow and surfaces typing-time autocomplete behaviours, not rendering),
  * PUT the doc body through the API, then assert the *reading mode* DOM
- * renders all of them correctly — headings, lists, code, callouts, wikilinks,
+ * renders all of them correctly - headings, lists, code, callouts, wikilinks,
  * underline, image attrs, tables, dice, frontmatter title override, footnotes,
  * blockquotes, links, inline formatting, task lists, horizontal rules.
  */
@@ -54,7 +54,7 @@ async function injectFakeIp(ctx: BrowserContext) {
 }
 
 async function putDoc(p: Page, id: string, title: string, content: string) {
-  // Retry once on 5xx — local wrangler dev intermittently drops requests
+  // Retry once on 5xx - local wrangler dev intermittently drops requests
   // through the browser → vite → worker chain.
   const result = await p.evaluate(async ({ id, title, content }) => {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -119,7 +119,7 @@ test("sets up an account, project, and two docs (one as wikilink target)", async
   projectId = page.url().match(/\/projects\/([a-z0-9-]+)/)![1];
   projectSettingsUrl = `/projects/${projectId}/settings`;
 
-  // Target doc — wikilink references its title.
+  // Target doc - wikilink references its title.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
   linkedDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
@@ -197,12 +197,12 @@ test("renders every supported markdown element in reading mode", async () => {
   // The doc title is rendered as a real <h1> in the article header.
   await expect(page.getByRole("heading", { name: "Markdown Showcase" })).toBeVisible({ timeout: 5000 });
 
-  // Headings — react-markdown emits h1/h2/h3 from the body markdown.
+  // Headings - react-markdown emits h1/h2/h3 from the body markdown.
   await expect(mirror.locator("h1", { hasText: "H1 Heading" })).toHaveCount(1);
   await expect(mirror.locator("h2", { hasText: "H2 Heading" })).toHaveCount(1);
   await expect(mirror.locator("h3", { hasText: "H3 Heading" })).toHaveCount(1);
 
-  // Inline formatting — render as <strong>, <em>, <u>, <del>, <code>.
+  // Inline formatting - render as <strong>, <em>, <u>, <del>, <code>.
   await expect(mirror.locator("strong", { hasText: "bold" })).toHaveCount(1);
   await expect(mirror.locator("em", { hasText: "italic" })).toHaveCount(1);
   await expect(mirror.locator("u", { hasText: "underline" })).toHaveCount(1);
@@ -215,7 +215,7 @@ test("renders every supported markdown element in reading mode", async () => {
 
   // Callouts surface via data-callout attribute on a blockquote container.
   // The fold marker (`+`/`-`) parsing is covered by the remark-callouts unit
-  // tests — here we just need to confirm both callout types render in DOM.
+  // tests - here we just need to confirm both callout types render in DOM.
   await expect(mirror.locator("[data-callout='note']")).toHaveCount(1);
   await expect(mirror.locator("[data-callout='warning']")).toHaveCount(1);
 
@@ -231,7 +231,7 @@ test("renders every supported markdown element in reading mode", async () => {
   await expect(mirror.locator("th", { hasText: "Col A" })).toHaveCount(1);
   await expect(mirror.locator("td", { hasText: "a1" })).toHaveCount(1);
 
-  // Code block — react-markdown emits pre > code.
+  // Code block - react-markdown emits pre > code.
   await expect(mirror.locator("pre code")).toContainText("const x = 42");
 
   // Horizontal rule.
@@ -261,7 +261,7 @@ test("frontmatter title override is honored in reading mode", async () => {
     "Body content.",
   ].join("\n");
 
-  // Reuse the existing doc — frontmatter title swaps the rendered <h1>.
+  // Reuse the existing doc - frontmatter title swaps the rendered <h1>.
   await putDoc(page, docId, "Stored Title", body);
   await page.goto(`/projects/${projectId}/docs/${docId}`);
   await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });

@@ -18,7 +18,7 @@
 --
 -- The secret itself is NEVER stored. We keep only key_hash = SHA-256(secret)
 -- (hex). Keys are high-entropy random tokens, so a single fast SHA-256 is the
--- correct primitive (the GitHub-PAT pattern) — a slow KDF like password.ts's
+-- correct primitive (the GitHub-PAT pattern) - a slow KDF like password.ts's
 -- PBKDF2 would add latency to every authenticated API call for no security
 -- gain. Lookup is by exact hash match against a UNIQUE index, so the raw
 -- secret never participates in a timing-sensitive comparison.

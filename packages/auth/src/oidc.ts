@@ -4,8 +4,8 @@
 // security-critical bits (PKCE, scope resolution, exact redirect matching,
 // RS256 signing/verification, JWKS derivation) are unit-testable in isolation.
 //
-// Signing uses RS256 (asymmetric) — NOT the HS256 `JWT_SECRET` used for
-// first-party Annex sessions — so connected services can verify id_tokens
+// Signing uses RS256 (asymmetric) - NOT the HS256 `JWT_SECRET` used for
+// first-party Annex sessions - so connected services can verify id_tokens
 // offline against the published JWKS without ever holding an Annex secret.
 
 import { toArrayBuffer } from "./crypto";
@@ -108,7 +108,7 @@ export function parseRedirectUris(json: string): string[] {
   }
 }
 
-// Exact string match — no prefix/wildcard matching, which is the single most
+// Exact string match - no prefix/wildcard matching, which is the single most
 // important defence against open-redirect / token-theft in an OAuth provider.
 export function redirectUriAllowed(redirectUri: string, registered: string[]): boolean {
   return registered.includes(redirectUri);
@@ -146,7 +146,7 @@ export function parsePrivateJwk(secret: string): PrivateJwk {
   return jwk;
 }
 
-// The public half is just the private JWK with the private fields stripped —
+// The public half is just the private JWK with the private fields stripped -
 // an RSA private JWK already carries the public modulus (n) and exponent (e).
 export function derivePublicJwk(privateJwk: PrivateJwk): PublicJwk {
   return { kty: privateJwk.kty, n: privateJwk.n, e: privateJwk.e, alg: "RS256", use: "sig", kid: privateJwk.kid };
@@ -168,7 +168,7 @@ export async function signRs256(payload: Record<string, unknown>, privateJwk: Pr
   return `${signingInput}.${bytesToB64url(new Uint8Array(sig))}`;
 }
 
-// Verifies an RS256 JWT signed by THIS provider (alg pinned to RS256 — never
+// Verifies an RS256 JWT signed by THIS provider (alg pinned to RS256 - never
 // trust the token's alg to pick the verifier; that's the classic alg-confusion
 // hole). Returns the payload, or null if signature/format/exp is bad.
 export async function verifyRs256(token: string, privateJwk: PrivateJwk): Promise<Record<string, unknown> | null> {
@@ -301,7 +301,7 @@ export function buildAccessTokenClaims(opts: {
 // `issuer` is the dedicated identity origin (e.g. https://auth.cubityfir.st).
 // `authorizeUrl` is the browser-facing authorization endpoint, which lives on
 // the APP origin (docs.cubityfir.st) because that's where the user's Annex
-// session exists — OIDC permits endpoints on different hosts.
+// session exists - OIDC permits endpoints on different hosts.
 export function buildDiscoveryDocument(issuer: string, authorizeUrl: string): Record<string, unknown> {
   return {
     issuer,
@@ -324,5 +324,5 @@ export function buildDiscoveryDocument(issuer: string, authorizeUrl: string): Re
 // independent and longer-lived; revoking the Annex session does not retro-kill
 // already-issued OIDC tokens (they're short by design).
 export const OIDC_TOKEN_TTL_SEC = 60 * 60;
-// Authorization codes are single-use and short — matches admin_handoffs.
+// Authorization codes are single-use and short - matches admin_handoffs.
 export const OIDC_CODE_TTL_MS = 5 * 60 * 1000;

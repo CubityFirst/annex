@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-// Mock the heavy mermaid module — these tests cover the fence→diagram routing
+// Mock the heavy mermaid module - these tests cover the fence→diagram routing
 // and the error fallback, not mermaid's own SVG layout (which jsdom can't do).
 const renderMock = vi.fn();
 const initializeMock = vi.fn();

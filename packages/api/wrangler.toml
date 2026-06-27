@@ -21,7 +21,7 @@ migrations_dir = "migrations"
 # Read-only access to the auth DB so this worker can verify sessions inline
 # (one D1 batch read of users + sessions) instead of round-tripping through
 # the auth worker's /verify route on every request. Migrations live with the
-# auth worker — DO NOT add migrations_dir here.
+# auth worker - DO NOT add migrations_dir here.
 [[d1_databases]]
 binding = "AUTH_DB"
 database_name = "cubedocs-auth"
@@ -59,10 +59,10 @@ R2_BUCKET_NAME = "cubedocs-assets"
 R2_ACCOUNT_ID = "d843ae90cab33e54f4d284bc65d2fd6a"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's
-# /lookup also has its own coarser IP-keyed limiter — this one caps any
+# /lookup also has its own coarser IP-keyed limiter - this one caps any
 # single account from scraping the email→user map even when multiple
 # users share an IP (office NAT).
-# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) —
+# GA [[ratelimits]] binding (not the deprecated [[unsafe.bindings]] form) -
 # same behavior, but simulated locally in wrangler dev. See auth wrangler.toml.
 [[ratelimits]]
 name = "RATE_LIMITER_INVITE_LOOKUP"
@@ -78,17 +78,17 @@ namespace_id = "2002"
 simple = { limit = 120, period = 60 }
 
 # Cloudflare Flagship feature flags. Shared app with the auth worker. Flags in use:
-#   api              (default on)  — killswitch for the whole /v1 public API surface (v1.ts).
-#   custom-theming   (default off) — per-user gate for custom themes (index.ts).
-#   ai-summaries     (default on)  — killswitch for the OpenAI summarize endpoint (routes/ai.ts).
-#   realtime-collab  (default on)  — killswitch for new collab WS connections (handleCollabUpgrade).
+#   api              (default on)  - killswitch for the whole /v1 public API surface (v1.ts).
+#   custom-theming   (default off) - per-user gate for custom themes (index.ts).
+#   ai-summaries     (default on)  - killswitch for the OpenAI summarize endpoint (routes/ai.ts).
+#   realtime-collab  (default on)  - killswitch for new collab WS connections (handleCollabUpgrade).
 # When the binding is unavailable (local dev) the code falls back to each call's default.
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"
 
 # Secrets (set via `wrangler secret put`):
-#   JWT_SECRET      (same value as auth worker — used for local JWT verification)
+#   JWT_SECRET      (same value as auth worker - used for local JWT verification)
 #   OPENAI_API_KEY  (OpenAI API key for AI summarisation feature)
 #   CF_API_TOKEN    (Cloudflare token scoped to the zone with "SSL and
-#                    Certificates: Edit" — used to create/poll custom hostnames)
+#                    Certificates: Edit" - used to create/poll custom hostnames)

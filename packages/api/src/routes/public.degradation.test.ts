@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // Force the presign helper to throw for one file so we can assert
 // enrichFilesWithStreamUrls degrades THAT file to content_stream_url: null
-// instead of rejecting the whole list — a rejection would 500 the entire
+// instead of rejecting the whole list - a rejection would 500 the entire
 // published page (nav + docs + files), not just the offending video. Mocked in
 // its own file so the real-signature assertions in public.test.ts stay intact.
 vi.mock("../lib/r2Presign", () => ({
@@ -20,7 +20,7 @@ function vid(id: string) {
   return { id, name: `${id}.mp4`, mime_type: "video/mp4", size: 1, folder_id: null };
 }
 
-describe("enrichFilesWithStreamUrls — presign failure degradation", () => {
+describe("enrichFilesWithStreamUrls - presign failure degradation", () => {
   it("nulls out only the failing file and never rejects the whole list", async () => {
     (presignR2GetUrl as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce("https://r2.example/signed-a")

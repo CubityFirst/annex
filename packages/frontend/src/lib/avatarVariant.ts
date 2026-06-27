@@ -2,7 +2,7 @@
 //
 // This is the SINGLE seam for a future app-wide theme rework: nothing else
 // (the API resolver, UserAvatar, the settings toggle) decides "light vs dark"
-// — they all read this. When a real theme system lands, its only job is to
+// - they all read this. When a real theme system lands, its only job is to
 // become this store's input (e.g. have `read()` consult the theme provider
 // when present, else fall back to this localStorage key). Keep the public
 // type a plain "dark" | "light" so that swap stays trivial.
@@ -49,7 +49,7 @@ export function setAvatarVariant(variant: AvatarVariant): void {
     try {
       localStorage.setItem(STORAGE_KEY, variant);
     } catch {
-      // quota exceeded or storage disabled — still notify in-memory subscribers
+      // quota exceeded or storage disabled - still notify in-memory subscribers
     }
   }
   notify();
@@ -63,7 +63,7 @@ function subscribe(callback: () => void): () => void {
   };
 }
 
-/** [currentVariant, setVariant] — re-renders all consumers on change. */
+/** [currentVariant, setVariant] - re-renders all consumers on change. */
 export function useAvatarVariant(): [AvatarVariant, (v: AvatarVariant) => void] {
   const variant = useSyncExternalStore(subscribe, read, () => "dark" as const);
   return [variant, setAvatarVariant];

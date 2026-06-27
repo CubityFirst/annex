@@ -34,7 +34,7 @@ jwk.alg = "RS256";
 jwk.use = "sig";
 jwk.kid = kid;
 
-// Stable field order, single line — ready to paste into `wrangler secret put`.
+// Stable field order, single line - ready to paste into `wrangler secret put`.
 const ordered = {
   kty: jwk.kty,
   n: jwk.n,

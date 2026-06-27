@@ -32,7 +32,7 @@ function rowToLink(r: InviteLinkRow) {
   };
 }
 
-// Handles /projects/:projectId/invite-links[/:linkId] — requires project membership
+// Handles /projects/:projectId/invite-links[/:linkId] - requires project membership
 export async function handleInviteLinks(
   request: Request,
   env: Env,
@@ -96,7 +96,7 @@ export async function handleInviteLinks(
   return errorResponse(Errors.NOT_FOUND);
 }
 
-// Handles /invites/:token — GET is public, POST requires auth
+// Handles /invites/:token - GET is public, POST requires auth
 export async function handleInvitePublic(
   request: Request,
   env: Env,
@@ -107,7 +107,7 @@ export async function handleInvitePublic(
   const token = match[1];
   const isAccept = match[2] === "/accept";
 
-  // GET /invites/:token — public, returns invite metadata
+  // GET /invites/:token - public, returns invite metadata
   if (!isAccept && request.method === "GET") {
     const link = await env.DB.prepare(
       "SELECT pil.*, p.name as project_name FROM project_invite_links pil JOIN projects p ON p.id = pil.project_id WHERE pil.id = ?",
@@ -132,7 +132,7 @@ export async function handleInvitePublic(
     });
   }
 
-  // POST /invites/:token/accept — requires auth
+  // POST /invites/:token/accept - requires auth
   if (isAccept && request.method === "POST") {
     const result = await authenticate(request, env);
     if (result === null) return errorResponse(Errors.UNAUTHORIZED);
@@ -156,7 +156,7 @@ export async function handleInvitePublic(
 
     // Re-validate the creator's CURRENT authority to grant this link's role.
     // Without this, a link created by an admin who is later demoted or removed
-    // keeps minting its original role — letting a removed admin re-grant
+    // keeps minting its original role - letting a removed admin re-grant
     // themselves access. Managing invite links requires admin+, and an admin
     // may not grant admin (mirrors the POST creation rule above).
     const creatorRole = await resolveRole(env.DB, link.project_id, link.created_by);
@@ -176,7 +176,7 @@ export async function handleInvitePublic(
       if (existing.accepted === 1) {
         return Response.json({ ok: true, data: { projectId: link.project_id, alreadyMember: true, role: existing.role } });
       }
-      // Pending email invite — accept it via the link. Keep the role an admin
+      // Pending email invite - accept it via the link. Keep the role an admin
       // explicitly provisioned for this user; a link must NOT silently raise
       // (or change) it, otherwise a more-permissive link would undo a
       // deliberate lower-privilege invite. The link only flips `accepted`.

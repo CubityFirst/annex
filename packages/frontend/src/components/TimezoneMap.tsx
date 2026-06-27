@@ -6,7 +6,7 @@ import worldTopoRaw from "world-atlas/countries-110m.json";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const worldTopo = worldTopoRaw as any;
 
-// Computed once at module load — the JSON is bundled at build time
+// Computed once at module load - the JSON is bundled at build time
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const land = feature(worldTopo, worldTopo.objects.land) as any;
 
@@ -64,13 +64,13 @@ export function TimezoneMap({ lon, lat }: TimezoneMapProps) {
       preserveAspectRatio="xMidYMid slice"
       aria-hidden="true"
     >
-      {/* Ocean — dark base */}
+      {/* Ocean - dark base */}
       <rect width={W} height={H} fill="#171717" />
 
-      {/* Land — bright in daylight */}
+      {/* Land - bright in daylight */}
       <path d={landPath} fill="#737373" />
 
-      {/* Night overlay — darkens everything on the night side */}
+      {/* Night overlay - darkens everything on the night side */}
       <path d={nightPath} fill="rgba(8,8,8,0.82)" />
 
 

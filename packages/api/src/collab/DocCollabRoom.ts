@@ -18,7 +18,7 @@ const MAX_MESSAGE_BYTES = 512 * 1024;
 
 // Total Y.Doc state ceiling, measured by Y.encodeStateAsUpdate(...).byteLength. ~40× the
 // largest realistic markdown doc + edit history. Crossing this freezes the room so persist()
-// is a no-op — on next DO load we restore the pre-bloat snapshot from R2.
+// is a no-op - on next DO load we restore the pre-bloat snapshot from R2.
 const MAX_DOC_STATE_BYTES = 2 * 1024 * 1024;
 
 // Y.encodeStateAsUpdate is O(state size) so we only run the full check when accumulated
@@ -32,19 +32,19 @@ const DELTA_RECHECK_BYTES = 64 * 1024;
 // mid-session (direct member removal/demotion, org-member removal, whole-org
 // delete) would keep editing until they disconnect. We re-resolve effective
 // access for every connected socket, piggybacked on incoming room traffic (no
-// timer — WS hibernation is preserved) and throttled to at most once per room
+// timer - WS hibernation is preserved) and throttled to at most once per room
 // per this interval, closing any socket that no longer has editor+ (1008). This
 // bounds the leak window for an actively-trafficked room to ~this long.
 //
 // Writes are always cut: a revoked sender's own in-flight frame is dropped (see
-// webSocketMessage). The only residual is a revoked user who goes fully idle —
+// webSocketMessage). The only residual is a revoked user who goes fully idle -
 // they keep a read view of FUTURE broadcast edits until ANY participant sends a
 // frame, which re-arms this sweep and closes them; a fully idle room broadcasts
 // nothing, so there is nothing to leak.
 //
 // We deliberately do NOT fan a close out from the membership routes: that would
 // instantiate one DO per doc across the whole site (or whole org), on every
-// membership change — CF subrequest limits + latency — whereas this only ever
+// membership change - CF subrequest limits + latency - whereas this only ever
 // runs in rooms that already hold a live socket.
 const AUTH_RECHECK_MS = 15_000;
 
@@ -72,7 +72,7 @@ export function awarenessUpdateIdentityOk(updateBytes: Uint8Array, expectedUserI
       decoding.readVarUint(d); // clientID
       decoding.readVarUint(d); // clock
       const stateStr = decoding.readVarString(d);
-      if (stateStr === "null") continue; // removal — no identity claimed
+      if (stateStr === "null") continue; // removal - no identity claimed
       const state = JSON.parse(stateStr) as { user?: { id?: unknown } } | null;
       if (state && state.user && "id" in state.user && state.user.id !== expectedUserId) {
         return false;
@@ -103,7 +103,7 @@ export class DocCollabRoom implements DurableObject {
   private lastAlarmSetAt = 0;
   private frozen = false;
   private pendingDeltaBytes = 0;
-  // True once the room has a known content baseline — either a snapshot was
+  // True once the room has a known content baseline - either a snapshot was
   // restored from storage or a client synced content in. Until then the
   // Y.Doc is empty only because nothing has loaded yet, so persist() must
   // NOT write that emptiness over the real content in R2. Once true, an
@@ -130,12 +130,12 @@ export class DocCollabRoom implements DurableObject {
       const stored = toUint8Array(raw);
       if (stored) {
         Y.applyUpdate(ydoc, stored);
-        // We have a real baseline from storage — applyUpdate ran before the
+        // We have a real baseline from storage - applyUpdate ran before the
         // "update" handler below was attached, so set the flag explicitly.
         this.contentLoaded = true;
         if (stored.byteLength > MAX_DOC_STATE_BYTES) {
           // Persisted snapshot is already over the cap. Freeze immediately so persist() is a
-          // no-op — refusing to write the bloat back to R2 is the only useful response here.
+          // no-op - refusing to write the bloat back to R2 is the only useful response here.
           console.error(`[DocCollabRoom] stored state ${stored.byteLength}B exceeds cap ${MAX_DOC_STATE_BYTES}B; freezing room`);
           this.frozen = true;
         }
@@ -155,7 +155,7 @@ export class DocCollabRoom implements DurableObject {
     const awareness = new awarenessProtocol.Awareness(ydoc);
     // The Awareness constructor starts a 3s setInterval to expire stale clients. That timer
     // prevents WebSocket hibernation, so the DO accrues memory × wall-time billing the entire
-    // session. Kill it — webSocketClose already removes awareness state on disconnect.
+    // session. Kill it - webSocketClose already removes awareness state on disconnect.
     clearInterval((awareness as unknown as { _checkInterval: ReturnType<typeof setInterval> })._checkInterval);
     this.awareness = awareness;
 
@@ -175,7 +175,7 @@ export class DocCollabRoom implements DurableObject {
       }
     });
 
-    // Use the captured `awareness` reference — not `this.awareness` — so that if the room is
+    // Use the captured `awareness` reference - not `this.awareness` - so that if the room is
     // torn down and re-initialised, the old interval callbacks still reference the correct
     // (now-destroyed) instance and don't accidentally encode clients against a fresh meta map.
     awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
@@ -210,13 +210,13 @@ export class DocCollabRoom implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
-    // WebSocket upgrade must be checked first — upgrade requests are GET requests too,
+    // WebSocket upgrade must be checked first - upgrade requests are GET requests too,
     // so checking method before Upgrade header would intercept them with the wrong branch.
     if (request.headers.get("Upgrade") === "websocket") {
       return this.handleWebSocket(request);
     }
 
-    // Internal — returns and clears the set of users who have contributed edits
+    // Internal - returns and clears the set of users who have contributed edits
     if (request.method === "GET") {
       const stored = await this.ctx.storage.get<{ id: string; name: string }[]>("editors") ?? [];
       await this.ctx.storage.delete("editors");
@@ -227,7 +227,7 @@ export class DocCollabRoom implements DurableObject {
       });
     }
 
-    // Internal cleanup — called when the document is deleted
+    // Internal cleanup - called when the document is deleted
     if (request.method === "DELETE") {
       for (const ws of this.ctx.getWebSockets()) {
         try { ws.close(1001, "Document deleted"); } catch { /* */ }
@@ -313,10 +313,10 @@ export class DocCollabRoom implements DurableObject {
       projectId = docKey ? docKey.split("/")[0] : null;
       this.projectId = projectId;
     }
-    if (!projectId) return revoked; // can't resolve without it — fail open (no worse than before)
+    if (!projectId) return revoked; // can't resolve without it - fail open (no worse than before)
     const pid = projectId;
 
-    // Resolve every DISTINCT connected user once, in parallel — one indexed read
+    // Resolve every DISTINCT connected user once, in parallel - one indexed read
     // each. editor+ keeps the socket; anything lower (or null = no membership)
     // gets closed. A transient resolver/DB error fails OPEN for that user: we
     // don't tear down a live session over a blip (reconnect re-checks at upgrade).
@@ -444,7 +444,7 @@ export class DocCollabRoom implements DurableObject {
           const attachment = ws.deserializeAttachment() as WsAttachment | null;
 
           // Drop awareness updates that claim any identity other than this
-          // connection's authenticated user — prevents presence/cursor
+          // connection's authenticated user - prevents presence/cursor
           // impersonation of another member. (Durable edit attribution already
           // uses att.userId, not the client-supplied awareness state.)
           if (attachment?.userId && !awarenessUpdateIdentityOk(updateBytes, attachment.userId)) {
@@ -507,7 +507,7 @@ export class DocCollabRoom implements DurableObject {
     try {
       // `lastActivity` is only ever written by persist(). If it is unset, the
       // room has edits from a session that never persisted (e.g. persist-on-
-      // close didn't run) — defaulting to 0 would make `now - 0 >= 7d` true
+      // close didn't run) - defaulting to 0 would make `now - 0 >= 7d` true
       // and evict (deleteAll) those unsaved edits, reverting the doc to its
       // stale R2 body. Default to "now" so an unpersisted room persists here
       // instead of being wiped; only a genuinely 7-day-idle (already
@@ -515,7 +515,7 @@ export class DocCollabRoom implements DurableObject {
       const lastActivity = await this.ctx.storage.get<number>("lastActivity") ?? Date.now();
       const sevenDays = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() - lastActivity >= sevenDays) {
-        // No activity for 7 days — evict the room entirely
+        // No activity for 7 days - evict the room entirely
         await this.ctx.storage.deleteAll();
         this.teardown();
       } else {
@@ -531,7 +531,7 @@ export class DocCollabRoom implements DurableObject {
     // Refuse to write bloated state back to R2. The previously-good snapshot already in
     // storage is what we want a future load to restore from.
     if (this.frozen) return;
-    // No baseline yet — the doc is empty only because nothing has loaded.
+    // No baseline yet - the doc is empty only because nothing has loaded.
     // Persisting now would clobber the real content in R2/storage with "".
     if (!this.contentLoaded) return;
 
@@ -539,7 +539,7 @@ export class DocCollabRoom implements DurableObject {
     await this.ctx.storage.put("ydoc", bytes);
     await this.ctx.storage.put("lastActivity", Date.now());
 
-    // Mirror current state to R2 unconditionally — including empty content.
+    // Mirror current state to R2 unconditionally - including empty content.
     // A collaborative delete-all produces an empty doc that MUST overwrite
     // the old R2 body, otherwise the deletion silently reverts once the DO
     // is evicted and a future load re-seeds from the stale R2 object.

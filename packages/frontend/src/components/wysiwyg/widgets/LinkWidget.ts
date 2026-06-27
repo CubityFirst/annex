@@ -16,7 +16,7 @@ function LinkInner({ text, href }: Props) {
       rel: "noopener noreferrer",
       className: "cm-link",
       onClick: (e: React.MouseEvent) => {
-        // Don't let the click bubble into the editor and move the cursor —
+        // Don't let the click bubble into the editor and move the cursor -
         // we want the browser navigation to win.
         e.stopPropagation();
       },
@@ -36,7 +36,7 @@ export class LinkWidget extends ReactWidget {
     return createElement(LinkInner, this.props);
   }
 
-  // Interactive — let the <a> handle the click for navigation.
+  // Interactive - let the <a> handle the click for navigation.
   protected revealOnClick(): boolean {
     return false;
   }

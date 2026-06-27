@@ -1,4 +1,4 @@
-# Content-hashed bundles never change for a given URL — cache hard.
+# Content-hashed bundles never change for a given URL - cache hard.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 

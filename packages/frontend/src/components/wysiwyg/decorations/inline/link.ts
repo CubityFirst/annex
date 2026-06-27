@@ -27,7 +27,7 @@ function sanitizeHref(url: string): string | null {
 
 export const visitLink: Visitor = ({ node, state, sel, reveal, decos }) => {
   // Walk children to extract the text range and URL. Bail out if this isn't
-  // a complete `[text](url)` — Lezer also marks `[text]` (without url) as a
+  // a complete `[text](url)` - Lezer also marks `[text]` (without url) as a
   // Link node, and we don't want to underline plain bracketed text.
   const parent = node.node;
   let textFrom = -1;
@@ -52,7 +52,7 @@ export const visitLink: Visitor = ({ node, state, sel, reveal, decos }) => {
     cur = cur.nextSibling;
   }
 
-  if (!url) return; // partial / shortcut reference — leave as plain text
+  if (!url) return; // partial / shortcut reference - leave as plain text
 
   const cursorOn = reveal && cursorTouches(sel, node.from, node.to);
   if (cursorOn) {
@@ -66,7 +66,7 @@ export const visitLink: Visitor = ({ node, state, sel, reveal, decos }) => {
   if (!text) return;
 
   const safeHref = sanitizeHref(url);
-  if (safeHref === null) return; // unsafe scheme — leave raw markdown visible
+  if (safeHref === null) return; // unsafe scheme - leave raw markdown visible
 
   decos.push(
     Decoration.replace({ widget: new LinkWidget({ text, href: safeHref }) }).range(node.from, node.to),

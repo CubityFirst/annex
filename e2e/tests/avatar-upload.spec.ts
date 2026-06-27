@@ -7,7 +7,7 @@
  *   uploads to the API → /api/avatar/:id serves it back with Content-Type
  *   image/webp, RIFF/WEBP framing, and ANIM/ANMF chunks intact.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * packages/auth/.dev.vars must contain:
@@ -32,7 +32,7 @@ const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7
 // test ships no binary fixtures. Bytes laid out per the GIF89a spec; the LZW
 // payload is the precomputed three-code stream (clear=4, code(0), end=5)
 // packed LSB-first into bytes 0x44, 0x01. We just need >1 frame so gifuct-js
-// reports it as animated — visual content is irrelevant.
+// reports it as animated - visual content is irrelevant.
 function buildAnimatedGif(): Buffer {
   const frameSection = [
     // Graphics Control Extension
@@ -127,7 +127,7 @@ test("registers a fresh account", async () => {
 test("uploading an animated GIF stores it as animated WebP", async () => {
   await page.goto("/settings");
 
-  // Avatar input is a hidden <input type="file"> — setInputFiles works on it
+  // Avatar input is a hidden <input type="file"> - setInputFiles works on it
   // directly without opening the popover. The change handler triggers the
   // crop dialog. Using a hidden input also avoids racing the popover open
   // animation.
@@ -153,7 +153,7 @@ test("uploading an animated GIF stores it as animated WebP", async () => {
   // Look up the freshly-registered user's id via /api/me using the bearer
   // token that the app dropped into localStorage on login. We can't use
   // page.request directly here because it doesn't share localStorage, only
-  // cookies — and we mint JWTs, not cookies.
+  // cookies - and we mint JWTs, not cookies.
   userId = await page.evaluate(async () => {
     const token = localStorage.getItem("token");
     const r = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
@@ -162,7 +162,7 @@ test("uploading an animated GIF stores it as animated WebP", async () => {
     return j.data.userId;
   });
 
-  // The avatar endpoint is public — no auth needed. Cache-bust so we don't
+  // The avatar endpoint is public - no auth needed. Cache-bust so we don't
   // get a stale 404 from a CDN/SW in between the POST and this GET.
   const response = await page.request.get(`/api/avatar/${userId}?v=${Date.now()}`);
   expect(response.status()).toBe(200);
@@ -172,7 +172,7 @@ test("uploading an animated GIF stores it as animated WebP", async () => {
   // RIFF/WEBP container framing
   expect(bytes.subarray(0, 4).toString("ascii")).toBe("RIFF");
   expect(bytes.subarray(8, 12).toString("ascii")).toBe("WEBP");
-  // Animated-WebP markers — the muxer writes a VP8X header, an ANIM chunk
+  // Animated-WebP markers - the muxer writes a VP8X header, an ANIM chunk
   // (loop info), and one ANMF chunk per frame. Their FourCCs appear as
   // ASCII strings somewhere inside the binary, so a substring scan is
   // sufficient and resilient to chunk-size variations from the browser's

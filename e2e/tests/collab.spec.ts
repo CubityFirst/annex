@@ -1,7 +1,7 @@
 /**
  * E2E test for Durable Object collaborative editing.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -11,10 +11,10 @@
  *   1. Two pages on the same doc see each other's edits within the editor
  *      after the realtime feature flag is flipped on the project.
  *   2. Presence avatars appear in the title bar of each peer.
- *   3. After all peers disconnect, content persists to R2 — verified by
+ *   3. After all peers disconnect, content persists to R2 - verified by
  *      reloading the doc and reading the rendered preview.
  *
- * Uses a single browser context (one user, two tabs) — Yjs uses per-tab
+ * Uses a single browser context (one user, two tabs) - Yjs uses per-tab
  * clientID, so two tabs of the same user are still distinct peers, which is
  * enough to exercise the DocCollabRoom WebSocket fan-out + persistence path.
  *
@@ -140,7 +140,7 @@ test("sets up a project + doc with the realtime flag enabled", async () => {
   // wiring, since `realtimeEnabled` is computed from the project load.
   enableRealtime(projectId);
 
-  // Create doc — starts in editing mode because location.state.isNew is true.
+  // Create doc - starts in editing mode because location.state.isNew is true.
   await pageA.getByRole("button", { name: "New document" }).click();
   await expect(pageA).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
   const docMatch = pageA.url().match(/\/docs\/([a-z0-9-]+)/);
@@ -156,7 +156,7 @@ test("sets up a project + doc with the realtime flag enabled", async () => {
   await pageA.keyboard.type("# Collab Test\n\nInitial line.");
 
   // Save so the seed content lands in R2 + D1. The DO room hasn't been
-  // touched yet — it'll boot off the R2 snapshot on first peer connect.
+  // touched yet - it'll boot off the R2 snapshot on first peer connect.
   await pageA.getByRole("button", { name: "Save" }).click();
   await expect(pageA.getByTitle("Edit document")).toBeVisible({ timeout: 10000 });
 
@@ -225,7 +225,7 @@ test("each peer renders a presence avatar for the other", async () => {
 
   // The page chrome has other avatar buttons (user menu, etc.), so we can't
   // assert an exact count. Instead, snapshot the presence-region count on
-  // a connected vs. disconnected peer and assert it dropped — that
+  // a connected vs. disconnected peer and assert it dropped - that
   // isolates the presence avatars from the rest of the UI.
   const aBeforeDisconnect = await presenceA.count();
   expect(aBeforeDisconnect).toBeGreaterThan(0);
@@ -244,19 +244,19 @@ test("each peer renders a presence avatar for the other", async () => {
 test("content persists to R2 after all peers disconnect", async () => {
   // Currently A is the only connected peer. Save through the UI so the
   // route-handler R2 path also runs (and so the test doesn't depend on the
-  // DO's debounced 30s alarm flush — that's exercised separately by the
+  // DO's debounced 30s alarm flush - that's exercised separately by the
   // in-package collab tests).
   await pageA.getByRole("button", { name: "Save" }).click();
   await expect(pageA.getByTitle("Edit document")).toBeVisible({ timeout: 10000 });
 
   // Verify the doc body shows both peers' edits. The reading view renders the
   // markdown both into CodeMirror (`.cm-line`) and into a separate react-markdown
-  // `<article>`, so the marker text matches in two places — use .first() rather
+  // `<article>`, so the marker text matches in two places - use .first() rather
   // than asserting against a strict-mode locator.
   await expect(pageA.getByText(`from-A-${RUN_ID}`).first()).toBeVisible({ timeout: 5000 });
   await expect(pageA.getByText(`from-B-${RUN_ID}`).first()).toBeVisible({ timeout: 5000 });
 
-  // Hard reload — kicks the doc loader and resets the DocPage state. If R2
+  // Hard reload - kicks the doc loader and resets the DocPage state. If R2
   // didn't have the merged content, the reload would show only the seed.
   await pageA.reload();
   await expect(pageA.locator(".cm-content")).toBeVisible({ timeout: 10000 });

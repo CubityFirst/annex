@@ -1,4 +1,4 @@
-/* Terminal 404 — ported from the Claude Design handoff (CubeDocs 404.html,
+/* Terminal 404 - ported from the Claude Design handoff (CubeDocs 404.html,
    "option 3 · Terminal / dark"). All selectors are scoped under .v404 so the
    bespoke dark/terminal styling can't leak into the rest of the (Tailwind) app.
    The prototype shipped separate desktop + mobile components inside a design
@@ -120,7 +120,7 @@
 }
 .v404-link:hover { color: rgba(240, 237, 232, 0.85); }
 
-/* ══ Mobile — same language, stacked (<=720px) ══ */
+/* ══ Mobile - same language, stacked (<=720px) ══ */
 @media (max-width: 720px) {
   .v404-stage {
     flex-direction: column;

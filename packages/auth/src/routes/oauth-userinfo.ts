@@ -44,7 +44,7 @@ export async function handleOAuthUserinfo(request: Request, env: Env): Promise<R
   }
 
   // Mirror the token endpoint's disabled-client refusal so flipping
-  // disabled=1 cuts off a client's already-issued access tokens too — not just
+  // disabled=1 cuts off a client's already-issued access tokens too - not just
   // new ones. (Also a belt-and-braces audience check.)
   const client = await env.DB.prepare(
     "SELECT disabled FROM oauth_clients WHERE client_id = ?",

@@ -47,7 +47,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     }
   }
 
-  // Existence check only — stop at the first row instead of counting every
+  // Existence check only - stop at the first row instead of counting every
   // credential. Backed by idx_webauthn_credentials_user (migration 0027).
   const webauthnResult = await env.DB.prepare(
     "SELECT 1 FROM webauthn_credentials WHERE user_id = ? LIMIT 1",
@@ -75,7 +75,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     if (totpError) return totpError;
   }
 
-  // Authentication succeeded — opportunistically migrate hashes that were
+  // Authentication succeeded - opportunistically migrate hashes that were
   // written with an older iteration count.
   if (needsRehash(row.password_hash)) {
     const newHash = await hashPassword(body.password);
@@ -119,7 +119,7 @@ async function verifyTotpOrBackup(
   if (!totpCode && !backupCode) return null;
 
   // Same per-user budget as requireMFA (`mfa:<userId>`): the password is
-  // already verified by this point, so key the throttle on the account — a
+  // already verified by this point, so key the throttle on the account - a
   // distributed attacker can rotate source IPs, but not this key.
   const { success } = await env.RATE_LIMITER_AUTH.limit({ key: `mfa:${userId}` });
   if (!success) return errorResponse(Errors.RATE_LIMITED);

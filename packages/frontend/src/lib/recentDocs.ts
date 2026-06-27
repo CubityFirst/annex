@@ -26,7 +26,7 @@ function readAll(): Store {
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
-    // Drop entries written under prior schemas (no `kind` field) — they
+    // Drop entries written under prior schemas (no `kind` field) - they
     // route to /files/ by default and 404 because the id is a doc id.
     const cleaned: Store = {};
     for (const [pid, list] of Object.entries(parsed as Record<string, unknown>)) {
@@ -48,7 +48,7 @@ function writeAll(data: Store): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
-    // quota exceeded or storage disabled — silently skip
+    // quota exceeded or storage disabled - silently skip
   }
 }
 

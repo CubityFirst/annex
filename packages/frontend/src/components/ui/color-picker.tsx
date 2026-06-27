@@ -29,7 +29,7 @@ interface ColorPickerProps {
 }
 
 // shadcn-style HSL canvas + hue slider + hex input, packaged as a popover-
-// trigger swatch. Colour is locked to #rrggbb output — anything else gets
+// trigger swatch. Colour is locked to #rrggbb output - anything else gets
 // rejected by `normalizeHex`.
 export function ColorPicker({ value, onChange, onCommit, disabled, swatchClassName }: ColorPickerProps) {
   const [open, setOpen] = useState(false);
@@ -57,7 +57,7 @@ export function ColorPicker({ value, onChange, onCommit, disabled, swatchClassNa
       onChange(normalized);
     } else {
       // Roll back the input to the live value if the user typed something
-      // that doesn't parse — prevents the field showing an invalid string
+      // that doesn't parse - prevents the field showing an invalid string
       // after blur.
       setHexDraft(value);
     }

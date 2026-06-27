@@ -1,4 +1,4 @@
-/* Collapsible animation — Radix sets `--radix-collapsible-content-height`
+/* Collapsible animation - Radix sets `--radix-collapsible-content-height`
    on open. Tailwind v4 in this project doesn't ship `tailwindcss-animate`,
    so we define the keyframes inline. Used by Annex Ink cosmetics dropdown. */
 @keyframes ink-collapsible-down {

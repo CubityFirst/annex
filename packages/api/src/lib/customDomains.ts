@@ -3,7 +3,7 @@
 // A site owner maps their own domain (e.g. `docs.acme.com`) to their published
 // site. We register that hostname as a Cloudflare *custom hostname* on our zone;
 // Cloudflare then issues + auto-renews a DV certificate for it and routes the
-// traffic to our frontend Worker (which serves the site — see the host-based
+// traffic to our frontend Worker (which serves the site - see the host-based
 // serving path in the frontend). The customer points DNS at us with a CNAME and
 // proves control via a TXT record (DCV). This module is the thin client around
 // the Cloudflare API plus the pure helpers (validation + DNS-record derivation)
@@ -74,7 +74,7 @@ export function customDomainsConfigured(env: CustomDomainEnv): boolean {
 // Hostname rules: a valid DNS hostname, lowercased, no scheme/path/port, at
 // least one dot (no bare apex of our own zone, no single-label hosts), <=255
 // chars, each label 1-63 chars of [a-z0-9-] not starting/ending with a hyphen.
-// We deliberately reject wildcards — a customer maps one concrete host.
+// We deliberately reject wildcards - a customer maps one concrete host.
 const LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
 
 export function normalizeHostname(raw: string): string {
@@ -98,7 +98,7 @@ export function isValidHostname(raw: string): boolean {
 // hostname object. Always includes the CNAME (routes traffic to us). Adds the
 // ownership-verification TXT (proves domain control before the host points at
 // us) and the SSL DCV TXT record when Cloudflare provides them. Once the
-// hostname is fully active these may be absent — that's expected.
+// hostname is fully active these may be absent - that's expected.
 export function deriveDnsRecords(
   cf: CfCustomHostname,
   cnameTarget: string,
@@ -213,7 +213,7 @@ export async function cfDeleteCustomHostname(
   id: string,
 ): Promise<void> {
   // DELETE returns `{ id }` as the result; we don't need it. A 404 here means
-  // it's already gone, which is fine for our delete flow — swallow it.
+  // it's already gone, which is fine for our delete flow - swallow it.
   try {
     await cfFetch<{ id: string }>(env, `/custom_hostnames/${id}`, { method: "DELETE" });
   } catch (e) {
@@ -227,7 +227,7 @@ export async function cfDeleteCustomHostname(
 
 // Best-effort deregistration of a site's Cloudflare custom hostname, to be
 // called BEFORE the project (and its cascading `project_custom_domains` row) is
-// deleted — `cf_hostname_id` lives only in that row, so once it cascades away we
+// deleted - `cf_hostname_id` lives only in that row, so once it cascades away we
 // can no longer tell Cloudflare to release the hostname.
 //
 // Without this, deleting a site orphans the custom hostname in the CF SaaS zone:
@@ -236,7 +236,7 @@ export async function cfDeleteCustomHostname(
 // re-add it from another site (even though our own DB row is long gone).
 //
 // No-op when custom domains aren't configured (no CF creds) or the site has no
-// mapped domain. Never throws — site deletion must not be blocked by a CF
+// mapped domain. Never throws - site deletion must not be blocked by a CF
 // hiccup; an orphaned hostname is recoverable, a half-deleted site is worse.
 export async function releaseCustomDomain(
   env: CustomDomainEnv & { DB: D1Database },
@@ -263,7 +263,7 @@ export async function releaseCustomDomain(
 // unmap. Returns the removed hostname, or null if the site had none mapped.
 //
 // The CF deregistration is best-effort (a CF hiccup must not leave the DB row
-// orphaned), but the DB row IS always deleted — that's the user-visible effect
+// orphaned), but the DB row IS always deleted - that's the user-visible effect
 // the caller asked for.
 export async function removeCustomDomain(
   env: CustomDomainEnv & { DB: D1Database },

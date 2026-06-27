@@ -1,8 +1,8 @@
 // Central file-type classifier shared by the file listing (FileManager), the
 // file viewer (FilePage), and the public site (PublicDocPage). Two jobs:
-//   • fileKind()     — coarse category that drives the icon and which inline
+//   • fileKind()     - coarse category that drives the icon and which inline
 //                      preview (if any) a file gets.
-//   • guessLanguage() — Shiki grammar id for the text/code preview.
+//   • guessLanguage() - Shiki grammar id for the text/code preview.
 //
 // Detection leans on the file *name* before the MIME type, because browsers hand
 // out unreliable MIME for source and config files: a `.ts` TypeScript file
@@ -32,7 +32,7 @@ const EXT_TO_LANG: Record<string, string> = {
 };
 
 // Plain-text extensions that have no dedicated grammar but should still preview
-// as text rather than download. (Deliberately excludes `svg` — that renders as
+// as text rather than download. (Deliberately excludes `svg` - that renders as
 // an image.)
 const PLAIN_TEXT_EXTENSIONS = new Set([
   "txt", "text", "log", "csv", "tsv", "xml",
@@ -50,7 +50,7 @@ const ARCHIVE_EXTENSIONS = new Set([
   "zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "7z", "rar", "zst",
 ]);
 
-// Excalidraw native scene files — edited in place by the drawing editor and
+// Excalidraw native scene files - edited in place by the drawing editor and
 // rendered as a live canvas, never previewed as JSON text. Name-based only
 // (browsers hand .excalidraw up as application/json or application/octet-stream).
 const DRAWING_EXTENSIONS = new Set(["excalidraw"]);

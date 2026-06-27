@@ -14,7 +14,7 @@ import { isLightTheme } from "@/lib/theme";
 import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
-// @excalidraw/excalidraw is a heavy chunk — keep it out of the main bundle and
+// @excalidraw/excalidraw is a heavy chunk - keep it out of the main bundle and
 // only fetch it when a drawing is actually opened.
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
@@ -30,7 +30,7 @@ interface FileRecord {
   // Short-lived capability token for streaming this file's bytes by URL, so
   // <video>/<audio>/<iframe> (which can't send the auth header) can seek/stream.
   content_token?: string;
-  // Presigned R2 URL for video — streams directly from R2 (no Worker in the byte
+  // Presigned R2 URL for video - streams directly from R2 (no Worker in the byte
   // path). Present only for video when R2 S3 creds are configured server-side.
   content_stream_url?: string | null;
 }
@@ -41,7 +41,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Guard rail so a huge log/dump doesn't lock up the tab — preview the first
+// Guard rail so a huge log/dump doesn't lock up the tab - preview the first
 // chunk and tell the user to download for the rest.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 
@@ -88,7 +88,7 @@ export function FilePage() {
           }));
           setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
           // Media (audio/video/pdf) streams directly from the content URL via a
-          // capability token — no blob fetch. Text is fetched + decoded here so
+          // capability token - no blob fetch. Text is fetched + decoded here so
           // we can render it inline (and cap the preview size).
           if (fileKind(result.data.mime_type, result.data.name) === "text") {
             apiFetch(`/api/files/${fileId}/content`)
@@ -111,7 +111,7 @@ export function FilePage() {
 
   // URL the browser can stream/seek directly (token authenticates the request,
   // since media elements can't attach the Authorization header). Null until the
-  // metadata — and thus the token — has loaded.
+  // metadata - and thus the token - has loaded.
   const contentUrl = file?.content_token
     ? `/api/files/${file.id}/content?token=${encodeURIComponent(file.content_token)}`
     : null;
@@ -156,7 +156,7 @@ export function FilePage() {
 
   const kind = fileKind(file.mime_type, file.name);
 
-  // Drawings render as a live canvas filling the content area — editor+ get the
+  // Drawings render as a live canvas filling the content area - editor+ get the
   // full editor + Save; everyone else gets a read-only (view-mode) canvas.
   if (kind === "drawing") {
     const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";

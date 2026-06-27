@@ -49,7 +49,7 @@ async function registerAndLogin(label: string, ip: string): Promise<{ token: str
 const bearer = (token: string, extra: Record<string, string> = {}) =>
   ({ "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...extra });
 
-describe.skipIf(!apiServerUp)("API — organizations + trickle-down access", () => {
+describe.skipIf(!apiServerUp)("API - organizations + trickle-down access", () => {
   // userA = org owner; userB = invited member.
   let A = { token: "", userId: "", email: "" };
   let B = { token: "", userId: "", email: "" };
@@ -116,12 +116,12 @@ describe.skipIf(!apiServerUp)("API — organizations + trickle-down access", () 
     expect(siteRes.status).toBe(201);
     orgSiteId = (await siteRes.json<{ data: { id: string } }>()).data.id;
 
-    // Read as B — effective editor via the org, despite no project_members row.
+    // Read as B - effective editor via the org, despite no project_members row.
     const readRes = await fetch(`${API_URL}/projects/${orgSiteId}`, { headers: bearer(B.token) });
     expect(readRes.status).toBe(200);
     expect((await readRes.json<{ data: { role: string } }>()).data.role).toBe("editor");
 
-    // Write as B — create a doc.
+    // Write as B - create a doc.
     const docRes = await fetch(`${API_URL}/docs`, {
       method: "POST", headers: bearer(B.token), body: JSON.stringify({ title: "By B", content: "x", projectId: orgSiteId }),
     });
@@ -177,7 +177,7 @@ describe.skipIf(!apiServerUp)("API — organizations + trickle-down access", () 
     expect(siteRes.status).toBe(201);
     bAdminSiteId = (await siteRes.json<{ data: { id: string } }>()).data.id;
 
-    // A is the ORG owner but has no direct membership on B's site — trickle-down
+    // A is the ORG owner but has no direct membership on B's site - trickle-down
     // grants effective owner, so the delete (owner-only) succeeds.
     const delRes = await fetch(`${API_URL}/projects/${bAdminSiteId}`, {
       method: "DELETE", headers: bearer(A.token),
@@ -233,7 +233,7 @@ describe.skipIf(!apiServerUp)("API — organizations + trickle-down access", () 
     const aDel = await fetch(`${API_URL}/organizations/${orgId}`, { method: "DELETE", headers: bearer(A.token) });
     expect(aDel.status).toBe(200);
 
-    // The in-org site survives (detached) — A is still its direct owner.
+    // The in-org site survives (detached) - A is still its direct owner.
     const siteStillThere = await fetch(`${API_URL}/projects/${orgSiteId}`, { headers: bearer(A.token) });
     expect(siteStillThere.status).toBe(200);
 
@@ -243,7 +243,7 @@ describe.skipIf(!apiServerUp)("API — organizations + trickle-down access", () 
   });
 });
 
-describe.skipIf(!apiServerUp)("API — org account-deletion guard + ejected-owner detach", () => {
+describe.skipIf(!apiServerUp)("API - org account-deletion guard + ejected-owner detach", () => {
   let C = { token: "", userId: "", email: "" };
   let D = { token: "", userId: "", email: "" };
   let E = { token: "", userId: "", email: "" };
@@ -298,7 +298,7 @@ describe.skipIf(!apiServerUp)("API — org account-deletion guard + ejected-owne
     });
     expect(eject.status).toBe(200);
 
-    // E is no longer an org member but is still the DIRECT owner of the site —
+    // E is no longer an org member but is still the DIRECT owner of the site -
     // detach must succeed (previously a 404 dead-end).
     const detach = await fetch(`${API_URL}/organizations/${dOrgId}/projects/${eSiteId}/attach`, {
       method: "DELETE", headers: bearer(E.token),
@@ -311,7 +311,7 @@ describe.skipIf(!apiServerUp)("API — org account-deletion guard + ejected-owne
   });
 });
 
-describe.skipIf(!apiServerUp)("API — org member removal & self-leave revoke trickle-down", () => {
+describe.skipIf(!apiServerUp)("API - org member removal & self-leave revoke trickle-down", () => {
   // F = org owner; G = removed member; H = self-leaving member.
   let F = { token: "", userId: "", email: "" };
   let G = { token: "", userId: "", email: "" };
@@ -356,7 +356,7 @@ describe.skipIf(!apiServerUp)("API — org member removal & self-leave revoke tr
   it("removing an org-only member revokes trickle-down READ and WRITE", async () => {
     await joinOrgAsEditor(G);
 
-    // G has no direct project_members row — access is purely org trickle-down.
+    // G has no direct project_members row - access is purely org trickle-down.
     const readBefore = await fetch(`${API_URL}/projects/${siteId}`, { headers: bearer(G.token) });
     expect(readBefore.status).toBe(200);
     expect((await readBefore.json<{ data: { role: string } }>()).data.role).toBe("editor");
@@ -371,7 +371,7 @@ describe.skipIf(!apiServerUp)("API — org member removal & self-leave revoke tr
     });
     expect(remove.status).toBe(200);
 
-    // Trickle-down is gone on the very next request — read 404, write 403.
+    // Trickle-down is gone on the very next request - read 404, write 403.
     const readAfter = await fetch(`${API_URL}/projects/${siteId}`, { headers: bearer(G.token) });
     expect(readAfter.status).toBe(404);
     const writeAfter = await fetch(`${API_URL}/docs`, {

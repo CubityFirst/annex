@@ -11,14 +11,14 @@ export interface AdminSession {
 // Verifies the JWT and re-derives the session against the auth DB inline
 // via the AUTH_DB binding (one D1 batch), mirroring the API worker
 // (packages/api/src/auth.ts) instead of round-tripping the auth worker's
-// /verify route — that doubled the billable Worker invocations on every
+// /verify route - that doubled the billable Worker invocations on every
 // admin request and contradicted the documented verification boundary.
 //
 // Returns:
-//   AdminSession — token valid; account in good standing.
-//   Response     — token valid but the account is disabled / suspended.
+//   AdminSession - token valid; account in good standing.
+//   Response     - token valid but the account is disabled / suspended.
 //                  Pass this straight back to the client.
-//   null         — no/malformed Authorization header, or the token itself
+//   null         - no/malformed Authorization header, or the token itself
 //                  was invalid/expired (incl. force-password-change).
 export async function verifySession(
   request: Request,

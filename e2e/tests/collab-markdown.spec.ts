@@ -1,7 +1,7 @@
 /**
  * E2E test for collaborative editing of markdown content.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
@@ -164,7 +164,7 @@ test("markdown edits from A propagate verbatim to B (and back)", async () => {
   await expect.poll(async () => (await readEditorText(pageB)).includes(markerA), { timeout: 8000 }).toBe(true);
 
   // B types markdown-formatted text. Asterisks survive the round-trip even
-  // though editing-mode decorations may visually hide them — readEditorText
+  // though editing-mode decorations may visually hide them - readEditorText
   // walks .cm-line nodes which still contain the raw source.
   const markerB = `marker-from-B-${RUN_ID}`;
   await pageB.locator(".cm-content").click();

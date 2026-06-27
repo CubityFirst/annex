@@ -8,7 +8,7 @@
 // with a session JWT). It is minted only AFTER a normal authenticated access
 // check (GET /files/:id) and is a capability for exactly ONE file id until exp.
 // Unlike putting the raw session JWT in the URL, a leaked/shared content URL
-// grants only that single file for the TTL — not the user's whole account.
+// grants only that single file for the TTL - not the user's whole account.
 
 const PREFIX = "filecontent.v1";
 

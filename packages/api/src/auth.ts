@@ -8,10 +8,10 @@ import { loadCurrentSession, sessionResultToResponse } from "../../auth/src/sess
 // would double the billable Worker invocations on every API request.
 //
 // Returns:
-//   Session  — authenticated; account is in good standing.
-//   Response — token was valid but the account is disabled / suspended.
+//   Session  - authenticated; account is in good standing.
+//   Response - token was valid but the account is disabled / suspended.
 //              Pass this response straight back to the client.
-//   null     — no/malformed Authorization header, or the token itself was
+//   null     - no/malformed Authorization header, or the token itself was
 //              invalid/expired. Caller maps this to a generic 401.
 export async function authenticate(request: Request, env: Env): Promise<Session | Response | null> {
   const authHeader = request.headers.get("Authorization");

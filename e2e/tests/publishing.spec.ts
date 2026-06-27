@@ -1,7 +1,7 @@
 /**
  * E2E test for site publishing flow.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Covers:
@@ -123,7 +123,7 @@ test("the public reader serves the doc by project id, unauthenticated", async ({
 
   // Vanity slugs require a premium feature flag on the project, so for the
   // public-access assertion we fall back to the always-available /s/<projectId>
-  // route — both resolve via the same PublicDocPage handler.
+  // route - both resolve via the same PublicDocPage handler.
   await anonPage.goto(`/s/${projectId}/${docId}`);
   await expect(anonPage.locator(".cm-content, article").first()).toBeVisible({ timeout: 10000 });
   await expect(anonPage.getByRole("heading", { name: "Welcome" }).first()).toBeVisible({ timeout: 5000 });

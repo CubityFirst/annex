@@ -3,7 +3,7 @@ import { handleWebauthnAuthStart } from "./webauthn-auth-start";
 
 // Minimal D1 mock: createAuthenticationOptions reads the user's credentials
 // (.all → `creds`) and inserts a challenge row (.run). No `users` lookup happens
-// anymore — that existence check was the oracle this endpoint must not have.
+// anymore - that existence check was the oracle this endpoint must not have.
 function makeEnv(creds: Array<{ id: string; transports: string | null }> = []) {
   const db = {
     prepare: vi.fn(() => ({
@@ -30,7 +30,7 @@ function req(body: unknown) {
   });
 }
 
-describe("handleWebauthnAuthStart — no account-existence oracle", () => {
+describe("handleWebauthnAuthStart - no account-existence oracle", () => {
   it("returns options (200) even for an unknown user, instead of 401", async () => {
     const res = await handleWebauthnAuthStart(req({ userId: "does-not-exist" }), makeEnv());
     expect(res.status).toBe(200);
@@ -46,7 +46,7 @@ describe("handleWebauthnAuthStart — no account-existence oracle", () => {
   });
 });
 
-describe("handleWebauthnAuthStart — transports hint in allowCredentials", () => {
+describe("handleWebauthnAuthStart - transports hint in allowCredentials", () => {
   async function allowCredentials(creds: Array<{ id: string; transports: string | null }>) {
     const res = await handleWebauthnAuthStart(req({ userId: "u1" }), makeEnv(creds));
     const body = await res.json<{

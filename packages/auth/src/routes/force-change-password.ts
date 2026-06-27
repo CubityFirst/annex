@@ -31,7 +31,7 @@ export async function handleForceChangePassword(request: Request, env: Env): Pro
 
   // Single statement performs the consume: matches `change_token_id` to the
   // JWT's `cti` claim, writes the new hash, clears the flag, and clears the
-  // nonce — atomically. If 0 rows change, the token was either never the
+  // nonce - atomically. If 0 rows change, the token was either never the
   // current one, or has already been consumed by a concurrent request.
   const newHash = await hashPassword(body.newPassword);
   const updateResult = await env.DB.prepare(
@@ -42,7 +42,7 @@ export async function handleForceChangePassword(request: Request, env: Env): Pro
   }
 
   // The forced-reset path is for "your password was leaked / your account
-  // is compromised" scenarios — kill every existing session, no exceptions.
+  // is compromised" scenarios - kill every existing session, no exceptions.
   await revokeAllSessions(env, user.id);
 
   const expiresAt = Date.now() + SESSION_TTL_MS;

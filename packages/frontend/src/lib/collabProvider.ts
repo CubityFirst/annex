@@ -24,7 +24,7 @@ function readVarUint(buf: Uint8Array, offset: number): [number, number] {
 }
 
 export interface CollabProviderOptions {
-  // Terminal signal — room is in a state where reconnecting is pointless (doc size cap
+  // Terminal signal - room is in a state where reconnecting is pointless (doc size cap
   // exceeded server-side, or our last frame was too big and our local Y.Doc has diverged).
   // The provider stops trying after this fires.
   onFatal?: (reason: string) => void;
@@ -169,13 +169,13 @@ export class CollabProvider {
   private onClose = () => {
     if (this.destroyed) return;
 
-    // Terminal close codes — reconnecting won't help, fall back to non-collab editing.
-    // 1008 (policy violation): either the doc size cap was exceeded (room frozen — any
+    // Terminal close codes - reconnecting won't help, fall back to non-collab editing.
+    // 1008 (policy violation): either the doc size cap was exceeded (room frozen - any
     //   reconnect immediately re-freezes on load) OR the user's access was revoked/demoted
     //   below editor mid-session (a reconnect would just be rejected at the upgrade gate).
     //   Either way it's terminal; the server's reason (shown below) distinguishes them.
     // 1009 (message too big): a frame we sent exceeded MAX_MESSAGE_BYTES. The server rejected
-    //   it before applying, but Yjs applied it locally before sending — so our state has
+    //   it before applying, but Yjs applied it locally before sending - so our state has
     //   diverged from the server's. Reconnecting recomputes the same too-big diff and loops.
     if (this.lastCloseCode === 1008 || this.lastCloseCode === 1009) {
       this.destroyed = true;
@@ -190,7 +190,7 @@ export class CollabProvider {
     }
 
     // If the socket closed without ever firing `open`, the upgrade was rejected
-    // (auth failure, project flag turned off, etc.) — give up after a few
+    // (auth failure, project flag turned off, etc.) - give up after a few
     // tries instead of pounding the server every 30s and spamming Vite's WS
     // proxy with ECONNABORTED/ECONNRESET errors.
     if (!this.currentAttemptOpened) {

@@ -1,7 +1,7 @@
 /**
  * E2E test for large-document handling.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Covers:
@@ -149,7 +149,7 @@ test("editing mode of a big doc still mounts and preserves the source", async ()
   await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
 
   // We can't easily read the entire 200 KB source in one go because CM
-  // virtualises lines outside the viewport — but the first line ("# Big
+  // virtualises lines outside the viewport - but the first line ("# Big
   // Document") and the next ("## Section 1") should be in the DOM.
   await expect.poll(async () => {
     return page.evaluate(() => {

@@ -52,8 +52,8 @@ export class AudioWidget extends ReactWidget {
 
   protected revealOnClick(): boolean {
     // Clicks on the preview surface (border, visualizer canvas) reveal the
-    // raw markdown like images do. Interactive children — the small play
-    // button and the native <audio controls> — call stopPropagation on
+    // raw markdown like images do. Interactive children - the small play
+    // button and the native <audio controls> - call stopPropagation on
     // pointerdown so transport keeps working without revealing.
     return true;
   }

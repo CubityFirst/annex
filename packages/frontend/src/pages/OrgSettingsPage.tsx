@@ -491,7 +491,7 @@ export function OrgSettingsPage() {
               {isOwner ? (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Deleting this organization removes it for all members. The sites inside it are NOT deleted — they're
+                    Deleting this organization removes it for all members. The sites inside it are NOT deleted - they're
                     detached and remain owned by their respective owners. This action cannot be undone.
                   </p>
                   <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

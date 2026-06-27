@@ -2,7 +2,7 @@ import { StateEffect, StateField, type EditorState } from "@codemirror/state";
 
 // Per-callout collapse state for foldable callouts (`> [!type]+` / `> [!type]-`).
 //
-// Folding is a *view* concern, not a document edit — clicking the chevron must
+// Folding is a *view* concern, not a document edit - clicking the chevron must
 // not rewrite the markdown source. We keep the user's explicit open/closed
 // choices in this field, keyed by the callout header line's start position. The
 // `+`/`-` marker only supplies the *default* when the user hasn't toggled.

@@ -1,7 +1,7 @@
 /**
  * E2E tests for changing a user's password from the settings page.
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * packages/auth/.dev.vars must contain:

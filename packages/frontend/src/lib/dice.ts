@@ -89,8 +89,8 @@ export interface GroupMember {
 
 export interface GroupResult {
   /**
-   * "individual": no-comma syntax — keep picks from individual dice values across one expression.
-   * "sum": comma syntax — keep picks from per-member sums.
+   * "individual": no-comma syntax - keep picks from individual dice values across one expression.
+   * "sum": comma syntax - keep picks from per-member sums.
    */
   keepMode: "individual" | "sum";
   keep?: { mode: "h" | "l"; count: number };
@@ -178,7 +178,7 @@ function tokenize(input: string): Token[] {
           else { atom += c; i++; if (i < input.length && input[i] === "=") { atom += "="; i++; } }
         }
         // Absorb a balanced (...) group into the atom when it directly follows the
-        // 'd' of a dice prefix — this is computed-sides notation, e.g. 2d(3+3).
+        // 'd' of a dice prefix - this is computed-sides notation, e.g. 2d(3+3).
         // Restricted to atoms matching `\d*d$` so function names like `round` (also
         // ending in d) and other letter-prefixed atoms are not affected.
         else if (c === "(" && /^\d*d$/i.test(atom)) {
@@ -217,7 +217,7 @@ function tokenize(input: string): Token[] {
  *
  * Explicit separator: `1d20+5 \ +5 for initiative`
  * Implicit:          `1d20+5 Roll for Initiative`
- *   — first top-level space where the following text doesn't look like a
+ *   - first top-level space where the following text doesn't look like a
  *     formula continuation (operator, digit, parenthesis, or function name).
  */
 export function splitFormulaLabel(notation: string): { formula: string; label?: string } {

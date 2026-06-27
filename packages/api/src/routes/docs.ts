@@ -16,7 +16,7 @@ export async function handleDocs(
   const subId = parts[2] || null;
   const params = url.searchParams;
 
-  // GET /docs?projectId=xxx[&folderId=yyy] — any member
+  // GET /docs?projectId=xxx[&folderId=yyy] - any member
   if (!docId && request.method === "GET") {
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -76,7 +76,7 @@ export async function handleDocs(
     return okResponse(rows.results);
   }
 
-  // POST /docs — editor or above
+  // POST /docs - editor or above
   if (!docId && request.method === "POST") {
     const body = await request.json<{ title: string; content: string; projectId: string; folderId?: string | null }>();
     if (!body.title || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -101,7 +101,7 @@ export async function handleDocs(
     return okResponse(created, 201);
   }
 
-  // POST /docs/:id/collab/reset — editor or above; wipes the collab DO so a frozen room
+  // POST /docs/:id/collab/reset - editor or above; wipes the collab DO so a frozen room
   // (state size cap exceeded) can recover. The next WS connection creates a fresh DO,
   // and the connecting client seeds it from R2's saved markdown.
   if (docId && subResource === "collab" && subId === "reset" && request.method === "POST") {
@@ -129,7 +129,7 @@ export async function handleDocs(
     return okResponse({ ok: true });
   }
 
-  // GET /docs/:id/revisions/:revisionId — any member (limited must have a doc_share)
+  // GET /docs/:id/revisions/:revisionId - any member (limited must have a doc_share)
   if (docId && subResource === "revisions" && subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
@@ -148,7 +148,7 @@ export async function handleDocs(
     return okResponse({ ...revision, content });
   }
 
-  // GET /docs/:id/revisions — any member (limited must have a doc_share)
+  // GET /docs/:id/revisions - any member (limited must have a doc_share)
   if (docId && subResource === "revisions" && !subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
@@ -164,14 +164,14 @@ export async function handleDocs(
     return okResponse(rows.results);
   }
 
-  // GET /docs/:id — any member of the doc's project (limited must have a doc_share)
+  // GET /docs/:id - any member of the doc's project (limited must have a doc_share)
   if (docId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
     const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     let myPermission: string | null = null;
-    // limited has no project-wide read access — a doc_share is required.
+    // limited has no project-wide read access - a doc_share is required.
     // viewer already reads everything, but a doc_share with permission='edit' uplifts them on this doc.
     if (caller.role === "limited" || caller.role === "viewer") {
       const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first<{ permission: string }>();
@@ -198,7 +198,7 @@ export async function handleDocs(
     return okResponse({ ...row, content, myRole: caller.role, myPermission, display_title, hide_title, description, image });
   }
 
-  // PUT /docs/:id — editor or above
+  // PUT /docs/:id - editor or above
   if (docId && request.method === "PUT") {
     const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocUpdateRow>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
@@ -251,7 +251,7 @@ export async function handleDocs(
     return okResponse(savedContent !== undefined ? { ...updated, content: savedContent } : updated);
   }
 
-  // DELETE /docs/:id — editor or above
+  // DELETE /docs/:id - editor or above
   if (docId && request.method === "DELETE") {
     const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);

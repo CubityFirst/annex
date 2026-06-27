@@ -136,7 +136,7 @@ export async function handleFolders(
     return okResponse(counts);
   }
 
-  // POST /folders — editor or above
+  // POST /folders - editor or above
   if (!folderId && request.method === "POST") {
     const body = await request.json<{ name: string; projectId: string; parentId?: string | null; type?: string }>();
     if (!body.name || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -161,7 +161,7 @@ export async function handleFolders(
     return okResponse({ id, name: body.name, type, project_id: body.projectId, parent_id: body.parentId ?? null, created_at: now }, 201);
   }
 
-  // PUT /folders/:id — editor or above (rename or move)
+  // PUT /folders/:id - editor or above (rename or move)
   if (folderId && folderId !== "counts" && request.method === "PUT") {
     const folder = await env.DB.prepare("SELECT * FROM folders WHERE id = ?")
       .bind(folderId).first<Folder & { type: string }>();
@@ -175,7 +175,7 @@ export async function handleFolders(
 
     // Validate a re-parent: target must be in the same project + type, and the
     // move must not create a cycle (which would make the recursive subtree CTEs
-    // loop forever — a DoS).
+    // loop forever - a DoS).
     if (body.parentId !== undefined && body.parentId !== null) {
       if (!(await folderInProject(env.DB, body.parentId, folder.project_id, folder.type))) {
         return errorResponse(Errors.BAD_REQUEST);
@@ -201,7 +201,7 @@ export async function handleFolders(
     });
   }
 
-  // DELETE /folders/:id — editor or above
+  // DELETE /folders/:id - editor or above
   if (folderId && folderId !== "counts" && request.method === "DELETE") {
     const folder = await env.DB.prepare("SELECT project_id FROM folders WHERE id = ?")
       .bind(folderId).first<{ project_id: string }>();

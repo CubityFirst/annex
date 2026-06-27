@@ -110,7 +110,7 @@ export async function handleCustomDomain(
   if (role === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-  // Feature gate: the CUSTOM_LINK flag (admin-set) gates custom domains — they
+  // Feature gate: the CUSTOM_LINK flag (admin-set) gates custom domains - they
   // are one and the same feature as the vanity slug.
   const proj = await env.DB.prepare("SELECT features FROM projects WHERE id = ?")
     .bind(projectId).first<{ features: number }>();
@@ -123,7 +123,7 @@ export async function handleCustomDomain(
   const existing = await env.DB.prepare("SELECT * FROM project_custom_domains WHERE project_id = ?")
     .bind(projectId).first<DomainRow>();
 
-  // POST /domain/refresh — re-poll Cloudflare and update the cached state.
+  // POST /domain/refresh - re-poll Cloudflare and update the cached state.
   if (isRefresh) {
     if (request.method !== "POST") return errorResponse(Errors.NOT_FOUND);
     if (!existing) return errorResponse(Errors.NOT_FOUND);
@@ -139,7 +139,7 @@ export async function handleCustomDomain(
     }
   }
 
-  // GET /domain — return current mapping (or null) plus config status.
+  // GET /domain - return current mapping (or null) plus config status.
   if (request.method === "GET") {
     return okResponse({
       configured,
@@ -148,7 +148,7 @@ export async function handleCustomDomain(
     });
   }
 
-  // PUT /domain { hostname } — create/replace the custom hostname.
+  // PUT /domain { hostname } - create/replace the custom hostname.
   if (request.method === "PUT") {
     if (!configured) {
       return Response.json(
@@ -189,7 +189,7 @@ export async function handleCustomDomain(
     }
   }
 
-  // DELETE /domain — unmap and remove the Cloudflare custom hostname.
+  // DELETE /domain - unmap and remove the Cloudflare custom hostname.
   if (request.method === "DELETE") {
     if (!existing) return okResponse({ deleted: true });
     if (configured && existing.cf_hostname_id) {

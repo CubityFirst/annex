@@ -64,8 +64,8 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
     const gone = fakeWs("gone");
     const { db } = dbForRoles({
       "direct-editor": { project: "editor", org: null },
-      "org-editor": { project: null, org: "editor" },   // trickle-down editor — keep
-      "org-viewer": { project: null, org: "viewer" },    // below editor — close
+      "org-editor": { project: null, org: "editor" },   // trickle-down editor - keep
+      "org-viewer": { project: null, org: "viewer" },    // below editor - close
       // "gone": absent => no membership => close
     });
 
@@ -79,7 +79,7 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
     expect([...revoked].sort()).toEqual(["gone", "org-viewer"]);
   });
 
-  it("de-dups by userId — duplicate sockets for one user cost a single resolver read", async () => {
+  it("de-dups by userId - duplicate sockets for one user cost a single resolver read", async () => {
     const a = fakeWs("gone");
     const b = fakeWs("gone");
     const { db, calls } = dbForRoles({});
@@ -92,7 +92,7 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
     expect([...revoked]).toEqual(["gone"]);
   });
 
-  it("throttles — a second immediate sweep is a no-op (no query, no re-close)", async () => {
+  it("throttles - a second immediate sweep is a no-op (no query, no re-close)", async () => {
     const gone = fakeWs("gone");
     const { db, calls } = dbForRoles({});
     const room = makeRoom([gone], db);
@@ -103,11 +103,11 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
 
     const second = await room.revalidateAccess();
     expect(second.size).toBe(0);
-    expect(calls.first).toBe(1);     // throttled — did not query again
+    expect(calls.first).toBe(1);     // throttled - did not query again
     expect(gone.closedWith).toBeNull();
   });
 
-  it("fails open on a resolver/DB error — does not tear down a live session", async () => {
+  it("fails open on a resolver/DB error - does not tear down a live session", async () => {
     const boom = fakeWs("boom");
     const { db } = dbForRoles({ boom: "throw" });
     const room = makeRoom([boom], db);
@@ -117,7 +117,7 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
     expect(revoked.size).toBe(0);
   });
 
-  it("no connected sockets — no query, empty result", async () => {
+  it("no connected sockets - no query, empty result", async () => {
     const { db, calls } = dbForRoles({});
     const room = makeRoom([], db);
     const revoked = await room.revalidateAccess();

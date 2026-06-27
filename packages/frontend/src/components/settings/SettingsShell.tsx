@@ -58,7 +58,7 @@ interface SettingsShellProps {
  * accordion outline that auto-expands the group of the section you're scrolled
  * to (and collapses the rest), and a content column holding the page's own
  * section JSX verbatim. Owns scroll-spy and hash deep-linking; knows nothing
- * about auth — pages pass pre-gated `visible` flags.
+ * about auth - pages pass pre-gated `visible` flags.
  */
 export function SettingsShell({ title, description, maxWidth = "3xl", groups, sections, children }: SettingsShellProps) {
   const location = useLocation();
@@ -71,7 +71,7 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
   // change, scroll to the section once it has rendered. scrollTo also sets the
   // section active, so the owning group expands. We re-run on idsKey changes so
   // a hash pointing at an initially-gated section (e.g. #theme before /api/me
-  // resolves) still scrolls once that section appears — but honoredHash ensures
+  // resolves) still scrolls once that section appears - but honoredHash ensures
   // each hash is honored only once, so a later gate flip can't yank the user
   // back to the hash after they've scrolled away.
   const honoredHashRef = useRef<string | null>(null);
@@ -95,7 +95,7 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
   return (
     <div className={cn("mx-auto px-6 py-10", maxWidthClass)}>
       <div className="flex gap-12">
-        {/* Grouped accordion outline — desktop only, mirrors DocsLayout's own
+        {/* Grouped accordion outline - desktop only, mirrors DocsLayout's own
             mobile sidebar gesture by staying out of the way on small screens. */}
         <aside className="hidden md:block w-44 shrink-0">
           <nav className="sticky top-10 flex flex-col">
@@ -149,7 +149,7 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
           </nav>
         </aside>
 
-        {/* Content column — the page's existing sections, unchanged. */}
+        {/* Content column - the page's existing sections, unchanged. */}
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}

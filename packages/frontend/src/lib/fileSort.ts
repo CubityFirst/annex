@@ -1,5 +1,5 @@
 // Client-side sorting for the File Manager listing. The listing renders three
-// independent groups — folders, docs, files — in that fixed order; a header
+// independent groups - folders, docs, files - in that fixed order; a header
 // click sorts the rows *within* each group, never across groups. Sorting keys
 // off the raw fields (`file.size: number`, ISO date strings), not the formatted
 // `formatBytes` / `formatRelativeTime` display strings.
@@ -79,7 +79,7 @@ export function sortDocs<
     case SortCol.Updated:
       return stableSort(docs, d => d.updated_at, "date", sort.dir);
     default:
-      // Docs have no Size — fall back to title-ascending.
+      // Docs have no Size - fall back to title-ascending.
       return stableSort(docs, d => d.title, "text", "asc");
   }
 }

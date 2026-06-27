@@ -37,7 +37,7 @@ jobs:
 
       # The four packages with vitest unit suites. e2e (Playwright) is excluded
       # on purpose: it has no webServer block, so it needs the full local stack
-      # (vite + 3 workers + seeded D1) plus browsers — a separate job, later.
+      # (vite + 3 workers + seeded D1) plus browsers - a separate job, later.
       #
       # --workspace-concurrency=1 runs the packages one at a time: several vitest
       # instances at once oversubscribe a 2-core runner and crash worker processes

@@ -9,7 +9,7 @@
 -- UNIQUE(doc_id, user_id) already auto-indexes lookups keyed by doc_id,
 -- but the limited-viewer hot path also hits "shares for this user in this
 -- project" (graph.ts) and "any share for this user in this project"
--- (files.ts) — both unindexed today.
+-- (files.ts) - both unindexed today.
 CREATE INDEX IF NOT EXISTS idx_docs_project           ON docs(project_id);
 CREATE INDEX IF NOT EXISTS idx_doc_shares_user        ON doc_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_doc_shares_project_user ON doc_shares(project_id, user_id);

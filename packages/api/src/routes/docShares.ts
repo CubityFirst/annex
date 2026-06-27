@@ -20,7 +20,7 @@ export async function handleDocShares(
   user: Session,
   url: URL,
 ): Promise<Response> {
-  // POST /projects/:projectId/folder-shares — bulk share all docs in a folder
+  // POST /projects/:projectId/folder-shares - bulk share all docs in a folder
   const folderShareMatch = url.pathname.match(/^\/projects\/([^/]+)\/folder-shares$/);
   if (folderShareMatch && request.method === "POST") {
     const projectId = folderShareMatch[1];
@@ -70,7 +70,7 @@ export async function handleDocShares(
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-  // GET /docs/:id/shares — list shares with permission levels.
+  // GET /docs/:id/shares - list shares with permission levels.
   // Only surface shares whose target is below editor; editor/admin/owner already
   // have project-wide access, so any lingering share row for them (e.g. left
   // over from a role promotion) is functionally inert and would confuse admins.
@@ -87,7 +87,7 @@ export async function handleDocShares(
     })));
   }
 
-  // POST /docs/:id/shares — grant access with a permission level
+  // POST /docs/:id/shares - grant access with a permission level
   if (!targetUserId && request.method === "POST") {
     const body = await request.json<{ userId: string; permission?: SharePermission }>();
     if (!body.userId) return errorResponse(Errors.BAD_REQUEST);
@@ -111,7 +111,7 @@ export async function handleDocShares(
     return okResponse({ userId: body.userId, name: share?.name ?? "", email: share?.email ?? "", permission }, 201);
   }
 
-  // PATCH /docs/:id/shares/:userId — update permission level
+  // PATCH /docs/:id/shares/:userId - update permission level
   if (targetUserId && request.method === "PATCH") {
     const body = await request.json<{ permission: SharePermission }>();
     if (!isValidPermission(body.permission)) return errorResponse(Errors.BAD_REQUEST);
@@ -126,7 +126,7 @@ export async function handleDocShares(
     return okResponse({ userId: targetUserId, permission: body.permission });
   }
 
-  // DELETE /docs/:id/shares/:userId — revoke access
+  // DELETE /docs/:id/shares/:userId - revoke access
   if (targetUserId && request.method === "DELETE") {
     const existing = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?")
       .bind(docId, targetUserId).first();

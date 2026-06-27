@@ -6,13 +6,13 @@
 
 # annex
 
-A collaborative documentation platform built on Cloudflare's edge infrastructure. Real-time co-editing, rich markdown, full-text search, file attachments, revision history, and passkey/TOTP authentication — all running at the edge with zero servers to manage.
+A collaborative documentation platform built on Cloudflare's edge infrastructure. Real-time co-editing, rich markdown, full-text search, file attachments, revision history, and passkey/TOTP authentication - all running at the edge with zero servers to manage.
 
 ## Features
 
 **Documents & Editing**
 - Markdown editor with live split-view preview
-- GitHub-Flavored Markdown — tables, task lists, strikethrough
+- GitHub-Flavored Markdown - tables, task lists, strikethrough
 - Syntax highlighting via Shiki
 - Custom callout blocks (note, warning, tip, error, success)
 - Real-time collaborative editing (Yjs CRDT over WebSocket)
@@ -48,8 +48,8 @@ A collaborative documentation platform built on Cloudflare's edge infrastructure
 ```
 packages/
 ├── frontend/   React SPA
-├── api/        Core Worker — projects, docs, files, collab
-├── auth/       Auth Worker — login, register, TOTP, WebAuthn
+├── api/        Core Worker - projects, docs, files, collab
+├── auth/       Auth Worker - login, register, TOTP, WebAuthn
 └── admin/      Admin dashboard
 ```
 
@@ -62,7 +62,7 @@ packages/
 npm install -g pnpm
 ```
 
-Wrangler (the Cloudflare CLI) is installed automatically as a dev dependency — no global install needed.
+Wrangler (the Cloudflare CLI) is installed automatically as a dev dependency - no global install needed.
 
 ## Setup
 
@@ -116,11 +116,11 @@ Starts all packages concurrently. Once running:
 | Auth Worker | http://localhost:8788 |
 | Admin Dashboard | http://localhost:5174 |
 
-The frontend dev server automatically proxies `/api` requests to the local Workers — no separate configuration needed.
+The frontend dev server automatically proxies `/api` requests to the local Workers - no separate configuration needed.
 
 ## Stripe / Billing (optional)
 
-Required only if you're working on the Annex Ink subscription system — billing routes, the Stripe webhook handler, or the billing UI in user/admin settings. See `memories/Ink-Stripe.md` for the full architecture.
+Required only if you're working on the Annex Ink subscription system - billing routes, the Stripe webhook handler, or the billing UI in user/admin settings. See `memories/Ink-Stripe.md` for the full architecture.
 
 **1. Install the Stripe CLI**
 
@@ -157,7 +157,7 @@ pnpm dev:stripe
 # (equivalent to: stripe listen --forward-to http://localhost:8788/stripe/webhook)
 ```
 
-The CLI prints a `whsec_...` at startup — paste it into `packages/auth/.dev.vars` as `STRIPE_WEBHOOK_SECRET`, then restart the auth worker dev so it picks up the new value. The `whsec_` printed by the CLI is only valid for events forwarded by that CLI session; it's separate from the live-mode webhook secret in the Stripe Dashboard.
+The CLI prints a `whsec_...` at startup - paste it into `packages/auth/.dev.vars` as `STRIPE_WEBHOOK_SECRET`, then restart the auth worker dev so it picks up the new value. The `whsec_` printed by the CLI is only valid for events forwarded by that CLI session; it's separate from the live-mode webhook secret in the Stripe Dashboard.
 
 Without `pnpm dev:stripe` running, the local auth worker will accept webhook POSTs from the public internet but won't see any. Local checkouts will succeed at Stripe, but local DB state won't update until events are forwarded.
 
@@ -167,7 +167,7 @@ Required only if you want videos to stream **directly from R2** with range/seek
 ("chunked" loading) instead of through the API Worker. With it configured,
 `GET /files/:id` hands the player a short-lived presigned S3 URL, so every
 range request goes browser → R2 with **zero per-request Worker invocations**
-(and no per-request D1 read). **It is entirely optional** — when unset, video
+(and no per-request D1 read). **It is entirely optional** - when unset, video
 falls back to the in-Worker token streaming route (which still supports
 range/seek, just with one Worker request per range). Audio, PDF, images and
 text always use the Worker path regardless. See `memories/file-content-streaming.md`.
@@ -182,7 +182,7 @@ In the Cloudflare dashboard → **R2 → Manage R2 API Tokens → Create API Tok
 Cloudflare gives you an **Access Key ID** and a **Secret Access Key**. You'll
 also need your **Cloudflare Account ID** (R2 overview page, or any dashboard URL).
 
-**2. Production — set the secrets and vars on the API worker**
+**2. Production - set the secrets and vars on the API worker**
 
 The two keys are secrets; the account id and bucket name are plain vars.
 Because `annex-api` uses versioned deployments, **deploy first**, then add the
@@ -196,7 +196,7 @@ npx wrangler secret put R2_SECRET_ACCESS_KEY
 ```
 
 Enter each value at the interactive prompt (do **not** pipe it in via
-PowerShell — it appends a CRLF and corrupts the secret). Then set the two vars
+PowerShell - it appends a CRLF and corrupts the secret). Then set the two vars
 in `packages/api/wrangler.toml` (`R2_BUCKET_NAME` is already there):
 
 ```toml
@@ -221,16 +221,16 @@ R2_ACCOUNT_ID=...
 R2_BUCKET_NAME=cubedocs-assets
 ```
 
-**Security — keep the bucket private.** The presigned signature must be the
+**Security - keep the bucket private.** The presigned signature must be the
 **only** way to read objects:
 
 - Do **not** enable R2 public access (the `r2.dev` URL or a public custom
   domain) on `cubedocs-assets`. The Worker reads R2 through its binding and the
-  presigned URLs use the signature-gated S3 endpoint — neither needs public
+  presigned URLs use the signature-gated S3 endpoint - neither needs public
   access, and enabling it would let anyone fetch raw objects by key, bypassing
   every authorization check.
-- The API token above is **read-only** and **single-bucket** — keep it that way.
-- **No CORS policy is required** — `<video>` playback is a no-cors media request.
+- The API token above is **read-only** and **single-bucket** - keep it that way.
+- **No CORS policy is required** - `<video>` playback is a no-cors media request.
   Only add one (scoped to your app origin, never `*`) if you later read media
   bytes from JavaScript.
 

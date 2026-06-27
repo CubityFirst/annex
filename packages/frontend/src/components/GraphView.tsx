@@ -118,7 +118,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     link?.distance?.(40);
     link?.strength?.(0.92);
 
-    // Gravity — pull every node toward the origin so the graph stays bounded.
+    // Gravity - pull every node toward the origin so the graph stays bounded.
     type SimNode = { x?: number; y?: number; vx?: number; vy?: number };
     type GravityForce = ((alpha: number) => void) & { initialize?: (nodes: SimNode[]) => void };
     let simNodes: SimNode[] = [];

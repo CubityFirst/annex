@@ -5,14 +5,14 @@ import { cn } from "@/lib/utils";
 
 // Plain-DOM fenced-code widget.
 //
-// A highlighted code block is static HTML plus a copy button — it needs no
+// A highlighted code block is static HTML plus a copy button - it needs no
 // React. Earlier this mounted a React root per block (ReactWidget → <CodeBlock>);
 // for a code-heavy doc that's one React reconciler root per visible block. This
 // renders straight to the DOM instead, so loading a page with many code blocks
 // costs only Shiki tokenisation + an innerHTML assignment per block.
 //
 // Mermaid blocks still need React (async render, heavy lazy lib) and go through
-// MermaidWidget instead — see decorations/block/codeFence.ts.
+// MermaidWidget instead - see decorations/block/codeFence.ts.
 
 const THEME = "github-dark-dimmed";
 
@@ -36,7 +36,7 @@ function highlightHtml(code: string, lang: string): string | null {
   try {
     return h.codeToHtml(code, { lang, theme: THEME });
   } catch {
-    // Unknown language — fall back to plain text.
+    // Unknown language - fall back to plain text.
     return h.codeToHtml(code, { lang: "text", theme: THEME });
   }
 }
@@ -67,7 +67,7 @@ export class CodeFenceWidget extends WidgetType {
     this.paint(outer);
 
     // If Shiki wasn't ready on first paint, swap in the highlighted output once
-    // it is — in place, no remount. (After the JS-engine init this window is
+    // it is - in place, no remount. (After the JS-engine init this window is
     // tiny.)
     if (getHighlighter() === null) {
       highlighterReady.then(() => {
@@ -100,7 +100,7 @@ export class CodeFenceWidget extends WidgetType {
     if (html !== null) {
       outer.className = "not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4";
       const host = document.createElement("div");
-      // Shiki escapes all user code content — safe to assign as HTML.
+      // Shiki escapes all user code content - safe to assign as HTML.
       host.innerHTML = html;
       outer.appendChild(host);
     } else {

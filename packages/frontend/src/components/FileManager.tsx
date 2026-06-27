@@ -99,7 +99,7 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-// "Created by" cell — the author/uploader name plus an optional role badge,
+// "Created by" cell - the author/uploader name plus an optional role badge,
 // linking to the user's profile card when we have an id. The name truncates in
 // its own span while the badge stays `shrink-0`, so a long name never pushes
 // the badge out of the (overflow-hidden) cell.
@@ -123,7 +123,7 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
   );
 }
 
-// Module-scope so the array identity is stable across renders — the table keys
+// Module-scope so the array identity is stable across renders - the table keys
 // its segment memo and auto-fit effect off this reference. "Name" and
 // "Created by" are constrained (minWidth/maxWidth) so they auto-fit to content;
 // "Size"/"Last updated" share the remaining resizable space.
@@ -173,7 +173,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<DocItem[] | null>(null);
 
-  // Column sort for the listing — applied within each group (folders, docs,
+  // Column sort for the listing - applied within each group (folders, docs,
   // files). Defaults to Name ascending; clicking the active column toggles dir.
   const [sort, setSort] = useState<{ colIdx: number; dir: SortDir }>({ colIdx: 0, dir: "asc" });
   const handleSort = useCallback((colIdx: number) => {
@@ -547,7 +547,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
       // Everything else → upload as a native file entry. Imported/dropped
       // .excalidraw files arrive with an empty or application/json MIME, so
-      // re-type them to the vendor MIME — otherwise the API wouldn't treat them
+      // re-type them to the vendor MIME - otherwise the API wouldn't treat them
       // as mutable drawings and saving edits would 400 (isMutableFile).
       const upload = file.name.toLowerCase().endsWith(EXCALIDRAW_EXT)
         ? new File([file], file.name, { type: EXCALIDRAW_MIME })
@@ -611,7 +611,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     const sortedDocs = sortDocs(docRows, sort);
     const sortedFiles = sortFiles(fileRows, sort);
     // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
-    // shown in them changes — folder/doc/file names plus author/uploader names.
+    // shown in them changes - folder/doc/file names plus author/uploader names.
     // Deliberately excludes selection state, so checkbox toggles don't re-measure.
     const measureKey = [
       ...sortedFolders.map(f => f.name),

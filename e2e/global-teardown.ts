@@ -26,7 +26,7 @@ export default async function globalTeardown() {
       );
     } catch (err) {
       // Dev stack might be down (we just torched it with the test run); that's
-      // fine — there's nothing to clean if there's no DB to talk to.
+      // fine - there's nothing to clean if there's no DB to talk to.
       console.warn(`[globalTeardown] ${db}: ${(err as Error).message.split("\n")[0]}`);
     }
   };

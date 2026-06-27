@@ -10,7 +10,7 @@
 //   - "custom" → drop .dark and override the ~19 theme tokens inline with a
 //                palette derived from one base colour
 //
-// Setting the theme is admin-only — the settings UI is hidden and the write
+// Setting the theme is admin-only - the settings UI is hidden and the write
 // route is 403-guarded unless the user is a global site admin. THEME_MODES
 // must stay in sync with packages/auth/src/theme.ts.
 
@@ -38,7 +38,7 @@ export function resolveThemeMode(value: string | null | undefined, fallback: The
 }
 
 // The public landing page and the auth screens always render in the default
-// (dark) brand look — the per-user theme is an in-app preference and must not
+// (dark) brand look - the per-user theme is an in-app preference and must not
 // leak onto these. Everything else (the DocsLayout app, public docs, etc.)
 // uses the saved theme. Exact-match paths: none of these have sub-routes.
 const UNTHEMED_PATHS = new Set(["/", "/login", "/register"]);
@@ -55,7 +55,7 @@ const DARK_HTML_BG = "oklch(0.141 0.005 285.823)";
 const LIGHT_HTML_BG = "oklch(1 0 0)";
 const NEAR_WHITE = "oklch(0.985 0 0)";
 const NEAR_BLACK = "oklch(0.21 0.006 285.885)";
-// destructive stays a stock red, never tinted toward the base — recolouring
+// destructive stays a stock red, never tinted toward the base - recolouring
 // "danger" muddies its meaning. Two variants so a light custom theme gets the
 // lighter red (matches :root) and a dark one the darker red (matches .dark).
 const DESTRUCTIVE_DARK = "oklch(0.396 0.141 25.723)";
@@ -91,8 +91,8 @@ function fmt(l: number, c: number, h: number): string {
 
 // "Tinted surfaces (full)" strategy: the picked colour drives a tinted neutral
 // scale (background → card → border) plus a base-coloured primary/ring, with
-// auto-contrast text. The picked colour's lightness chooses the polarity —
-// a pale pick yields a light theme, a dark pick a dark one — so users can
+// auto-contrast text. The picked colour's lightness chooses the polarity -
+// a pale pick yields a light theme, a dark pick a dark one - so users can
 // build either. Each polarity uses its own banded lightness scale (not a
 // free-floating background), so a mid-tone pick still resolves to a clearly
 // light or dark backdrop instead of a muddy, low-contrast in-between. Chroma
@@ -148,8 +148,8 @@ export function derivePalette(baseHex: string): Record<string, string> {
 }
 
 // Whether the effective theme renders on a light backdrop (near-black text).
-// Consumers that key off the .dark class can't tell — custom never sets it,
-// yet a pale pick yields a light theme — so use this instead (e.g. to keep
+// Consumers that key off the .dark class can't tell - custom never sets it,
+// yet a pale pick yields a light theme - so use this instead (e.g. to keep
 // the black wordmark un-inverted). Mirrors derivePalette's polarity decision
 // and applyThemeToRoot's "custom-without-colour falls back to dark" rule.
 export function isLightTheme(prefs: ThemePrefs): boolean {
@@ -212,7 +212,7 @@ export function applyThemeToRoot(prefs: ThemePrefs): void {
     const palette = derivePalette(prefs.customColor);
     // Match .dark to the derived polarity so the ~39 `dark:*` utilities and
     // `dark:prose-invert` (AI summary, file summary, public doc body) behave
-    // correctly — a custom *dark* theme still needs them. The inline vars
+    // correctly - a custom *dark* theme still needs them. The inline vars
     // below beat both :root and .dark for the 19 theme tokens, so toggling
     // the class only steers the non-token `dark:` utilities and the wordmark.
     root.classList.toggle("dark", !isLightTheme(prefs));
@@ -227,7 +227,7 @@ export function applyThemeToRoot(prefs: ThemePrefs): void {
     return;
   }
 
-  // dark — the historic default, and the fallback for custom-without-colour.
+  // dark - the historic default, and the fallback for custom-without-colour.
   root.classList.add("dark");
   root.style.backgroundColor = DARK_HTML_BG;
 }

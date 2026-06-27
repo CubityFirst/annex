@@ -30,7 +30,7 @@ export async function handleFiles(
   const fileId = parts[0] || null;
   const subResource = parts[1] || null;
 
-  // GET /files/:id/content — serve raw file (streamed from R2, range-aware)
+  // GET /files/:id/content - serve raw file (streamed from R2, range-aware)
   // Access order: published project → ?token= capability → authenticated member → deny.
   // The token path exists for browser media elements that can't send the
   // Authorization header on their range/seek subrequests (see lib/contentToken).
@@ -60,8 +60,8 @@ export async function handleFiles(
       }
     }
 
-    // Uploaded media is immutable — file_id is keyed to a single blob and PUT
-    // /files/:id only mutates name/folder — so its content ETag is the bare id and
+    // Uploaded media is immutable - file_id is keyed to a single blob and PUT
+    // /files/:id only mutates name/folder - so its content ETag is the bare id and
     // it caches for a long time. Mutable files (Excalidraw drawings, overwritten by
     // PUT /files/:id/content) version their ETag with updated_at ("<id>-<ms>") and
     // serve no-cache, so a save always revalidates and never returns stale bytes.
@@ -83,7 +83,7 @@ export async function handleFiles(
   // All other file operations require authentication
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
 
-  // GET /files/:id — get single file metadata (any member except limited)
+  // GET /files/:id - get single file metadata (any member except limited)
   if (fileId && !subResource && request.method === "GET") {
     const record = await env.DB.prepare("SELECT * FROM files WHERE id = ?")
       .bind(fileId).first<FileRecord>();
@@ -99,7 +99,7 @@ export async function handleFiles(
     const contentToken = await signContentToken(env.JWT_SECRET, record.id, Math.floor(Date.now() / 1000));
     // For video, hand back a presigned R2 URL so playback streams straight from
     // R2 (range/seek with zero per-request Worker hits). Null when R2 S3 creds
-    // aren't configured — the client then falls back to the token route above.
+    // aren't configured - the client then falls back to the token route above.
     // Gated to the exact inline-safe video allowlist (not just `video/*`) since
     // the direct R2 path skips fileServeHeaders' nosniff; the response-type
     // override then forces a Worker-controlled Content-Type/Disposition.
@@ -113,7 +113,7 @@ export async function handleFiles(
     return okResponse({ ...record, content_token: contentToken, content_stream_url: contentStreamUrl });
   }
 
-  // GET /files?projectId=xxx[&folderId=yyy] — list files (any member except limited)
+  // GET /files?projectId=xxx[&folderId=yyy] - list files (any member except limited)
   if (!fileId && request.method === "GET") {
     const projectId = url.searchParams.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -145,7 +145,7 @@ export async function handleFiles(
     return okResponse(rows.results);
   }
 
-  // POST /files — upload a file (editor+)
+  // POST /files - upload a file (editor+)
   if (!fileId && request.method === "POST") {
     const contentType = request.headers.get("Content-Type") ?? "";
     if (!contentType.includes("multipart/form-data")) return errorResponse(Errors.BAD_REQUEST);
@@ -180,7 +180,7 @@ export async function handleFiles(
     return okResponse(record, 201);
   }
 
-  // PUT /files/:id/content — overwrite a drawing's bytes in place (editor+).
+  // PUT /files/:id/content - overwrite a drawing's bytes in place (editor+).
   // Only mutable files (Excalidraw drawings) may be overwritten; uploaded media
   // stay immutable (their content ETag / long cache assume the blob never changes).
   if (fileId && subResource === "content" && request.method === "PUT") {
@@ -205,7 +205,7 @@ export async function handleFiles(
     const prevMs = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     if (nowMs <= prevMs) nowMs = prevMs + 1;
     const now = new Date(nowMs).toISOString();
-    // Re-use the stored MIME — a drawing stays a drawing; never trust the client's
+    // Re-use the stored MIME - a drawing stays a drawing; never trust the client's
     // request Content-Type here (the editor PUTs application/json).
     await env.ASSETS.put(`files/${fileId}`, body, { httpMetadata: { contentType: meta.mime_type } });
     await env.DB.prepare("UPDATE files SET size = ?, updated_at = ? WHERE id = ?")
@@ -214,7 +214,7 @@ export async function handleFiles(
     return okResponse({ id: fileId, size: body.byteLength, updated_at: now });
   }
 
-  // PUT /files/:id — move to a different folder (editor+)
+  // PUT /files/:id - move to a different folder (editor+)
   if (fileId && !subResource && request.method === "PUT") {
     const meta = await env.DB.prepare("SELECT project_id FROM files WHERE id = ?")
       .bind(fileId).first<{ project_id: string }>();
@@ -248,7 +248,7 @@ export async function handleFiles(
     return okResponse(updated);
   }
 
-  // DELETE /files/:id — editor+
+  // DELETE /files/:id - editor+
   if (fileId && !subResource && request.method === "DELETE") {
     const meta = await env.DB.prepare("SELECT project_id FROM files WHERE id = ?")
       .bind(fileId).first<{ project_id: string }>();

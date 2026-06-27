@@ -12,10 +12,10 @@ Browser ↔ WebSocket `/api/docs/:id/collab?token=<jwt>` ↔ API Worker (auth + 
 
 ## Key files
 
-- `packages/api/src/collab/DocCollabRoom.ts` — Durable Object; holds `Y.Doc` in memory, persists snapshot to R2 via a debounced alarm after edits and on last-client-close. The Awareness `_checkInterval` is cleared at construction to allow WebSocket hibernation, and `teardown()` is called when the last client disconnects so the DO can be evicted.
-- `packages/frontend/src/components/wysiwyg/WysiwygEditor.tsx` — CodeMirror 6 editor used universally (flag-on and flag-off); Yjs/WebSocket extensions only wired when the `collab` prop is set.
-- `packages/frontend/src/components/EditorPresence.tsx` — title-bar avatars (first 3 + "+N" overflow popover) fed from Yjs awareness state.
-- `packages/frontend/src/lib/userColor.ts` — deterministic HSL color from user UUID.
+- `packages/api/src/collab/DocCollabRoom.ts` - Durable Object; holds `Y.Doc` in memory, persists snapshot to R2 via a debounced alarm after edits and on last-client-close. The Awareness `_checkInterval` is cleared at construction to allow WebSocket hibernation, and `teardown()` is called when the last client disconnects so the DO can be evicted.
+- `packages/frontend/src/components/wysiwyg/WysiwygEditor.tsx` - CodeMirror 6 editor used universally (flag-on and flag-off); Yjs/WebSocket extensions only wired when the `collab` prop is set.
+- `packages/frontend/src/components/EditorPresence.tsx` - title-bar avatars (first 3 + "+N" overflow popover) fed from Yjs awareness state.
+- `packages/frontend/src/lib/userColor.ts` - deterministic HSL color from user UUID.
 
 ## WebSocket auth
 
@@ -23,7 +23,7 @@ Token passed as `?token=` (browsers can't set headers on WS); API worker re-wrap
 
 ## DO room key
 
-`${projectId}:${docId}` — one room per document.
+`${projectId}:${docId}` - one room per document.
 
 ## Reconnect backoff
 

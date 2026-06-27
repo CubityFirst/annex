@@ -16,7 +16,7 @@ export function pickActiveSection(orderedIds: string[], ratios: Map<string, numb
 /**
  * Finds the real scroll container for a settings section. Both settings pages
  * render inside DocsLayout's `<div className="flex-1 overflow-y-auto …">`
- * (DocsLayout.tsx) — the page roots themselves have no overflow, so window/
+ * (DocsLayout.tsx) - the page roots themselves have no overflow, so window/
  * document never scrolls. We observe and scroll that ancestor.
  */
 function scrollContainerOf(el: HTMLElement): HTMLElement | null {
@@ -74,7 +74,7 @@ export function useScrollSpy(orderedIds: string[]): ScrollSpy {
         if (performance.now() < ignoreUntilRef.current) return;
         // When scrolled to the bottom, a short trailing section (e.g. Danger
         // Zone) sits below the upper-third active band and can never be the
-        // topmost intersecting section — pin it so its link highlights and its
+        // topmost intersecting section - pin it so its link highlights and its
         // group stays expanded. Only when the container actually overflows, so
         // a non-scrolling page still resolves to its first section.
         if (root) {

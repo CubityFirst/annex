@@ -5,7 +5,7 @@ import type { Env } from "../index";
 //
 // The OIDC discovery document. Standard clients read this from
 // `${issuer}/.well-known/openid-configuration` and self-configure every
-// endpoint from it. Safe to cache — it only changes on a config/key roll.
+// endpoint from it. Safe to cache - it only changes on a config/key roll.
 export function handleOAuthDiscovery(_request: Request, env: Env): Response {
   const doc = buildDiscoveryDocument(env.OIDC_ISSUER, env.OIDC_AUTHORIZE_URL);
   return Response.json(doc, {

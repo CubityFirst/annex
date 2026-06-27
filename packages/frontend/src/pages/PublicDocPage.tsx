@@ -24,7 +24,7 @@ import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network } from "lucide-react";
 
-// Heavy chunk — only loaded when a published drawing is opened.
+// Heavy chunk - only loaded when a published drawing is opened.
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
 interface Heading { level: number; text: string; id: string }
@@ -503,7 +503,7 @@ export function PublicDocPage() {
       .then(r => (r.status === 404 ? null : r.json() as Promise<{ ok: boolean; data?: PublicData }>))
       .then(async json => {
         if (json && json.ok && json.data) { setData(json.data); return; }
-        // Not a doc — the id may be a published FILE (files/videos/audio/drawings
+        // Not a doc - the id may be a published FILE (files/videos/audio/drawings
         // are directly linkable too). Load the site nav and, if it matches a file,
         // show the file view; otherwise it's a genuine 404.
         const projJson = await fetch(`/api/public/projects/${projectId}`)
@@ -529,7 +529,7 @@ export function PublicDocPage() {
       .finally(() => { setLoading(false); setFetching(false); });
   }, [projectId, docId, isGraph, navigate]);
 
-  // Redirect raw UUID to vanity slug once we know it. Path mode only — on a
+  // Redirect raw UUID to vanity slug once we know it. Path mode only - on a
   // custom domain the project isn't in the URL, so there's nothing to canonicalize.
   useEffect(() => {
     if (hostMode || !data || !docId) return;
@@ -543,7 +543,7 @@ export function PublicDocPage() {
   // the outline buttons. Drives CodeMirror's own `scrollIntoView` against the
   // heading's *line position* (parsed from the markdown source). That's
   // crucial because:
-  //   - CodeMirror virtualises its DOM — far-off-screen heading lines may not
+  //   - CodeMirror virtualises its DOM - far-off-screen heading lines may not
   //     exist as elements, so `getElementById` would fail.
   //   - The Lezer markdown parser sometimes fails to tag a `## Heading` as an
   //     ATXHeading after long paragraphs, so even when the line is rendered
@@ -575,7 +575,7 @@ export function PublicDocPage() {
     // Compute the target scrollTop from CM's height map (`lineBlockAt`),
     // which works whether or not the line is currently rendered as DOM, then
     // write it directly on the Radix viewport. We deliberately avoid CM's own
-    // `scrollIntoView` effect — it competes with this manual write on the
+    // `scrollIntoView` effect - it competes with this manual write on the
     // next measure cycle and leaves the scroll position slightly off.
     function doScroll(): boolean {
       const view = getView();
@@ -616,7 +616,7 @@ export function PublicDocPage() {
       observer.observe(watchTarget);
       stopTimer = setTimeout(cancelAttempt, 2500);
 
-      // Treat any user-initiated scroll input as a cancel — once the user
+      // Treat any user-initiated scroll input as a cancel - once the user
       // has reached for the wheel / touchpad / a key, our re-anchor should
       // back off so we don't yank them away from where they wanted to be.
       if (viewport) {
@@ -711,7 +711,7 @@ export function PublicDocPage() {
       {showNav && sidebarOpen && (
         <div className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
-      {/* Sidebar — only shown when the entire site is published */}
+      {/* Sidebar - only shown when the entire site is published */}
       {showNav && (
         <div className={cn(
           "fixed inset-y-0 left-0 z-40 transition-transform duration-200",
@@ -854,7 +854,7 @@ export function PublicDocPage() {
         </div>
       )}
 
-      {/* Main content — stays put; the sidebar overlays it on mobile instead of pushing it */}
+      {/* Main content - stays put; the sidebar overlays it on mobile instead of pushing it */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {!showNav && (
           <header className="flex h-14 items-center border-b border-border px-6 gap-2">
@@ -898,7 +898,7 @@ export function PublicDocPage() {
             )}
           </div>
         ) : selectedFile && fileKind(selectedFile.mime_type, selectedFile.name) === "drawing" ? (
-          // Drawings fill the entire right pane (full-bleed, not boxed) — a live
+          // Drawings fill the entire right pane (full-bleed, not boxed) - a live
           // read-only canvas the visitor can pan/zoom.
           <div className="flex-1 min-h-0">
             <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading drawing…</div>}>

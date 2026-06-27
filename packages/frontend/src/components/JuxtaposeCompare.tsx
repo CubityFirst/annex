@@ -83,7 +83,7 @@ export function JuxtaposeCompare({
       } catch {
         /* setPointerCapture can throw if the pointer is already gone */
       }
-      // Animate the initial jump — a plain click glides to the target. If the
+      // Animate the initial jump - a plain click glides to the target. If the
       // user then drags, the first move switches off the transition.
       setAnimate(true);
       updateFromPointer(e.clientX, e.clientY);
@@ -198,7 +198,7 @@ export function JuxtaposeCompare({
         </span>
       )}
 
-      {/* divider line — accent-tinted */}
+      {/* divider line - accent-tinted */}
       <div
         className="pointer-events-none absolute shadow-[0_0_4px_rgba(0,0,0,0.5)]"
         style={
@@ -208,7 +208,7 @@ export function JuxtaposeCompare({
         }
       />
 
-      {/* knob — focusable slider handle when interactive */}
+      {/* knob - focusable slider handle when interactive */}
       {handle === "bar" ? (
         <div
           role="slider"

@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 
 // Stripe SDK initialized for the Workers runtime. The default Node http
-// client + crypto won't work even with nodejs_compat — we have to plug
+// client + crypto won't work even with nodejs_compat - we have to plug
 // in fetch and SubtleCrypto explicitly.
 let cached: Stripe | null = null;
 let cachedKey: string | null = null;

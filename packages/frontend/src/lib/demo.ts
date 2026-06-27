@@ -1,4 +1,4 @@
-// Demo mode — a try-before-you-register sandbox entered via /demo (linked from
+// Demo mode - a try-before-you-register sandbox entered via /demo (linked from
 // the landing page's "See a demo"). While the sessionStorage flag is set,
 // main.tsx installs the in-memory mock API (lib/demoServer.ts) before React
 // mounts, and getToken() hands out a fake JWT so the authenticated app shell
@@ -40,8 +40,8 @@ function b64url(s: string): string {
 }
 
 // Unsigned JWT-shaped token. It never reaches a real server (the demo fetch
-// patch answers every /api call), but code that base64-decodes the payload —
-// e.g. parseToken in SiteSettingsPage — gets sensible values out of it.
+// patch answers every /api call), but code that base64-decodes the payload -
+// e.g. parseToken in SiteSettingsPage - gets sensible values out of it.
 export const DEMO_TOKEN = `${b64url(JSON.stringify({ alg: "none", typ: "JWT" }))}.${b64url(
   JSON.stringify({ userId: DEMO_USER_ID, email: DEMO_USER_EMAIL }),
 )}.demo`;

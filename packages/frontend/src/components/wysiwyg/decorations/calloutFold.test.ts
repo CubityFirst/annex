@@ -6,7 +6,7 @@ function stateWith(doc: string): EditorState {
   return EditorState.create({ doc, extensions: [calloutFoldField] });
 }
 
-describe("isCalloutCollapsed — marker defaults", () => {
+describe("isCalloutCollapsed - marker defaults", () => {
   it("non-foldable callouts are never collapsed", () => {
     const s = stateWith("> [!tip] Hi");
     expect(isCalloutCollapsed(s, 0, "")).toBe(false);
@@ -23,7 +23,7 @@ describe("isCalloutCollapsed — marker defaults", () => {
   });
 });
 
-describe("toggleCalloutFold — explicit user choice overrides the marker", () => {
+describe("toggleCalloutFold - explicit user choice overrides the marker", () => {
   it("collapsing a `+` callout", () => {
     let s = stateWith("> [!tip]+ Hi");
     s = s.update({ effects: toggleCalloutFold.of({ from: 0, collapsed: true }) }).state;
@@ -45,13 +45,13 @@ describe("toggleCalloutFold — explicit user choice overrides the marker", () =
   });
 });
 
-describe("calloutFoldField — position remap through doc changes", () => {
+describe("calloutFoldField - position remap through doc changes", () => {
   it("a user toggle survives an edit above the callout", () => {
     let s = stateWith("intro\n\n> [!tip]+ Hi");
     const header = s.doc.line(3).from;
     s = s.update({ effects: toggleCalloutFold.of({ from: header, collapsed: true }) }).state;
 
-    // Insert text at the very top — the header shifts right.
+    // Insert text at the very top - the header shifts right.
     const tr = s.update({ changes: { from: 0, insert: "PREPENDED\n" } });
     s = tr.state;
     const newHeader = tr.changes.mapPos(header, 1);

@@ -242,7 +242,7 @@ export default {
       } else if (url.pathname === "/stripe/webhook" && request.method === "POST") {
         // Stripe webhook handler reads its own raw body for signature
         // verification; it must NOT be wrapped by anything that calls
-        // request.json() upstream. CORS is also irrelevant — Stripe
+        // request.json() upstream. CORS is also irrelevant - Stripe
         // calls this server-to-server, not from a browser.
         response = await handleStripeWebhook(request, env);
       } else if (url.pathname === "/dev/quick-login" && request.method === "POST") {
@@ -271,7 +271,7 @@ export default {
 };
 
 // Public OIDC endpoints served to connected services from their own origins.
-// `/oauth/authorize` is intentionally NOT here — it's reached internally via
+// `/oauth/authorize` is intentionally NOT here - it's reached internally via
 // the API worker's service binding and stays locked to the app origin.
 function isPublicOidcPath(pathname: string): boolean {
   return (

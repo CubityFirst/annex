@@ -3,7 +3,7 @@ import { cursorTouches, type VisitorArgs } from "../types";
 import { tryVisitCallout } from "./callout";
 
 // Returns false when the walker should NOT descend into this node's children
-// (a collapsed callout — its body is hidden, so inline visitors must not add
+// (a collapsed callout - its body is hidden, so inline visitors must not add
 // decorations inside the block-replaced range). Returns void to descend.
 export const visitBlockquote = (args: VisitorArgs): false | void => {
   const result = tryVisitCallout(args);

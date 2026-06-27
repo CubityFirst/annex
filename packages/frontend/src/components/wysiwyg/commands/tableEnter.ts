@@ -29,7 +29,7 @@ export const tableContinueOnEnter: Command = (view) => {
 
   const cells = countCells(view.state.doc.sliceString(line.from, line.to));
   const newRow = "\n|" + " |".repeat(cells);
-  // Position cursor inside the first new cell — "\n| " is 3 chars
+  // Position cursor inside the first new cell - "\n| " is 3 chars
   const cursorOffset = 3;
 
   view.dispatch({

@@ -49,7 +49,7 @@ export function parseUserAgent(ua: string | null): { deviceKind: DeviceKind | nu
 }
 
 // Creates a new session row and returns the id (used as the JWT's `sid` claim).
-// Captures UA/IP at creation time only — there's no per-request write.
+// Captures UA/IP at creation time only - there's no per-request write.
 export async function createSession(
   env: Env,
   userId: string,

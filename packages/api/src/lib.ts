@@ -44,7 +44,7 @@ export interface Doc {
 
 export const ProjectFeatures = {
   // CUSTOM_LINK gates both the vanity slug (/s/<slug>) and mapping the site to
-  // the owner's own custom domain — they're one feature (see routes/customDomains.ts).
+  // the owner's own custom domain - they're one feature (see routes/customDomains.ts).
   CUSTOM_LINK: 1,
   AI_FEATURES: 2,
   REALTIME:    4,
@@ -128,7 +128,7 @@ export async function folderInProject(
   return !!row;
 }
 
-// True if re-parenting `folderId` under `newParentId` would create a cycle —
+// True if re-parenting `folderId` under `newParentId` would create a cycle -
 // i.e. the new parent is the folder itself or one of its descendants. Walks the
 // new parent's ancestor chain; a cycle exists iff `folderId` appears in it.
 // Prevents an infinite loop in the recursive subtree CTEs (a DoS vector).
@@ -153,8 +153,8 @@ export async function wouldCreateFolderCycle(
 
 // MIME types safe to render `inline` in the browser. Stored files are served
 // from the same origin as the SPA (docs.cubityfir.st), so a file the user can
-// navigate to runs in our security context. Anything NOT on this allowlist —
-// notably text/html and image/svg+xml, both of which can carry script — is
+// navigate to runs in our security context. Anything NOT on this allowlist -
+// notably text/html and image/svg+xml, both of which can carry script - is
 // forced to download as application/octet-stream so it can never execute as a
 // document in our origin (stored-XSS defence).
 const INLINE_SAFE_MIME = new Set([
@@ -166,7 +166,7 @@ const INLINE_SAFE_MIME = new Set([
 ]);
 
 // True when a stored blob's declared MIME type is on the inline-render
-// allowlist — safe to serve with its real Content-Type and an inline
+// allowlist - safe to serve with its real Content-Type and an inline
 // disposition. Used by fileServeHeaders and to gate which videos are eligible
 // for direct-from-R2 presigned streaming.
 export function isInlineSafeMime(mimeType: string | null): boolean {
@@ -176,7 +176,7 @@ export function isInlineSafeMime(mimeType: string | null): boolean {
 
 // Native Excalidraw scene format ({type:"excalidraw", elements, appState, files}).
 // Stored .excalidraw drawings carry this MIME so the server can tell them apart
-// from immutable uploaded media. Deliberately NOT on INLINE_SAFE_MIME — it serves
+// from immutable uploaded media. Deliberately NOT on INLINE_SAFE_MIME - it serves
 // as octet-stream/attachment/nosniff; the editor reads the bytes via fetch(), so
 // the content-disposition is irrelevant and an inline JSON document stays inert.
 export const EXCALIDRAW_MIME = "application/vnd.excalidraw+json";
@@ -214,7 +214,7 @@ export function fileServeHeaders(mimeType: string | null, filename: string): Rec
 //   - null            → no range / a form we don't handle (serve the full body)
 //   - "unsatisfiable" → syntactically valid but out of bounds (caller → 416)
 //   - {offset,length} → concrete range, clamped to the object
-// Multi-range ("bytes=0-1,5-6") is intentionally unsupported — we return null
+// Multi-range ("bytes=0-1,5-6") is intentionally unsupported - we return null
 // and serve the whole object, which is a valid response to any Range request.
 export function parseByteRange(
   rangeHeader: string,
@@ -244,7 +244,7 @@ export function parseByteRange(
 
 // Stream a stored blob straight from R2 through the Worker (never buffered into
 // memory) with HTTP range support, so media elements can seek and large files
-// don't pin the isolate. Honors If-None-Match (full requests only — a ranged
+// don't pin the isolate. Honors If-None-Match (full requests only - a ranged
 // seek must never 304) and emits Accept-Ranges so browsers know seeking works.
 // Auth/access is the caller's responsibility; this only moves bytes.
 export async function serveR2Object(

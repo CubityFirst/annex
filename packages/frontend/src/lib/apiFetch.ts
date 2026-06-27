@@ -19,7 +19,7 @@ export interface ApiResult<T> {
   status: number;
   // True when apiFetch handled this response by triggering a forced redirect
   // (401 expired, 403 disabled/suspended). Callers should bail out of post-
-  // response logic — the page is unloading.
+  // response logic - the page is unloading.
   redirected?: boolean;
 }
 
@@ -100,7 +100,7 @@ async function peekAccountRejectReason(response: Response): Promise<string | nul
     if (data.error === "account_disabled") return "disabled";
     if (data.error === "account_suspended") return "suspended";
   } catch {
-    // not JSON, or unexpected shape — treat as a generic 403, not an account reject
+    // not JSON, or unexpected shape - treat as a generic 403, not an account reject
   }
   return null;
 }

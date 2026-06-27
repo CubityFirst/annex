@@ -75,7 +75,7 @@ export function parseFrontmatter(content: string): Frontmatter {
 // frontmatter block if none exists and a value is given; drops the block
 // entirely if removing its last key. Used by the header-image upload control to
 // persist `cover:` without round-tripping through the editor. Only safe for
-// simple scalar keys (no nested/list values) — which is all `cover` ever needs.
+// simple scalar keys (no nested/list values) - which is all `cover` ever needs.
 export function setFrontmatterKey(content: string, key: string, value: string | null): string {
   const match = content.match(FM_REGEX);
   const line = `${key}: ${value}`;
@@ -87,7 +87,7 @@ export function setFrontmatterKey(content: string, key: string, value: string | 
   if (value !== null) kept.push(line);
   const body = content.slice(match[0].length);
   if (kept.length === 0) {
-    // Removed the only key — drop the now-empty frontmatter block.
+    // Removed the only key - drop the now-empty frontmatter block.
     return body.replace(/^\r?\n/, "");
   }
   return `---\n${kept.join("\n")}\n---\n${body}`;

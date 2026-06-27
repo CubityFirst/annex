@@ -1,4 +1,4 @@
-// Shared callout parsing — used by both the ReactMarkdown remark plugin and the
+// Shared callout parsing - used by both the ReactMarkdown remark plugin and the
 // CodeMirror WYSIWYG renderer. Implements the Obsidian callout spec:
 // https://help.obsidian.md/callouts
 

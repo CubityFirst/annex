@@ -61,7 +61,7 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    // WebSocket upgrade for real-time collab — must be handled before addCorsHeaders
+    // WebSocket upgrade for real-time collab - must be handled before addCorsHeaders
     // because wrapping a 101 response loses the webSocket property.
     const collabMatch = url.pathname.match(/^\/docs\/([^/]+)\/collab$/);
     if (collabMatch && request.headers.get("Upgrade") === "websocket") {
@@ -92,7 +92,7 @@ export default {
         return env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request));
       }
 
-      // TOTP management routes — authenticated, proxied to auth worker with userId injected
+      // TOTP management routes - authenticated, proxied to auth worker with userId injected
       if (url.pathname.startsWith("/me/totp")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -107,7 +107,7 @@ export default {
         return addCorsHeaders(authRes);
       }
 
-      // WebAuthn management routes — authenticated, proxied to auth worker with userId injected
+      // WebAuthn management routes - authenticated, proxied to auth worker with userId injected
       if (url.pathname.startsWith("/me/webauthn")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -122,14 +122,14 @@ export default {
         return addCorsHeaders(authRes);
       }
 
-      // WebAuthn login ceremony — unauthenticated, forwarded directly
+      // WebAuthn login ceremony - unauthenticated, forwarded directly
       if (url.pathname.startsWith("/webauthn/auth")) {
         return addCorsHeaders(
           await env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request)),
         );
       }
 
-      // /me/sessions/* — authenticated, proxied to auth worker.
+      // /me/sessions/* - authenticated, proxied to auth worker.
       // GET   /me/sessions          → list user's active sessions
       // POST  /me/sessions/revoke   → revoke a specific session by id
       // POST  /me/sessions/revoke-others → revoke all but the current
@@ -180,7 +180,7 @@ export default {
         return addCorsHeaders(authRes);
       }
 
-      // /billing/* — authenticated, proxied to auth worker (Stripe Checkout
+      // /billing/* - authenticated, proxied to auth worker (Stripe Checkout
       // and Customer Portal session creation). Public Stripe webhook is
       // hit directly on the auth worker, not through here.
       if (url.pathname === "/billing/checkout" && request.method === "POST") {
@@ -206,7 +206,7 @@ export default {
         return addCorsHeaders(authRes);
       }
 
-      // PATCH /me/password — change password
+      // PATCH /me/password - change password
       if (url.pathname === "/me/password" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -220,7 +220,7 @@ export default {
         return addCorsHeaders(authRes);
       }
 
-      // GET /me — returns authenticated user's name and email
+      // GET /me - returns authenticated user's name and email
       if (url.pathname === "/me" && request.method === "GET") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -266,7 +266,7 @@ export default {
         }));
       }
 
-      // PATCH /me — update authenticated user's name and/or timezone
+      // PATCH /me - update authenticated user's name and/or timezone
       if (url.pathname === "/me" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -305,7 +305,7 @@ export default {
         return addCorsHeaders(Response.json({ ok: true, data: responseData }));
       }
 
-      // PATCH /me/ink-prefs — update Ink supporter cosmetic prefs (ring style + presence colour)
+      // PATCH /me/ink-prefs - update Ink supporter cosmetic prefs (ring style + presence colour)
       if (url.pathname === "/me/ink-prefs" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -319,7 +319,7 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
-      // PATCH /me/reading-font — update user's reading/editing prose-font choices
+      // PATCH /me/reading-font - update user's reading/editing prose-font choices
       if (url.pathname === "/me/reading-font" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -333,7 +333,7 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
-      // PATCH /me/theme — set site theme (dark/light/custom). Admins always
+      // PATCH /me/theme - set site theme (dark/light/custom). Admins always
       // have access; other users require the custom-theming Flagship flag.
       if (url.pathname === "/me/theme" && request.method === "PATCH") {
         const session = await getSession(request, env);
@@ -354,7 +354,7 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
-      // PATCH /me/bio — Ink-only supporter bio. Proxied so the auth worker
+      // PATCH /me/bio - Ink-only supporter bio. Proxied so the auth worker
       // can plan-gate against the live row (avoids JWT-staleness writes).
       if (url.pathname === "/me/bio" && request.method === "PATCH") {
         const session = await getSession(request, env);
@@ -369,7 +369,7 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
-      // GET /me/favourite-sites/search?q= — find published sites by name for
+      // GET /me/favourite-sites/search?q= - find published sites by name for
       // the picker in user settings. Excludes ones the user has already
       // favourited so the list shows what's *addable*. Capped to 20 results.
       if (url.pathname === "/me/favourite-sites/search" && request.method === "GET") {
@@ -402,7 +402,7 @@ export default {
         }));
       }
 
-      // GET /me/favourite-sites — list current user's favourited published projects
+      // GET /me/favourite-sites - list current user's favourited published projects
       if (url.pathname === "/me/favourite-sites" && request.method === "GET") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -426,8 +426,8 @@ export default {
         }));
       }
 
-      // POST /me/favourite-sites/:projectId — add a favourite (idempotent)
-      // DELETE /me/favourite-sites/:projectId — remove
+      // POST /me/favourite-sites/:projectId - add a favourite (idempotent)
+      // DELETE /me/favourite-sites/:projectId - remove
       const favSiteMatch = url.pathname.match(/^\/me\/favourite-sites\/([^/]+)$/);
       if (favSiteMatch) {
         const session = await getSession(request, env);
@@ -458,7 +458,7 @@ export default {
           ).bind(session.userId, projectId).run();
           return addCorsHeaders(Response.json({ ok: true, data: { favourited: false } }));
         }
-        // PATCH — update the per-favourite note. Empty/missing string clears it.
+        // PATCH - update the per-favourite note. Empty/missing string clears it.
         // 140-char cap to keep it a short justification, not a bio.
         if (request.method === "PATCH") {
           const body = await request.json<{ note?: string | null }>().catch(() => ({} as { note?: string | null }));
@@ -473,7 +473,7 @@ export default {
         }
       }
 
-      // GET /avatar/:userId — public, serve avatar from R2.
+      // GET /avatar/:userId - public, serve avatar from R2.
       // ?variant=light|dark (default dark). light falls back to dark; a legacy
       // avatars/{id} object is migrated to -dark on first fetch (see avatar.ts).
       if (url.pathname.startsWith("/avatar/") && request.method === "GET") {
@@ -492,7 +492,7 @@ export default {
         });
       }
 
-      // POST /avatar — authenticated, upload avatar image
+      // POST /avatar - authenticated, upload avatar image
       if (url.pathname === "/avatar" && request.method === "POST") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -518,7 +518,7 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
-      // DELETE /avatar — authenticated. ?variant=light|dark removes only that
+      // DELETE /avatar - authenticated. ?variant=light|dark removes only that
       // slot; no variant removes every avatar object for the user.
       if (url.pathname === "/avatar" && request.method === "DELETE") {
         const session = await getSession(request, env);
@@ -532,7 +532,7 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
-      // DELETE /me — delete the authenticated user's account
+      // DELETE /me - delete the authenticated user's account
       if (url.pathname === "/me" && request.method === "DELETE") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -585,7 +585,7 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
-      // GET /users/:userId — authenticated, returns user profile + shared projects
+      // GET /users/:userId - authenticated, returns user profile + shared projects
       const userProfileMatch = url.pathname.match(/^\/users\/([^/]+)$/);
       if (userProfileMatch && request.method === "GET") {
         const session = await getSession(request, env);
@@ -772,14 +772,14 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
   // an incident (the DO holds live sockets + persists to R2) without a redeploy.
   // Checked before auth/DB work so a kill takes effect with zero load. Defaults
   // to enabled when the flag/binding is unavailable (local dev / flag outage).
-  // Note: this refuses NEW upgrades only — already-open sockets stay until they
+  // Note: this refuses NEW upgrades only - already-open sockets stay until they
   // reconnect; use the /collab/reset endpoint to force-drop a specific room.
   const collabEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("realtime-collab", true) : true;
   if (!collabEnabled) return new Response("Realtime collaboration is temporarily disabled", { status: 503 });
 
   // Token arrives as a query param (browsers can't set headers on WS).
   // Re-wrap it as a Bearer header so authenticate() / the AUTH service binding handles it
-  // the same way every other route does — works in local dev without JWT_SECRET.
+  // the same way every other route does - works in local dev without JWT_SECRET.
   const token = url.searchParams.get("token");
   if (!token) return new Response("Unauthorized", { status: 401 });
   const authReq = new Request("https://placeholder/", {
@@ -800,7 +800,7 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
   }
 
   // Effective role (direct OR via the site's org) gates realtime co-editing,
-  // and — unlike the old query — requires an ACCEPTED membership.
+  // and - unlike the old query - requires an ACCEPTED membership.
   const caller = await resolveAccess(env.DB, docRow.project_id, session.userId);
   if (!caller || ROLE_RANK[caller.role] < ROLE_RANK["editor"]) {
     return new Response("Forbidden", { status: 403 });
@@ -826,14 +826,14 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
 // service binding.
 //
 // X-Client-IP: service-binding hops drop CF-Connecting-IP, so the edge-observed
-// client IP travels as X-Client-IP — the frontend worker's /api proxy sets it,
+// client IP travels as X-Client-IP - the frontend worker's /api proxy sets it,
 // and we re-forward it here for the auth worker's login/register rate limiters
 // and session-row IP capture. CF-Connecting-IP always wins when present (it's
 // set by the Cloudflare edge and unspoofable), so a client-supplied X-Client-IP
 // on a directly-routed request is never trusted.
 //
 // Shape: `fetch(url, init)` with a buffered body, NOT a forwarded Request
-// object — wrangler's cross-process dev registry 503s when handed the original
+// object - wrangler's cross-process dev registry 503s when handed the original
 // streamed request. These auth payloads are small JSON, so buffering is free.
 async function proxyAuthInit(request: Request): Promise<RequestInit> {
   const headers = new Headers(request.headers);

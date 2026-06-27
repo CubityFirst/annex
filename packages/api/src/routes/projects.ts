@@ -15,7 +15,7 @@ export async function handleProjects(
   const parts = url.pathname.replace(/^\/projects\/?/, "").split("/");
   const projectId = parts[0] || null;
 
-  // /projects/:id/logo/:variant — variant ∈ {"square","wide"}.
+  // /projects/:id/logo/:variant - variant ∈ {"square","wide"}.
   // Square is the icon used in the projects sidebar / favourites; wide is the
   // wordmark used at the top-left of published-site headers.
   if (projectId && parts[1] === "logo" && parts[2]) {
@@ -24,7 +24,7 @@ export async function handleProjects(
     const r2Key = `site-logos/${projectId}-${variant}`;
     const column = variant === "square" ? "logo_square_updated_at" : "logo_wide_updated_at";
 
-    // GET — any member can fetch
+    // GET - any member can fetch
     if (request.method === "GET") {
       const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
@@ -39,7 +39,7 @@ export async function handleProjects(
       });
     }
 
-    // POST — admin or owner uploads
+    // POST - admin or owner uploads
     if (request.method === "POST") {
       const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
@@ -65,7 +65,7 @@ export async function handleProjects(
       return okResponse(updated);
     }
 
-    // DELETE — admin or owner clears
+    // DELETE - admin or owner clears
     if (request.method === "DELETE") {
       const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
@@ -77,10 +77,10 @@ export async function handleProjects(
     }
   }
 
-  // GET /projects — list projects where user is a member (includes owned).
+  // GET /projects - list projects where user is a member (includes owned).
   // Explicit column list (not p.*) so we don't ship the large graph_tag_colors
   // JSON or the logo_wide / vanity_slug / home_doc_id columns that the list
-  // consumers (DashboardPage, DocsLayout, UserSettingsPage) never read — those
+  // consumers (DashboardPage, DocsLayout, UserSettingsPage) never read - those
   // belong on the single-project endpoint.
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
@@ -106,7 +106,7 @@ export async function handleProjects(
     if (!body.name) return errorResponse(Errors.BAD_REQUEST);
 
     // Optional: create the site directly inside an org. Org-level gate (checked
-    // against organization_members here, not a per-site role) — caller must be
+    // against organization_members here, not a per-site role) - caller must be
     // an admin+ of that org.
     let organizationId: string | null = null;
     if (body.organizationId) {
@@ -143,7 +143,7 @@ export async function handleProjects(
     return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now, organizationId }, 201);
   }
 
-  // GET /projects/:id/contents?folderId=… — bundled folder + doc + file listing
+  // GET /projects/:id/contents?folderId=… - bundled folder + doc + file listing
   // for the FileManager view, plus project-wide folder counts. Replaces 4
   // separate calls (folders, docs, files, folder-counts) with a single
   // auth-checked round trip. Limited members see only docs they have shares
@@ -235,8 +235,8 @@ export async function handleProjects(
 
     // Counts are only ever displayed for the folders in the current view
     // (FileManager reads folderCounts[folder.id] for each rendered folder),
-    // so root the subtree at exactly those folders — the same set foldersQuery
-    // returns (parent_id IS folderFilter) — instead of every folder in the
+    // so root the subtree at exactly those folders - the same set foldersQuery
+    // returns (parent_id IS folderFilter) - instead of every folder in the
     // project. Each count is still a full descendant total; we just stop
     // building closures for folders nobody asked about, which collapses the
     // recursion from O(folders × depth) to ~O(folders) and the docs join with it.
@@ -307,7 +307,7 @@ export async function handleProjects(
     });
   }
 
-  // GET /projects/:id — any member can view
+  // GET /projects/:id - any member can view
   if (projectId && request.method === "GET") {
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.NOT_FOUND);
@@ -318,9 +318,9 @@ export async function handleProjects(
     return okResponse({ ...row, role });
   }
 
-  // PATCH /projects/:id/favourite — toggle favourite for current user.
+  // PATCH /projects/:id/favourite - toggle favourite for current user.
   // Favourite and hidden are mutually exclusive: favouriting a site clears the
-  // hidden flag (the two are opposite intents — see /hidden below).
+  // hidden flag (the two are opposite intents - see /hidden below).
   if (projectId && parts[1] === "favourite" && request.method === "PATCH") {
     const row = await env.DB.prepare("SELECT is_favourite FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
       .bind(projectId, user.userId).first<{ is_favourite: number }>();
@@ -331,7 +331,7 @@ export async function handleProjects(
     return okResponse({ is_favourite: next, is_hidden: next === 1 ? 0 : undefined });
   }
 
-  // PATCH /projects/:id/hidden — toggle hidden for current user. Hidden sites
+  // PATCH /projects/:id/hidden - toggle hidden for current user. Hidden sites
   // are filtered out of the dashboard grid and every sidebar list (the inverse
   // of favourites). Hiding a site also clears its favourite flag.
   if (projectId && parts[1] === "hidden" && request.method === "PATCH") {
@@ -344,7 +344,7 @@ export async function handleProjects(
     return okResponse({ is_hidden: next, is_favourite: next === 1 ? 0 : undefined });
   }
 
-  // PATCH /projects/:id — admin or owner
+  // PATCH /projects/:id - admin or owner
   if (projectId && request.method === "PATCH") {
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.NOT_FOUND);
@@ -413,7 +413,7 @@ export async function handleProjects(
     return okResponse(updated);
   }
 
-  // POST /projects/:id/reindex — owner only, rebuilds the FTS index for all docs in this project
+  // POST /projects/:id/reindex - owner only, rebuilds the FTS index for all docs in this project
   const subPath = url.pathname.replace(/^\/projects\/[^/]+/, "");
   if (projectId && subPath === "/reindex" && request.method === "POST") {
     const role = await resolveRole(env.DB, projectId, user.userId);
@@ -436,7 +436,7 @@ export async function handleProjects(
     return okResponse({ indexed });
   }
 
-  // DELETE /projects/:id — owner only
+  // DELETE /projects/:id - owner only
   if (projectId && request.method === "DELETE") {
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.NOT_FOUND);
@@ -470,8 +470,8 @@ export async function handleProjects(
       ).bind(...docIds).run();
     }
 
-    // Release the Cloudflare custom hostname (if any) before the project row —
-    // and its cascading project_custom_domains row — is deleted.
+    // Release the Cloudflare custom hostname (if any) before the project row -
+    // and its cascading project_custom_domains row - is deleted.
     await releaseCustomDomain(env, projectId);
 
     await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId).run();

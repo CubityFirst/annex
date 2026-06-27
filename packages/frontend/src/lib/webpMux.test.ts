@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { muxAnimatedWebP } from "./webpMux";
 
 // Build a minimal "static WebP" with a synthetic VP8 chunk. We never decode
-// the bitstream — the muxer only relocates chunks — so the contents can be
+// the bitstream - the muxer only relocates chunks - so the contents can be
 // any bytes as long as the RIFF framing is valid.
 function fakeStaticWebP(vp8Payload: Uint8Array): Uint8Array {
   const padded = vp8Payload.byteLength + (vp8Payload.byteLength & 1);

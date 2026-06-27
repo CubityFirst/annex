@@ -41,7 +41,7 @@ export function App() {
   // Keep the landing/auth routes on the default (dark) brand look even when a
   // user with a saved light/custom theme navigates here client-side (the theme
   // applied by DocsLayout would otherwise linger on the <html>). App routes are
-  // left alone — DocsLayout owns applying the saved theme there.
+  // left alone - DocsLayout owns applying the saved theme there.
   useLayoutEffect(() => {
     if (!pathUsesUserTheme(location.pathname)) {
       applyThemeToRoot(DEFAULT_THEME_PREFS);

@@ -6,7 +6,7 @@ import { rendererCtxFacet } from "../context/RendererContext";
 import { toggleCalloutFold } from "./calloutFold";
 
 // Block decorations (HR, code fences, callouts, frontmatter, etc.) are not
-// allowed from ViewPlugins — CM6 throws "Block decorations may not be specified
+// allowed from ViewPlugins - CM6 throws "Block decorations may not be specified
 // via plugins". A StateField is the supported source for block decorations.
 export const decorationField = StateField.define<DecorationSet>({
   create(state) {
@@ -21,7 +21,7 @@ export const decorationField = StateField.define<DecorationSet>({
     // tab is hidden). When the parser advances it dispatches a transaction with
     // no doc/selection change, so without this check the decorations for the
     // newly-parsed region (headings, tables, code blocks further down a large
-    // doc) would never be built until an unrelated edit or click — the cause of
+    // doc) would never be built until an unrelated edit or click - the cause of
     // "it doesn't render until I click back in / scroll". Rebuilding when the
     // tree identity changes makes content render as soon as parsing reaches it
     // (and as soon as a backgrounded tab is refocused and parsing resumes),

@@ -33,11 +33,11 @@ export const CALLOUT_CONFIG: Record<string, CalloutTypeConfig> = {
 
 interface Props {
   type: string;
-  /** Whether the title is empty in the source — when empty, we render the canonical label after the icon. */
+  /** Whether the title is empty in the source - when empty, we render the canonical label after the icon. */
   showLabel: boolean;
-  /** True for `> [!type]+` / `> [!type]-` callouts — renders a clickable collapse chevron. */
+  /** True for `> [!type]+` / `> [!type]-` callouts - renders a clickable collapse chevron. */
   foldable: boolean;
-  /** Current effective collapsed state — drives the chevron rotation. */
+  /** Current effective collapsed state - drives the chevron rotation. */
   collapsed: boolean;
 }
 

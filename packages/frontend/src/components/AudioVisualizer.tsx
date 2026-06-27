@@ -20,7 +20,7 @@ interface AudioVisualizerProps extends Omit<React.HTMLAttributes<HTMLCanvasEleme
   mirror?: boolean;
   /** TEMPORARY: render tuning sliders below the canvas. */
   showControls?: boolean;
-  /** Tailwind class controls bar color via `currentColor` — defaults to text-primary. */
+  /** Tailwind class controls bar color via `currentColor` - defaults to text-primary. */
   className?: string;
 }
 
@@ -74,7 +74,7 @@ export function AudioVisualizer({
 }: AudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Local tunable state — initialized from props, mutable via the temporary
+  // Local tunable state - initialized from props, mutable via the temporary
   // sliders. Effect reads these directly, not the props.
   const [barCount, setBarCount] = useState(barCountProp);
   const [smoothing, setSmoothing] = useState(smoothingProp);
@@ -211,7 +211,7 @@ export function AudioVisualizer({
       }
       const elapsed = performance.now() - fadeStart;
       const t = Math.min(1, elapsed / FADE_MS);
-      // Ease-out quad — fast initial collapse, soft landing at zero.
+      // Ease-out quad - fast initial collapse, soft landing at zero.
       const scale = 1 - t * t;
       paintBars(fadeData, scale);
       if (t < 1) {
@@ -277,7 +277,7 @@ export function AudioVisualizer({
         cancelAnimationFrame(raf);
         raf = null;
       }
-      // Intentionally do NOT close the AudioContext or disconnect the source —
+      // Intentionally do NOT close the AudioContext or disconnect the source -
       // the wiring is keyed to the <audio> element and reused across remounts;
       // tearing it down would silence the audio if the parent re-renders.
     };
@@ -380,6 +380,10 @@ function TuningControls(p: TuningControlsProps) {
       <Slider label="lowEndBias" value={p.lowEndBias} min={0.5} max={4} step={0.05} onChange={p.setLowEndBias} fixed={2} />
       <label className="flex items-center justify-between gap-2">
         <span className="font-mono text-muted-foreground">fftSize</span>
+        {/* Exception to the shadcn-only rule: native <select> is intentional here.
+            This is the dev-only tuning panel (showControls, never set in the real
+            app - see TEMPORARY note below) and is slated for removal, so it isn't
+            worth a shadcn Select. */}
         <select
           value={p.fftSize}
           onChange={e => p.setFftSize(Number(e.target.value))}

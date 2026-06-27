@@ -2,7 +2,7 @@
  * E2E tests for the /demo sandbox (linked from the landing page's "See a
  * demo"). Demo mode patches window.fetch with an in-memory mock API
  * (frontend/src/lib/demoServer.ts), so these tests only need the frontend dev
- * server — no auth/API worker state is touched and nothing is left behind.
+ * server - no auth/API worker state is touched and nothing is left behind.
  *
  * Demo mode is flagged in sessionStorage, so every test gets a clean sandbox
  * simply by navigating to /demo in its own browser context.
@@ -19,7 +19,7 @@ async function enterDemo(page: Page) {
 }
 
 // The reading view is CodeMirror-virtualized, and its scrollHeight grows as
-// content mounts — a single scroll-to-bottom can land short. Keep scrolling
+// content mounts - a single scroll-to-bottom can land short. Keep scrolling
 // until the target locator actually renders.
 async function scrollUntilVisible(page: Page, locator: ReturnType<Page["locator"]>) {
   await expect(async () => {
@@ -61,7 +61,7 @@ test.describe("demo sandbox", () => {
     const palette = page.getByRole("dialog");
     await expect(palette.getByText("Coffee brewing guide", { exact: true })).toBeVisible();
 
-    // Open the search hit — this doc has frontmatter tags, which DocPage
+    // Open the search hit - this doc has frontmatter tags, which DocPage
     // JSON.parses, so it guards the demo store's tags encoding too.
     await palette.getByText("Coffee brewing guide", { exact: true }).click();
     await expect(page.getByText("Weigh everything").first()).toBeVisible();
@@ -82,7 +82,7 @@ test.describe("demo sandbox", () => {
     await page.keyboard.press("Control+End");
     await page.keyboard.type("\n\nEdited locally in the demo e2e test.");
     await page.click('button:has-text("Save")');
-    // Back in the reading view — scroll until the appended paragraph mounts,
+    // Back in the reading view - scroll until the appended paragraph mounts,
     // scoped to the CodeMirror content to avoid matching the hidden
     // PDF-export markdown copy.
     await expect(page.locator(".cm-content")).toBeVisible();

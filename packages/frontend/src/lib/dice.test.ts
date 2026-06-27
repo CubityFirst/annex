@@ -90,7 +90,7 @@ describe("cmpMatch", () => {
   });
 });
 
-// ── parseDice — structural / AST ──────────────────────────────────────────
+// ── parseDice - structural / AST ──────────────────────────────────────────
 describe("parseDice", () => {
   it("parses a basic NdS term", () => {
     const expr = parseDice("2d6");
@@ -389,8 +389,8 @@ describe("parseDice", () => {
   });
 });
 
-// ── roll — deterministic results via mocked Math.random ───────────────────
-describe("roll — basic dice", () => {
+// ── roll - deterministic results via mocked Math.random ───────────────────
+describe("roll - basic dice", () => {
   it("rolls a constant", () => {
     const r = roll("7");
     expect(r.total).toBe(7);
@@ -426,7 +426,7 @@ describe("roll — basic dice", () => {
   });
 });
 
-describe("roll — keep / drop", () => {
+describe("roll - keep / drop", () => {
   it("4d6kh3 keeps the three highest values", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))
@@ -474,7 +474,7 @@ describe("roll — keep / drop", () => {
   });
 });
 
-describe("roll — reroll", () => {
+describe("roll - reroll", () => {
   it("rerolls on exact match and records original in rerolledFrom", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))  // die 1: rolls 1 → triggers reroll
@@ -528,7 +528,7 @@ describe("roll — reroll", () => {
   });
 });
 
-describe("roll — exploding dice", () => {
+describe("roll - exploding dice", () => {
   it("normal explode: max face triggers an extra roll", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 6))  // die 1: max → explodes
@@ -590,7 +590,7 @@ describe("roll — exploding dice", () => {
   });
 });
 
-describe("roll — fate dice", () => {
+describe("roll - fate dice", () => {
   it("fate dice produce values in {-1, 0, 1}", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(fate(-1))
@@ -610,7 +610,7 @@ describe("roll — fate dice", () => {
   });
 });
 
-describe("roll — pool and table dice", () => {
+describe("roll - pool and table dice", () => {
   it("pool dice select from custom numeric faces", () => {
     vi.spyOn(Math, "random").mockReturnValueOnce(poolIdx(4, 2)); // index 2 of [2,4,6,8] = 6
     const r = roll("1d[2,4,6,8]");
@@ -627,7 +627,7 @@ describe("roll — pool and table dice", () => {
   });
 });
 
-describe("roll — success counting", () => {
+describe("roll - success counting", () => {
   it("3d6>3: counts dice strictly greater than 3", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))  // 1: no
@@ -667,7 +667,7 @@ describe("roll — success counting", () => {
   });
 });
 
-describe("roll — critical success / failure", () => {
+describe("roll - critical success / failure", () => {
   it("cs20: marks exact 20 as crit success", () => {
     vi.spyOn(Math, "random").mockReturnValueOnce(d(20, 20));
     const r = roll("1d20cs20");
@@ -706,7 +706,7 @@ describe("roll — critical success / failure", () => {
   });
 });
 
-describe("roll — expression-level success threshold", () => {
+describe("roll - expression-level success threshold", () => {
   it("1d20+13>21: success when total exceeds 21", () => {
     vi.spyOn(Math, "random").mockReturnValueOnce(d(20, 12)); // 12+13=25
     const r = roll("1d20+13>21");
@@ -722,7 +722,7 @@ describe("roll — expression-level success threshold", () => {
   });
 });
 
-describe("roll — math expressions", () => {
+describe("roll - math expressions", () => {
   it("adds a constant modifier", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 4))
@@ -788,7 +788,7 @@ describe("roll — math expressions", () => {
   });
 });
 
-describe("roll — group rolls", () => {
+describe("roll - group rolls", () => {
   it("{4d6}kh3: keeps 3 highest dice from a single expression", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))
@@ -824,7 +824,7 @@ describe("roll — group rolls", () => {
   });
 });
 
-describe("roll — group drop", () => {
+describe("roll - group drop", () => {
   it("parses {...}d1 as drop-lowest", () => {
     const expr = parseDice("{4d6,2d8,3d20}d1");
     expect(expr.root.type).toBe("group");
@@ -927,8 +927,8 @@ describe("roll — group drop", () => {
   });
 });
 
-// ── Invariant tests (no mocking — properties that always hold) ────────────
-describe("roll — invariants", () => {
+// ── Invariant tests (no mocking - properties that always hold) ────────────
+describe("roll - invariants", () => {
   const REPS = 30;
 
   it("standard rolls always stay within [1, sides]", () => {
@@ -1014,7 +1014,7 @@ describe("roll — invariants", () => {
 
 // ── Additional coverage ────────────────────────────────────────────────────
 
-describe("roll — sort modifiers", () => {
+describe("roll - sort modifiers", () => {
   it("parseDice: 4d6s has sort=asc", () => {
     const expr = parseDice("4d6s");
     expect(expr.root.type).toBe("term");
@@ -1058,7 +1058,7 @@ describe("roll — sort modifiers", () => {
   });
 });
 
-describe("roll — additional math functions", () => {
+describe("roll - additional math functions", () => {
   it("round() rounds to nearest integer", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 3))
@@ -1078,7 +1078,7 @@ describe("roll — additional math functions", () => {
   });
 });
 
-describe("roll — group failure count", () => {
+describe("roll - group failure count", () => {
   it("{3d6}>3f1: counts successes minus failures across group", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))  // 1: failure (=1)
@@ -1092,7 +1092,7 @@ describe("roll — group failure count", () => {
   });
 });
 
-describe("roll — expression-level success threshold operators", () => {
+describe("roll - expression-level success threshold operators", () => {
   it("1d20+5>=15: success when total is exactly the threshold", () => {
     vi.spyOn(Math, "random").mockReturnValueOnce(d(20, 10)); // 10+5=15
     const r = roll("1d20+5>=15");
@@ -1123,8 +1123,8 @@ describe("roll — expression-level success threshold operators", () => {
   });
 });
 
-// ── Computed dice count / sides — (N+Y)dX and Nd(X+Y) ─────────────────────
-describe("parseDice — computed dice", () => {
+// ── Computed dice count / sides - (N+Y)dX and Nd(X+Y) ─────────────────────
+describe("parseDice - computed dice", () => {
   it("(2+3)d6 stores the count expression on the term", () => {
     const expr = parseDice("(2+3)d6");
     expect(expr.root.type).toBe("term");
@@ -1182,7 +1182,7 @@ describe("parseDice — computed dice", () => {
   });
 });
 
-describe("roll — computed dice", () => {
+describe("roll - computed dice", () => {
   it("(2+3)d6 rolls 5 d6 dice", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 4))
@@ -1272,8 +1272,8 @@ describe("roll — computed dice", () => {
   });
 });
 
-// ── Dice matching — m / mt ────────────────────────────────────────────────
-describe("parseDice — matching", () => {
+// ── Dice matching - m / mt ────────────────────────────────────────────────
+describe("parseDice - matching", () => {
   it("2d6m parses as show-mode match with default minMatches=2", () => {
     const expr = parseDice("2d6m");
     expect(expr.root.type).toBe("term");
@@ -1333,7 +1333,7 @@ describe("parseDice — matching", () => {
   });
 });
 
-describe("roll — matching", () => {
+describe("roll - matching", () => {
   it("2d6m: matched pair does not change the total (sum mode)", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 4))
@@ -1386,10 +1386,10 @@ describe("roll — matching", () => {
   it("6d6mt3: only counts groups of 3 or more", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 2))
-      .mockReturnValueOnce(d(6, 2))  // pair of 2s — not enough
+      .mockReturnValueOnce(d(6, 2))  // pair of 2s - not enough
       .mockReturnValueOnce(d(6, 5))
       .mockReturnValueOnce(d(6, 5))
-      .mockReturnValueOnce(d(6, 5))  // triple of 5s — counts
+      .mockReturnValueOnce(d(6, 5))  // triple of 5s - counts
       .mockReturnValueOnce(d(6, 1));
     const r = roll("6d6mt3");
     expect(r.terms[0].matchedValues).toEqual([5]);
@@ -1400,9 +1400,9 @@ describe("roll — matching", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 3))
       .mockReturnValueOnce(d(6, 3))
-      .mockReturnValueOnce(d(6, 3))  // triple of 3s — fails value > 4
+      .mockReturnValueOnce(d(6, 3))  // triple of 3s - fails value > 4
       .mockReturnValueOnce(d(6, 6))
-      .mockReturnValueOnce(d(6, 6));  // pair of 6s — fails count >= 3
+      .mockReturnValueOnce(d(6, 6));  // pair of 6s - fails count >= 3
     const r = roll("5d6mt3>4");
     expect(r.total).toBe(0);
   });

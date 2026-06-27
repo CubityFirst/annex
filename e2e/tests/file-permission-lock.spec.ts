@@ -1,7 +1,7 @@
 /**
  * E2E test for file permission locking across projects ("sites").
  *
- * Prerequisites — run from the monorepo root before starting tests:
+ * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
  * Scenario (single owner, two sites):
@@ -17,7 +17,7 @@
  *     user owns Site A, the renderer fetches it with `?projectId=<SiteB>`, and
  *     the file-content route locks files to their owning project, so the
  *     cross-project request 404s. (`packages/api/src/routes/files.ts` /
- *     `routes/public.ts` — the `AND f.project_id = ?` / `(p.id = ? OR
+ *     `routes/public.ts` - the `AND f.project_id = ?` / `(p.id = ? OR
  *     p.vanity_slug = ?)` guard.)
  *   - Site B image  → renders (same project context, member access, then
  *     published access).
@@ -28,9 +28,9 @@
  *   - The external image is intercepted and fulfilled with a 1×1 PNG so the
  *     test is hermetic / offline-deterministic. We are exercising the renderer
  *     branch that treats non-/api/files URLs as plain <img> and is NOT subject
- *     to the permission lock — not third-party network availability.
+ *     to the permission lock - not third-party network availability.
  *   - The doc body is built from the exact "Copy markdown" string format
- *     (`![<name>](/api/files/<id>/content)` — see FilePage.tsx). On Chromium we
+ *     (`![<name>](/api/files/<id>/content)` - see FilePage.tsx). On Chromium we
  *     additionally click the real "Copy markdown" button and assert the
  *     clipboard contents match that format; Firefox can't read the clipboard
  *     under Playwright, so there we only assert the visible "Copied!" feedback.
@@ -46,7 +46,7 @@ const PROJECT_A_NAME = `E2E FileLock Site A ${RUN_ID}`;
 const PROJECT_B_NAME = `E2E FileLock Site B ${RUN_ID}`;
 const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7) % 256}.${(RUN_ID + 21) % 256}`;
 
-// External "URL" image — intercepted below, never hits the network.
+// External "URL" image - intercepted below, never hits the network.
 const EXTERNAL_URL = "https://i.cubityfir.st/explorer_9LHgOrjobE.png";
 
 // Smallest valid PNG: 1×1 transparent pixel. Avoids shipping a binary fixture
@@ -111,7 +111,7 @@ async function createSite(p: Page, name: string): Promise<string> {
 }
 
 // Upload a tiny PNG straight to /api/files (the editor's paste/upload path is
-// covered by image-paste.spec.ts — here we only need the resulting file id).
+// covered by image-paste.spec.ts - here we only need the resulting file id).
 async function uploadImage(p: Page, projectId: string, name: string): Promise<string> {
   const id = await p.evaluate(async ({ projectId, name, b64 }) => {
     const token = localStorage.getItem("token");
@@ -171,8 +171,8 @@ async function deleteSite(p: Page, projectId: string) {
   } catch { /* best-effort cleanup */ }
 }
 
-// Reading-mode / published-mode assertions are identical — Site A locked,
-// Site B + external rendered — so share them.
+// Reading-mode / published-mode assertions are identical - Site A locked,
+// Site B + external rendered - so share them.
 // The doc body is rendered more than once in the DOM (DocPage / PublicDocPage
 // keep a second hidden WysiwygEditor for print/PDF export), so assert on
 // .first() for visibility and on title-scoped counts for the negative cases
@@ -280,15 +280,15 @@ test("internal reading view locks the Site A image; Site B + external render", a
   const content = [
     "# File Permission Lock",
     "",
-    "Cross-project (Site A) image — must be locked:",
+    "Cross-project (Site A) image - must be locked:",
     "",
     `![${FILE_A_NAME}](/api/files/${fileAId}/content)`,
     "",
-    "Same-project (Site B) image — must render:",
+    "Same-project (Site B) image - must render:",
     "",
     `![${FILE_B_NAME}](/api/files/${fileBId}/content)`,
     "",
-    "External URL image — must render:",
+    "External URL image - must render:",
     "",
     `![${EXTERNAL_ALT}](${EXTERNAL_URL})`,
     "",

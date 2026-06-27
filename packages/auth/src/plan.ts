@@ -1,8 +1,8 @@
 // Per-user plan resolution. Three sources of truth, in priority order:
 //
-//   1. granted_plan (set via wrangler one-liner for comps) — wins if it
+//   1. granted_plan (set via wrangler one-liner for comps) - wins if it
 //      either has no expiry or hasn't expired yet
-//   2. personal_plan (Stripe-managed) — active when status is one of
+//   2. personal_plan (Stripe-managed) - active when status is one of
 //      active|trialing|past_due (past_due gets a grace period; the UI
 //      shows a banner but the perks stay on)
 //   3. free

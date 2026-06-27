@@ -99,7 +99,7 @@ describe("resolveImageUrl", () => {
 
   // Gap-closer: encodeURIComponent escapes `&`, `=`, `?`, `+`; encodeURI does
   // not. A regression to encodeURI (or to no encoding at all) would corrupt
-  // the resulting query string in real ways — this test catches both.
+  // the resulting query string in real ways - this test catches both.
   it("URL-encodes query-significant characters in projectId", () => {
     expect(resolveImageUrl("/api/files/abc/content", reqUrl, "a&b=c?d+e"))
       .toBe("https://docs.example.com/api/public/files/abc/content?projectId=a%26b%3Dc%3Fd%2Be");

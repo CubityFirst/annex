@@ -19,7 +19,7 @@ describe("isApiKeyToken (credential discrimination)", () => {
   });
 
   it("rejects JWTs (three dot-separated segments) and junk", () => {
-    // A JWT must never be mistaken for an API key — that's the whole basis for
+    // A JWT must never be mistaken for an API key - that's the whole basis for
     // keeping the two auth paths isolated.
     expect(isApiKeyToken("aaa.bbb.ccc")).toBe(false);
     expect(isApiKeyToken("eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoieCJ9.sig")).toBe(false);

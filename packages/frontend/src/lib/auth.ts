@@ -24,7 +24,7 @@ export function setToken(token: string): void {
 }
 
 export function clearToken(): void {
-  // "Logging out" of the demo just exits demo mode — the user's real token
+  // "Logging out" of the demo just exits demo mode - the user's real token
   // (if any) stays put.
   if (isDemoMode()) {
     exitDemoMode();
