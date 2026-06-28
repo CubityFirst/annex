@@ -242,9 +242,9 @@ export function FilePage() {
           <div className="flex flex-col items-center gap-3 p-6 text-center sm:hidden">
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">PDF preview isn’t available on small screens.</p>
-            <a href={contentUrl} target="_blank" rel="noreferrer" className="w-full">
-              <Button className="min-h-11 w-full">Open PDF</Button>
-            </a>
+            <Button asChild className="min-h-11 w-full">
+              <a href={contentUrl} target="_blank" rel="noreferrer">Open PDF</a>
+            </Button>
           </div>
         </div>
       )}
@@ -273,16 +273,22 @@ export function FilePage() {
           <Button
             variant="outline"
             className="gap-2"
+            aria-label={copiedLink ? "Copied" : "Copy markdown"}
             onClick={() => {
               navigator.clipboard.writeText(`![${file.name}](/api/files/${file.id}/content)`);
               setCopiedLink(true);
               setTimeout(() => setCopiedLink(false), 2000);
             }}
           >
-            {copiedLink ? <Check className="h-4 w-4 text-green-500" /> : <Link className="h-4 w-4" />}
+            {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
             {copiedLink ? "Copied!" : "Copy markdown"}
           </Button>
         )}
+      </div>
+      {/* Announce the transient copy confirmation to assistive tech (the button
+          text swap alone isn't reliably announced). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {copiedLink ? "Markdown link copied to clipboard" : ""}
       </div>
     </div>
   );

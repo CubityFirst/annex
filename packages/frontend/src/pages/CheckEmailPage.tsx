@@ -33,7 +33,7 @@ export function CheckEmailPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" />
+            <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />
             <h1 className="text-2xl font-semibold">Check your email</h1>
             <p className="text-sm text-muted-foreground">
               {email
@@ -44,7 +44,7 @@ export function CheckEmailPage() {
           </div>
 
           <div className="flex flex-col items-center gap-1 rounded-lg border p-6">
-            <Mail className="h-10 w-10 text-muted-foreground mb-2" />
+            <Mail className="h-10 w-10 text-muted-foreground mb-2" aria-hidden="true" />
             <p className="text-sm text-muted-foreground text-center">
               Didn't receive the email? Check your spam folder, or request a new link.
             </p>

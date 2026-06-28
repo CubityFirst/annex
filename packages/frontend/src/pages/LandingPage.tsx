@@ -21,12 +21,17 @@ function useTypewriter(
   words: string[],
   { typingSpeed = 75, deletingSpeed = 42, pause = 1700 } = {}
 ) {
-  const [displayed, setDisplayed] = useState("");
+  const reducedMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [displayed, setDisplayed] = useState(reducedMotion ? words[0] : "");
   const [wordIdx, setWordIdx] = useState(0);
   const [phase, setPhase] = useState<"typing" | "deleting">("typing");
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (reducedMotion) return;
     const word = words[wordIdx];
     if (phase === "typing") {
       if (displayed.length < word.length) {
@@ -49,7 +54,7 @@ function useTypewriter(
       }
     }
     return () => { if (t.current) clearTimeout(t.current); };
-  }, [displayed, phase, wordIdx, words, typingSpeed, deletingSpeed, pause]);
+  }, [displayed, phase, wordIdx, words, typingSpeed, deletingSpeed, pause, reducedMotion]);
 
   return displayed;
 }
@@ -124,10 +129,14 @@ function EditorMockup() {
           <div className="l-editor-dot" />
           <div className="l-editor-dot" />
         </div>
-        <div className="l-editor-tabs">
+        <div className="l-editor-tabs" role="tablist" aria-label="Example documents">
           {TAB_ORDER.map((k) => (
             <button
               key={k}
+              role="tab"
+              id={`l-editor-tab-${k}`}
+              aria-selected={active === k}
+              aria-controls="l-editor-tabpanel"
               onClick={() => setActive(k)}
               className={`l-editor-tab ${active === k ? "l-editor-tab-active" : "l-editor-tab-inactive"}`}
             >
@@ -136,7 +145,12 @@ function EditorMockup() {
           ))}
         </div>
       </div>
-      <div className="l-editor-body">
+      <div
+        className="l-editor-body"
+        role="tabpanel"
+        id="l-editor-tabpanel"
+        aria-labelledby={`l-editor-tab-${active}`}
+      >
         <div className="l-editor-h">{tab.h}</div>
         <div className="l-editor-p">{tab.p}</div>
         {tab.lines.slice(0, 2).map((w, i) => (
@@ -206,7 +220,7 @@ export function LandingPage() {
         <div className="l-hero-inner">
           <div className="l-hero-copy">
             <div className="l-hero-pre">an annex for your mind</div>
-            <div className="l-hero-headline">A place to keep</div>
+            <h1 className="l-hero-headline">A place to keep</h1>
             <div className="l-hero-headline-b">
               your&nbsp;<span>{word}</span><span className="l-tw-cursor">&nbsp;</span>
             </div>
@@ -229,7 +243,7 @@ export function LandingPage() {
       <hr className="l-section-divider" />
       <section id="features" className="l-features">
         <div className="site-wrap">
-          <div className="l-features-label">What it does</div>
+          <h2 className="l-features-label">What it does</h2>
           <div className="l-features-grid">
             {FEATURES.map((f) => {
               const inner = (
@@ -237,10 +251,10 @@ export function LandingPage() {
                   <div className="l-feature-icon">
                     <f.Icon size={21} />
                   </div>
-                  <div className="l-feature-title">
+                  <h3 className="l-feature-title">
                     {f.title}
                     {f.soon && <span className="l-feature-soon">soon</span>}
-                  </div>
+                  </h3>
                   <div className="l-feature-desc">{f.desc}</div>
                 </>
               );
@@ -262,14 +276,14 @@ export function LandingPage() {
       <hr className="l-section-divider" />
       <section id="pricing" className="l-ink">
         <div className="site-wrap">
-          <div className="l-features-label">Annex Ink</div>
+          <h2 className="l-features-label">Annex Ink</h2>
           <div className="l-ink-grid">
             <div className="l-ink-copy">
-              <div className="l-ink-headline">
+              <h3 className="l-ink-headline">
                 A small supporter tier.
                 <br />
                 <span>Cosmetic&nbsp;only.</span>
-              </div>
+              </h3>
               <p className="l-ink-sub">
                 There's no paywall, no upsell, no missing buttons. Annex Ink is a
                 way to chip in if the project's useful to you - in return, your
@@ -322,9 +336,9 @@ export function LandingPage() {
       {/* CTA BAND */}
       <section className="l-cta-band">
         <div className="site-wrap">
-          <div className="l-cta-band-headline">
+          <h2 className="l-cta-band-headline">
             Ready to build your <b>Annex?</b>
-          </div>
+          </h2>
           <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
         </div>
       </section>

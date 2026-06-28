@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Mail, Plus, Radio, Sparkles, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,8 +106,17 @@ export function DashboardPage() {
     return (
       <Card
         key={project.id}
+        role="button"
+        tabIndex={0}
         onClick={() => navigate(`/projects/${project.id}`)}
-        className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            if (e.key === " ") e.preventDefault();
+            navigate(`/projects/${project.id}`);
+          }
+        }}
+        className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
           <div className="flex items-center gap-2.5">
@@ -115,7 +124,7 @@ export function DashboardPage() {
               <BookOpen className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <CardTitle>{project.name}</CardTitle>
+              <CardTitle as="h3">{project.name}</CardTitle>
             </div>
           </div>
           <Badge variant="outline" className="shrink-0">
@@ -201,7 +210,9 @@ export function DashboardPage() {
           {!!project.ai_enabled && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} aria-label="AI features enabled" />
+                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} role="img" aria-label="AI features enabled" />
+                </span>
               </TooltipTrigger>
               <TooltipContent>AI features enabled</TooltipContent>
             </Tooltip>
@@ -210,7 +221,9 @@ export function DashboardPage() {
           {!!(project.features & REALTIME_FEATURE) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} aria-label="Real-time collaboration enabled" />
+                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} role="img" aria-label="Real-time collaboration enabled" />
+                </span>
               </TooltipTrigger>
               <TooltipContent>Real-time collaboration enabled</TooltipContent>
             </Tooltip>
@@ -219,7 +232,9 @@ export function DashboardPage() {
           {project.organization_id && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
+                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} role="img" aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
+                </span>
               </TooltipTrigger>
               <TooltipContent>
                 Part of {project.organization_name ?? "an organization"}
@@ -250,6 +265,7 @@ export function DashboardPage() {
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-10">
+      <h1 className="sr-only">Dashboard</h1>
       {orgs.length > 0 && (
         <div className="mb-10">
           <h2 className="text-2xl font-bold tracking-tight">Your Orgs</h2>
@@ -258,17 +274,17 @@ export function DashboardPage() {
           </p>
           <div className="mt-6 grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {orgs.map(org => (
-              <Card
-                key={org.id}
-                onClick={() => navigate(`/orgs/${org.id}`)}
-                className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
-              >
+              <Card key={org.id} asChild>
+                <Link
+                  to={`/orgs/${org.id}`}
+                  className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
                 <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
                       <Building2 className="h-4 w-4 text-primary" />
                     </div>
-                    <CardTitle>{org.name}</CardTitle>
+                    <CardTitle as="h3">{org.name}</CardTitle>
                   </div>
                   <Badge variant="outline" className="shrink-0 capitalize">{org.role}</Badge>
                 </CardHeader>
@@ -293,6 +309,7 @@ export function DashboardPage() {
                     <TooltipContent>{org.member_count} {org.member_count === 1 ? "member" : "members"}</TooltipContent>
                   </Tooltip>
                 </CardFooter>
+                </Link>
               </Card>
             ))}
           </div>
@@ -301,7 +318,7 @@ export function DashboardPage() {
 
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Your Sites</h1>
+          <h2 className="text-2xl font-bold tracking-tight">Your Sites</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Select a site to browse its documentation.
           </p>
@@ -315,17 +332,18 @@ export function DashboardPage() {
       <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleProjects.map(project => renderProjectCard(project))}
           {pendingCount > 0 && (
-            <Card
-              onClick={() => navigate("/invites/pending")}
-              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
-            >
+            <Card asChild>
+              <Link
+                to="/invites/pending"
+                className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
               <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-500/10">
                     <Mail className="h-4 w-4 text-amber-500" />
                   </div>
                   <div>
-                    <CardTitle>{pendingCount === 1 ? "Pending Invite" : "Pending Invites"}</CardTitle>
+                    <CardTitle as="h3">{pendingCount === 1 ? "Pending Invite" : "Pending Invites"}</CardTitle>
                   </div>
                 </div>
                 <Badge variant="outline" className="shrink-0">
@@ -338,12 +356,15 @@ export function DashboardPage() {
                 </p>
               </CardContent>
               <CardFooter />
+              </Link>
             </Card>
           )}
-          <Card
-            onClick={openCreateSite}
-            className="group flex cursor-pointer flex-col items-center justify-center border-dashed transition-colors hover:border-primary/40 hover:bg-accent/30"
-          >
+          <Card asChild>
+            <button
+              type="button"
+              onClick={openCreateSite}
+              className="group flex w-full cursor-pointer flex-col items-center justify-center border-dashed text-left transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
             <CardContent className="flex flex-col items-center gap-3 py-6">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-dashed border-muted-foreground/40 transition-colors group-hover:border-primary/60">
                 <Plus className="h-5 w-5 text-muted-foreground/60 transition-colors group-hover:text-primary" />
@@ -353,6 +374,7 @@ export function DashboardPage() {
                 <p className="mt-0.5 text-xs text-muted-foreground">Create a new documentation site</p>
               </div>
             </CardContent>
+            </button>
           </Card>
         </div>
 

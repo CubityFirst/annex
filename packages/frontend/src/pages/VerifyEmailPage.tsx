@@ -59,12 +59,15 @@ export function VerifyEmailPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" />
+            <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />
             <h1 className="text-2xl font-semibold">Email verification</h1>
           </div>
 
           {state === "loading" && (
             <div className="space-y-3">
+              <span role="status" className="sr-only">
+                Verifying your email…
+              </span>
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-3/4" />
             </div>

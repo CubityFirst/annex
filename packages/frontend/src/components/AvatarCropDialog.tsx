@@ -258,6 +258,24 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
     setRotation(0);
   }
 
+  // Keyboard-operable pan so the image can be repositioned without a
+  // pointer. Arrow keys nudge the image in the pressed direction (Shift =
+  // larger step); offsets are clamped the same way as a drag.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const step = e.shiftKey ? 20 : 5;
+    let dx = 0;
+    let dy = 0;
+    switch (e.key) {
+      case "ArrowLeft": dx = -step; break;
+      case "ArrowRight": dx = step; break;
+      case "ArrowUp": dy = -step; break;
+      case "ArrowDown": dy = step; break;
+      default: return;
+    }
+    e.preventDefault();
+    setOffset(prev => clampOffset(prev.x + dx, prev.y + dy, scale, naturalSize.w, naturalSize.h, rotation));
+  }
+
   // Reproduce the layout the user sees in the preview onto a 512×512
   // canvas: translate to centre → fit the circle to the output → apply
   // pan/rotate/zoom → draw the source image centred. Same transform is
@@ -359,12 +377,16 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
         {/* Crop area */}
         <div
           ref={containerRef}
-          className="relative overflow-hidden bg-black rounded cursor-move select-none mx-auto"
+          role="application"
+          tabIndex={0}
+          aria-label="Reposition image. Use the arrow keys to pan; hold Shift for larger steps."
+          className="relative overflow-hidden bg-black rounded cursor-move select-none mx-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           style={{ width: CONTAINER_W, height: CONTAINER_H, touchAction: "none" }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onKeyDown={handleKeyDown}
           onWheel={e => {
             e.preventDefault();
             const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;

@@ -287,6 +287,7 @@ export function AudioVisualizer({
     <div>
       <canvas
         ref={canvasRef}
+        aria-hidden="true"
         className={cn("block h-16 w-full text-primary", className)}
         {...rest}
       />

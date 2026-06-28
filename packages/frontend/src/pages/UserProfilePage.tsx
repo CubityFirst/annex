@@ -36,6 +36,7 @@ export function UserProfilePage() {
         else navigate("/dashboard");
       }}
       forceViewAsPublic
+      standalone
     />
   );
 }

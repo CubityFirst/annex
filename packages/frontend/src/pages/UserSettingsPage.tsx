@@ -1108,7 +1108,7 @@ export function UserSettingsPage() {
                     <div className="flex flex-col items-center gap-2 shrink-0">
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
-                        <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
+                        <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
                           <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
                           <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             {avatarUploading
@@ -1181,7 +1181,7 @@ export function UserSettingsPage() {
                       {emailVerified === true && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <button type="button" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none">
+                            <button type="button" aria-label="Email verified" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               <CheckCircle2 className="size-4 text-green-500" />
                             </button>
                           </PopoverTrigger>
@@ -1193,7 +1193,7 @@ export function UserSettingsPage() {
                       {emailVerified === false && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <button type="button" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none">
+                            <button type="button" aria-label="Email not verified" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               <AlertCircle className="size-4 text-amber-500" />
                             </button>
                           </PopoverTrigger>
@@ -1362,7 +1362,7 @@ export function UserSettingsPage() {
                     type="button"
                     onClick={() => setFavouriteSearch("")}
                     aria-label="Clear search"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -1916,7 +1916,7 @@ export function UserSettingsPage() {
               {!totpLoading && !webauthnLoading && (
                 <Popover>
                   <PopoverTrigger asChild>
-                    <button type="button" className="inline-flex cursor-default focus:outline-none">
+                    <button type="button" aria-label={twoFactorProtected ? "2FA is enabled" : "2FA is disabled"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {twoFactorProtected
                         ? <LockKeyhole className="size-3.5 text-green-500" />
                         : <LockOpen className="size-3.5 text-red-500" />}
@@ -1937,7 +1937,7 @@ export function UserSettingsPage() {
                 {!totpLoading && (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button type="button" className="inline-flex cursor-default focus:outline-none">
+                      <button type="button" aria-label={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         {totpEnabled
                           ? <LockKeyhole className="size-3.5 text-green-500" />
                           : <LockOpen className="size-3.5 text-red-500" />}
@@ -2037,7 +2037,7 @@ export function UserSettingsPage() {
                 {!webauthnLoading && (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button type="button" className="inline-flex cursor-default focus:outline-none">
+                      <button type="button" aria-label={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         {webauthnCredentials.length > 0
                           ? <LockKeyhole className="size-3.5 text-green-500" />
                           : <LockOpen className="size-3.5 text-red-500" />}
@@ -2315,6 +2315,7 @@ export function UserSettingsPage() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       autoComplete="new-password"
+                      aria-describedby={newPassword ? "password-strength" : undefined}
                       required
                     />
                     {newPassword && (() => {
@@ -2329,7 +2330,7 @@ export function UserSettingsPage() {
                               />
                             ))}
                           </div>
-                          <p className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+                          <p id="password-strength" aria-label={`Password strength: ${STRENGTH_LABELS[score]}`} className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
                         </div>
                       );
                     })()}
@@ -2343,10 +2344,12 @@ export function UserSettingsPage() {
                       value={confirmPassword}
                       onChange={e => setConfirmPassword(e.target.value)}
                       autoComplete="new-password"
+                      aria-invalid={confirmPassword.length > 0 && newPassword !== confirmPassword}
+                      aria-describedby={confirmPassword && newPassword !== confirmPassword ? "confirm-password-error" : undefined}
                       required
                     />
                     {confirmPassword && newPassword !== confirmPassword && (
-                      <p className="text-xs text-destructive">Passwords do not match.</p>
+                      <p id="confirm-password-error" role="alert" className="text-xs text-destructive">Passwords do not match.</p>
                     )}
                   </div>
 

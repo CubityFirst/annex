@@ -1352,6 +1352,7 @@ export function SiteSettingsPage() {
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9 sm:h-8 sm:w-8"
+                    aria-label="Copy public link"
                     onClick={() => {
                       const slug = project.vanity_slug ?? projectId;
                       const url = `${window.location.origin}/s/${slug}`;
@@ -1618,6 +1619,7 @@ export function SiteSettingsPage() {
                     <div className="flex items-center gap-2">
                       <Input
                         id="custom-domain-input"
+                        aria-label="Custom domain"
                         value={domainInput}
                         onChange={e => setDomainInput(e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, ""))}
                         placeholder="docs.example.com"
@@ -1762,7 +1764,7 @@ export function SiteSettingsPage() {
               <>
                 <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
                   <div className="flex flex-col gap-0.5">
-                    <p className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
+                    <p id="ai-features-label" className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
                     <p className="text-xs text-muted-foreground">
                       Enable AI-powered document summarization.
                     </p>
@@ -1771,6 +1773,7 @@ export function SiteSettingsPage() {
                     checked={project.ai_enabled === 1}
                     onCheckedChange={handleToggleAi}
                     disabled={togglingAi}
+                    aria-labelledby="ai-features-label"
                   />
                 </div>
                 {project.ai_enabled === 1 && (
@@ -1786,7 +1789,7 @@ export function SiteSettingsPage() {
                       onValueChange={handleAiSummarizationTypeChange}
                       disabled={togglingAiType}
                     >
-                      <SelectTrigger className="w-36">
+                      <SelectTrigger className="w-36" aria-label="AI summarization type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1810,7 +1813,7 @@ export function SiteSettingsPage() {
                 onValueChange={handleChangelogModeChange}
                 disabled={togglingChangelog}
               >
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-32" aria-label="Save changelog mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1834,6 +1837,7 @@ export function SiteSettingsPage() {
                 checked={!!project.home_doc_id}
                 onCheckedChange={handleToggleHomeDoc}
                 disabled={togglingHomeDoc}
+                aria-label="Home Document"
               />
             </div>
             <div className="rounded-md border border-border">
@@ -1870,6 +1874,7 @@ export function SiteSettingsPage() {
                     checked={project.graph_enabled === 1}
                     onCheckedChange={handleToggleGraph}
                     disabled={togglingGraph}
+                    aria-label="Graph View"
                   />
                 </div>
               </div>
@@ -1886,6 +1891,7 @@ export function SiteSettingsPage() {
                       checked={project.published_graph_enabled === 1}
                       onCheckedChange={handleTogglePublishedGraph}
                       disabled={togglingPublishedGraph}
+                      aria-label="Show graph view on published site"
                     />
                   </div>
                   <div className="border-t border-border">
@@ -1904,10 +1910,11 @@ export function SiteSettingsPage() {
                         Color graph nodes by frontmatter tag. The first matching tag wins.
                       </p>
                       <div className="flex flex-col gap-2">
-                        {tagColorRules.map(rule => (
+                        {tagColorRules.map((rule, i) => (
                           <div key={rule.id} className="flex items-center gap-2.5 sm:gap-2">
                             <Input
                               placeholder="tag-name"
+                              aria-label={`Tag ${i + 1} name`}
                               value={rule.tag}
                               onChange={e => updateTagRuleTag(rule.id, e.target.value)}
                               className="flex-1 h-9 sm:h-8"
@@ -1926,6 +1933,7 @@ export function SiteSettingsPage() {
                               <input
                                 id={`tag-color-${rule.id}`}
                                 type="color"
+                                aria-label="Tag color"
                                 className="sr-only"
                                 value={rule.color}
                                 onChange={e => updateTagRuleColor(rule.id, e.target.value)}
@@ -2036,7 +2044,7 @@ export function SiteSettingsPage() {
                             value={member.role}
                             onValueChange={val => handleRoleChange(member, val as Role)}
                           >
-                            <SelectTrigger className="h-9 sm:h-7 w-28 text-xs">
+                            <SelectTrigger className="h-9 sm:h-7 w-28 text-xs" aria-label={`Role for ${member.name}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -2086,9 +2094,9 @@ export function SiteSettingsPage() {
                     </DialogHeader>
                     <div className="flex flex-col gap-4 py-2">
                       <div className="flex flex-col gap-1.5">
-                        <Label>Role</Label>
+                        <Label htmlFor="new-link-role">Role</Label>
                         <Select value={newLinkRole} onValueChange={val => setNewLinkRole(val as Role)}>
-                          <SelectTrigger>
+                          <SelectTrigger id="new-link-role" aria-label="Invite link role">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2099,8 +2107,9 @@ export function SiteSettingsPage() {
                         </Select>
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <Label>Max uses <span className="text-muted-foreground font-normal">(leave blank for unlimited)</span></Label>
+                        <Label htmlFor="new-link-max-uses">Max uses <span className="text-muted-foreground font-normal">(leave blank for unlimited)</span></Label>
                         <Input
+                          id="new-link-max-uses"
                           type="number"
                           min={1}
                           placeholder="Unlimited"
@@ -2109,9 +2118,9 @@ export function SiteSettingsPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <Label>Expires</Label>
+                        <Label htmlFor="new-link-expiry">Expires</Label>
                         <Select value={newLinkExpiry} onValueChange={setNewLinkExpiry}>
-                          <SelectTrigger>
+                          <SelectTrigger id="new-link-expiry" aria-label="Invite link expiry">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2181,6 +2190,7 @@ export function SiteSettingsPage() {
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="email"
+                  aria-label="Member email"
                   placeholder="user@example.com"
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
@@ -2189,7 +2199,7 @@ export function SiteSettingsPage() {
                 />
                 <div className="flex gap-2">
                   <Select value={inviteRole} onValueChange={val => setInviteRole(val as Role)}>
-                    <SelectTrigger className="w-full sm:w-28">
+                    <SelectTrigger className="w-full sm:w-28" aria-label="Member role">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

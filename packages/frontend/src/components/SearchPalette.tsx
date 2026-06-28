@@ -152,6 +152,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false 
       <div className="flex items-center gap-1.5 border-b px-3 py-1.5">
         <button
           onClick={toggleTagMode}
+          aria-pressed={tagMode}
           className={cn(
             "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors cursor-pointer",
             tagMode
@@ -159,14 +160,24 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false 
               : "text-muted-foreground border-border hover:text-foreground hover:border-muted-foreground",
           )}
         >
-          <Hash className="h-3 w-3" />
+          <Hash className="h-3 w-3" aria-hidden="true" />
           Tags
         </button>
+      </div>
+      <div aria-live="polite" role="status" className="sr-only">
+        {loading
+          ? "Searching…"
+          : searchTerm.trim() && results.length === 0
+            ? "No results found."
+            : results.length > 0
+              ? `${results.length} result${results.length === 1 ? "" : "s"} found.`
+              : ""}
       </div>
       <CommandList>
         {loading && (
           <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+            <span className="sr-only">Searching…</span>
           </div>
         )}
         {!loading && searchTerm.trim() && results.length === 0 && (

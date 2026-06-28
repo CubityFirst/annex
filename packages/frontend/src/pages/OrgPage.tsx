@@ -133,12 +133,22 @@ export function OrgPage() {
           )}
         </div>
       ) : (
+        <>
+        <h2 className="sr-only">Sites in this organization</h2>
         <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sites.map(site => (
             <Card
               key={site.id}
+              role="button"
+              tabIndex={0}
               onClick={() => navigate(`/projects/${site.id}`)}
-              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/projects/${site.id}`);
+                }
+              }}
+              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                 <div className="flex items-center gap-2.5">
@@ -167,11 +177,11 @@ export function OrgPage() {
                     <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> View public site
                   </Button>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> Private
                   </span>
                 )}
-                <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
+                <div className="ml-auto flex items-center gap-1 text-muted-foreground">
                   <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
                   <span className="text-xs">{site.member_count}</span>
                 </div>
@@ -179,6 +189,7 @@ export function OrgPage() {
             </Card>
           ))}
         </div>
+        </>
       )}
 
       <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); } }}>
@@ -198,7 +209,7 @@ export function OrgPage() {
                 autoFocus
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <DialogFooter className="pt-2">
               <DialogClose asChild>
                 <Button type="button" variant="outline" disabled={saving}>Cancel</Button>

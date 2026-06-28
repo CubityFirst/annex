@@ -176,7 +176,7 @@ function AudioPdfPlaceholder({ alt, size = "full" }: { alt?: string; size?: Audi
   if (size === "small") {
     const svgH = 16;
     return (
-      <span className="cm-wysiwyg-audio cm-wysiwyg-audio--small inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2 py-[3px] align-middle text-muted-foreground/50">
+      <span className="cm-wysiwyg-audio cm-wysiwyg-audio--small inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2 py-[3px] align-middle text-muted-foreground">
         <svg width={WAVEFORM_SMALL.length * 2.5 - 0.5} height={svgH} aria-hidden="true" style={{ flexShrink: 0 }}>
           {WAVEFORM_SMALL.map((r, i) => {
             const h = Math.round(r * svgH);
@@ -807,12 +807,13 @@ export function DocPage() {
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
             placeholder="Document title"
-            className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none focus-visible:ring-0"
+            aria-label="Document title"
+            className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none"
             autoFocus={location.state?.isNew}
           />
           <div className="ml-auto flex items-center gap-2">
             {realtimeEnabled && <EditorPresence editors={remoteEditors} />}
-            {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+            {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
               <Button
                 variant="destructive"
@@ -996,6 +997,7 @@ export function DocPage() {
                 }
               }}
               placeholder="e.g. Fixed typo in introduction, added new section on deployment…"
+              aria-label="Changelog note"
               className="min-h-[80px]"
               autoFocus
             />
@@ -1412,7 +1414,7 @@ export function DocPage() {
                 </div>
               </>
             ) : (
-              <p className="not-prose text-sm italic text-muted-foreground/60">
+              <p className="not-prose text-sm italic text-muted-foreground">
                 This page has no content yet.
               </p>
             )}

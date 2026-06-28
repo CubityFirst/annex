@@ -134,15 +134,24 @@ export function RegisterPage() {
         />
         {password && (
           <div className="space-y-1">
-            <div className="flex gap-1">
+            <div
+              className="flex gap-1"
+              role="meter"
+              aria-label="Password strength"
+              aria-valuemin={0}
+              aria-valuemax={4}
+              aria-valuenow={score < 0 ? 0 : score}
+              aria-valuetext={STRENGTH_LABELS[score]}
+            >
               {[0, 1, 2, 3, 4].map(i => (
                 <div
                   key={i}
+                  aria-hidden="true"
                   className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
                 />
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+            <p className="text-xs text-muted-foreground" aria-live="polite">{STRENGTH_LABELS[score]}</p>
           </div>
         )}
       </div>

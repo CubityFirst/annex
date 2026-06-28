@@ -8,7 +8,7 @@
   --border2: #2a2a2a;
   --text: #e8e4de;
   --text2: #9a9590;
-  --text3: #555;
+  --text3: #8a8a8a;
   --accent: #e8e4de;
   --max: 1320px;
   --gutter: clamp(20px, 4vw, 60px);
@@ -134,6 +134,9 @@
   animation: l-blink 0.9s step-end infinite;
 }
 @keyframes l-blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+@media (prefers-reduced-motion: reduce) {
+  .l-tw-cursor { animation: none; }
+}
 .l-hero-sub {
   font-size: clamp(21px, 2.1vw, 25px);
   font-weight: 300;
@@ -231,6 +234,11 @@
   bottom: -1px;
   background: transparent;
 }
+.l-editor-tab:focus-visible {
+  outline: 2px solid var(--text2);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .l-editor-tab-active {
   background: #161616;
   border: 1px solid var(--border2);
@@ -240,9 +248,9 @@
 .l-editor-tab-inactive {
   border: 1px solid transparent;
   border-bottom: 1px solid var(--border);
-  color: #3e3e3e;
+  color: #808080;
 }
-.l-editor-tab-inactive:hover { color: #555; }
+.l-editor-tab-inactive:hover { color: var(--text2); }
 .l-editor-body {
   padding: 30px 33px 27px;
   border-top: 1px solid var(--border);
@@ -532,11 +540,11 @@
 }
 .l-footer-link {
   font-size: 16px;
-  color: #3a3a3a;
+  color: #8a8a8a;
   text-decoration: none;
   transition: color 0.15s;
 }
-.l-footer-link:hover { color: var(--text3); }
+.l-footer-link:hover { color: var(--text2); }
 
 /* ── ACKNOWLEDGEMENTS PAGE ── */
 .l-ack-list {

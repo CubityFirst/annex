@@ -18,8 +18,8 @@ const ROLE_COLORS: Record<Role, string> = {
   owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
   admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-muted-foreground",
-  limited: "bg-muted text-muted-foreground",
+  viewer: "bg-muted text-foreground",
+  limited: "bg-muted text-foreground",
 };
 
 interface InviteInfo {
@@ -118,12 +118,13 @@ export function AcceptInvitePage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm">
         {loading ? (
-          <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex flex-col items-center gap-4 text-center" aria-live="polite" aria-busy="true">
+            <span className="sr-only">Loading invite…</span>
             <div className="size-16 rounded-2xl bg-muted animate-pulse" />
             <div className="h-5 w-48 bg-muted animate-pulse rounded" />
           </div>
         ) : error && !alreadyMember ? (
-          <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8 shadow-sm">
+          <div role="alert" className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8 shadow-sm">
             <div className="size-16 rounded-2xl bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground">
               ?
             </div>

@@ -13,7 +13,7 @@ import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
 import { NotFound404 } from "./NotFound404";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -140,11 +140,14 @@ function FolderNode({
   selectedFileId: string | null;
 }) {
   const [open, setOpen] = useState(true);
+  const childrenId = `folder-children-${folder.id}`;
 
   return (
     <div className={`relative ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
       <button
         onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-controls={childrenId}
         className={`relative w-full flex items-center gap-1.5 rounded-md py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
       >
         {depth > 0 && (
@@ -155,7 +158,7 @@ function FolderNode({
         <span className="truncate font-medium">{folder.name}</span>
       </button>
       {open && (
-        <div className="ml-3 border-l border-border">
+        <div id={childrenId} className="ml-3 border-l border-border">
           <NavTree href={href} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
         </div>
       )}
@@ -412,6 +415,19 @@ export function PublicDocPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openSearch]);
+
+  // Allow dismissing the open mobile sidebar overlay with Escape. Scoped to the
+  // mobile breakpoint so it never collapses the persistent desktop sidebar.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && window.innerWidth < 768) {
+        setSidebarOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   useSwipeGesture({
     onSwipeLeft: () => setSidebarOpen(false),
@@ -753,12 +769,22 @@ export function PublicDocPage() {
                 <span className="text-lg font-semibold tracking-tight">{data.project.name}</span>
               </>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-10 w-10 shrink-0 md:hidden"
+              aria-label="Close navigation"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
           <Separator />
           <div className="px-3 py-2 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
+                aria-label="Filter titles"
                 placeholder={
                   typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
                     ? "Filter titles…"
@@ -771,9 +797,10 @@ export function PublicDocPage() {
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                  aria-label="Clear filter"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3 w-3" aria-hidden />
                 </button>
               )}
             </div>
@@ -853,7 +880,7 @@ export function PublicDocPage() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0"
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -1010,7 +1037,7 @@ export function PublicDocPage() {
                         <Spinner />
                       </div>
                     ) : (
-                      <p className="not-prose text-sm italic text-muted-foreground/60">
+                      <p className="not-prose text-sm italic text-muted-foreground">
                         This page has no content yet.
                       </p>
                     )}
@@ -1168,6 +1195,7 @@ export function PublicDocPage() {
       )}
       <Dialog open={graphExpanded} onOpenChange={setGraphExpanded}>
         <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] p-0 overflow-hidden">
+          <DialogTitle className="sr-only">Document graph</DialogTitle>
           <div className="h-full w-full">
             {graphData && data && graphData.nodes.length > 0 && (
               <GraphView

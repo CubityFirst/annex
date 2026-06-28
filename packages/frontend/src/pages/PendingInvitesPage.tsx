@@ -11,8 +11,8 @@ const ROLE_COLORS: Record<Role, string> = {
   owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
   admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-muted-foreground",
-  limited: "bg-muted text-muted-foreground",
+  viewer: "bg-muted text-foreground",
+  limited: "bg-muted text-foreground",
 };
 
 // Invites span both sites (projects) and orgs; `type` discriminates which.
@@ -34,6 +34,8 @@ interface PendingInvite {
 export function PendingInvitesPage() {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [acting, setActing] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,8 +45,9 @@ export function PendingInvitesPage() {
       .then(r => r.json())
       .then((json: { ok: boolean; data?: PendingInvite[] }) => {
         if (json.ok && json.data) setInvites(json.data);
+        else setLoadError("Could not load your pending invites. Please try again.");
       })
-      .catch(() => {});
+      .catch(() => setLoadError("Could not load your pending invites. Please try again."));
   }, []);
 
   async function handleAccept(invite: PendingInvite) {
@@ -58,6 +61,7 @@ export function PendingInvitesPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
+        setStatusMessage(`Accepted invite to ${(invite.type === "org" ? invite.organizationName : invite.projectName) ?? "this invite"}.`);
         setInvites(prev => prev.filter(i => i.id !== invite.id));
         navigate(invite.type === "org" ? `/orgs/${invite.organizationId}` : `/projects/${invite.projectId}`);
       }
@@ -76,7 +80,10 @@ export function PendingInvitesPage() {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) setInvites(prev => prev.filter(i => i.id !== invite.id));
+      if (res.ok) {
+        setStatusMessage(`Declined invite to ${(invite.type === "org" ? invite.organizationName : invite.projectName) ?? "this invite"}.`);
+        setInvites(prev => prev.filter(i => i.id !== invite.id));
+      }
     } finally {
       setActing(null);
     }
@@ -91,29 +98,38 @@ export function PendingInvitesPage() {
         </p>
       </div>
 
-      {invites.length === 0 ? (
+      <div aria-live="polite" className="sr-only">{statusMessage}</div>
+
+      {loadError ? (
+        <div role="alert" className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
+          <Mail className="mb-3 h-10 w-10 text-muted-foreground/40" aria-hidden="true" />
+          <p className="text-sm font-medium">Couldn&apos;t load invites</p>
+          <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+        </div>
+      ) : invites.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
-          <Mail className="mb-3 h-10 w-10 text-muted-foreground/40" />
+          <Mail className="mb-3 h-10 w-10 text-muted-foreground/40" aria-hidden="true" />
           <p className="text-sm font-medium">No pending invites</p>
           <p className="mt-1 text-xs text-muted-foreground">
             You're all caught up.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {invites.map(invite => {
             const isOrg = invite.type === "org";
             const title = isOrg ? invite.organizationName : invite.projectName;
             return (
-              <Card key={invite.id} className="flex flex-col">
+              <Card key={invite.id} asChild className="flex flex-col">
+              <li>
                 <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                      {isOrg ? <Building2 className="h-4 w-4 text-primary" /> : <BookOpen className="h-4 w-4 text-primary" />}
+                      {isOrg ? <Building2 className="h-4 w-4 text-primary" aria-hidden="true" /> : <BookOpen className="h-4 w-4 text-primary" aria-hidden="true" />}
                     </div>
                     <div className="min-w-0">
                       <CardTitle className="truncate">{title}</CardTitle>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <p className="text-[11px] uppercase tracking-wide text-secondary-foreground">
                         {isOrg ? "Organization" : "Site"}
                       </p>
                     </div>
@@ -149,10 +165,11 @@ export function PendingInvitesPage() {
                     Decline
                   </Button>
                 </CardFooter>
+              </li>
               </Card>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );

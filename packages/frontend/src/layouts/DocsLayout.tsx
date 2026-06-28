@@ -182,6 +182,7 @@ function ProjectSwitcher({
         <div className="px-1 pb-1">
           <Input
             placeholder="Search sites…"
+            aria-label="Search sites"
             value={query}
             onChange={e => { setQuery(e.target.value); setPage(0); }}
             className="h-8 text-base sm:text-xs"
@@ -211,9 +212,10 @@ function ProjectSwitcher({
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
+              aria-label="Previous page"
               className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {page + 1} / {totalPages}
@@ -221,9 +223,10 @@ function ProjectSwitcher({
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page === totalPages - 1}
+              aria-label="Next page"
               className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         )}
@@ -239,6 +242,20 @@ export function DocsLayout() {
     onSwipeLeft: () => setSidebarOpen(false),
     onSwipeRight: () => setSidebarOpen(true),
   });
+
+  // Escape closes the sidebar when it's open as a mobile overlay (the backdrop
+  // is the only other way to dismiss it on mobile). On desktop the sidebar is
+  // an in-flow column, so only act below the md breakpoint.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && window.innerWidth < 768) {
+        setSidebarOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
@@ -834,7 +851,7 @@ export function DocsLayout() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors before:absolute before:inset-y-0 before:-right-3 before:left-0 before:content-['']"
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -861,30 +878,45 @@ export function DocsLayout() {
                 <Menu className="h-5 w-5" />
               </button>
             )}
-            {breadcrumbs.map((crumb, i) => {
-              const isLast = i === breadcrumbs.length - 1;
-              return (
-                <span key={i} className="flex items-center gap-1 shrink-0">
-                  {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
-                  <span
-                    title={crumb.name}
-                    className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
-                      isLast
-                        ? "text-foreground font-medium"
-                        : crumb.onClick
-                        ? "text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent"
-                        : "text-muted-foreground"
-                    } ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
-                    onClick={!isLast ? crumb.onClick : undefined}
-                    onDragOver={crumb.onDragOver}
-                    onDragLeave={crumb.onDragLeave}
-                    onDrop={crumb.onDrop}
-                  >
-                    {crumb.name}
-                  </span>
-                </span>
-              );
-            })}
+            <nav aria-label="Breadcrumb" className="flex items-center">
+              <ol className="flex items-center gap-1">
+                {breadcrumbs.map((crumb, i) => {
+                  const isLast = i === breadcrumbs.length - 1;
+                  const clickable = !isLast && !!crumb.onClick;
+                  return (
+                    <li key={i} className="flex items-center gap-1 shrink-0">
+                      {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" aria-hidden="true" />}
+                      {clickable ? (
+                        <button
+                          type="button"
+                          title={crumb.name}
+                          onClick={crumb.onClick}
+                          onDragOver={crumb.onDragOver}
+                          onDragLeave={crumb.onDragLeave}
+                          onDrop={crumb.onDrop}
+                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
+                        >
+                          {crumb.name}
+                        </button>
+                      ) : (
+                        <span
+                          title={crumb.name}
+                          aria-current={isLast ? "page" : undefined}
+                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
+                            isLast ? "text-foreground font-medium" : "text-muted-foreground"
+                          } ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
+                          onDragOver={crumb.onDragOver}
+                          onDragLeave={crumb.onDragLeave}
+                          onDrop={crumb.onDrop}
+                        >
+                          {crumb.name}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </nav>
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
@@ -974,6 +1006,7 @@ export function DocsLayout() {
                   <button
                     type="button"
                     onClick={() => squareInputRef.current?.click()}
+                    aria-label="Upload square icon"
                     className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
                   >
                     {squarePreviewUrl
@@ -1007,6 +1040,7 @@ export function DocsLayout() {
                   <button
                     type="button"
                     onClick={() => wideInputRef.current?.click()}
+                    aria-label="Upload wordmark"
                     className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
                   >
                     {widePreviewUrl

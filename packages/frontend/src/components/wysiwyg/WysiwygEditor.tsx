@@ -427,6 +427,7 @@ export function WysiwygEditor({
       ])),
       editorTheme,
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ "aria-label": "Document content" }),
       keymap.of([
         {
           key: "Mod-s",

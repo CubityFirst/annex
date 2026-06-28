@@ -49,18 +49,21 @@ interface ResizableTableProps {
 function HeaderCell({
   col,
   idx,
+  colIndex,
   sort,
   onSort,
 }: {
   col: ColumnDef;
   idx: number;
+  /** 1-based ARIA grid column index (accounts for the checkbox column). */
+  colIndex: number;
   sort?: SortSpec | null;
   onSort?: (colIdx: number) => void;
 }) {
   const base = "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground";
 
   if (!col.sortable || !onSort) {
-    return <div className={base}>{col.label}</div>;
+    return <div role="columnheader" aria-colindex={colIndex} className={base}>{col.label}</div>;
   }
 
   const active = sort?.colIdx === idx;
@@ -69,6 +72,9 @@ function HeaderCell({
   return (
     <button
       type="button"
+      role="columnheader"
+      aria-colindex={colIndex}
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
       onClick={() => onSort(idx)}
       title={`Sort by ${col.label}`}
       aria-label={
@@ -101,6 +107,21 @@ interface ResizableTableRowProps {
   onDragOver?: React.DragEventHandler;
   onDragLeave?: React.DragEventHandler;
   onDrop?: React.DragEventHandler<HTMLDivElement>;
+  /**
+   * Optional keyboard-activation handler. When provided the row becomes
+   * operable: Enter/Space fire `onActivate` (after `preventDefault`). Pair with
+   * `tabIndex={0}` to make the row focusable. Pointer activation still flows
+   * through each cell's own `onClick`.
+   */
+  onActivate?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  /** Forwarded to the row container, composed after the built-in Enter/Space handling. */
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+  /** Forwarded to the row container so a consumer can make the row focusable. */
+  tabIndex?: number;
+  /** ARIA role for the row container. Defaults to `"row"` (keeps grid semantics). */
+  role?: React.AriaRole;
+  /** Accessible name for the row when it is focusable/operable. */
+  "aria-label"?: string;
 }
 
 // ── Segment helpers ──────────────────────────────────────────────────────────
@@ -297,11 +318,13 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
     }
   }, [segments, saved, measureKey]);
 
+  const colOffset = checkboxColumn ? 1 : 0;
+
   return (
-    <div ref={containerRef} className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
+    <div ref={containerRef} role="grid" className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
     <div className="min-w-0 md:min-w-[700px]">
-      <div className="flex items-center bg-muted/50 border-b h-10">
-        {checkboxColumn && <div className="w-10 shrink-0" />}
+      <div role="row" className="flex items-center bg-muted/50 border-b h-10">
+        {checkboxColumn && <div role="columnheader" aria-colindex={1} className="w-10 shrink-0" />}
 
         {segments.map((seg, i) => {
           const wrapperStyle: React.CSSProperties = seg.isLast
@@ -316,7 +339,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
               <div data-seg={seg.segIdx} style={wrapperStyle} className="h-full flex">
                 {seg.constrained ? (
                   // Constrained (standalone) segment - no internal panel group needed
-                  <HeaderCell col={seg.cols[0].col} idx={seg.cols[0].idx} sort={sort} onSort={onSort} />
+                  <HeaderCell col={seg.cols[0].col} idx={seg.cols[0].idx} colIndex={seg.cols[0].idx + 1 + colOffset} sort={sort} onSort={onSort} />
                 ) : (
                   <ResizablePanelGroup
                     className="flex-1 h-full"
@@ -331,7 +354,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                         defaultSize={col.defaultSize}
                         minSize={col.minSize ?? 8}
                       >
-                        <HeaderCell col={col} idx={idx} sort={sort} onSort={onSort} />
+                        <HeaderCell col={col} idx={idx} colIndex={idx + 1 + colOffset} sort={sort} onSort={onSort} />
                       </ResizablePanel>,
                     ])}
                   </ResizablePanelGroup>
@@ -371,13 +394,32 @@ export function ResizableTableRow({
   onDragOver,
   onDragLeave,
   onDrop,
+  onActivate,
+  onKeyDown,
+  tabIndex,
+  role = "row",
+  "aria-label": ariaLabel,
 }: ResizableTableRowProps) {
   const segments = useMemo(() => buildSegments(columns), [columns]);
+  const colOffset = checkboxCell !== undefined ? 1 : 0;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (onActivate && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      onActivate(e);
+    }
+    onKeyDown?.(e);
+  };
 
   return (
     <div
+      role={role}
+      tabIndex={tabIndex}
+      aria-label={ariaLabel}
+      onKeyDown={onActivate || onKeyDown ? handleKeyDown : undefined}
       className={cn(
         "flex items-center border-b last:border-b-0 h-10 select-none transition-colors hover:bg-muted/40",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         className,
       )}
       draggable={draggable}
@@ -388,7 +430,7 @@ export function ResizableTableRow({
       onDrop={onDrop}
     >
       {checkboxCell !== undefined && (
-        <div className="w-10 shrink-0 px-3" onClick={e => e.stopPropagation()}>
+        <div role="gridcell" aria-colindex={1} className="w-10 shrink-0 px-3" onClick={e => e.stopPropagation()}>
           {checkboxCell}
         </div>
       )}
@@ -406,6 +448,8 @@ export function ResizableTableRow({
                 <div
                   key={idx}
                   data-col={idx}
+                  role="gridcell"
+                  aria-colindex={idx + 1 + colOffset}
                   style={{ width: `var(--col-${idx})` }}
                   className={cn("flex items-center overflow-hidden shrink-0", cell?.className ?? "px-3")}
                   onClick={cell?.onClick}

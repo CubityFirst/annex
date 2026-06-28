@@ -62,7 +62,7 @@ const ROLE_COLORS: Record<Role, string> = {
   owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
   admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-muted-foreground",
+  viewer: "bg-muted text-foreground",
   limited: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
 };
 
@@ -114,9 +114,11 @@ interface UserProfileCardProps {
   onOpenChange?: (open: boolean) => void;
   /** Force the bio/favourites/shared view even when viewing your own profile (used by the /u/:userId route). */
   forceViewAsPublic?: boolean;
+  /** Standalone /u/:userId route: the card is the whole page, so the visible name is promoted to the page's single h1. */
+  standalone?: boolean;
 }
 
-export function UserProfileCard({ userId, name, children, open: controlledOpen, onOpenChange, forceViewAsPublic }: UserProfileCardProps) {
+export function UserProfileCard({ userId, name, children, open: controlledOpen, onOpenChange, forceViewAsPublic, standalone }: UserProfileCardProps) {
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -126,6 +128,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   };
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
   // Single source of truth for which badge tooltip is open, so that moving
   // the cursor from one badge to another forces the previous tooltip closed
@@ -146,6 +149,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   useEffect(() => {
     if (!open || profile) return;
     setLoading(true);
+    setLoadError(false);
     const token = getToken();
     fetch(`/api/users/${userId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -153,7 +157,9 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
       .then(r => r.json())
       .then((json: { ok: boolean; data?: ProfileData }) => {
         if (json.ok && json.data) setProfile(json.data);
+        else setLoadError(true);
       })
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, [open, userId, profile]);
 
@@ -189,14 +195,18 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               <div className="absolute inset-0 pointer-events-none">
                 <TimezoneMap lon={g.coords[0]} lat={g.coords[1]} />
                 {/* Fade the map out on the left so the avatar area stays legible */}
-                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/60" />
               </div>
             );
           })()}
 
           <UserAvatar userId={userId} name={displayName} className="relative z-10 size-20 shrink-0 text-2xl" personalPlan={profile?.personalPlan} personalPlanStyle={profile?.personalPlanStyle} />
           <div className="relative z-10 min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+            {standalone ? (
+              <h1 className="truncate text-lg font-semibold">{displayName}</h1>
+            ) : (
+              <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+            )}
             {profile && (() => {
               const badgeBits = profile.badges ?? 0;
               const isInk = profile.personalPlan === "ink";
@@ -260,7 +270,14 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               );
             })()}
             {loading ? (
-              <Skeleton className="mt-2 h-4 w-40" />
+              <div role="status" aria-live="polite">
+                <Skeleton className="mt-2 h-4 w-40" />
+                <span className="sr-only">Loading profile…</span>
+              </div>
+            ) : loadError ? (
+              <p role="alert" className="mt-1.5 text-sm text-muted-foreground">
+                Couldn’t load this profile.
+              </p>
             ) : profile ? (
               <>
                 <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
@@ -341,7 +358,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
             </button>
           </div>
         ) : loading ? (
-          <div className="px-6 py-5">
+          <div className="px-6 py-5" aria-hidden="true">
             <div className="space-y-2">
               <Skeleton className="h-11 w-full rounded-md" />
               <Skeleton className="h-11 w-full rounded-md" />

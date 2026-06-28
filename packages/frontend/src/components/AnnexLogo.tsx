@@ -24,11 +24,14 @@ const LOGO_PATHS = [
 export function AnnexLogo({ fill = "#e8e4de", height = 16 }: { fill?: string; height?: number }) {
   return (
     <svg
+      role="img"
+      aria-label="Annex"
       height={height}
       viewBox="0 0 2226 424"
       xmlns="http://www.w3.org/2000/svg"
       style={{ fill, display: "block" }}
     >
+      <title>Annex</title>
       <g transform="matrix(1,0,0,1,-611.45151,-2371.443353)">
         {LOGO_PATHS.map((p) => (
           <g key={p.transform} transform={p.transform}>

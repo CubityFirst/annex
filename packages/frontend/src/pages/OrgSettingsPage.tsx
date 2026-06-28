@@ -342,7 +342,7 @@ export function OrgSettingsPage() {
                 <div className="flex flex-col gap-1.5">
                   <Label>Role</Label>
                   <Select value={inviteRole} onValueChange={v => setInviteRole(v as Role)}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-32" aria-label="Role"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
                         <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
@@ -352,7 +352,7 @@ export function OrgSettingsPage() {
                 </div>
                 <Button type="submit" disabled={inviting}>{inviting ? "Inviting…" : "Invite"}</Button>
               </form>
-              {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
+              {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
 
               {/* Member list */}
               <div className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -385,7 +385,7 @@ export function OrgSettingsPage() {
                           </Badge>
                         ) : canChangeRole ? (
                           <Select value={member.role} onValueChange={val => handleRoleChange(member, val as Role)}>
-                            <SelectTrigger className="h-9 w-28 text-xs sm:h-7"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-9 w-28 text-xs sm:h-7" aria-label={`Role for ${member.name}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
                                 <SelectItem key={role} value={role} className="text-xs">{ROLE_LABELS[role]}</SelectItem>
@@ -433,7 +433,7 @@ export function OrgSettingsPage() {
                 <Label>Attach a site you own</Label>
                 <div className="flex gap-2">
                   <Select value={attachId} onValueChange={setAttachId}>
-                    <SelectTrigger className="max-w-sm">
+                    <SelectTrigger className="max-w-sm" aria-label="Attach a site you own">
                       <SelectValue placeholder={attachable.length ? "Choose a site…" : "No eligible sites"} />
                     </SelectTrigger>
                     <SelectContent>

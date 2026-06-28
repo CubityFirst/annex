@@ -68,13 +68,19 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
               {revisions.map(rev => (
                 <button
                   key={rev.id}
-                  className={`flex items-center justify-between gap-2 px-6 py-2.5 text-left disabled:opacity-50 ${selectedId === rev.id ? "bg-accent" : "hover:bg-accent/60"}`}
+                  aria-current={selectedId === rev.id ? "true" : undefined}
+                  className={`flex items-center justify-between gap-2 border-l-2 px-6 py-2.5 text-left disabled:opacity-50 ${selectedId === rev.id ? "border-primary bg-accent" : "border-transparent hover:bg-accent/60"}`}
                   onClick={() => onSelect(rev.id)}
                   disabled={loading}
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium">{displayName(rev)}</span>
-                    <span className="text-xs text-muted-foreground">{formatDateTime(rev.created_at)} · <span className="text-muted-foreground/60">{timeAgo(rev.created_at)}</span></span>
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                      <span className="truncate">{displayName(rev)}</span>
+                      {selectedId === rev.id && (
+                        <span className="shrink-0 rounded-sm bg-primary px-1 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">Viewing</span>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{formatDateTime(rev.created_at)} · <span className="text-muted-foreground">{timeAgo(rev.created_at)}</span></span>
                     {rev.changelog && (
                       <span className="text-xs text-foreground/70 italic line-clamp-2">{rev.changelog}</span>
                     )}

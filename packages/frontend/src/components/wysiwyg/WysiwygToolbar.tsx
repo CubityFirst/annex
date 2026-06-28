@@ -179,7 +179,7 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
           : "Insert table"}
       </p>
       <div
-        className="grid gap-0.5"
+        className="grid gap-1"
         style={{ gridTemplateColumns: `repeat(${TABLE_COLS}, 1.75rem)` }}
         onMouseLeave={() => setHovered({ rows: 0, cols: 0 })}
       >

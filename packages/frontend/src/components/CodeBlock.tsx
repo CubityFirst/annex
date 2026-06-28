@@ -62,9 +62,16 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
       variant="ghost"
       onClick={copy}
       className="pdf-print-hide absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10"
-      aria-label="Copy code"
+      aria-label={copied ? "Copied" : "Copy code"}
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? (
+        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
+      <span role="status" aria-live="polite" className="sr-only">
+        {copied ? "Copied to clipboard" : ""}
+      </span>
     </Button>
   );
 

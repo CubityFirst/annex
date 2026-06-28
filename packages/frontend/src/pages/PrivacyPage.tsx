@@ -11,7 +11,7 @@ export function PrivacyPage() {
     <div className="landing">
       <nav className="l-nav">
         <div className="l-nav-inner">
-          <Link to="/"><AnnexLogo height={21} /></Link>
+          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
           <div className="l-nav-links">
             {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
             {isLoggedIn

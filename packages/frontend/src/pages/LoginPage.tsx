@@ -479,8 +479,10 @@ export function LoginPage() {
           </div>
         ) : (
           <div className="space-y-2 flex flex-col items-center">
-            <Label>Authenticator code</Label>
+            <Label htmlFor="totp-code">Authenticator code</Label>
             <InputOTP
+              id="totp-code"
+              aria-label="Authenticator code"
               maxLength={6}
               value={totpCode}
               onChange={setTotpCode}

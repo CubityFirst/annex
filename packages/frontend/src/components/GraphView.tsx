@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from "react-force-graph-2d";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -89,6 +89,8 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  const listRef = useRef<HTMLUListElement | null>(null);
+
   const graph = useMemo(() => {
     const rules = data.tagColors ?? [];
     const nodes: GraphNode[] = data.nodes.map(n => {
@@ -112,6 +114,44 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     const links: GraphLink[] = data.edges.map(e => ({ source: e.source, target: e.target }));
     return { nodes, links };
   }, [data]);
+
+  // Adjacency for the keyboard-accessible text equivalent: each node's connected
+  // document titles. Derived from the raw id-based edges (graph.links may hold
+  // node objects after the simulation resolves them).
+  const adjacency = useMemo(() => {
+    const titleById = new Map(graph.nodes.map(n => [n.id, n.title] as const));
+    const map = new Map<string, string[]>();
+    for (const n of graph.nodes) map.set(n.id, []);
+    for (const e of data.edges) {
+      const s = String(e.source);
+      const t = String(e.target);
+      if (titleById.has(s) && titleById.has(t)) {
+        map.get(s)?.push(titleById.get(t)!);
+        map.get(t)?.push(titleById.get(s)!);
+      }
+    }
+    return map;
+  }, [graph, data.edges]);
+
+  // The single id currently announced / highlighted (selection wins over hover).
+  const currentId = selectedId ?? hoverId;
+  const currentTitle = currentId
+    ? graph.nodes.find(n => n.id === currentId)?.title ?? null
+    : null;
+
+  // Arrow-key navigation between the focusable node entries in the text list.
+  const onListKeyDown = (e: ReactKeyboardEvent<HTMLUListElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const items = Array.from(
+      listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-node-entry]") ?? [],
+    );
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (idx === -1) return;
+    e.preventDefault();
+    const next = e.key === "ArrowDown" ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+    items[next]?.focus();
+  };
 
   // The pointer cursor is set on document.body during node hover, so we must
   // reset it both on click (navigation prevents a hover-out) and on unmount.
@@ -155,7 +195,56 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
   const uiFontStack = tokens.uiFont || "ui-sans-serif, system-ui, sans-serif";
 
   return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden">
+    <div
+      ref={ref}
+      role="group"
+      aria-label="Document graph"
+      className="relative h-full w-full overflow-hidden"
+    >
+      {/* Live region announcing the currently highlighted/selected document. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {currentTitle ? `Selected document: ${currentTitle}` : ""}
+      </div>
+
+      {/* Keyboard-accessible text equivalent of the pointer-only canvas: the same
+          documents and their links, reachable by Tab / Up-Down arrows, Enter to
+          open. Visually hidden but focusable so it doesn't alter the layout. */}
+      <ul
+        ref={listRef}
+        aria-label="Documents in this graph"
+        className="sr-only"
+        onKeyDown={onListKeyDown}
+      >
+        {graph.nodes.map(n => {
+          const connections = adjacency.get(n.id) ?? [];
+          const tagText = n.tags.length > 0 ? `, tags: ${n.tags.join(", ")}` : "";
+          const linkText =
+            connections.length > 0 ? `, links to: ${connections.join(", ")}` : ", no links";
+          return (
+            <li key={n.id}>
+              <button
+                type="button"
+                data-node-entry
+                aria-current={currentId === n.id ? "true" : undefined}
+                onFocus={() => setHoverId(n.id)}
+                onBlur={() => setHoverId(prev => (prev === n.id ? null : prev))}
+                onClick={() => {
+                  if (typeof document !== "undefined") document.body.style.cursor = "";
+                  setHoverId(null);
+                  setSelectedId(null);
+                  onNodeClick(n.id);
+                }}
+              >
+                {n.title}
+                {currentId === n.id ? " (selected)" : ""}
+                {tagText}
+                {linkText}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
       {width > 0 && height > 0 && (
         <ForceGraph2D<GraphNode, GraphLink>
           ref={fgRef}
@@ -170,7 +259,9 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             const src = link.source as GraphNode;
             const tgt = link.target as GraphNode;
             ctx.save();
-            ctx.globalAlpha = 0.3;
+            // Raised from 0.3 so links clear the 3:1 non-text contrast minimum
+            // against the page background (WCAG 2.2 1.4.11).
+            ctx.globalAlpha = 0.6;
             ctx.beginPath();
             ctx.moveTo(src.x ?? 0, src.y ?? 0);
             ctx.lineTo(tgt.x ?? 0, tgt.y ?? 0);
@@ -242,6 +333,23 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             ctx.fill();
           }}
         />
+      )}
+      {(data.tagColors?.length ?? 0) > 0 && (
+        <ul
+          aria-label="Tag color legend"
+          className="pointer-events-none absolute left-2 top-2 flex max-w-[60%] flex-wrap gap-x-3 gap-y-1 rounded-md border bg-popover/80 px-2 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur"
+        >
+          {data.tagColors!.map(rule => (
+            <li key={rule.tag} className="flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="inline-block size-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: rule.color }}
+              />
+              <span>{rule.tag}</span>
+            </li>
+          ))}
+        </ul>
       )}
       {coarse && selectedId && (
         <div className="absolute inset-x-2 bottom-2 flex items-center gap-2 rounded-lg border bg-popover/95 p-2 shadow-md backdrop-blur pb-[env(safe-area-inset-bottom)]">

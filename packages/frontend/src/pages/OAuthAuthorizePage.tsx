@@ -167,12 +167,12 @@ export function OAuthAuthorizePage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {status === "loading" && (
-            <p className="text-center text-sm text-muted-foreground">Completing sign-in…</p>
+            <p role="status" aria-live="polite" className="text-center text-sm text-muted-foreground">Completing sign-in…</p>
           )}
 
           {status === "consent" && consent && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{consent.clientName}</span> wants to sign you
                 in{consent.email ? <> as <span className="font-medium text-foreground">{consent.email}</span></> : null}.
               </p>
@@ -196,7 +196,7 @@ export function OAuthAuthorizePage() {
           )}
 
           {status === "error" && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           )}

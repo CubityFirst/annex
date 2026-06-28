@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -196,6 +197,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
 
+  // "Move to folder…" picker - a single-pointer / keyboard alternative to the
+  // drag-and-drop move. Opening it loads every folder in the project so the user
+  // can pick any destination (drag only reaches whatever is currently on screen).
+  const [moveTarget, setMoveTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; name: string } | null>(null);
+  const [moveFolders, setMoveFolders] = useState<FolderItem[] | null>(null);
+  const [moving, setMoving] = useState(false);
+
   // internal drag-to-reorder state
   const draggedItem = useRef<{ type: "doc" | "folder" | "file"; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
@@ -283,6 +291,18 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   function enterFolder(folder: FolderItem) {
     navigate(folderUrl(folder.id));
+  }
+
+  // Keyboard activation for rows rendered as `role="button"`. The
+  // `e.target === e.currentTarget` guard means Enter/Space pressed while focus
+  // is on a nested control (rename button, checkbox, kebab) doesn't also fire
+  // the row's primary action.
+  function activateOnKey(e: React.KeyboardEvent, fn: () => void) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fn();
+    }
   }
 
   function navigateToCrumb(index: number) {
@@ -446,6 +466,48 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     if (!result.ok) {
       toast({ title: "Failed to move file.", variant: "destructive" });
       await loadContents();
+    }
+  }
+
+  async function openMoveDialog(target: { type: "folder" | "doc" | "file"; id: string; name: string }) {
+    setMoveTarget(target);
+    setMoveFolders(null);
+    const result = await apiFetchJson<FolderItem[]>(`/api/folders?projectId=${projectId}&all=1`);
+    if (result.ok && result.data) setMoveFolders(result.data);
+    else setMoveFolders([]);
+  }
+
+  // Destinations offered in the move picker: every folder in the project, minus
+  // (for a folder being moved) itself and its descendants, since the API rejects
+  // a move that would create a cycle. "Home" (root) is added separately in the UI.
+  function moveDestinations(): FolderItem[] {
+    const all = moveFolders ?? [];
+    if (!moveTarget || moveTarget.type !== "folder") return all;
+    const banned = new Set<string>([moveTarget.id]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const f of all) {
+        if (f.parent_id && banned.has(f.parent_id) && !banned.has(f.id)) {
+          banned.add(f.id);
+          added = true;
+        }
+      }
+    }
+    return all.filter(f => !banned.has(f.id));
+  }
+
+  async function handleMoveTo(targetFolderId: string | null) {
+    if (!moveTarget || moving) return;
+    setMoving(true);
+    try {
+      const { type, id } = moveTarget;
+      if (type === "doc") await moveDoc(id, targetFolderId);
+      else if (type === "file") await moveFile(id, targetFolderId);
+      else await moveFolder(id, targetFolderId);
+      setMoveTarget(null);
+    } finally {
+      setMoving(false);
     }
   }
 
@@ -680,8 +742,14 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   cells={[
                     {
                       content: (
-                        <div className="group flex items-center w-full min-w-0">
-                          <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open folder ${folder.name}`}
+                          onKeyDown={e => activateOnKey(e, () => enterFolder(folder))}
+                          className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
+                          <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
                           {folderCounts.has(folder.id) && (() => {
                             const c = folderCounts.get(folder.id)!;
@@ -696,11 +764,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           })()}
                           {canEdit && (
                             <button
+                              type="button"
+                              aria-label={`Rename folder ${folder.name}`}
                               onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
-                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:focus-visible:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-3 w-3" aria-hidden="true" />
                             </button>
                           )}
                         </div>
@@ -722,6 +792,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     <Pencil />
                     Rename
                   </ContextMenuItem>
+                  <ContextMenuItem onClick={() => openMoveDialog({ type: "folder", id: folder.id, name: folder.name })}>
+                    <FolderInput />
+                    Move to folder…
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
                     <Trash2 />
@@ -742,6 +816,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   onDragEnd={onDragEnd}
                   checkboxCell={!canEdit ? undefined : isHome ? null : (
                     <Checkbox
+                      aria-label={`Select ${doc.title || "Untitled"}`}
                       checked={selectedDocs.has(doc.id)}
                       onClick={(e) => {
                         const willBeChecked = !selectedDocs.has(doc.id);
@@ -772,19 +847,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   cells={[
                     {
                       content: (
-                        <div className="group flex items-center w-full min-w-0">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open ${doc.title || "Untitled"}`}
+                          onKeyDown={e => activateOnKey(e, navToDoc)}
+                          className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
                           {isHome
-                            ? <House className="h-4 w-4 shrink-0 mr-2 text-primary/70" />
-                            : <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                            ? <House className="h-4 w-4 shrink-0 mr-2 text-primary/70" aria-hidden="true" />
+                            : <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" aria-hidden="true" />
                           }
                           <span className="text-sm truncate">{doc.title || "Untitled"}</span>
                           {canEdit && (
                             <button
+                              type="button"
+                              aria-label={`Rename ${doc.title || "Untitled"}`}
                               onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
-                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:focus-visible:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-3 w-3" aria-hidden="true" />
                             </button>
                           )}
                         </div>
@@ -803,19 +886,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           <div className="flex items-center gap-0.5">
                             {aiEnabled && (
                               <button
+                                type="button"
+                                aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
                                 onClick={e => handleSummarize(e, doc)}
-                                className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
+                                className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
                                 title="Summarise with AI"
                               >
-                                <Sparkles className="h-3.5 w-3.5" />
+                                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                               </button>
                             )}
                             <button
+                              type="button"
+                              aria-label={`Download ${doc.title || "Untitled"} as markdown`}
                               onClick={e => handleDownloadDoc(e, doc)}
-                              className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                              className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                               title="Download as markdown"
                             >
-                              <Download className="h-3.5 w-3.5" />
+                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           </div>
                         </div>
@@ -844,6 +931,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     </ContextMenuItem>
                   )}
                   {canEdit && !isHome && (
+                    <ContextMenuItem onClick={() => openMoveDialog({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
+                      <FolderInput />
+                      Move to folder…
+                    </ContextMenuItem>
+                  )}
+                  {canEdit && !isHome && (
                     <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
                       <Trash2 />
                       Delete
@@ -862,6 +955,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 onDragEnd={onDragEnd}
                 checkboxCell={canEdit ? (
                   <Checkbox
+                    aria-label={`Select ${file.name}`}
                     checked={selectedFiles.has(file.id)}
                     onClick={(e) => {
                       const willBeChecked = !selectedFiles.has(file.id);
@@ -891,16 +985,24 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 cells={[
                   {
                     content: (
-                      <div className="group flex items-center w-full min-w-0">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${file.name}`}
+                        onKeyDown={e => activateOnKey(e, () => openFile(file))}
+                        className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      >
                         <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
                         <span className="text-sm truncate">{file.name}</span>
                         {canEdit && (
                           <button
+                            type="button"
+                            aria-label={`Rename ${file.name}`}
                             onClick={e => { e.stopPropagation(); setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}
-                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 inline-flex items-center justify-center min-h-6 min-w-6 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                             title="Rename"
                           >
-                            <Pencil className="h-3 w-3" />
+                            <Pencil className="h-3 w-3" aria-hidden="true" />
                           </button>
                         )}
                       </div>
@@ -919,11 +1021,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       <div className="flex items-center justify-between gap-2 w-full">
                         <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
                         <button
+                          type="button"
+                          aria-label={`Download ${file.name}`}
                           onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                          className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                           title="Download"
                         >
-                          <Download className="h-3.5 w-3.5" />
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     ),
@@ -948,6 +1052,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     <ContextMenuItem onClick={() => { setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}>
                       <Pencil />
                       Rename
+                    </ContextMenuItem>
+                  )}
+                  {canEdit && (
+                    <ContextMenuItem onClick={() => openMoveDialog({ type: "file", id: file.id, name: file.name })}>
+                      <FolderInput />
+                      Move to folder…
                     </ContextMenuItem>
                   )}
                   {canEdit && (
@@ -976,10 +1086,14 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           return (
             <div
               key={folder.id}
-              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open folder ${folder.name}`}
+              onKeyDown={e => activateOnKey(e, () => enterFolder(folder))}
+              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={() => enterFolder(folder)}
             >
-              <Folder className="h-5 w-5 shrink-0 text-primary/70" />
+              <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
                 {parts.length > 0 && (
@@ -991,6 +1105,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   <DropdownMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
                     <Pencil />
                     Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openMoveDialog({ type: "folder", id: folder.id, name: folder.name })}>
+                    <FolderInput />
+                    Move to folder…
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
@@ -1008,17 +1126,21 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           return (
             <div
               key={doc.id}
-              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${doc.title || "Untitled"}`}
+              onKeyDown={e => activateOnKey(e, navToDoc)}
+              className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={navToDoc}
             >
               {canEdit && !isHome && (
                 <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                  <Checkbox checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
+                  <Checkbox aria-label={`Select ${doc.title || "Untitled"}`} checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
                 </div>
               )}
               {isHome
-                ? <House className="h-5 w-5 shrink-0 text-primary/70" />
-                : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" />
+                ? <House className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
+                : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
               }
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm">{doc.title || "Untitled"}</div>
@@ -1044,6 +1166,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     </DropdownMenuItem>
                   )}
                   {canEdit && !isHome && (
+                    <DropdownMenuItem onClick={() => openMoveDialog({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
+                      <FolderInput />
+                      Move to folder…
+                    </DropdownMenuItem>
+                  )}
+                  {canEdit && !isHome && (
                     <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
                       <Trash2 />
                       Delete
@@ -1057,12 +1185,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         {sortedFiles.map(file => (
           <div
             key={file.id}
-            className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40"
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${file.name}`}
+            onKeyDown={e => activateOnKey(e, () => openFile(file))}
+            className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={() => openFile(file)}
           >
             {canEdit && (
               <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                <Checkbox checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
+                <Checkbox aria-label={`Select ${file.name}`} checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
               </div>
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
@@ -1090,6 +1222,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   </DropdownMenuItem>
                 )}
                 {canEdit && (
+                  <DropdownMenuItem onClick={() => openMoveDialog({ type: "file", id: file.id, name: file.name })}>
+                    <FolderInput />
+                    Move to folder…
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
                   <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
                     <Trash2 />
                     Delete
@@ -1114,8 +1252,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     >
       {(externalDragOver || uploadingCount > 0) && (
         <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
-          <Upload className="h-8 w-8 text-primary/60" />
-          <p className="text-sm font-medium text-muted-foreground">
+          <Upload className="h-8 w-8 text-primary/60" aria-hidden="true" />
+          <p role="status" aria-live="polite" className="text-sm font-medium text-muted-foreground">
             {uploadingCount > 0 ? `Uploading ${uploadingCount} ${uploadingCount === 1 ? "file" : "files"}…` : "Drop to upload"}
           </p>
         </div>
@@ -1133,19 +1271,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
         <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
             placeholder="Search files…"
+            aria-label="Search files"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-9 pr-8"
           />
           {searchQuery && (
             <button
+              type="button"
+              aria-label="Clear search"
+              title="Clear search"
               onClick={() => setSearchQuery("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-5 sm:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -1213,8 +1355,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <DialogTitle>New folder</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateFolder} className="flex flex-col gap-3">
+            <Label htmlFor="new-folder-name" className="sr-only">Folder name</Label>
             <Input
+              id="new-folder-name"
               placeholder="Folder name"
+              aria-label="Folder name"
               value={newFolderName}
               onChange={e => setNewFolderName(e.target.value)}
               autoFocus
@@ -1234,7 +1379,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <DialogTitle>Rename</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col gap-3">
+            <Label htmlFor="rename-name" className="sr-only">New name</Label>
             <Input
+              id="rename-name"
+              aria-label="New name"
               value={renameName}
               onChange={e => setRenameName(e.target.value)}
               autoFocus
@@ -1244,6 +1392,50 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               {renaming ? "Renaming…" : "Rename"}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move-to-folder dialog - keyboard/single-pointer alternative to drag */}
+      <Dialog open={!!moveTarget} onOpenChange={open => { if (!open) setMoveTarget(null); }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Move "{moveTarget?.name}"</DialogTitle>
+            <DialogDescription>Choose a destination folder.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+            {moveFolders === null ? (
+              <div className="flex flex-col gap-1.5 py-1">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={moving || currentFolderId === null}
+                  onClick={() => handleMoveTo(null)}
+                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                  <span className="truncate">{projectName} (home)</span>
+                </button>
+                {moveDestinations().map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    disabled={moving || currentFolderId === f.id}
+                    onClick={() => handleMoveTo(f.id)}
+                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                    <span className="truncate">{f.name}</span>
+                  </button>
+                ))}
+                {moveDestinations().length === 0 && currentFolderId !== null && (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">No other folders available.</p>
+                )}
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
