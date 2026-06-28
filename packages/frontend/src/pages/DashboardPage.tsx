@@ -25,6 +25,10 @@ interface Project {
 
 const REALTIME_FEATURE = 4;
 
+// Shared square slot so every footer item (clickable button or static info icon)
+// occupies the same footprint - uniform touch/visual regions across the row.
+const FOOTER_SLOT = "flex h-11 w-11 shrink-0 items-center justify-center sm:h-9 sm:w-9";
+
 interface Org {
   id: string;
   name: string;
@@ -138,13 +142,13 @@ export function DashboardPage() {
           )}
         </CardContent>
 
-        <CardFooter className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <CardFooter className="flex flex-wrap items-center gap-x-1 gap-y-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                className={FOOTER_SLOT}
                 aria-label={project.is_favourite ? "Remove from favourites" : "Add to favourites"}
                 onClick={(e) => handleToggleFavourite(e, project.id)}
               >
@@ -164,7 +168,7 @@ export function DashboardPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                className={FOOTER_SLOT}
                 aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
                 onClick={(e) => handleToggleHidden(e, project.id)}
               >
@@ -191,7 +195,7 @@ export function DashboardPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 sm:h-9 sm:w-9 -m-1.5 sm:m-0"
+                className={FOOTER_SLOT}
                 aria-label={project.published_at ? "View public site" : "Site is private"}
                 disabled={!project.published_at}
                 onClick={project.published_at ? (e) => { e.stopPropagation(); navigate(`/s/${project.id}`); } : undefined}
@@ -210,7 +214,7 @@ export function DashboardPage() {
           {!!project.ai_enabled && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} role="img" aria-label="AI features enabled" />
                 </span>
               </TooltipTrigger>
@@ -221,7 +225,7 @@ export function DashboardPage() {
           {!!(project.features & REALTIME_FEATURE) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} role="img" aria-label="Real-time collaboration enabled" />
                 </span>
               </TooltipTrigger>
@@ -232,7 +236,7 @@ export function DashboardPage() {
           {project.organization_id && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} role="img" aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
                 </span>
               </TooltipTrigger>
