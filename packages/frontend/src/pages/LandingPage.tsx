@@ -70,9 +70,9 @@ const TABS: Record<TabKey, {
 }> = {
   "api-reference.md": {
     h: "API Reference",
-    p: "Programmatically create, read, update and delete docs in your Annex workspace using the REST API.",
+    p: "Programmatically create, read, update and delete docs in your Annex site using the REST API.",
     code: [
-      { c: "#555", t: "BASE_URL = https://api.annex.app/v1" },
+      { c: "#555", t: "BASE_URL = https://<your-site>/api/v1" },
       { c: "#444", t: "Content-Type: application/json" },
     ],
     lines: [88, 72, 80, 65],
@@ -80,14 +80,14 @@ const TABS: Record<TabKey, {
   },
   "authentication.md": {
     h: "Authentication",
-    p: "All requests require a bearer token in the Authorization header. Tokens are generated from workspace settings.",
+    p: "All requests use a scoped API key in the Authorization header. Create keys in Site Settings → Developer → API Keys.",
     code: [
-      { c: "#555", t: "POST /v1/auth/token" },
-      { c: "#4a4a4a", t: "Authorization: Bearer <YOUR_TOKEN>" },
-      { c: "#3a3a3a", t: '→  { "token": "ak_...", "expires": 3600 }' },
+      { c: "#555", t: "GET /api/v1/docs" },
+      { c: "#4a4a4a", t: "Authorization: Bearer annx_<YOUR_KEY>" },
+      { c: "#3a3a3a", t: '→  { "docs": [ ... ] }' },
     ],
     lines: [82, 68, 74],
-    badges: ["OAuth2", "bearer", "tokens"],
+    badges: ["scoped", "api-keys", "annx_"],
   },
   "getting-started.md": {
     h: "Getting Started",
@@ -189,7 +189,7 @@ const FEATURES: {
     desc: "Embed images, tables, code blocks, and callouts in any doc.",
     link: "https://docs.cubityfir.st/s/help/a0ea410e-95ff-455b-a495-cdf00ea5a890",
   },
-  { Icon: Users, title: "Live Collaboration", desc: "Work together in real time. See who's editing, leave inline comments." },
+  { Icon: Users, title: "Live Collaboration", desc: "Work together in real time. See who's in the doc and watch edits land as they type." },
   { Icon: Search, title: "Fast Search", desc: "Full-text search across every page, heading, and tag in your workspace." },
   { Icon: Globe, title: "Publish Anywhere", desc: "Share a private link or publish a styled public site in one click." },
 ];
@@ -225,8 +225,9 @@ export function LandingPage() {
               your&nbsp;<span>{word}</span><span className="l-tw-cursor">&nbsp;</span>
             </div>
             <p className="l-hero-sub">
-              Annex is the flexible writing platform for any kind of structured thought,
-              from technical specs to tabletop campaigns.
+              Annex is a flexible docs workspace - write, link and version anything
+              from technical specs to tabletop campaigns, then publish it to the web
+              in a click.
             </p>
             <div className="l-hero-ctas">
               <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
@@ -243,7 +244,7 @@ export function LandingPage() {
       <hr className="l-section-divider" />
       <section id="features" className="l-features">
         <div className="site-wrap">
-          <h2 className="l-features-label">What it does</h2>
+          <h2 className="l-features-label">Everything your docs should do</h2>
           <div className="l-features-grid">
             {FEATURES.map((f) => {
               const inner = (
