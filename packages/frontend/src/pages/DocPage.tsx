@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, isValidElement } from "react";
+import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,6 +40,10 @@ import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
+
+// @codemirror/merge is only needed while comparing revisions - keep it out of
+// the main bundle (same pattern as ExcalidrawCanvas).
+const RevisionDiff = lazy(() => import("@/components/RevisionDiff"));
 
 const PASTED_IMAGE_EXT: Record<string, string> = {
   "image/jpeg": "jpg", "image/jpg": "jpg", "image/svg+xml": "svg",
@@ -278,6 +282,8 @@ interface RevisionDetail extends RevisionMeta {
   content: string;
 }
 
+const REVISIONS_PAGE_SIZE = 50;
+
 export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
@@ -334,9 +340,16 @@ export function DocPage() {
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<RevisionMeta[] | null>(null);
+  const [revisionsHasMore, setRevisionsHasMore] = useState(false);
+  const [loadingMoreRevisions, setLoadingMoreRevisions] = useState(false);
   const [viewingRevision, setViewingRevision] = useState<RevisionDetail | null>(null);
   const [loadingRevision, setLoadingRevision] = useState(false);
   const [reverting, setReverting] = useState(false);
+  // "Changes" view while a historical revision is open: diff the viewed
+  // revision against the live document, or against the previous revision.
+  const [revisionView, setRevisionView] = useState<"rendered" | "diff">("rendered");
+  const [diffBase, setDiffBase] = useState<"current" | "previous">("current");
+  const [prevRevisionContent, setPrevRevisionContent] = useState<string | null>(null);
   const [changelogDialogOpen, setChangelogDialogOpen] = useState(false);
   const [changelogText, setChangelogText] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
@@ -413,6 +426,16 @@ export function DocPage() {
     setEditing(false);
     setCollabFatal(false);
     setCollabFatalReason(null);
+    // Revision-history state is per-document - without these resets, navigating
+    // to another doc would keep rendering the previous doc's revision (and diff
+    // it against the new doc's live content).
+    setHistoryOpen(false);
+    setRevisions(null);
+    setRevisionsHasMore(false);
+    setViewingRevision(null);
+    setRevisionView("rendered");
+    setDiffBase("current");
+    setPrevRevisionContent(null);
     apiFetchJson<Doc>(`/api/docs/${docId}`)
       .then(result => {
         if (result.ok && result.data) {
@@ -548,6 +571,11 @@ export function DocPage() {
         setDoc(prev => prev ? { ...prev, ...data } : data);
         updateDocTitle(docId, data.title);
         setEditing(false);
+        // The server echoes `content` only when the body actually changed; a
+        // no-op save records no revision, so a provided changelog went nowhere.
+        if (changelog && !("content" in data)) {
+          toast({ title: "No content changes - your changelog note wasn't saved." });
+        }
       } else {
         setSaveError("Failed to save. Please try again.");
       }
@@ -669,10 +697,35 @@ export function DocPage() {
 
   async function openHistory() {
     setHistoryOpen(true);
-    setViewingRevision(null);
     setRevisions(null);
-    const result = await apiFetchJson<RevisionMeta[]>(`/api/docs/${docId}/revisions`);
-    if (result.ok) setRevisions(result.data ?? []);
+    setRevisionsHasMore(false);
+    const result = await apiFetchJson<RevisionMeta[]>(`/api/docs/${docId}/revisions?limit=${REVISIONS_PAGE_SIZE}`);
+    if (result.ok) {
+      const rows = result.data ?? [];
+      setRevisions(rows);
+      setRevisionsHasMore(rows.length === REVISIONS_PAGE_SIZE);
+    }
+  }
+
+  async function loadMoreRevisions() {
+    if (!revisions || revisions.length === 0 || loadingMoreRevisions) return;
+    const last = revisions[revisions.length - 1];
+    setLoadingMoreRevisions(true);
+    try {
+      const params = new URLSearchParams({
+        limit: String(REVISIONS_PAGE_SIZE),
+        before: last.created_at,
+        beforeId: last.id,
+      });
+      const result = await apiFetchJson<RevisionMeta[]>(`/api/docs/${docId}/revisions?${params}`);
+      if (result.ok) {
+        const rows = result.data ?? [];
+        setRevisions(prev => prev ? [...prev, ...rows] : rows);
+        setRevisionsHasMore(rows.length === REVISIONS_PAGE_SIZE);
+      }
+    } finally {
+      setLoadingMoreRevisions(false);
+    }
   }
 
   async function viewRevision(revisionId: string) {
@@ -682,14 +735,41 @@ export function DocPage() {
     setLoadingRevision(false);
   }
 
+  // Reset the changes view whenever the viewed revision changes.
+  useEffect(() => {
+    setRevisionView("rendered");
+    setDiffBase("current");
+    setPrevRevisionContent(null);
+  }, [viewingRevision?.id]);
+
+  // The revision immediately older than the one being viewed (list is ordered
+  // created_at DESC). Null when viewing the oldest loaded revision.
+  const prevRevisionMeta = useMemo(() => {
+    if (!viewingRevision || !revisions) return null;
+    const idx = revisions.findIndex(r => r.id === viewingRevision.id);
+    return idx >= 0 && idx + 1 < revisions.length ? revisions[idx + 1] : null;
+  }, [viewingRevision, revisions]);
+
+  // Fetch the previous revision's content on demand for the "vs previous" diff.
+  useEffect(() => {
+    if (revisionView !== "diff" || diffBase !== "previous" || !prevRevisionMeta || prevRevisionContent !== null) return;
+    let cancelled = false;
+    apiFetchJson<RevisionDetail>(`/api/docs/${docId}/revisions/${prevRevisionMeta.id}`)
+      .then(result => {
+        if (!cancelled && result.ok && result.data) setPrevRevisionContent(result.data.content);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [revisionView, diffBase, prevRevisionMeta, prevRevisionContent, docId]);
+
   async function handleRevert() {
     if (!docId || !viewingRevision) return;
     setReverting(true);
     try {
-      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: viewingRevision.content }),
+      // Server-side restore: brings back content AND title, and records the
+      // auto-changelog ("Restored version from <ISO>") in one atomic step.
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}/revisions/${viewingRevision.id}/restore`, {
+        method: "POST",
       });
       if (result.ok && result.data) {
         const data = result.data;
@@ -1053,6 +1133,33 @@ export function DocPage() {
             />
           );
         })()}
+        {/* Rendered below the cover image (whose -mt-10 full-bleed pull would
+            cover anything above it) and OUTSIDE the md:relative column below,
+            so the absolutely-positioned top-right action toolbar can never
+            overlap it. */}
+        {viewingRevision && (
+          <div className="mx-auto max-w-3xl">
+            <HistoryBanner
+              editorName={(() => {
+                if (viewingRevision.contributors) {
+                  try {
+                    const cs = JSON.parse(viewingRevision.contributors) as { id: string; name: string }[];
+                    if (cs.length > 1) return cs.map(c => c.name).join(", ");
+                  } catch { /* */ }
+                }
+                return viewingRevision.editor_name;
+              })()}
+              createdAt={viewingRevision.created_at}
+              title={viewingRevision.title && viewingRevision.title !== doc.title ? viewingRevision.title : undefined}
+              onBack={() => setViewingRevision(null)}
+              onRevert={isEditor ? handleRevert : undefined}
+              reverting={reverting}
+              showingDiff={revisionView === "diff"}
+              onToggleDiff={() => setRevisionView(v => (v === "diff" ? "rendered" : "diff"))}
+              className="mb-6"
+            />
+          </div>
+        )}
         <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
           <div className="flex flex-wrap justify-end gap-1.5 mb-2 md:flex-nowrap md:gap-1 md:absolute md:top-0 md:right-0 md:mb-0">
@@ -1089,6 +1196,11 @@ export function DocPage() {
                 selectedId={viewingRevision?.id}
                 loading={loadingRevision}
                 onSelect={viewRevision}
+                currentTitle={doc.title}
+                onSelectCurrent={() => setViewingRevision(null)}
+                hasMore={revisionsHasMore}
+                loadingMore={loadingMoreRevisions}
+                onLoadMore={loadMoreRevisions}
               />
               {isAdmin && (
                 <>
@@ -1342,24 +1454,6 @@ export function DocPage() {
           )}
           </div>
 
-          {viewingRevision && (
-            <HistoryBanner
-              editorName={(() => {
-                if (viewingRevision.contributors) {
-                  try {
-                    const cs = JSON.parse(viewingRevision.contributors) as { id: string; name: string }[];
-                    if (cs.length > 1) return cs.map(c => c.name).join(", ");
-                  } catch { /* */ }
-                }
-                return viewingRevision.editor_name;
-              })()}
-              createdAt={viewingRevision.created_at}
-              onBack={() => setViewingRevision(null)}
-              onRevert={isEditor ? handleRevert : undefined}
-              reverting={reverting}
-              className={`mb-6${isEditor ? " mr-32" : ""}`}
-            />
-          )}
           <article data-pdf-print-target className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
             {(() => {
               const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
@@ -1393,7 +1487,46 @@ export function DocPage() {
                 )}
               </div>
             )}
-            {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
+            {viewingRevision && revisionView === "diff" ? (
+              <div className="not-prose">
+                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+                  <span className="text-muted-foreground">Compare against:</span>
+                  <div className="flex overflow-hidden rounded-md border border-border">
+                    <button
+                      className={`px-2.5 py-1 text-xs font-medium transition-colors ${diffBase === "current" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
+                      onClick={() => setDiffBase("current")}
+                    >
+                      Current version
+                    </button>
+                    <button
+                      className={`border-l border-border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${diffBase === "previous" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
+                      onClick={() => setDiffBase("previous")}
+                      disabled={!prevRevisionMeta}
+                      title={prevRevisionMeta ? undefined : "No older revision is loaded to compare against."}
+                    >
+                      Previous save
+                    </button>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {diffBase === "current"
+                      ? "What has changed between this version and the live document."
+                      : "What this save changed compared to the previous version."}
+                  </span>
+                </div>
+                {diffBase === "previous" && !prevRevisionMeta ? (
+                  <p className="text-sm text-muted-foreground">This is the oldest loaded revision - there is no previous version to compare against.</p>
+                ) : diffBase === "previous" && prevRevisionContent === null ? (
+                  <p className="text-sm text-muted-foreground">Loading previous version…</p>
+                ) : (
+                  <Suspense fallback={<p className="text-sm text-muted-foreground">Loading diff…</p>}>
+                    <RevisionDiff
+                      original={diffBase === "current" ? viewingRevision.content : prevRevisionContent!}
+                      modified={diffBase === "current" ? doc.content : viewingRevision.content}
+                    />
+                  </Suspense>
+                )}
+              </div>
+            ) : (viewingRevision ? viewingRevision.content : doc.content).trim() ? (
               <>
                 <div className="not-prose pdf-print-hide">
                   <WysiwygEditor

@@ -16,23 +16,30 @@ function makeEnv() {
   const alls: unknown[] = [];
   const runs: unknown[] = [];
   const batches: unknown[] = [];
+  const bindCalls: unknown[][] = [];
   const first = vi.fn(() => Promise.resolve(firsts.shift() ?? null));
   const all = vi.fn(() => Promise.resolve(alls.shift() ?? { results: [] }));
   const run = vi.fn(() => Promise.resolve(runs.shift() ?? { meta: { changes: 1 } }));
-  const bind = vi.fn(() => ({ first, all, run }));
-  const prepare = vi.fn(() => ({ bind }));
+  const bind = vi.fn((...args: unknown[]) => { bindCalls.push(args); return { first, all, run }; });
+  const prepare = vi.fn((_sql: string) => ({ bind }));
   const batch = vi.fn(() => Promise.resolve(batches.shift() ?? []));
   const assetsGet = vi.fn(async () => null as unknown);
+  const assetsList = vi.fn(async () => ({ objects: [] as { key: string }[], truncated: false as const, delimitedPrefixes: [] as string[] }));
+  const assetsDelete = vi.fn(async (_keys: string | string[]) => undefined);
   const authFetch = vi.fn(async () => Response.json({ ok: true, data: { name: "Owner Name" } }, { status: 200 }));
   return {
     env: {
       DB: { prepare, batch },
-      ASSETS: { get: assetsGet, put: vi.fn(), delete: vi.fn() },
+      ASSETS: { get: assetsGet, put: vi.fn(), delete: assetsDelete, list: assetsList },
       AUTH: { fetch: authFetch },
     } as unknown as Parameters<typeof handleProjects>[1],
     run,
     batch,
+    prepare,
+    bindCalls,
     assetsGet,
+    assetsList,
+    assetsDelete,
     authFetch,
     queueFirst: (v: unknown) => firsts.push(v),
     queueAll: (v: unknown) => alls.push(v),
@@ -379,6 +386,47 @@ describe("handleProjects DELETE /projects/:id", () => {
     expect(run).toHaveBeenCalled(); // DELETE projects
     const json = (await res.json()) as { data: { deleted: boolean } };
     expect(json.data.deleted).toBe(true);
+  });
+
+  it("deletes doc/revision R2 objects via a paged prefix sweep, not per-D1-row", async () => {
+    const { env, queueAll, assetsList, assetsDelete } = makeEnv();
+    queueAll({ results: [{ id: "d1" }] }); // docs
+    queueAll({ results: [{ id: "f1" }, { id: "f2" }] }); // files
+    // Two list pages under the project prefix - the second must be fetched via the cursor.
+    assetsList
+      .mockResolvedValueOnce({ objects: [{ key: "p1/d1" }, { key: "p1/d1/v/r1" }], truncated: true, cursor: "cur-1", delimitedPrefixes: [] } as never)
+      .mockResolvedValueOnce({ objects: [{ key: "p1/d1/v/r2" }], truncated: false, delimitedPrefixes: [] } as never);
+
+    const res = await call(env, "DELETE", "/projects/p1");
+    expect(res.status).toBe(200);
+
+    expect(assetsList).toHaveBeenNthCalledWith(1, { prefix: "p1/", cursor: undefined });
+    expect(assetsList).toHaveBeenNthCalledWith(2, { prefix: "p1/", cursor: "cur-1" });
+    // Batched array deletes: one per list page, plus one for files + logos.
+    expect(assetsDelete.mock.calls.map(c => c[0])).toEqual([
+      ["p1/d1", "p1/d1/v/r1"],
+      ["p1/d1/v/r2"],
+      ["files/f1", "files/f2", "site-logos/p1-square", "site-logos/p1-wide"],
+    ]);
+  });
+
+  it("chunks the asset_revisions row delete to 50 doc ids per statement", async () => {
+    const { env, queueAll, prepare, bindCalls } = makeEnv();
+    const docIds = Array.from({ length: 60 }, (_, i) => `d${i}`);
+    queueAll({ results: docIds.map(id => ({ id })) }); // docs
+    queueAll({ results: [] }); // files
+    const res = await call(env, "DELETE", "/projects/p1");
+    expect(res.status).toBe(200);
+
+    const revisionDeletes = prepare.mock.calls
+      .map(c => c[0] as string)
+      .filter(sql => sql.includes("DELETE FROM asset_revisions"));
+    expect(revisionDeletes).toHaveLength(2);
+    // 50 + 10 placeholders, and the bound ids match the chunks.
+    expect(revisionDeletes[0].match(/\?/g)).toHaveLength(50);
+    expect(revisionDeletes[1].match(/\?/g)).toHaveLength(10);
+    expect(bindCalls).toContainEqual(docIds.slice(0, 50));
+    expect(bindCalls).toContainEqual(docIds.slice(50));
   });
 });
 

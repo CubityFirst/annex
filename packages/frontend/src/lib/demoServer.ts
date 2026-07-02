@@ -51,6 +51,7 @@ interface DemoRevision {
   created_at: string;
   changelog: string | null;
   contributors: string | null;
+  title: string | null;
   content: string;
 }
 
@@ -69,7 +70,10 @@ let store: Store | null = null;
 let idCounter = 0;
 
 function nextId(prefix: string): string {
-  return `${prefix}-${++idCounter}`;
+  // Zero-padded so lexicographic order matches creation order - the revision
+  // list tiebreaks equal created_at values by id (same as the real API), and
+  // same-millisecond saves would otherwise sort "-9" above "-10".
+  return `${prefix}-${String(++idCounter).padStart(6, "0")}`;
 }
 
 function nowIso(): string {
@@ -272,8 +276,8 @@ function seed(): Store {
       { id: FILE_NOTES, name: "session-zero-notes.txt", mime_type: "text/plain", size: DEMO_NOTES_TXT.length, folder_id: null, created_at: minutesAgo(60 * 24), blob: new Blob([DEMO_NOTES_TXT], { type: "text/plain" }) },
     ],
     revisions: [
-      { id: "demo-rev-1", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(60 * 24 * 2), changelog: "First draft", contributors: null, content: "# Welcome\n\nThis page is being written…" },
-      { id: "demo-rev-2", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(90), changelog: "Added the feature checklist and basics table", contributors: null, content: WELCOME_CONTENT },
+      { id: "demo-rev-1", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(60 * 24 * 2), changelog: "First draft", contributors: null, title: "Welcome", content: "# Welcome\n\nThis page is being written…" },
+      { id: "demo-rev-2", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(90), changelog: "Added the feature checklist and basics table", contributors: null, title: "Welcome to the Annex demo", content: WELCOME_CONTENT },
     ],
   };
 }
@@ -383,7 +387,14 @@ function fileListing(f: DemoFile) {
 }
 
 function revisionMeta(r: DemoRevision) {
-  return { id: r.id, editor_id: r.editor_id, editor_name: r.editor_name, created_at: r.created_at, changelog: r.changelog, contributors: r.contributors };
+  return { id: r.id, editor_id: r.editor_id, editor_name: r.editor_name, created_at: r.created_at, changelog: r.changelog, contributors: r.contributors, title: r.title };
+}
+
+// Matches the API's revision-list ordering: created_at DESC, id DESC.
+function revisionOrderDesc(a: DemoRevision, b: DemoRevision): number {
+  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
+  if (a.id !== b.id) return a.id < b.id ? 1 : -1;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -611,8 +622,9 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
         if ("publishedAt" in body) doc.published_at = typeof body.publishedAt === "string" ? body.publishedAt : null;
         if (typeof body.showLastUpdated === "boolean") doc.show_last_updated = body.showLastUpdated ? 1 : 0;
         if (typeof body.showHeading === "boolean") doc.show_heading = body.showHeading ? 1 : 0;
-        if (typeof body.content === "string" && body.content !== doc.content) {
-          doc.content = body.content;
+        const contentChanged = typeof body.content === "string" && body.content !== doc.content;
+        if (contentChanged) {
+          doc.content = body.content as string;
           doc.updated_at = nowIso();
           s.revisions.push({
             id: nextId("demo-rev"),
@@ -622,10 +634,15 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
             created_at: doc.updated_at,
             changelog: typeof body.changelog === "string" && body.changelog ? body.changelog : null,
             contributors: null,
+            title: doc.title,
             content: doc.content,
           });
         }
-        return ok(docDetail(doc));
+        // Like the real API, the response carries `content` only when the body
+        // actually changed (a no-op save records no revision or changelog).
+        if (contentChanged) return ok(docDetail(doc));
+        const { content: _content, ...rest } = docDetail(doc);
+        return ok(rest);
       }
       if (method === "DELETE") {
         s.docs = s.docs.filter(d => d.id !== seg[1]);
@@ -636,11 +653,51 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       if (!doc) return notFound();
       const docRevisions = s.revisions.filter(r => r.doc_id === doc.id);
       if (seg.length === 3 && method === "GET") {
-        return ok([...docRevisions].reverse().map(revisionMeta));
+        // Keyset pagination, same semantics as the real API: ordered
+        // created_at DESC, id DESC; before+beforeId return strictly older rows;
+        // limit defaults to 50, capped at 200.
+        const limitRaw = parseInt(url.searchParams.get("limit") ?? "", 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+        const before = url.searchParams.get("before");
+        const beforeId = url.searchParams.get("beforeId");
+        let rows = [...docRevisions].sort(revisionOrderDesc);
+        if (before && beforeId) {
+          rows = rows.filter(r => r.created_at < before || (r.created_at === before && r.id < beforeId));
+        }
+        return ok(rows.slice(0, limit).map(revisionMeta));
       }
       if (seg.length === 4 && method === "GET") {
         const rev = docRevisions.find(r => r.id === seg[3]);
         return rev ? ok({ ...revisionMeta(rev), content: rev.content }) : notFound();
+      }
+      if (seg.length === 5 && seg[4] === "restore" && method === "POST") {
+        const rev = docRevisions.find(r => r.id === seg[3]);
+        if (!rev) return notFound();
+        const body = await readJsonBody(input, init);
+        const contentChanged = rev.content !== doc.content;
+        const titleChanged = rev.title !== null && rev.title !== doc.title;
+        if (rev.title !== null) doc.title = rev.title;
+        // Same semantics as the real API: a restore that mutates the doc
+        // (content OR title) records a revision; only a true no-op doesn't.
+        if (contentChanged || titleChanged) {
+          doc.content = rev.content;
+          doc.updated_at = nowIso();
+          s.revisions.push({
+            id: nextId("demo-rev"),
+            doc_id: doc.id,
+            editor_id: DEMO_USER_ID,
+            editor_name: DEMO_USER_NAME,
+            created_at: doc.updated_at,
+            changelog: typeof body.changelog === "string" && body.changelog ? body.changelog : `Restored version from ${rev.created_at}`,
+            contributors: null,
+            title: doc.title,
+            content: doc.content,
+          });
+        }
+        // Same response shape as the doc PUT: content only when it changed.
+        if (contentChanged) return ok(docDetail(doc));
+        const { content: _content, ...rest } = docDetail(doc);
+        return ok(rest);
       }
     }
     if (seg[2] === "shares" && method === "GET") return ok([]);

@@ -95,6 +95,58 @@ export interface DocUpdateResult {
   savedContent?: string;
 }
 
+// Returns the content of the doc's most recent revision, or null when the doc
+// has no revisions at all. This is the "did the content change?" baseline for
+// both applyDocUpdate and the collab DO's session-end checkpoint: the live R2
+// body is NOT a reliable baseline because the collab Durable Object mirrors
+// the Y.Doc text straight over it (~30s after the last edit), which would make
+// an explicit save arriving after the mirror look like a no-op and silently
+// skip the revision + changelog + reindex side effects.
+export async function latestDocRevisionContent(env: Env, projectId: string, docId: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+  ).bind(docId).first<{ id: string }>();
+  if (!row) return null;
+  const obj = await env.ASSETS.get(`${projectId}/${docId}/v/${row.id}`);
+  return obj ? await obj.text() : "";
+}
+
+export interface SnapshotDocRevisionInput {
+  projectId: string;
+  docId: string;
+  content: string;
+  // The doc's title as of this save - versioned alongside the body so a revert
+  // can restore both.
+  title: string;
+  editorId: string;
+  editorName: string;
+  changelog?: string | null;
+  contributors?: string | null;
+  now?: string;
+}
+
+// The full revision side-effect chain, shared by applyDocUpdate (explicit
+// saves) and DocCollabRoom's session-end checkpoint: R2 `v/` snapshot,
+// asset_revisions row (with title), FTS reindex, doc-link graph reindex,
+// AI-summary cache invalidation, and the docs.updated_at bump. Does NOT write
+// the live R2 body - callers own that (applyDocUpdate writes it; the collab DO
+// mirrors it from persist()).
+export async function snapshotDocRevision(env: Env, input: SnapshotDocRevisionInput): Promise<string> {
+  const now = input.now ?? new Date().toISOString();
+  const revisionId = crypto.randomUUID();
+  await env.ASSETS.put(`${input.projectId}/${input.docId}/v/${revisionId}`, input.content);
+  await env.DB.prepare(
+    "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors, title) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+  ).bind(revisionId, input.docId, input.projectId, input.editorId, input.editorName, now, input.changelog ?? null, input.contributors ?? null, input.title).run();
+  await upsertFtsRow(env.DB, input.docId, input.projectId, input.title, input.content);
+  await indexDocLinks(env, input.projectId, input.docId, input.content);
+  // Drop any cached AI summary - its version is the doc's updated_at at cache
+  // time, and that is about to advance.
+  await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(input.docId).run();
+  await env.DB.prepare("UPDATE docs SET updated_at = ? WHERE id = ?").bind(now, input.docId).run();
+  return revisionId;
+}
+
 export interface ApplyDocUpdateOptions {
   // Invoked once, ONLY when the body actually changed, to produce the
   // contributors JSON stored on the new revision (the interactive collab path
@@ -116,21 +168,32 @@ export async function applyDocUpdate(
   let savedContent: string | undefined;
 
   if (patch.content !== undefined) {
-    const oldR2 = await env.ASSETS.get(`${doc.project_id}/${doc.id}`);
-    const oldContent = oldR2 ? await oldR2.text() : "";
+    // Baseline = latest revision's content (not the live R2 body - the collab
+    // DO mirrors over that, which would make post-mirror explicit saves look
+    // like no-ops). Docs with no revisions yet fall back to the live body.
+    const baseline = await latestDocRevisionContent(env, doc.project_id, doc.id);
+    const oldContent = baseline !== null ? baseline : await (async () => {
+      const oldR2 = await env.ASSETS.get(`${doc.project_id}/${doc.id}`);
+      return oldR2 ? await oldR2.text() : "";
+    })();
     if (patch.content !== oldContent) {
       savedContent = patch.content;
 
       const contributorsJson = opts.gatherContributors ? await opts.gatherContributors() : null;
-      const revisionId = crypto.randomUUID();
-      await Promise.all([
-        env.ASSETS.put(`${doc.project_id}/${doc.id}`, patch.content),
-        env.ASSETS.put(`${doc.project_id}/${doc.id}/v/${revisionId}`, patch.content),
-      ]);
-      await env.DB.prepare(
-        "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?)",
-      ).bind(revisionId, doc.id, doc.project_id, editorId, editorName, now, patch.changelog ?? null, contributorsJson).run();
-      await indexDocLinks(env, doc.project_id, doc.id, patch.content);
+      // The live body may already hold this exact content (collab-mirrored
+      // case) - writing it again is harmless and keeps this path simple.
+      await env.ASSETS.put(`${doc.project_id}/${doc.id}`, patch.content);
+      await snapshotDocRevision(env, {
+        projectId: doc.project_id,
+        docId: doc.id,
+        content: patch.content,
+        title: patch.title ?? doc.title,
+        editorId,
+        editorName,
+        changelog: patch.changelog ?? null,
+        contributors: contributorsJson,
+        now,
+      });
     }
   }
 
@@ -164,19 +227,15 @@ export async function applyDocUpdate(
   }
 
   // Only re-index FTS when the body changed (title or content). Settings-only
-  // toggles don't affect search.
-  if (patch.title !== undefined || savedContent !== undefined) {
-    const ftsContent = savedContent ?? (await (async () => {
+  // toggles don't affect search. When the content changed, snapshotDocRevision
+  // already reindexed with the final title, so only a title-only change needs
+  // handling here (content fetched from the live body).
+  if (patch.title !== undefined && savedContent === undefined) {
+    const ftsContent = await (async () => {
       const r2 = await env.ASSETS.get(`${doc.project_id}/${doc.id}`);
       return r2 ? await r2.text() : "";
-    })());
-    await upsertFtsRow(env.DB, doc.id, doc.project_id, patch.title ?? doc.title, ftsContent);
-  }
-
-  // Drop any cached AI summary when the body changed - its version is the doc's
-  // updated_at at cache time, and that just advanced.
-  if (savedContent !== undefined) {
-    await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(doc.id).run();
+    })();
+    await upsertFtsRow(env.DB, doc.id, doc.project_id, patch.title, ftsContent);
   }
 
   const updated: DocUpdateRow = {
@@ -192,18 +251,77 @@ export async function applyDocUpdate(
   return { updated, savedContent };
 }
 
+// Deletes every R2 object under `prefix`, in batches. One list() page is at
+// most 1000 keys and the array form of delete() accepts up to 1000 keys, so
+// each page maps to exactly one delete subrequest - a doc/project with
+// thousands of revision objects stays far below the Workers subrequest limit
+// (the old one-delete-per-D1-row fan-out did not). Listing by prefix (rather
+// than by surviving D1 rows) also sweeps up objects orphaned by a failed
+// insert, which previously leaked forever.
+export async function deleteR2Prefix(assets: R2Bucket, prefix: string): Promise<void> {
+  let cursor: string | undefined;
+  do {
+    const listing = await assets.list({ prefix, cursor });
+    if (listing.objects.length > 0) {
+      await assets.delete(listing.objects.map(o => o.key));
+    }
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor !== undefined);
+}
+
+// How long non-latest doc revisions are kept.
+export const REVISION_RETENTION_DAYS = 90;
+
+// Prunes doc revisions older than the retention window. The newest revision
+// per doc is ALWAYS kept regardless of age: it is the "did the content
+// change?" baseline for applyDocUpdate and the collab checkpoint (see
+// latestDocRevisionContent) - pruning it would resurrect the collab-mirror
+// no-op-save bug on dormant docs, and would leave stale docs with no history
+// at all. Runs from the API worker's daily cron. Each pass selects up to
+// `batch` rows, deletes their R2 snapshots in one array call, then their D1
+// rows in chunks; `maxBatches` bounds a single invocation's subrequests, so a
+// large backlog drains over successive runs. R2 objects are deleted before
+// their rows - if the row delete fails, the survivors are reselected next run
+// (and re-deleting a missing R2 key is a no-op), so the order self-heals.
+export async function pruneDocRevisions(
+  env: Env,
+  opts: { now?: Date; batch?: number; maxBatches?: number } = {},
+): Promise<number> {
+  const batch = opts.batch ?? 500;
+  const maxBatches = opts.maxBatches ?? 20;
+  const cutoff = new Date((opts.now ?? new Date()).getTime() - REVISION_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  let pruned = 0;
+  for (let i = 0; i < maxBatches; i++) {
+    const rows = await env.DB.prepare(
+      `SELECT id, project_id, asset_id FROM (
+         SELECT id, project_id, asset_id, created_at,
+                ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY created_at DESC, id DESC) AS rn
+         FROM asset_revisions WHERE asset_type = 'doc'
+       ) WHERE rn > 1 AND created_at < ? LIMIT ?`,
+    ).bind(cutoff, batch).all<{ id: string; project_id: string; asset_id: string }>();
+    if (rows.results.length === 0) break;
+
+    await env.ASSETS.delete(rows.results.map(r => `${r.project_id}/${r.asset_id}/v/${r.id}`));
+    for (let j = 0; j < rows.results.length; j += 50) {
+      const chunk = rows.results.slice(j, j + 50);
+      await env.DB.prepare(
+        `DELETE FROM asset_revisions WHERE id IN (${chunk.map(() => "?").join(",")})`,
+      ).bind(...chunk.map(r => r.id)).run();
+    }
+    pruned += rows.results.length;
+    if (rows.results.length < batch) break;
+  }
+  return pruned;
+}
+
 // Deletes a doc and everything keyed off it: R2 body + every revision object,
 // the docs row, asset_revisions (no FK to docs, so it never cascades),
 // doc_shares, the FTS row, and the collab DO room. The graph is reindexed
 // because a removed title may have shadowed another doc's wikilink resolution.
 // The caller must enforce permission and any preconditions (e.g. home-doc).
 export async function deleteDoc(env: Env, docId: string, projectId: string): Promise<void> {
-  const revisions = await env.DB.prepare("SELECT id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?")
-    .bind(docId).all<{ id: string }>();
-  await Promise.all([
-    env.ASSETS.delete(`${projectId}/${docId}`),
-    ...revisions.results.map(r => env.ASSETS.delete(`${projectId}/${docId}/v/${r.id}`)),
-  ]);
+  await env.ASSETS.delete(`${projectId}/${docId}`);
+  await deleteR2Prefix(env.ASSETS, `${projectId}/${docId}/v/`);
   await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
   await env.DB.prepare("DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?").bind(docId).run();
   await env.DB.prepare("DELETE FROM doc_shares WHERE doc_id = ?").bind(docId).run();

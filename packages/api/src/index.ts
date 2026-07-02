@@ -18,6 +18,7 @@ import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
 import { releaseCustomDomain } from "./lib/customDomains";
+import { pruneDocRevisions } from "./lib/docOps";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
@@ -54,6 +55,16 @@ export interface Env {
 }
 
 export default {
+  // Daily cron (see wrangler.toml [triggers]): revision retention. Keeps each
+  // doc's newest revision unconditionally; see pruneDocRevisions.
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      pruneDocRevisions(env)
+        .then(n => { if (n > 0) console.log(`[retention] pruned ${n} doc revisions`); })
+        .catch(err => console.error("[retention] prune failed:", err)),
+    );
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 

@@ -1,8 +1,47 @@
 import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
-import { createDoc, applyDocUpdate, deleteDoc, type DocUpdateRow } from "../lib/docOps";
+import { createDoc, applyDocUpdate, deleteDoc, snapshotDocRevision, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
 import type { Env } from "../index";
 import { resolveAccess } from "../lib/access";
+
+interface RevisionRow {
+  id: string;
+  editor_id: string;
+  editor_name: string;
+  created_at: string;
+  changelog: string | null;
+  contributors: string | null;
+  title: string | null;
+}
+
+// Builds the gatherContributors callback shared by the content PUT and the
+// revision-restore endpoint: collects (and clears) the collab DO's tracked
+// editor set so a revision written after a realtime session credits everyone
+// who typed. applyDocUpdate invokes it only when the body actually changed.
+function collabContributorsGatherer(
+  env: Env,
+  projectId: string,
+  docId: string,
+  userId: string,
+  userName: string,
+): () => Promise<string | null> {
+  return async () => {
+    if (!env.DOC_COLLAB) return null;
+    try {
+      const roomId = env.DOC_COLLAB.idFromName(`${projectId}:${docId}`);
+      const resp = await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/contributors"));
+      if (resp.ok) {
+        const { editors } = await resp.json<{ editors: { id: string; name: string }[] }>();
+        const all = [
+          { id: userId, name: userName },
+          ...editors.filter(e => e.id !== userId),
+        ];
+        if (all.length > 1) return JSON.stringify(all);
+      }
+    } catch { /* non-fatal */ }
+    return null;
+  };
+}
 
 export async function handleDocs(
   request: Request,
@@ -129,8 +168,74 @@ export async function handleDocs(
     return okResponse({ ok: true });
   }
 
+  // POST /docs/:id/revisions/:revisionId/restore - same gate as the content
+  // PUT: editor+ OR a doc_share with permission = 'edit'. Applies the stored
+  // revision's content (and title, when captured) through applyDocUpdate so
+  // the restore itself becomes a new revision with a changelog, instead of the
+  // client re-PUTting downloaded content.
+  if (docId && subResource === "revisions" && subId && parts[3] === "restore" && !parts[4] && request.method === "POST") {
+    const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocUpdateRow>();
+    if (!doc) return errorResponse(Errors.NOT_FOUND);
+
+    const caller = await resolveAccess(env.DB, doc.project_id, user.userId);
+    if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) {
+      const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?")
+        .bind(docId, user.userId).first<{ permission: string }>();
+      if (!share || share.permission !== "edit") return errorResponse(Errors.FORBIDDEN);
+    }
+
+    const revision = await env.DB.prepare(
+      "SELECT id, title, created_at FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
+    ).bind(subId, docId).first<{ id: string; title: string | null; created_at: string }>();
+    if (!revision) return errorResponse(Errors.NOT_FOUND);
+    // Unlike the read path (which renders a missing snapshot as ""), the
+    // write path must fail hard: restoring an orphaned revision row would
+    // silently wipe the live doc to empty.
+    const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}/v/${subId}`);
+    if (!r2Object) return errorResponse(Errors.NOT_FOUND);
+    const content = await r2Object.text();
+
+    let changelog: string | undefined;
+    try {
+      const body = await request.json<{ changelog?: string }>();
+      if (typeof body?.changelog === "string" && body.changelog.trim() !== "") changelog = body.changelog;
+    } catch { /* empty or non-JSON body - use the auto changelog */ }
+    if (changelog === undefined) changelog = `Restored version from ${revision.created_at}`;
+
+    const patch: DocUpdatePatch = { content, changelog };
+    // Old revisions (pre-title-versioning) have a NULL title - leave the
+    // current title untouched for those.
+    if (revision.title !== null) patch.title = revision.title;
+
+    const { updated, savedContent } = await applyDocUpdate(env, doc, user.userId, caller.name, patch, {
+      gatherContributors: collabContributorsGatherer(env, doc.project_id, docId, user.userId, caller.name),
+    });
+
+    // A title-only restore (content already matches the latest revision)
+    // still mutates the doc, so it must leave a history entry - applyDocUpdate
+    // only writes revisions on content changes, which would otherwise drop
+    // this restore's changelog and record nothing.
+    if (savedContent === undefined && patch.title !== undefined && patch.title !== doc.title) {
+      await snapshotDocRevision(env, {
+        projectId: doc.project_id,
+        docId,
+        content,
+        title: patch.title,
+        editorId: user.userId,
+        editorName: caller.name,
+        changelog,
+      });
+    }
+
+    // Same shape as the PUT. Restoring the already-current content and title
+    // is a valid no-op: the doc is returned without content and no revision
+    // is written.
+    return okResponse(savedContent !== undefined ? { ...updated, content: savedContent } : updated);
+  }
+
   // GET /docs/:id/revisions/:revisionId - any member (limited must have a doc_share)
-  if (docId && subResource === "revisions" && subId && request.method === "GET") {
+  if (docId && subResource === "revisions" && subId && !parts[3] && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
     const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
@@ -140,15 +245,19 @@ export async function handleDocs(
       if (!share) return errorResponse(Errors.FORBIDDEN);
     }
     const revision = await env.DB.prepare(
-      "SELECT id, editor_id, editor_name, created_at, changelog, contributors FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
-    ).bind(subId, docId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null; contributors: string | null }>();
+      "SELECT id, editor_id, editor_name, created_at, changelog, contributors, title FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
+    ).bind(subId, docId).first<RevisionRow>();
     if (!revision) return errorResponse(Errors.NOT_FOUND);
     const r2Object = await env.ASSETS.get(`${meta.project_id}/${docId}/v/${subId}`);
     const content = r2Object ? await r2Object.text() : "";
     return okResponse({ ...revision, content });
   }
 
-  // GET /docs/:id/revisions - any member (limited must have a doc_share)
+  // GET /docs/:id/revisions[?limit=N&before=ISO&beforeId=ID] - any member
+  // (limited must have a doc_share). Keyset-paginated: when before+beforeId
+  // are given, returns only rows strictly older than that (created_at, id)
+  // pair. Response stays a plain array; clients infer another page when they
+  // receive exactly `limit` rows.
   if (docId && subResource === "revisions" && !subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
@@ -158,9 +267,17 @@ export async function handleDocs(
       const share = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first();
       if (!share) return errorResponse(Errors.FORBIDDEN);
     }
-    const rows = await env.DB.prepare(
-      "SELECT id, editor_id, editor_name, created_at, changelog, contributors FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC",
-    ).bind(docId).all<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null; contributors: string | null }>();
+    const limitRaw = parseInt(params.get("limit") ?? "", 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+    const before = params.get("before");
+    const beforeId = params.get("beforeId");
+    const rows = before && beforeId
+      ? await env.DB.prepare(
+          "SELECT id, editor_id, editor_name, created_at, changelog, contributors, title FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?",
+        ).bind(docId, before, before, beforeId, limit).all<RevisionRow>()
+      : await env.DB.prepare(
+          "SELECT id, editor_id, editor_name, created_at, changelog, contributors, title FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+        ).bind(docId, limit).all<RevisionRow>();
     return okResponse(rows.results);
   }
 
@@ -228,22 +345,7 @@ export async function handleDocs(
     const { updated, savedContent } = await applyDocUpdate(env, doc, user.userId, caller.name, body, {
       // Collect collab contributors (clears the DO's tracked set for the next
       // session). Runs only when the body actually changed.
-      gatherContributors: async () => {
-        if (!env.DOC_COLLAB) return null;
-        try {
-          const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
-          const resp = await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/contributors"));
-          if (resp.ok) {
-            const { editors } = await resp.json<{ editors: { id: string; name: string }[] }>();
-            const all = [
-              { id: user.userId, name: caller.name },
-              ...editors.filter(e => e.id !== user.userId),
-            ];
-            if (all.length > 1) return JSON.stringify(all);
-          }
-        } catch { /* non-fatal */ }
-        return null;
-      },
+      gatherContributors: collabContributorsGatherer(env, doc.project_id, docId, user.userId, caller.name),
     });
 
     // Only echo content when it was sent. Clients toggling settings already

@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
+import { deleteR2Prefix } from "../lib/docOps";
 import { upsertFtsRow, deleteFtsForProject } from "../lib/fts";
 import { resolveRole } from "../lib/access";
 import { releaseCustomDomain } from "../lib/customDomains";
@@ -441,33 +442,34 @@ export async function handleProjects(
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.NOT_FOUND);
 
-    // Collect all docs and their revisions for R2 cleanup
+    // Collect all docs (for the asset_revisions row cleanup below) and files.
     const docs = await env.DB.prepare("SELECT id FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string }>();
     const docIds = docs.results.map(d => d.id);
-
-    const revisions = docIds.length > 0
-      ? await env.DB.prepare(
-          `SELECT asset_id, id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${docIds.map(() => "?").join(",")})`,
-        ).bind(...docIds).all<{ asset_id: string; id: string }>()
-      : { results: [] };
-
-    // Collect all files for R2 cleanup
     const files = await env.DB.prepare("SELECT id FROM files WHERE project_id = ?").bind(projectId).all<{ id: string }>();
 
-    // Delete R2 assets in parallel
-    await Promise.all([
-      ...docIds.map(docId => env.ASSETS.delete(`${projectId}/${docId}`)),
-      ...revisions.results.map(r => env.ASSETS.delete(`${projectId}/${r.asset_id}/v/${r.id}`)),
-      ...files.results.map(f => env.ASSETS.delete(`files/${f.id}`)),
-      env.ASSETS.delete(`site-logos/${projectId}-square`),
-      env.ASSETS.delete(`site-logos/${projectId}-wide`),
-    ]);
+    // Every doc body (`{projectId}/{docId}`) and every revision snapshot
+    // (`{projectId}/{docId}/v/{revId}`) lives under the `{projectId}/` prefix,
+    // so one batched prefix sweep removes them all - including revision objects
+    // orphaned by a failed insert, which a per-D1-row delete would leak. Files
+    // and logos live under other prefixes and are deleted by key, batched
+    // (R2's array delete takes up to 1000 keys per call).
+    await deleteR2Prefix(env.ASSETS, `${projectId}/`);
+    const otherKeys = [
+      ...files.results.map(f => `files/${f.id}`),
+      `site-logos/${projectId}-square`,
+      `site-logos/${projectId}-wide`,
+    ];
+    for (let i = 0; i < otherKeys.length; i += 1000) {
+      await env.ASSETS.delete(otherKeys.slice(i, i + 1000));
+    }
 
-    // Delete orphaned asset_revisions (no cascade on this table)
-    if (docIds.length > 0) {
+    // Delete orphaned asset_revisions rows (no cascade on this table), chunked
+    // so a project with many docs stays well under D1's bound-parameter limit.
+    for (let i = 0; i < docIds.length; i += 50) {
+      const chunk = docIds.slice(i, i + 50);
       await env.DB.prepare(
-        `DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${docIds.map(() => "?").join(",")})`,
-      ).bind(...docIds).run();
+        `DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${chunk.map(() => "?").join(",")})`,
+      ).bind(...chunk).run();
     }
 
     // Release the Cloudflare custom hostname (if any) before the project row -

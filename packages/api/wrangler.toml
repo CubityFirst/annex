@@ -4,6 +4,11 @@ compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
+# Daily revision-retention sweep (pruneDocRevisions in lib/docOps.ts): doc
+# revisions older than 90 days are pruned, always keeping each doc's newest.
+[triggers]
+crons = ["0 4 * * *"]
+
 [[durable_objects.bindings]]
 name = "DOC_COLLAB"
 class_name = "DocCollabRoom"

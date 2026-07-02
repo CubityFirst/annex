@@ -40,9 +40,11 @@ import {
   Upload,
   Building2,
   Menu,
+  LayoutGrid,
 } from "lucide-react";
 import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
@@ -60,6 +62,8 @@ interface Project {
   is_hidden: number;
   features: number;
   logo_square_updated_at: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
 }
 
 // Orgs the current user can create a site under (admin+ only - the API gates
@@ -149,92 +153,114 @@ export interface DocsLayoutContext {
   openCreateOrg: () => void;
 }
 
-const PAGE_SIZE = 10;
-
 function ProjectSwitcher({
   currentProject,
   projects,
   onSelect,
+  onAllSites,
+  onCreateSite,
 }: {
   currentProject: Project;
   projects: Project[];
   onSelect: (id: string) => void;
+  onAllSites: () => void;
+  onCreateSite: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
 
-  const filtered = query.trim()
-    ? projects.filter(p => p.name.toLowerCase().includes(query.toLowerCase()))
-    : projects;
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const visible = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  // Each site lands in exactly one group: Favourites, then one group per org,
+  // then the ungrouped rest. Incoming order (favourites first, newest first -
+  // set by the API + the fetch-time sort) is preserved within each group.
+  const favourites = projects.filter(p => p.is_favourite);
+  const rest = projects.filter(p => !p.is_favourite);
+  const orgGroups = new Map<string, { name: string; sites: Project[] }>();
+  const personal: Project[] = [];
+  for (const p of rest) {
+    if (p.organization_id && p.organization_name) {
+      const group = orgGroups.get(p.organization_id) ?? { name: p.organization_name, sites: [] };
+      group.sites.push(p);
+      orgGroups.set(p.organization_id, group);
+    } else {
+      personal.push(p);
+    }
+  }
 
-  function handleOpenChange(next: boolean) {
-    setOpen(next);
-    if (!next) { setQuery(""); setPage(0); }
+  function renderSite(p: Project) {
+    const isCurrent = p.id === currentProject.id;
+    return (
+      <CommandItem
+        key={p.id}
+        value={p.id}
+        keywords={p.organization_name ? [p.name, p.organization_name] : [p.name]}
+        onSelect={() => {
+          setOpen(false);
+          if (!isCurrent) onSelect(p.id);
+        }}
+        className={cn(isCurrent && "font-medium")}
+      >
+        <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="size-4" />
+        <span className="flex-1 truncate">{p.name}</span>
+        {isCurrent && <Check className="size-4 shrink-0 text-primary" />}
+      </CommandItem>
+    );
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex flex-1 min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent group">
+        <button className="flex flex-1 min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent group">
+          <ProjectSquareLogo
+            projectId={currentProject.id}
+            logoSquareUpdatedAt={currentProject.logo_square_updated_at}
+            className="size-4"
+          />
           <span className="flex-1 truncate font-semibold tracking-tight text-sm">{currentProject.name}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-data-[state=open]:rotate-180" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-56 p-1">
-        <div className="px-1 pb-1">
-          <Input
-            placeholder="Search sites…"
-            aria-label="Search sites"
-            value={query}
-            onChange={e => { setQuery(e.target.value); setPage(0); }}
-            className="h-8 text-base sm:text-xs"
-            autoFocus
-          />
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {visible.length === 0 ? (
-            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No sites found</p>
-          ) : visible.map(p => (
-            <button
-              key={p.id}
-              onClick={() => { onSelect(p.id); handleOpenChange(false); }}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-left transition-colors hover:bg-accent",
-                p.id === currentProject.id ? "font-medium" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-3.5 w-3.5" />
-              <span className="flex-1 truncate">{p.name}</span>
-              {p.id === currentProject.id && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-            </button>
-          ))}
-        </div>
-        {totalPages > 1 && (
-          <div className="mt-1 flex items-center justify-between border-t border-border px-1 pt-1">
-            <button
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
-              aria-label="Previous page"
-              className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-            <span className="text-[11px] text-muted-foreground tabular-nums">
-              {page + 1} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-              disabled={page === totalPages - 1}
-              aria-label="Next page"
-              className="rounded p-2 sm:p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
-            >
-              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </div>
-        )}
+      <PopoverContent align="start" sideOffset={6} className="w-64 p-0">
+        <Command
+          // Site ids are random strings, so scoring against `value` would let a
+          // query accidentally match an id. Match on keywords (name + org) only.
+          filter={(_value, search, keywords) =>
+            (keywords ?? []).join(" ").toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+          }
+        >
+          <CommandInput placeholder="Search sites…" autoFocus />
+          <CommandList>
+            <CommandEmpty>No sites found.</CommandEmpty>
+            {favourites.length > 0 && (
+              <CommandGroup heading="Favourites">{favourites.map(renderSite)}</CommandGroup>
+            )}
+            {[...orgGroups.entries()].map(([orgId, group]) => (
+              <CommandGroup key={orgId} heading={group.name}>{group.sites.map(renderSite)}</CommandGroup>
+            ))}
+            {personal.length > 0 && (
+              <CommandGroup heading={favourites.length > 0 || orgGroups.size > 0 ? "Other sites" : "Sites"}>
+                {personal.map(renderSite)}
+              </CommandGroup>
+            )}
+            <CommandSeparator />
+            <CommandGroup>
+              <CommandItem
+                value="all-sites"
+                keywords={["all sites", "dashboard"]}
+                onSelect={() => { setOpen(false); onAllSites(); }}
+              >
+                <LayoutGrid className="size-4" />
+                All sites
+              </CommandItem>
+              <CommandItem
+                value="new-site"
+                keywords={["new site", "create site"]}
+                onSelect={() => { setOpen(false); onCreateSite(); }}
+              >
+                <Plus className="size-4" />
+                New site
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   );
@@ -682,6 +708,8 @@ export function DocsLayout() {
                 currentProject={currentProject}
                 projects={visibleProjects}
                 onSelect={id => navigate(`/projects/${id}`)}
+                onAllSites={() => navigate("/dashboard")}
+                onCreateSite={() => setCreating(true)}
               />
               <NavLink
                 to={`/projects/${projectId}/settings`}

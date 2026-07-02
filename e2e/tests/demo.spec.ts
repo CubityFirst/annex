@@ -51,10 +51,12 @@ test.describe("demo sandbox", () => {
   test("file manager lists seeded content and search finds it", async ({ page }) => {
     await enterDemo(page);
     await page.click('div.cursor-pointer:has-text("Demo Site")');
-    await expect(page.getByText("Welcome to the Annex demo")).toBeVisible();
-    await expect(page.getByText("demo-illustration.svg")).toBeVisible();
-    await expect(page.getByText("session-zero-notes.txt")).toBeVisible();
-    await expect(page.getByText("Guides")).toBeVisible();
+    // The doc title appears in both the sidebar tree and the file-manager
+    // list, so a bare getByText trips strict mode.
+    await expect(page.getByText("Welcome to the Annex demo").first()).toBeVisible();
+    await expect(page.getByText("demo-illustration.svg").first()).toBeVisible();
+    await expect(page.getByText("session-zero-notes.txt").first()).toBeVisible();
+    await expect(page.getByText("Guides").first()).toBeVisible();
 
     await page.keyboard.press("Control+k");
     await page.fill("[cmdk-input]", "coffee");
@@ -89,6 +91,7 @@ test.describe("demo sandbox", () => {
     await scrollUntilVisible(page, page.locator(".cm-content").getByText("Edited locally in the demo e2e test."));
 
     await page.click('button[title="View history"]');
+    await expect(page.getByText("Current version")).toBeVisible();
     await expect(page.getByText("Added the feature checklist")).toBeVisible();
   });
 

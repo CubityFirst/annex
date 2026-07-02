@@ -6,6 +6,7 @@ import * as decoding from "lib0/decoding";
 import type { Env } from "../index";
 import { ROLE_RANK } from "../lib";
 import { resolveAccess } from "../lib/access";
+import { latestDocRevisionContent, snapshotDocRevision } from "../lib/docOps";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -102,6 +103,8 @@ export class DocCollabRoom implements DurableObject {
   private editors: Map<string, string> | null = null; // userId → userName
   private lastAlarmSetAt = 0;
   private frozen = false;
+  // Re-entrancy guard for the session-end checkpoint (see checkpointRevision).
+  private checkpointing = false;
   private pendingDeltaBytes = 0;
   // True once the room has a known content baseline - either a snapshot was
   // restored from storage or a client synced content in. Until then the
@@ -487,6 +490,16 @@ export class DocCollabRoom implements DurableObject {
       }
 
       if (this.ctx.getWebSockets().length === 0) {
+        // Session-end checkpoint revision, BEFORE persist(): a doc with no
+        // revisions yet compares against the live R2 body as its baseline,
+        // and persist() is about to mirror this session's text over it.
+        // Fully defensive - a checkpoint failure must never break the
+        // persist/eviction path.
+        try {
+          await this.checkpointRevision();
+        } catch (err) {
+          console.error("[DocCollabRoom] session-end checkpoint error:", err);
+        }
         await this.persist();
         // Schedule eviction 7 days from now; a reconnect will cancel this via the next edit alarm
         this.ctx.storage.setAlarm(Date.now() + 7 * 24 * 60 * 60 * 1000).catch(() => { /* */ });
@@ -523,6 +536,69 @@ export class DocCollabRoom implements DurableObject {
       }
     } catch (err) {
       console.error("[DocCollabRoom] alarm error:", err);
+    }
+  }
+
+  // Session-end checkpoint: when the last socket closes and this session had
+  // edits (tracked editors set non-empty) that nobody explicitly saved, write
+  // a revision through the shared side-effect chain (v/ snapshot,
+  // asset_revisions row, FTS, doc-link graph, AI-summary invalidation,
+  // docs.updated_at) so the session leaves a history entry and none of those
+  // indexes go stale. Attributed to the first tracked editor, with the full
+  // editor list as contributors when there was more than one; changelog NULL.
+  // Deliberately NOT run from the alarm-driven persist - only on session end -
+  // so long sessions don't spam revisions.
+  private async checkpointRevision(): Promise<void> {
+    if (!this.ydoc || this.frozen || !this.contentLoaded) return;
+    if (!this.editors || this.editors.size === 0) return;
+    // Two sockets closing back-to-back can both observe getWebSockets() empty
+    // and race into this method; the baseline read awaits D1/R2 (not DO
+    // storage), so the input gate alone doesn't serialize them. The in-memory
+    // flag makes the second caller a no-op instead of a duplicate revision.
+    if (this.checkpointing) return;
+    this.checkpointing = true;
+    try {
+      const docKey = await this.ctx.storage.get<string>("docKey");
+      if (!docKey) return;
+      const slash = docKey.indexOf("/");
+      if (slash <= 0) return;
+      const projectId = docKey.slice(0, slash);
+      const docId = docKey.slice(slash + 1);
+
+      const text = this.ydoc.getText("content").toString();
+
+      // Same baseline as applyDocUpdate: the latest revision's content, falling
+      // back to the live R2 body for docs with no revisions yet. Runs BEFORE
+      // persist() mirrors the Y text over the live body, so the fallback still
+      // reflects the pre-session content.
+      const baseline = await latestDocRevisionContent(this.env, projectId, docId);
+      const oldContent = baseline !== null ? baseline : await (async () => {
+        const obj = await this.env.ASSETS.get(docKey);
+        return obj ? await obj.text() : "";
+      })();
+      if (text === oldContent) return;
+
+      const doc = await this.env.DB.prepare("SELECT title FROM docs WHERE id = ?").bind(docId).first<{ title: string }>();
+      if (!doc) return; // doc deleted while the room was open
+
+      const editors = Array.from(this.editors.entries()).map(([id, name]) => ({ id, name }));
+      await snapshotDocRevision(this.env, {
+        projectId,
+        docId,
+        content: text,
+        title: doc.title,
+        editorId: editors[0].id,
+        editorName: editors[0].name,
+        changelog: null,
+        contributors: editors.length > 1 ? JSON.stringify(editors) : null,
+      });
+
+      // Mirror the internal /contributors GET: the tracked set is consumed by
+      // the revision that captured it.
+      await this.ctx.storage.delete("editors");
+      this.editors.clear();
+    } finally {
+      this.checkpointing = false;
     }
   }
 
