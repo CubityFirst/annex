@@ -162,3 +162,63 @@ describe("SearchPalette", () => {
     expect(navigate).toHaveBeenCalledWith("/projects/p1/folders/fo1");
   });
 });
+
+describe("SearchPalette (dashboard mode)", () => {
+  const SITES = [
+    { id: "p1", name: "Campaign Notes", logo_square_updated_at: null },
+    { id: "p2", name: "Recipe Book", logo_square_updated_at: null },
+  ];
+
+  it("lists all sites and dashboard actions with no query, without fetching", () => {
+    const fetchMock = mockFetch({});
+    renderPalette({ projectId: null, sites: SITES, onCreateSite: () => {}, onCreateOrg: () => {} });
+    expect(screen.getByPlaceholderText("Search sites…")).toBeInTheDocument();
+    expect(screen.getByText("Sites")).toBeInTheDocument();
+    expect(screen.getByText("Campaign Notes")).toBeInTheDocument();
+    expect(screen.getByText("Recipe Book")).toBeInTheDocument();
+    expect(screen.getByText("New site")).toBeInTheDocument();
+    expect(screen.getByText("New organization")).toBeInTheDocument();
+    expect(screen.getByText("User settings")).toBeInTheDocument();
+    // Site-only chrome stays hidden: no tag toggle, no server search.
+    expect(screen.queryByText("Tags")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("filters sites client-side and navigates on select", async () => {
+    const fetchMock = mockFetch({});
+    renderPalette({ projectId: null, sites: SITES });
+    await userEvent.type(screen.getByPlaceholderText("Search sites…"), "recipe");
+    expect(screen.queryByText("Campaign Notes")).not.toBeInTheDocument();
+    const fragment = screen.getByText("Recipe");
+    await userEvent.click(fragment.closest("[cmdk-item]") as HTMLElement);
+    expect(navigate).toHaveBeenCalledWith("/projects/p2");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("omits create actions when their callbacks are unset", () => {
+    mockFetch({});
+    renderPalette({ projectId: null, sites: SITES });
+    expect(screen.queryByText("New site")).not.toBeInTheDocument();
+    expect(screen.queryByText("New organization")).not.toBeInTheDocument();
+    expect(screen.getByText("User settings")).toBeInTheDocument();
+  });
+
+  it("runs the New site action and navigates to user settings", async () => {
+    mockFetch({});
+    const onCreateSite = vi.fn();
+    const { unmount } = renderPalette({ projectId: null, sites: SITES, onCreateSite });
+    await userEvent.click(screen.getByText("New site"));
+    expect(onCreateSite).toHaveBeenCalled();
+    unmount();
+    renderPalette({ projectId: null, sites: SITES });
+    await userEvent.click(screen.getByText("User settings"));
+    expect(navigate).toHaveBeenCalledWith("/settings");
+  });
+
+  it("shows no-results when the query matches nothing", async () => {
+    mockFetch({});
+    renderPalette({ projectId: null, sites: SITES });
+    await userEvent.type(screen.getByPlaceholderText("Search sites…"), "zzz");
+    expect((await screen.findAllByText("No results found.")).length).toBeGreaterThan(0);
+  });
+});

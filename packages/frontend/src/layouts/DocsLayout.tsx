@@ -377,9 +377,9 @@ export function DocsLayout() {
     });
   }, [projectId]);
 
-  // full-text search palette
+  // full-text search palette (in-site) / site switcher (dashboard)
   const [searchOpen, setSearchOpen] = useState(false);
-  const openSearch = useCallback(() => { if (projectId) setSearchOpen(true); }, [projectId]);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -655,6 +655,23 @@ export function DocsLayout() {
     openCreateOrg: () => setCreatingOrg(true),
   };
 
+  // Shared by the project and overview sidebars so the palette entry looks
+  // identical in both.
+  const searchEntry = (
+    <button
+      onClick={openSearch}
+      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}
+    >
+      <span className="flex items-center gap-1.5">
+        <Search className="h-3.5 w-3.5 shrink-0" />
+        Search
+      </span>
+      <Kbd className="hidden sm:inline-flex">
+        {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}
+      </Kbd>
+    </button>
+  );
+
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
@@ -742,18 +759,7 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
-              <button
-                onClick={openSearch}
-                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Search className="h-3.5 w-3.5 shrink-0" />
-                  Search
-                </span>
-                <Kbd className="hidden sm:inline-flex">
-                  {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}
-                </Kbd>
-              </button>
+              {searchEntry}
               <div className="flex items-center mb-1">
                 <NavLink
                   to={`/projects/${projectId}`}
@@ -808,6 +814,7 @@ export function DocsLayout() {
           /* ── Overview sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-1">
+              {searchEntry}
               {visibleProjects.map(p => (
                 <Button
                   key={p.id}
@@ -964,14 +971,15 @@ export function DocsLayout() {
         </div>
       </main>
       </div>
-      {projectId && (
-        <SearchPalette
-          open={searchOpen}
-          onOpenChange={setSearchOpen}
-          projectId={projectId}
-          role={currentProject?.role ?? null}
-        />
-      )}
+      <SearchPalette
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        projectId={projectId ?? null}
+        role={currentProject?.role ?? null}
+        sites={visibleProjects}
+        onCreateSite={() => setCreating(true)}
+        onCreateOrg={() => setCreatingOrg(true)}
+      />
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-lg" hideClose>
           <DialogHeader>

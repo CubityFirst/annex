@@ -12,8 +12,9 @@ import { getToken } from "@/lib/auth";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
-import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, type LucideIcon } from "lucide-react";
+import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
 interface DocHit {
   doc_id: string;
@@ -144,16 +145,29 @@ function HitMeta({ folder, updatedAt }: { folder: string | null; updatedAt?: str
   );
 }
 
+/** Minimal site shape needed by the dashboard-mode site list. */
+export interface PaletteSite {
+  id: string;
+  name: string;
+  logo_square_updated_at: string | null;
+}
+
 interface SearchPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: string;
+  /** Site to search within, or null for dashboard mode (site switcher + global actions, no server search). */
+  projectId: string | null;
   isPublic?: boolean;
   /** Caller's effective role on the site; gates the quick actions. */
   role?: string | null;
+  /** Sites listed in dashboard mode. Ignored when projectId is set. */
+  sites?: PaletteSite[];
+  /** Dashboard-mode quick actions; each is omitted from the list when unset. */
+  onCreateSite?: () => void;
+  onCreateOrg?: () => void;
 }
 
-export function SearchPalette({ open, onOpenChange, projectId, isPublic = false, role = null }: SearchPaletteProps) {
+export function SearchPalette({ open, onOpenChange, projectId, isPublic = false, role = null, sites = [], onCreateSite, onCreateOrg }: SearchPaletteProps) {
   const [query, setQuery] = useState("");
   const [docs, setDocs] = useState<DocHit[]>([]);
   const [files, setFiles] = useState<FileHit[]>([]);
@@ -164,12 +178,19 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const navigate = useNavigate();
   const route = useSiteRoute();
 
-  const tagMode = query.startsWith("#");
+  const isDashboard = projectId === null;
+  const tagMode = !isDashboard && query.startsWith("#");
   const searchTerm = tagMode ? query.slice(1) : query;
-  const resultCount = docs.length + files.length + folders.length;
+  const siteHits = isDashboard
+    ? sites.filter(s => s.name.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+    : [];
+  const resultCount = isDashboard
+    ? (searchTerm.trim() ? siteHits.length : 0)
+    : docs.length + files.length + folders.length;
 
   const search = useCallback(
     async (q: string) => {
+      if (!projectId) return;
       const isTag = q.startsWith("#");
       const term = isTag ? q.slice(1) : q;
       if (!term.trim()) { setDocs([]); setFiles([]); setFolders([]); setLoading(false); return; }
@@ -213,11 +234,11 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
       setQuery(""); setDocs([]); setFiles([]); setFolders([]); setLoading(false);
       return;
     }
-    setRecent(isPublic ? [] : readRecentItems(projectId));
+    setRecent(isPublic || !projectId ? [] : readRecentItems(projectId));
   }, [open, isPublic, projectId]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || isDashboard) return;
     if (!searchTerm.trim()) {
       abortRef.current?.abort();
       setDocs([]); setFiles([]); setFolders([]); setLoading(false);
@@ -228,13 +249,14 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     setLoading(true);
     const timer = setTimeout(() => { search(query); }, 250);
     return () => clearTimeout(timer);
-  }, [query, open, search, searchTerm]);
+  }, [query, open, search, searchTerm, isDashboard]);
 
   function close() {
     onOpenChange(false);
   }
 
   function openDoc(docId: string) {
+    if (!projectId) return;
     close();
     if (isPublic) {
       // Host mode (custom domain) → clean root URL; otherwise /s/<slug>/<docId>.
@@ -260,6 +282,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   }
 
   async function createDoc() {
+    if (!projectId) return;
     const result = await apiFetchJson<{ id: string }>("/api/docs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -277,7 +300,11 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
 
   const canEdit = role === "owner" || role === "admin" || role === "editor";
   const isAdmin = role === "owner" || role === "admin";
-  const actions: QuickAction[] = isPublic ? [] : [
+  const actions: QuickAction[] = isPublic ? [] : isDashboard ? [
+    ...(onCreateSite ? [{ id: "new-site", label: "New site", icon: Plus, keywords: "create project", run: () => { close(); onCreateSite(); } }] : []),
+    ...(onCreateOrg ? [{ id: "new-org", label: "New organization", icon: Building2, keywords: "create org team group", run: () => { close(); onCreateOrg(); } }] : []),
+    { id: "user-settings", label: "User settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
+  ] : [
     ...(canEdit ? [{ id: "new-doc", label: "New document", icon: Plus, keywords: "create write page", run: createDoc }] : []),
     { id: "file-manager", label: "File Manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
     ...(isAdmin ? [{ id: "members", label: "Members", icon: Users, keywords: "invite people team roles", run: () => { close(); navigate(`/projects/${projectId}/settings#members`); } }] : []),
@@ -298,7 +325,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
-        placeholder={tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
+        placeholder={isDashboard ? "Search sites…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
         value={query}
         onValueChange={setQuery}
       />
@@ -346,6 +373,23 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
         )}
         {showEmpty && (
           <p className="py-6 text-center text-sm text-muted-foreground">No results found.</p>
+        )}
+        {isDashboard && siteHits.length > 0 && (
+          <CommandGroup heading="Sites">
+            {siteHits.map(s => (
+              <CommandItem
+                key={`site:${s.id}`}
+                value={`site:${s.id}`}
+                onSelect={() => { close(); navigate(`/projects/${s.id}`); }}
+                className="flex items-center gap-2 py-2 min-w-0"
+              >
+                <ProjectSquareLogo projectId={s.id} logoSquareUpdatedAt={s.logo_square_updated_at} className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium text-sm truncate">
+                  <HighlightedText text={s.name} term={searchTerm} />
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
         )}
         {hasTerm && docs.length > 0 && (
           <CommandGroup heading={tagMode ? "Tagged documents" : "Documents"}>
@@ -432,7 +476,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
       </CommandList>
       <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5">
         <div className="flex items-center gap-2 min-w-0">
-          <button
+          {!isDashboard && <button
             onClick={toggleTagMode}
             aria-pressed={tagMode}
             className={cn(
@@ -444,7 +488,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
           >
             <Hash className="h-3 w-3" aria-hidden="true" />
             Tags
-          </button>
+          </button>}
           {loading ? (
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground" aria-hidden="true">
               <Loader2 className="h-3 w-3 animate-spin" />
