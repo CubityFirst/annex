@@ -1,70 +1,51 @@
 // The light/dark signal that every avatar in the app derives from.
 //
-// This is the SINGLE seam for a future app-wide theme rework: nothing else
-// (the API resolver, UserAvatar, the settings toggle) decides "light vs dark"
-// - they all read this. When a real theme system lands, its only job is to
-// become this store's input (e.g. have `read()` consult the theme provider
-// when present, else fall back to this localStorage key). Keep the public
-// type a plain "dark" | "light" so that swap stays trivial.
+// Derived from the effective theme, not stored: applyThemeToRoot (lib/theme.ts)
+// is the single place that toggles the `dark` class on <html> - for all three
+// modes, including custom-palette polarity - so that class IS the effective
+// light/dark signal. Reading it (instead of ThemePrefs) keeps this store
+// correct no matter how the theme got applied: the settings control, the
+// cookie boot in main.tsx, or App.tsx resetting unthemed paths to the default.
 //
-// Persisted per-browser in localStorage (no DB) and synced across tabs via the
-// `storage` event. Default and SSR snapshot are "dark" (the app is dark-only).
+// A MutationObserver on <html>'s class attribute notifies subscribers, so
+// mounted avatars re-render (and re-request the matching variant) the moment
+// the theme changes. The server falls back to the other variant when the
+// requested one isn't uploaded, so single-variant users never break.
 
 import { useSyncExternalStore } from "react";
 
 export type AvatarVariant = "dark" | "light";
 
-const STORAGE_KEY = "cubedocs:avatar-variant";
-
 const listeners = new Set<() => void>();
 
-function notify(): void {
-  for (const l of listeners) l();
-}
-
-let storageBound = false;
-function ensureStorageListener(): void {
-  if (storageBound || typeof window === "undefined") return;
-  storageBound = true;
-  window.addEventListener("storage", (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) notify();
-  });
+let observerBound = false;
+function ensureObserver(): void {
+  if (observerBound || typeof document === "undefined") return;
+  observerBound = true;
+  new MutationObserver(() => {
+    for (const l of listeners) l();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 }
 
 function read(): AvatarVariant {
-  if (typeof localStorage === "undefined") return "dark";
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";
-  } catch {
-    return "dark";
-  }
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
+/** The variant matching the effective theme right now (non-reactive read). */
 export function getAvatarVariant(): AvatarVariant {
   return read();
 }
 
-export function setAvatarVariant(variant: AvatarVariant): void {
-  if (typeof localStorage !== "undefined") {
-    try {
-      localStorage.setItem(STORAGE_KEY, variant);
-    } catch {
-      // quota exceeded or storage disabled - still notify in-memory subscribers
-    }
-  }
-  notify();
-}
-
 function subscribe(callback: () => void): () => void {
-  ensureStorageListener();
+  ensureObserver();
   listeners.add(callback);
   return () => {
     listeners.delete(callback);
   };
 }
 
-/** [currentVariant, setVariant] - re-renders all consumers on change. */
-export function useAvatarVariant(): [AvatarVariant, (v: AvatarVariant) => void] {
-  const variant = useSyncExternalStore(subscribe, read, () => "dark" as const);
-  return [variant, setAvatarVariant];
+/** The avatar variant matching the effective theme - re-renders on theme change. */
+export function useAvatarVariant(): AvatarVariant {
+  return useSyncExternalStore(subscribe, read, () => "dark" as const);
 }

@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useAvatarVariant } from "@/lib/avatarVariant";
+import { useAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 
 function initials(name: string): string {
   return name
@@ -29,15 +29,19 @@ interface UserAvatarProps {
   // unrecognised value also collapses to default - the source of truth
   // for the allowed list lives server-side in plan.ts.
   personalPlanStyle?: string | null;
+  // Force a specific image variant regardless of the effective theme - used by
+  // the settings page so the preview tracks the variant being edited.
+  variant?: AvatarVariant;
 }
 
-export function UserAvatar({ userId, name, className, cacheBust, personalPlan, personalPlanStyle }: UserAvatarProps) {
-  // Variant is derived from the app-wide light/dark signal; the server falls
-  // back to dark when the requested variant isn't uploaded, so we always send it.
-  const [variant] = useAvatarVariant();
+export function UserAvatar({ userId, name, className, cacheBust, personalPlan, personalPlanStyle, variant }: UserAvatarProps) {
+  // Variant follows the effective theme unless overridden; the server falls
+  // back to the other variant when the requested one isn't uploaded, so we
+  // always send it.
+  const themeVariant = useAvatarVariant();
   const params = new URLSearchParams();
   if (cacheBust !== undefined) params.set("v", String(cacheBust));
-  params.set("variant", variant);
+  params.set("variant", variant ?? themeVariant);
   const src = `/api/avatar/${userId}?${params.toString()}`;
   const inner = (
     <Avatar className={className}>

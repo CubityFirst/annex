@@ -42,7 +42,7 @@ import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_E
 import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
-import { useAvatarVariant } from "@/lib/avatarVariant";
+import { getAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
 // Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
@@ -139,7 +139,10 @@ export function UserSettingsPage() {
   const [avatarPopoverOpen, setAvatarPopoverOpen] = useState(false);
   const [cropFile, setCropFile] = useState<File | null>(null);
   // Which avatar slot the toggle is viewing/editing (app-wide, per-browser).
-  const [avatarVariant, setAvatarVariant] = useAvatarVariant();
+  // Which avatar slot the upload/remove controls target. Display elsewhere
+  // follows the theme automatically (useAvatarVariant); this is page-local so
+  // the user can edit the opposite variant without changing their theme.
+  const [avatarVariant, setAvatarVariant] = useState<AvatarVariant>(getAvatarVariant);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -1109,7 +1112,7 @@ export function UserSettingsPage() {
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
-                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
+                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
                           <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             {avatarUploading
                               ? <Loader2 className="size-6 text-white animate-spin" />
