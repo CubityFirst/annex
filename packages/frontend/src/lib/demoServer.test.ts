@@ -181,3 +181,41 @@ describe("demo server revisions", () => {
     expect((await api(`/docs/${docId}/revisions`)).data).toHaveLength(before);
   });
 });
+
+describe("demo server search", () => {
+  it("returns doc hits with excerpt, folder and updated_at under data.docs", async () => {
+    const res = await api("/search?projectId=demo-project&q=coffee");
+    expect(res.ok).toBe(true);
+    const hit = res.data.docs.find((d: { title: string }) => d.title === "Coffee brewing guide");
+    expect(hit).toBeTruthy();
+    expect(hit.excerpt).toContain("<mark>");
+    expect(hit).toHaveProperty("folder");
+    expect(hit.updated_at).toBeTruthy();
+  });
+
+  it("returns filename hits with mime and folder under data.files", async () => {
+    const res = await api("/search?projectId=demo-project&q=session");
+    expect(res.ok).toBe(true);
+    const hit = res.data.files.find((f: { name: string }) => f.name === "session-zero-notes.txt");
+    expect(hit).toBeTruthy();
+    expect(hit.mime_type).toBe("text/plain");
+    expect(hit.updated_at).toBeTruthy();
+  });
+
+  it("returns tag matches with no file or folder hits", async () => {
+    const res = await api("/search?projectId=demo-project&tag=coff");
+    expect(res.ok).toBe(true);
+    expect(res.data.docs.map((d: { title: string }) => d.title)).toContain("Coffee brewing guide");
+    expect(res.data.docs[0].tags).toBeTruthy();
+    expect(res.data.files).toEqual([]);
+    expect(res.data.folders).toEqual([]);
+  });
+
+  it("returns folder-name hits under data.folders", async () => {
+    const res = await api("/search?projectId=demo-project&q=guides");
+    expect(res.ok).toBe(true);
+    const hit = res.data.folders.find((f: { name: string }) => f.name === "Guides");
+    expect(hit).toBeTruthy();
+    expect(hit.parent).toBeNull();
+  });
+});

@@ -19,7 +19,10 @@ function stripMarkdown(content: string): string {
 
 export function sanitizeFtsQuery(q: string): string {
   const words = q.replace(/['"*()^:~\-]/g, " ").trim().split(/\s+/).filter(Boolean);
-  return words.length ? words.map(w => `"${w}"`).join(" ") : '""';
+  if (!words.length) return '""';
+  // Star the final token so search-as-you-type matches partially typed words
+  // ("colla" finds "collaboration"); earlier tokens must be complete words.
+  return words.map((w, i) => (i === words.length - 1 ? `"${w}"*` : `"${w}"`)).join(" ");
 }
 
 export async function upsertFtsRow(

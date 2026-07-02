@@ -969,6 +969,7 @@ export function DocsLayout() {
           open={searchOpen}
           onOpenChange={setSearchOpen}
           projectId={projectId}
+          role={currentProject?.role ?? null}
         />
       )}
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>

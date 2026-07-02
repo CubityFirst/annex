@@ -1,24 +1,54 @@
-import { okResponse, errorResponse, Errors, type Session, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, type Session } from "../lib";
 import { sanitizeFtsQuery } from "../lib/fts";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 
-interface SearchResult {
+interface DocSearchResult {
   doc_id: string;
   title: string;
   excerpt: string;
+  folder: string | null;
+  updated_at: string;
+}
+
+interface FileSearchResult {
+  file_id: string;
+  name: string;
+  mime_type: string;
+  folder: string | null;
+  updated_at: string;
+}
+
+interface FolderSearchResult {
+  folder_id: string;
+  name: string;
+  parent: string | null;
 }
 
 interface TagSearchRow {
   doc_id: string;
   title: string;
   tags: string;
+  folder: string | null;
+  updated_at: string;
 }
 
 interface TagSearchResult {
   doc_id: string;
   title: string;
   tags: string[];
+  folder: string | null;
+  updated_at: string;
+}
+
+interface SearchResponse {
+  docs: Array<DocSearchResult | TagSearchResult>;
+  files: FileSearchResult[];
+  folders: FolderSearchResult[];
+}
+
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, m => "\\" + m);
 }
 
 export async function handleSearch(
@@ -41,9 +71,10 @@ export async function handleSearch(
     let rows;
     if (role === "limited") {
       rows = await env.DB.prepare(`
-        SELECT d.id AS doc_id, d.title, d.tags
+        SELECT d.id AS doc_id, d.title, d.tags, fo.name AS folder, d.updated_at
         FROM docs d
         JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
+        LEFT JOIN folders fo ON fo.id = d.folder_id
         WHERE d.project_id = ?
           AND d.tags IS NOT NULL
           AND EXISTS (
@@ -54,8 +85,9 @@ export async function handleSearch(
       `).bind(user.userId, projectId, tag).all<TagSearchRow>();
     } else {
       rows = await env.DB.prepare(`
-        SELECT d.id AS doc_id, d.title, d.tags
+        SELECT d.id AS doc_id, d.title, d.tags, fo.name AS folder, d.updated_at
         FROM docs d
+        LEFT JOIN folders fo ON fo.id = d.folder_id
         WHERE d.project_id = ?
           AND d.tags IS NOT NULL
           AND EXISTS (
@@ -65,43 +97,87 @@ export async function handleSearch(
         LIMIT 20
       `).bind(projectId, tag).all<TagSearchRow>();
     }
-    const data: TagSearchResult[] = rows.results.map(r => ({
+    const docs: TagSearchResult[] = rows.results.map(r => ({
       doc_id: r.doc_id,
       title: r.title,
       tags: JSON.parse(r.tags) as string[],
+      folder: r.folder,
+      updated_at: r.updated_at,
     }));
-    return okResponse(data);
+    return okResponse({ docs, files: [], folders: [] } satisfies SearchResponse);
   }
 
   const ftsQuery = sanitizeFtsQuery(q!);
 
-  let results;
+  let docsPromise;
   if (role === "limited") {
-    results = await env.DB.prepare(`
+    docsPromise = env.DB.prepare(`
       SELECT f.doc_id, f.title,
         snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
-        bm25(docs_fts) AS rank
+        fo.name AS folder, d.updated_at,
+        bm25(docs_fts, 5.0, 1.0) AS rank
       FROM docs_fts f
       JOIN doc_shares ds ON ds.doc_id = f.doc_id AND ds.user_id = ?
+      JOIN docs d ON d.id = f.doc_id
+      LEFT JOIN folders fo ON fo.id = d.folder_id
       WHERE docs_fts MATCH ?
         AND f.project_id = ?
       ORDER BY rank
       LIMIT 20
-    `).bind(user.userId, ftsQuery, projectId).all<SearchResult>();
+    `).bind(user.userId, ftsQuery, projectId).all<DocSearchResult>();
   } else {
-    results = await env.DB.prepare(`
+    docsPromise = env.DB.prepare(`
       SELECT f.doc_id, f.title,
         snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
-        bm25(docs_fts) AS rank
+        fo.name AS folder, d.updated_at,
+        bm25(docs_fts, 5.0, 1.0) AS rank
       FROM docs_fts f
+      JOIN docs d ON d.id = f.doc_id
+      LEFT JOIN folders fo ON fo.id = d.folder_id
       WHERE docs_fts MATCH ?
         AND f.project_id = ?
       ORDER BY rank
       LIMIT 20
-    `).bind(ftsQuery, projectId).all<SearchResult>();
+    `).bind(ftsQuery, projectId).all<DocSearchResult>();
   }
 
-  return okResponse(results.results);
+  // Limited members have no file access at all (see routes/files.ts), so
+  // filename matches are only surfaced for full members.
+  const filesPromise = role === "limited"
+    ? Promise.resolve({ results: [] as FileSearchResult[] })
+    : env.DB.prepare(`
+        SELECT fi.id AS file_id, fi.name, fi.mime_type,
+          fo.name AS folder,
+          COALESCE(fi.updated_at, fi.created_at) AS updated_at
+        FROM files fi
+        LEFT JOIN folders fo ON fo.id = fi.folder_id
+        WHERE fi.project_id = ?
+          AND fi.name LIKE '%' || ? || '%' ESCAPE '\\'
+        ORDER BY fi.name COLLATE NOCASE
+        LIMIT 10
+      `).bind(projectId, escapeLike(q!)).all<FileSearchResult>();
+
+  // Folders are hidden from limited members for the same reason as files:
+  // they can only see individually shared docs, never the folder tree.
+  const foldersPromise = role === "limited"
+    ? Promise.resolve({ results: [] as FolderSearchResult[] })
+    : env.DB.prepare(`
+        SELECT fo.id AS folder_id, fo.name, p.name AS parent
+        FROM folders fo
+        LEFT JOIN folders p ON p.id = fo.parent_id
+        WHERE fo.project_id = ?
+          AND fo.name LIKE '%' || ? || '%' ESCAPE '\\'
+        ORDER BY fo.name COLLATE NOCASE
+        LIMIT 10
+      `).bind(projectId, escapeLike(q!)).all<FolderSearchResult>();
+
+  const [docRows, fileRows, folderRows] = await Promise.all([docsPromise, filesPromise, foldersPromise]);
+
+  return okResponse({
+    docs: docRows.results,
+    files: fileRows.results,
+    folders: folderRows.results,
+  } satisfies SearchResponse);
 }
 
 export async function handlePublicSearch(
@@ -123,8 +199,9 @@ export async function handlePublicSearch(
 
   if (tag !== undefined && tag !== null) {
     const rows = await env.DB.prepare(`
-      SELECT d.id AS doc_id, d.title, d.tags
+      SELECT d.id AS doc_id, d.title, d.tags, fo.name AS folder, d.updated_at
       FROM docs d
+      LEFT JOIN folders fo ON fo.id = d.folder_id
       WHERE d.project_id = ?
         AND d.tags IS NOT NULL
         AND EXISTS (
@@ -133,12 +210,14 @@ export async function handlePublicSearch(
       ORDER BY d.title COLLATE NOCASE
       LIMIT 20
     `).bind(project.id, tag).all<TagSearchRow>();
-    const data: TagSearchResult[] = rows.results.map(r => ({
+    const docs: TagSearchResult[] = rows.results.map(r => ({
       doc_id: r.doc_id,
       title: r.title,
       tags: JSON.parse(r.tags) as string[],
+      folder: r.folder,
+      updated_at: r.updated_at,
     }));
-    return okResponse(data);
+    return okResponse({ docs, files: [], folders: [] } satisfies SearchResponse);
   }
 
   const ftsQuery = sanitizeFtsQuery(q!);
@@ -146,13 +225,17 @@ export async function handlePublicSearch(
   const results = await env.DB.prepare(`
     SELECT f.doc_id, f.title,
       snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
-      bm25(docs_fts) AS rank
+      fo.name AS folder, d.updated_at,
+      bm25(docs_fts, 5.0, 1.0) AS rank
     FROM docs_fts f
+    JOIN docs d ON d.id = f.doc_id
+    LEFT JOIN folders fo ON fo.id = d.folder_id
     WHERE docs_fts MATCH ?
       AND f.project_id = ?
     ORDER BY rank
     LIMIT 20
-  `).bind(ftsQuery, project.id).all<SearchResult>();
+  `).bind(ftsQuery, project.id).all<DocSearchResult>();
 
-  return okResponse(results.results);
+  // Public sites expose docs only - no file browser, so no file/folder hits.
+  return okResponse({ docs: results.results, files: [], folders: [] } satisfies SearchResponse);
 }

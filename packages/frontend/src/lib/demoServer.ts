@@ -783,19 +783,34 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
 
   // --- search ---
   if (seg[0] === "search" && method === "GET") {
+    const folderName = (folderId: string | null) =>
+      folderId ? (s.folders.find(f => f.id === folderId)?.name ?? null) : null;
     const q = url.searchParams.get("q");
     const tag = url.searchParams.get("tag");
     if (tag) {
       const term = tag.toLowerCase();
-      return ok(s.docs
-        .filter(d => d.tags.some(t => t.toLowerCase().includes(term)))
-        .map(d => ({ doc_id: d.id, title: d.title, tags: d.tags })));
+      return ok({
+        docs: s.docs
+          .filter(d => d.tags.some(t => t.toLowerCase().includes(term)))
+          .map(d => ({ doc_id: d.id, title: d.title, tags: d.tags, folder: folderName(d.folder_id), updated_at: d.updated_at })),
+        files: [],
+        folders: [],
+      });
     }
     const term = (q ?? "").trim();
-    if (!term) return ok([]);
-    return ok(s.docs
-      .filter(d => d.title.toLowerCase().includes(term.toLowerCase()) || d.content.toLowerCase().includes(term.toLowerCase()))
-      .map(d => ({ doc_id: d.id, title: d.title, excerpt: buildExcerpt(d.content, term) })));
+    if (!term) return ok({ docs: [], files: [], folders: [] });
+    const lower = term.toLowerCase();
+    return ok({
+      docs: s.docs
+        .filter(d => d.title.toLowerCase().includes(lower) || d.content.toLowerCase().includes(lower))
+        .map(d => ({ doc_id: d.id, title: d.title, excerpt: buildExcerpt(d.content, term), folder: folderName(d.folder_id), updated_at: d.updated_at })),
+      files: s.files
+        .filter(f => f.name.toLowerCase().includes(lower))
+        .map(f => ({ file_id: f.id, name: f.name, mime_type: f.mime_type, folder: folderName(f.folder_id), updated_at: f.created_at })),
+      folders: s.folders
+        .filter(f => f.name.toLowerCase().includes(lower))
+        .map(f => ({ folder_id: f.id, name: f.name, parent: folderName(f.parent_id) })),
+    });
   }
 
   // --- AI ---

@@ -1,0 +1,164 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { SearchPalette } from "./SearchPalette";
+import { pushRecentItem } from "@/lib/recentDocs";
+
+vi.mock("@/lib/auth", () => ({ getToken: () => "test-token", clearToken: vi.fn() }));
+
+const navigate = vi.fn();
+vi.mock("react-router-dom", async (orig) => ({
+  ...(await orig<typeof import("react-router-dom")>()),
+  useNavigate: () => navigate,
+}));
+
+Element.prototype.scrollIntoView = vi.fn();
+
+// cmdk constructs a ResizeObserver; the arrow-function mock in test/setup.ts
+// isn't constructible under vitest 4, so use a real class here.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+
+const DOC_HIT = {
+  doc_id: "d1",
+  title: "Coffee brewing guide",
+  excerpt: "the best <mark>coffee</mark> is fresh",
+  folder: "Guides",
+  updated_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+};
+
+const FILE_HIT = {
+  file_id: "f1",
+  name: "coffee-chart.png",
+  mime_type: "image/png",
+  folder: null,
+  updated_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+};
+
+function mockFetch(data: unknown) {
+  const fetchMock = vi.fn(() =>
+    Promise.resolve(new Response(JSON.stringify({ ok: true, data }), { status: 200 })),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function renderPalette(props: Partial<Parameters<typeof SearchPalette>[0]> = {}) {
+  return render(
+    <MemoryRouter>
+      <SearchPalette open onOpenChange={() => {}} projectId="p1" {...props} />
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+});
+
+describe("SearchPalette", () => {
+  it("shows recently viewed items before any query is typed", () => {
+    pushRecentItem("p1", { id: "d9", title: "Session notes", kind: "doc" });
+    mockFetch({ docs: [], files: [] });
+    renderPalette();
+    expect(screen.getByText("Recently viewed")).toBeInTheDocument();
+    expect(screen.getByText("Session notes")).toBeInTheDocument();
+  });
+
+  it("hides recents in public mode and shows the hint instead", () => {
+    pushRecentItem("p1", { id: "d9", title: "Session notes", kind: "doc" });
+    mockFetch({ docs: [], files: [] });
+    renderPalette({ isPublic: true });
+    expect(screen.queryByText("Session notes")).not.toBeInTheDocument();
+    expect(screen.getByText(/filter by tag/)).toBeInTheDocument();
+  });
+
+  it("renders grouped doc and file hits with folder context and highlighting", async () => {
+    const fetchMock = mockFetch({ docs: [DOC_HIT], files: [FILE_HIT] });
+    renderPalette();
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "coffee");
+
+    expect(await screen.findByText("Documents")).toBeInTheDocument();
+    expect(screen.getByText("Files")).toBeInTheDocument();
+    expect(screen.getByText("Guides")).toBeInTheDocument();
+    // Both the title/filename words and the excerpt term are <mark>-highlighted.
+    const marks = document.querySelectorAll("mark");
+    expect(marks.length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("2 results")).toBeInTheDocument();
+
+    const url = (fetchMock.mock.calls[0] as unknown[])[0] as string;
+    expect(url).toBe("/api/search?projectId=p1&q=coffee");
+  });
+
+  it("navigates to the file page when a file hit is selected", async () => {
+    mockFetch({ docs: [], files: [FILE_HIT] });
+    renderPalette();
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "coffee");
+    // The name is split across <mark> spans - find the unhighlighted fragment
+    // and click its enclosing cmdk item.
+    const fragment = await screen.findByText("-chart.png");
+    await userEvent.click(fragment.closest("[cmdk-item]") as HTMLElement);
+    expect(navigate).toHaveBeenCalledWith("/projects/p1/files/f1");
+  });
+
+  it("hits the tag endpoint when the query starts with #", async () => {
+    const fetchMock = mockFetch({ docs: [{ doc_id: "d1", title: "Coffee brewing guide", tags: ["coffee"], folder: null, updated_at: DOC_HIT.updated_at }], files: [] });
+    renderPalette();
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "#coff");
+    expect(await screen.findByText("Tagged documents")).toBeInTheDocument();
+    const url = (fetchMock.mock.calls[0] as unknown[])[0] as string;
+    expect(url).toBe("/api/search?projectId=p1&tag=coff");
+  });
+
+  it("shows no-results only after the response comes back empty", async () => {
+    mockFetch({ docs: [], files: [] });
+    renderPalette();
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "zzz");
+    // Appears in both the visible list and the sr-only live region.
+    expect((await screen.findAllByText("No results found.")).length).toBeGreaterThan(0);
+  });
+
+  it("role-gates the quick actions shown on the empty state", () => {
+    mockFetch({ docs: [], files: [] });
+    const { unmount } = renderPalette({ role: "owner" });
+    expect(screen.getByText("New document")).toBeInTheDocument();
+    expect(screen.getByText("Members")).toBeInTheDocument();
+    expect(screen.getByText("Site settings")).toBeInTheDocument();
+    unmount();
+    renderPalette({ role: "viewer" });
+    expect(screen.queryByText("New document")).not.toBeInTheDocument();
+    expect(screen.queryByText("Members")).not.toBeInTheDocument();
+    expect(screen.getByText("Site settings")).toBeInTheDocument();
+  });
+
+  it("filters actions by query and creates a doc via New document", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        expect(String(input)).toBe("/api/docs");
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, data: { id: "nd1" } }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, data: { docs: [], files: [], folders: [] } }), { status: 200 }));
+    }));
+    renderPalette({ role: "editor" });
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "new");
+    expect(screen.getByText("New document")).toBeInTheDocument();
+    expect(screen.queryByText("Go to dashboard")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText("New document"));
+    await vi.waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith("/projects/p1/docs/nd1", { state: { isNew: true } });
+    });
+  });
+
+  it("navigates to the folder page when a folder hit is selected", async () => {
+    mockFetch({ docs: [], files: [], folders: [{ folder_id: "fo1", name: "Guides", parent: null }] });
+    renderPalette();
+    await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "guides");
+    await userEvent.click(await screen.findByText("Guides"));
+    expect(navigate).toHaveBeenCalledWith("/projects/p1/folders/fo1");
+  });
+});
