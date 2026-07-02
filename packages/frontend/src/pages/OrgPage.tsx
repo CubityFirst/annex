@@ -177,7 +177,7 @@ export function OrgPage() {
                     <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> View public site
                   </Button>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="-ml-2 flex h-9 items-center gap-1.5 px-2 text-xs text-muted-foreground">
                     <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> Private
                   </span>
                 )}
