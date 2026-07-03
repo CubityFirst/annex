@@ -43,10 +43,13 @@ export function AuthForm({
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
             {wordmark ? (
-              // A wordmark logo is present, so emit the page heading
-              // visually-hidden to keep the existing design while still
-              // giving every AuthForm screen a top-level <h1>.
-              <h1 className="sr-only">{title}</h1>
+              // A wordmark logo is present: render it, and emit the page
+              // heading visually-hidden to keep the existing design while
+              // still giving every AuthForm screen a top-level <h1>.
+              <>
+                {wordmark}
+                <h1 className="sr-only">{title}</h1>
+              </>
             ) : (
               <>
                 <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />

@@ -489,13 +489,13 @@ export function LoginPage() {
               autoComplete="one-time-code"
               autoFocus
             >
-              <InputOTPGroup className="w-full justify-center">
-                <InputOTPSlot index={0} className="h-12 w-full max-w-12" />
-                <InputOTPSlot index={1} className="h-12 w-full max-w-12" />
-                <InputOTPSlot index={2} className="h-12 w-full max-w-12" />
-                <InputOTPSlot index={3} className="h-12 w-full max-w-12" />
-                <InputOTPSlot index={4} className="h-12 w-full max-w-12" />
-                <InputOTPSlot index={5} className="h-12 w-full max-w-12" />
+              <InputOTPGroup className="justify-center">
+                <InputOTPSlot index={0} className="h-12 w-12" />
+                <InputOTPSlot index={1} className="h-12 w-12" />
+                <InputOTPSlot index={2} className="h-12 w-12" />
+                <InputOTPSlot index={3} className="h-12 w-12" />
+                <InputOTPSlot index={4} className="h-12 w-12" />
+                <InputOTPSlot index={5} className="h-12 w-12" />
               </InputOTPGroup>
             </InputOTP>
             <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
