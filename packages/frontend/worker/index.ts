@@ -61,14 +61,28 @@ function escapeHtml(s: string): string {
 
 const META_CACHE_TTL = 43200; // 12h
 
+// Hosts that are "us" (the app / previews / local dev) rather than a customer's
+// mapped custom domain. MUST stay in sync with isAppHost in
+// packages/frontend/src/lib/siteUrl.ts - the SPA uses its copy to decide
+// whether to boot CustomDomainApp, this one decides whether to inject
+// site-scoped meta / robots / sitemap at the edge.
+export function isAppHost(host: string): boolean {
+  if (host === "localhost" || host === "127.0.0.1") return true;
+  if (host.endsWith(".local")) return true;
+  if (host === "cubityfir.st" || host.endsWith(".cubityfir.st")) return true;
+  if (host.endsWith(".workers.dev") || host.endsWith(".pages.dev")) return true;
+  return false;
+}
+
 // Fetch the base index.html and inject <title> + OpenGraph/description meta so
 // link-unfurlers (Slack, Discord, Twitter, iMessage) show a contextual preview
-// instead of the static default. Returns null if the index asset is missing so
-// the caller can fall through to normal asset serving.
+// instead of the static default, plus an optional canonical URL so search
+// engines pick one address for content reachable at several. Returns null if
+// the index asset is missing so the caller can fall through to normal serving.
 async function renderIndexWithMeta(
   env: Env,
   request: Request,
-  meta: { pageTitle: string; description: string | null; ogImage: string | null },
+  meta: { pageTitle: string; description: string | null; ogImage: string | null; canonicalUrl?: string | null },
 ): Promise<Response | null> {
   const indexRes = await env.ASSETS.fetch(new Request(new URL("/", request.url).toString(), request));
   if (!indexRes.ok) return null;
@@ -79,6 +93,8 @@ async function renderIndexWithMeta(
     meta.description ? `<meta property="og:description" content="${escapeHtml(meta.description)}" />` : "",
     meta.description ? `<meta name="description" content="${escapeHtml(meta.description)}" />` : "",
     meta.ogImage ? `<meta property="og:image" content="${escapeHtml(meta.ogImage)}" />` : "",
+    meta.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(meta.canonicalUrl)}" />` : "",
+    meta.canonicalUrl ? `<meta property="og:url" content="${escapeHtml(meta.canonicalUrl)}" />` : "",
   ].filter(Boolean).join("\n");
   html = html.replace(/<\/head>/, `${ogTags}\n</head>`);
   return new Response(html, {
@@ -129,6 +145,136 @@ export function resolveImageUrl(raw: string, requestUrl: URL, projectId: string)
   return null;
 }
 
+// ── Custom-domain (host-mode) edge serving ─────────────────────────────────
+//
+// Requests whose host isn't one of ours come in through the Cloudflare-for-SaaS
+// zone and serve exactly one published site at root URLs (docs.acme.com/,
+// docs.acme.com/<docId>). The SPA handles rendering; this worker's job is the
+// parts a client-side app can't do: per-doc OG/title meta for link unfurlers,
+// a canonical URL for search engines, and robots.txt / sitemap.xml.
+
+interface ResolvedSite {
+  projectId: string;
+  vanitySlug: string | null;
+  name: string;
+  homeDocId: string | null;
+}
+
+const HOST_RESOLVE_TTL = 120; // seconds
+
+// Resolve a custom host to its published site via the API, memoized in the
+// edge cache so the per-request cost is a cache hit, not an API+D1 roundtrip.
+// Unmapped hosts aren't cached (rare, and a just-activated domain should not
+// have to wait out a negative cache).
+async function resolveCustomHost(env: Env, host: string): Promise<ResolvedSite | null> {
+  const cache = caches.default;
+  const cacheKey = new Request(`https://host-resolve.internal/${host}`);
+  const cached = await cache.match(cacheKey);
+  if (cached) return await cached.json<ResolvedSite>();
+  const res = await env.API.fetch(
+    new Request(`https://api/public/site-by-host?host=${encodeURIComponent(host)}`),
+  );
+  if (!res.ok) return null;
+  const json = await res.json<{ ok: boolean; data?: ResolvedSite }>();
+  if (!json.ok || !json.data) return null;
+  await cache.put(cacheKey, new Response(JSON.stringify(json.data), {
+    headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${HOST_RESOLVE_TTL}` },
+  }));
+  return json.data;
+}
+
+// Minimal sitemap for a custom-domain site: the root (home doc) plus every
+// doc's clean URL. The home doc is listed only as `/` so the same content
+// doesn't appear under two URLs. Pure so it can be unit-tested.
+export function buildSitemapXml(host: string, homeDocId: string | null, docIds: string[]): string {
+  const urls = ["/", ...docIds.filter(id => id !== homeDocId).map(id => `/${id}`)];
+  const entries = urls
+    .map(path => `  <url><loc>${escapeHtml(`https://${host}${path}`)}</loc></url>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>\n`;
+}
+
+// The public doc payload bits the meta injectors need (shared by the /s/ share
+// path and the custom-host path).
+interface PublicDocMeta {
+  doc: { title: string; display_title: string | null; description: string | null; image: string | null; content: string };
+  project: { id: string; name: string; vanity_slug: string | null; custom_domain: string | null };
+}
+
+async function fetchPublicDocMeta(env: Env, projectIdOrSlug: string, docId: string): Promise<PublicDocMeta | null> {
+  const res = await env.API.fetch(
+    new Request(`https://api/public/docs/${projectIdOrSlug}/${docId}`, { method: "GET" }),
+  );
+  if (!res.ok) return null;
+  const json = await res.json<{ ok: boolean; data?: PublicDocMeta }>();
+  return json.ok && json.data ? json.data : null;
+}
+
+// Serve the custom-host-specific responses; null falls through to normal
+// asset/SPA serving (which is what actually renders the site).
+async function handleCustomHost(request: Request, env: Env, url: URL, host: string): Promise<Response | null> {
+  if (request.method !== "GET") return null;
+
+  // Only page URLs (/, /<docId>) and the two crawler files need host
+  // resolution - bail before it for asset paths (/assets/*.js etc.) so they
+  // don't pay a cache match / API roundtrip on every load.
+  const isPagePath = url.pathname === "/" || /^\/[^/.]+$/.test(url.pathname);
+  if (!isPagePath && url.pathname !== "/robots.txt" && url.pathname !== "/sitemap.xml") return null;
+
+  const site = await resolveCustomHost(env, host);
+  if (!site) return null; // unmapped/unpublished → SPA shows its "not live yet" page
+
+  if (url.pathname === "/robots.txt") {
+    return new Response(`User-agent: *\nAllow: /\nSitemap: https://${host}/sitemap.xml\n`, {
+      headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "public, max-age=3600" },
+    });
+  }
+
+  if (url.pathname === "/sitemap.xml") {
+    const cache = caches.default;
+    const cacheKey = new Request(`https://custom-host-meta.internal/${host}/sitemap.xml`);
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+    const res = await env.API.fetch(new Request(`https://api/public/projects/${site.projectId}`, { method: "GET" }));
+    if (!res.ok) return null;
+    const json = await res.json<{ ok: boolean; data?: { home_doc_id: string | null; docs: Array<{ id: string }> } }>();
+    if (!json.ok || !json.data) return null;
+    const response = new Response(buildSitemapXml(host, json.data.home_doc_id, json.data.docs.map(d => d.id)), {
+      headers: { "Content-Type": "application/xml; charset=UTF-8", "Cache-Control": "public, max-age=3600" },
+    });
+    await cache.put(cacheKey, response.clone());
+    return response;
+  }
+
+  // Doc pages: `/` (home doc) and `/<docId>`. Paths with dots (favicon.ico,
+  // assets) and deeper paths fall through to normal asset serving.
+  const docMatch = url.pathname === "/" ? null : url.pathname.match(/^\/([^/.]+)$/);
+  const docId = docMatch ? docMatch[1] : url.pathname === "/" ? site.homeDocId : null;
+  if (!docId) return null;
+
+  try {
+    const cache = caches.default;
+    const cacheKey = new Request(`https://custom-host-meta.internal/${host}${url.pathname}`);
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+
+    const data = await fetchPublicDocMeta(env, site.projectId, docId);
+    if (!data) return null; // not a doc (maybe a file id) → SPA decides
+    const docTitle = data.doc.display_title ?? data.doc.title;
+    const response = await renderIndexWithMeta(env, request, {
+      pageTitle: `${docTitle} - ${data.project.name}`,
+      description: data.doc.description ?? extractFirstParagraph(data.doc.content),
+      ogImage: data.doc.image ? resolveImageUrl(data.doc.image, url, data.project.id) : null,
+      canonicalUrl: url.pathname === "/" ? `https://${host}/` : `https://${host}/${docId}`,
+    });
+    if (!response) return null;
+    await cache.put(cacheKey, response.clone());
+    return response;
+  } catch {
+    return null; // fall through to normal asset serving
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -157,6 +303,15 @@ export default {
         return await env.API.fetch(proxied);
       }
 
+      // A host that isn't ours is a mapped custom domain (Cloudflare for SaaS):
+      // serve its doc meta / robots / sitemap; anything else falls through to
+      // the normal asset/SPA serving below.
+      const host = url.hostname.toLowerCase();
+      if (!isAppHost(host)) {
+        const customResponse = await handleCustomHost(request, env, url, host);
+        if (customResponse) return customResponse;
+      }
+
       // Inject OG metadata for share links
       const shareMatch = url.pathname.match(/^\/s\/([^/]+)\/([^/]+)$/);
       if (shareMatch) {
@@ -167,35 +322,24 @@ export default {
           const cached = await cache.match(cacheKey);
           if (cached) return cached;
 
-          const metaRes = await env.API.fetch(
-            new Request(`https://api/public/docs/${projectSlug}/${docId}`, { method: "GET" }),
-          );
-          if (metaRes.ok) {
-            const json = await metaRes.json<{
-              ok: boolean;
-              data?: {
-                doc: {
-                  title: string;
-                  display_title: string | null;
-                  description: string | null;
-                  image: string | null;
-                  content: string;
-                };
-                project: { id: string; name: string };
-              };
-            }>();
-            if (json.ok && json.data) {
-              const { doc, project } = json.data;
-              const docTitle = doc.display_title ?? doc.title;
-              const pageTitle = `${docTitle} - ${project.name}`;
-              const description = doc.description ?? extractFirstParagraph(doc.content);
-              const ogImage = doc.image ? resolveImageUrl(doc.image, url, project.id) : null;
+          const data = await fetchPublicDocMeta(env, projectSlug, docId);
+          if (data) {
+            const { doc, project } = data;
+            const docTitle = doc.display_title ?? doc.title;
+            const pageTitle = `${docTitle} - ${project.name}`;
+            const description = doc.description ?? extractFirstParagraph(doc.content);
+            const ogImage = doc.image ? resolveImageUrl(doc.image, url, project.id) : null;
+            // The custom domain (when active) is the canonical address for this
+            // content; otherwise the vanity-slug path is (the same doc is also
+            // reachable under the raw project id).
+            const canonicalUrl = project.custom_domain
+              ? `https://${project.custom_domain}/${docId}`
+              : `${url.origin}/s/${project.vanity_slug ?? project.id}/${docId}`;
 
-              const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage });
-              if (response) {
-                await cache.put(cacheKey, response.clone());
-                return response;
-              }
+            const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage, canonicalUrl });
+            if (response) {
+              await cache.put(cacheKey, response.clone());
+              return response;
             }
           }
         } catch {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   normalizeHostname,
   isValidHostname,
+  isReservedHostname,
   deriveDnsRecords,
   deriveStatus,
   collectVerificationErrors,
@@ -42,6 +43,30 @@ describe("isValidHostname", () => {
   it("rejects an over-long hostname", () => {
     const long = `${"a".repeat(64)}.acme.com`;
     expect(isValidHostname(long)).toBe(false);
+  });
+});
+
+describe("isReservedHostname", () => {
+  const target = "publish.yourannex.com";
+
+  it("reserves the SaaS zone apex derived from the CNAME target", () => {
+    expect(isReservedHostname("yourannex.com", target)).toBe(true);
+    expect(isReservedHostname("docs.yourannex.com", target)).toBe(true);
+  });
+
+  it("reserves our app zone and platform zones regardless of the CNAME target", () => {
+    expect(isReservedHostname("cubityfir.st", target)).toBe(true);
+    expect(isReservedHostname("docs.cubityfir.st", target)).toBe(true);
+    expect(isReservedHostname("evil.workers.dev", target)).toBe(true);
+    expect(isReservedHostname("evil.pages.dev", target)).toBe(true);
+    expect(isReservedHostname("foo.localhost", target)).toBe(true);
+    expect(isReservedHostname("printer.local", target)).toBe(true);
+  });
+
+  it("allows ordinary customer domains", () => {
+    expect(isReservedHostname("docs.acme.com", target)).toBe(false);
+    expect(isReservedHostname("notcubityfir.st", target)).toBe(false);
+    expect(isReservedHostname("workers.dev.acme.com", target)).toBe(false);
   });
 });
 
@@ -92,6 +117,12 @@ describe("deriveStatus", () => {
       deriveStatus({ id: "x", hostname: "h", ssl: { validation_errors: [{ message: "dcv failed" }] } }),
     ).toBe("error");
   });
+
+  it("is error for dead hostname statuses (blocked/moved/deleted), not pending", () => {
+    expect(deriveStatus({ id: "x", hostname: "h", status: "blocked" })).toBe("error");
+    expect(deriveStatus({ id: "x", hostname: "h", status: "moved" })).toBe("error");
+    expect(deriveStatus({ id: "x", hostname: "h", status: "deleted" })).toBe("error");
+  });
 });
 
 describe("collectVerificationErrors", () => {
@@ -103,6 +134,12 @@ describe("collectVerificationErrors", () => {
       ssl: { validation_errors: [{ message: "ssl err" }, { message: undefined }] },
     };
     expect(collectVerificationErrors(cf)).toEqual(["host err", "ssl err"]);
+  });
+
+  it("explains a dead hostname status even when Cloudflare reports no errors", () => {
+    const errors = collectVerificationErrors({ id: "x", hostname: "h", status: "moved" });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/no longer points at us/i);
   });
 });
 

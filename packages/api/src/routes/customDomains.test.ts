@@ -145,14 +145,49 @@ describe("handleCustomDomain GET", () => {
     expect(json.data.domain).toBeNull();
   });
 
-  it("returns the mapped domain when one exists", async () => {
+  it("returns the mapped domain when one exists (active → no CF poll)", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow({ status: "active" }));
+    const res = await call(env, "GET", "/projects/p1/domain");
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { domain: { hostname: string } } };
+    expect(json.data.domain.hostname).toBe("docs.example.com");
+    expect(cfGetCustomHostname).not.toHaveBeenCalled();
+  });
+
+  it("lazily re-polls Cloudflare for a stale non-active mapping", async () => {
+    const { env, queueFirst, run } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow()); // pending, stale updated_at
+    queueFirst(makeRow({ status: "active" })); // persisted re-read
+    const res = await call(env, "GET", "/projects/p1/domain");
+    expect(res.status).toBe(200);
+    expect(cfGetCustomHostname).toHaveBeenCalledWith(env, "cf-1");
+    expect(run).toHaveBeenCalled();
+    const json = (await res.json()) as { data: { domain: { status: string } } };
+    expect(json.data.domain.status).toBe("active");
+  });
+
+  it("does not re-poll a freshly-updated pending mapping", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow({ updated_at: new Date().toISOString() }));
+    const res = await call(env, "GET", "/projects/p1/domain");
+    expect(res.status).toBe(200);
+    expect(cfGetCustomHostname).not.toHaveBeenCalled();
+  });
+
+  it("serves the cached row when the lazy re-poll fails", async () => {
+    vi.mocked(cfGetCustomHostname).mockRejectedValue(new CustomDomainError("boom", 502));
     const { env, queueFirst } = makeEnv();
     queueFirst({ features: 1 });
     queueFirst(makeRow());
     const res = await call(env, "GET", "/projects/p1/domain");
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { data: { domain: { hostname: string } } };
+    const json = (await res.json()) as { data: { domain: { hostname: string; status: string } } };
     expect(json.data.domain.hostname).toBe("docs.example.com");
+    expect(json.data.domain.status).toBe("pending");
   });
 });
 
@@ -182,6 +217,27 @@ describe("handleCustomDomain PUT", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400s when claiming a platform zone not derived from the CNAME target", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(null);
+    const res = await call(env, "PUT", "/projects/p1/domain", { hostname: "evil.workers.dev" });
+    expect(res.status).toBe(400);
+    expect(cfCreateCustomHostname).not.toHaveBeenCalled();
+  });
+
+  it("treats re-submitting the already-mapped hostname as a refresh, not a create", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow()); // existing maps the same hostname
+    queueFirst(makeRow()); // persisted re-read
+    const res = await call(env, "PUT", "/projects/p1/domain", { hostname: "docs.example.com" });
+    expect(res.status).toBe(200);
+    expect(cfGetCustomHostname).toHaveBeenCalledWith(env, "cf-1");
+    expect(cfCreateCustomHostname).not.toHaveBeenCalled();
+    expect(cfDeleteCustomHostname).not.toHaveBeenCalled();
+  });
+
   it("409s when another site already owns the hostname", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ features: 1 });
@@ -203,7 +259,7 @@ describe("handleCustomDomain PUT", () => {
     expect(run).toHaveBeenCalled();
   });
 
-  it("retires the old Cloudflare hostname when replacing a different one", async () => {
+  it("retires the old Cloudflare hostname only AFTER the new one is registered", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ features: 1 });
     queueFirst(makeRow({ hostname: "old.example.com", cf_hostname_id: "cf-old" }));
@@ -213,6 +269,34 @@ describe("handleCustomDomain PUT", () => {
     expect(res.status).toBe(200);
     expect(cfDeleteCustomHostname).toHaveBeenCalledWith(env, "cf-old");
     expect(cfCreateCustomHostname).toHaveBeenCalled();
+    const createOrder = vi.mocked(cfCreateCustomHostname).mock.invocationCallOrder[0];
+    const deleteOrder = vi.mocked(cfDeleteCustomHostname).mock.invocationCallOrder[0];
+    expect(createOrder).toBeLessThan(deleteOrder);
+  });
+
+  it("keeps the old mapping untouched when creating the replacement fails", async () => {
+    vi.mocked(cfCreateCustomHostname).mockRejectedValue(new CustomDomainError("cf down", 502));
+    const { env, queueFirst, run } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow({ hostname: "old.example.com", cf_hostname_id: "cf-old" }));
+    queueFirst(null); // claimed
+    const res = await call(env, "PUT", "/projects/p1/domain", { hostname: "docs.example.com" });
+    expect(res.status).toBe(502);
+    expect(cfDeleteCustomHostname).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("409s and releases the just-created CF hostname on a unique-hostname race", async () => {
+    const { env, queueFirst, run } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(null); // existing
+    queueFirst(null); // claimed pre-check passes (the race)
+    run.mockRejectedValueOnce(new Error("UNIQUE constraint failed: project_custom_domains.hostname"));
+    const res = await call(env, "PUT", "/projects/p1/domain", { hostname: "docs.example.com" });
+    expect(res.status).toBe(409);
+    expect(cfDeleteCustomHostname).toHaveBeenCalledWith(env, "cf-new");
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toMatch(/already in use/);
   });
 
   it("surfaces a CustomDomainError from Cloudflare", async () => {
@@ -249,6 +333,15 @@ describe("handleCustomDomain POST /refresh", () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ features: 1 });
     queueFirst(makeRow({ cf_hostname_id: null }));
+    const res = await call(env, "POST", "/projects/p1/domain/refresh");
+    expect(res.status).toBe(200);
+    expect(cfGetCustomHostname).not.toHaveBeenCalled();
+  });
+
+  it("throttles refresh: returns the cached row without a CF call right after an update", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ features: 1 });
+    queueFirst(makeRow({ updated_at: new Date().toISOString() }));
     const res = await call(env, "POST", "/projects/p1/domain/refresh");
     expect(res.status).toBe(200);
     expect(cfGetCustomHostname).not.toHaveBeenCalled();

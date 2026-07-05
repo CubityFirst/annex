@@ -86,13 +86,17 @@ export async function handlePublic(
     const host = (url.searchParams.get("host") ?? "").trim().toLowerCase().replace(/\.$/, "");
     if (!host) return errorResponse(Errors.NOT_FOUND);
     const row = await env.DB.prepare(
-      `SELECT p.id, p.vanity_slug, p.name
+      `SELECT p.id, p.vanity_slug, p.name, p.home_doc_id
          FROM project_custom_domains cd
          JOIN projects p ON p.id = cd.project_id
         WHERE cd.hostname = ? AND p.published_at IS NOT NULL`,
-    ).bind(host).first<{ id: string; vanity_slug: string | null; name: string }>();
+    ).bind(host).first<{ id: string; vanity_slug: string | null; name: string; home_doc_id: string | null }>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
-    return okResponse({ projectId: row.id, vanitySlug: row.vanity_slug, name: row.name });
+    // Every visit to a custom domain resolves the host before anything renders,
+    // so let edges/browsers reuse the answer briefly.
+    const res = okResponse({ projectId: row.id, vanitySlug: row.vanity_slug, name: row.name, homeDocId: row.home_doc_id });
+    res.headers.set("Cache-Control", "public, max-age=60");
+    return res;
   }
 
   // /public/projects/:id/logo/:variant - serve the site logo for a published project.
@@ -147,8 +151,11 @@ export async function handlePublic(
     const docId = parts[2];
 
     const project = await env.DB.prepare(
-      "SELECT id, name, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_square_updated_at, logo_wide_updated_at FROM projects WHERE id = ? OR vanity_slug = ?",
-    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_square_updated_at" | "logo_wide_updated_at">>();
+      `SELECT p.id, p.name, p.published_at, p.vanity_slug, p.home_doc_id, p.graph_enabled, p.published_graph_enabled, p.logo_square_updated_at, p.logo_wide_updated_at,
+              CASE WHEN cd.status = 'active' THEN cd.hostname END AS custom_domain
+         FROM projects p LEFT JOIN project_custom_domains cd ON cd.project_id = p.id
+        WHERE p.id = ? OR p.vanity_slug = ?`,
+    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_square_updated_at" | "logo_wide_updated_at"> & { custom_domain: string | null }>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
     const projectId = project.id;
 
@@ -191,7 +198,7 @@ export async function handlePublic(
     return okResponse({
       doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
-      project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_square_updated_at: project.logo_square_updated_at ?? null, logo_wide_updated_at: project.logo_wide_updated_at ?? null },
+      project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_square_updated_at: project.logo_square_updated_at ?? null, logo_wide_updated_at: project.logo_wide_updated_at ?? null, custom_domain: project.custom_domain ?? null },
       docs,
       folders,
       files,

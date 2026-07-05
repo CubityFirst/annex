@@ -17,10 +17,10 @@ export interface CustomDomainEnv {
   // API token scoped to the zone with "SSL and Certificates: Edit" (custom
   // hostnames). Set via `wrangler secret put CF_API_TOKEN`.
   CF_API_TOKEN?: string;
-  // The zone id of the SaaS zone (cubityfir.st).
+  // The zone id of the dedicated SaaS zone (yourannex.com).
   CF_ZONE_ID?: string;
   // The hostname customers CNAME their domain to (the fallback-origin / zone
-  // hostname). e.g. "docs.cubityfir.st".
+  // hostname). e.g. "publish.yourannex.com".
   CUSTOM_DOMAIN_CNAME_TARGET?: string;
 }
 
@@ -94,6 +94,19 @@ export function isValidHostname(raw: string): boolean {
   return true;
 }
 
+// Apexes a customer may never claim as their "custom" domain: our own app zone
+// and the platform zones we serve from (mirrors the frontend's isAppHost list),
+// plus the SaaS zone apex derived from the CNAME target. DCV would stop these
+// from ever activating anyway, but refusing up front avoids junk Cloudflare
+// hostnames stuck forever in "pending" with no explanation.
+const RESERVED_APEXES = ["cubityfir.st", "workers.dev", "pages.dev", "localhost", "local", "internal"];
+
+export function isReservedHostname(hostname: string, cnameTarget: string): boolean {
+  const targetApex = cnameTarget.split(".").slice(-2).join(".");
+  const apexes = targetApex ? [...RESERVED_APEXES, targetApex] : RESERVED_APEXES;
+  return apexes.some(apex => hostname === apex || hostname.endsWith(`.${apex}`));
+}
+
 // Derive the DNS records the customer must create from a Cloudflare custom
 // hostname object. Always includes the CNAME (routes traffic to us). Adds the
 // ownership-verification TXT (proves domain control before the host points at
@@ -136,19 +149,31 @@ export function deriveDnsRecords(
   return records;
 }
 
+// Cloudflare hostname statuses that mean the mapping is dead, not merely still
+// propagating. Without these a blocked/moved hostname would show "Pending"
+// forever with no explanation.
+const DEAD_HOSTNAME_STATUS: Record<string, string> = {
+  blocked: "Cloudflare has blocked this hostname. Contact support to resolve it.",
+  moved: "The domain no longer points at us. Re-add the CNAME record, then refresh.",
+  deleted: "The hostname registration was deleted at Cloudflare. Remove the domain and add it again.",
+};
+
 // Collapse Cloudflare's hostname (DCV) + ssl statuses into the app-facing
 // 'pending' | 'active' | 'error'. Active only when BOTH the hostname is active
-// and the certificate is active; any verification error surfaces as 'error'.
+// and the certificate is active; any verification error - or a dead hostname
+// status (blocked/moved/deleted) - surfaces as 'error'.
 export function deriveStatus(cf: CfCustomHostname): "pending" | "active" | "error" {
   const errs = (cf.verification_errors ?? []).filter(Boolean);
   const sslErrs = (cf.ssl?.validation_errors ?? []).map(e => e?.message).filter(Boolean);
   if (errs.length > 0 || sslErrs.length > 0) return "error";
+  if (cf.status && cf.status in DEAD_HOSTNAME_STATUS) return "error";
   if (cf.status === "active" && cf.ssl?.status === "active") return "active";
   return "pending";
 }
 
 export function collectVerificationErrors(cf: CfCustomHostname): string[] {
   return [
+    ...(cf.status && cf.status in DEAD_HOSTNAME_STATUS ? [DEAD_HOSTNAME_STATUS[cf.status]] : []),
     ...(cf.verification_errors ?? []),
     ...((cf.ssl?.validation_errors ?? []).map(e => e?.message).filter((m): m is string => !!m)),
   ];

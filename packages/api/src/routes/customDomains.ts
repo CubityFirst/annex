@@ -9,6 +9,7 @@ import {
   deriveStatus,
   collectVerificationErrors,
   isValidHostname,
+  isReservedHostname,
   normalizeHostname,
   CustomDomainError,
   type CfCustomHostname,
@@ -86,11 +87,19 @@ async function persistCfState(
     .bind(projectId).first<DomainRow>())!;
 }
 
-// The registrable apex of our own SaaS zone, derived from the CNAME target's
-// last two labels (e.g. "docs.cubityfir.st" → "cubityfir.st"). A customer must
-// not claim our own zone or any host under it as their "custom" domain.
-function ownZoneApex(cnameTarget: string): string {
-  return cnameTarget.split(".").slice(-2).join(".");
+// A not-yet-active mapping older than this is re-polled from Cloudflare on GET,
+// so the status keeps moving while the owner just watches the settings page.
+const LAZY_REFRESH_AFTER_SECONDS = 60;
+// An explicit POST /refresh within this window of the last update returns the
+// cached row instead of hitting the Cloudflare API again (click-spam guard).
+const REFRESH_THROTTLE_SECONDS = 15;
+
+// Age of a SQLite `datetime('now')` timestamp ("YYYY-MM-DD HH:MM:SS", UTC).
+// Unparseable input counts as infinitely old (safe: worst case one extra poll).
+function secondsSince(sqlUtc: string): number {
+  const iso = sqlUtc.includes("T") ? sqlUtc : sqlUtc.replace(" ", "T");
+  const t = Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`);
+  return Number.isNaN(t) ? Infinity : (Date.now() - t) / 1000;
 }
 
 export async function handleCustomDomain(
@@ -127,7 +136,8 @@ export async function handleCustomDomain(
   if (isRefresh) {
     if (request.method !== "POST") return errorResponse(Errors.NOT_FOUND);
     if (!existing) return errorResponse(Errors.NOT_FOUND);
-    if (!configured || !existing.cf_hostname_id) {
+    if (!configured || !existing.cf_hostname_id
+      || secondsSince(existing.updated_at) < REFRESH_THROTTLE_SECONDS) {
       return okResponse({ configured, domain: rowToApi(existing, cnameTarget) });
     }
     try {
@@ -139,12 +149,25 @@ export async function handleCustomDomain(
     }
   }
 
-  // GET /domain - return current mapping (or null) plus config status.
+  // GET /domain - return current mapping (or null) plus config status. A
+  // not-yet-active mapping whose cache has gone stale is re-polled inline
+  // (best-effort - a CF hiccup serves the cached row), so the status advances
+  // without the owner having to click Refresh.
   if (request.method === "GET") {
+    let row = existing;
+    if (
+      row && configured && row.cf_hostname_id && row.status !== "active" &&
+      secondsSince(row.updated_at) >= LAZY_REFRESH_AFTER_SECONDS
+    ) {
+      try {
+        const cf = await cfGetCustomHostname(env, row.cf_hostname_id);
+        row = await persistCfState(env, projectId, row.hostname, cf, cnameTarget);
+      } catch { /* serve the cached row */ }
+    }
     return okResponse({
       configured,
       cnameTarget,
-      domain: existing ? rowToApi(existing, cnameTarget) : null,
+      domain: row ? rowToApi(row, cnameTarget) : null,
     });
   }
 
@@ -161,9 +184,21 @@ export async function handleCustomDomain(
     if (!isValidHostname(hostname)) {
       return Response.json({ ok: false, error: "Enter a valid domain, e.g. docs.example.com" }, { status: 400 });
     }
-    const apex = ownZoneApex(cnameTarget);
-    if (hostname === apex || hostname.endsWith(`.${apex}`)) {
+    if (isReservedHostname(hostname, cnameTarget)) {
       return Response.json({ ok: false, error: "That domain is reserved." }, { status: 400 });
+    }
+
+    // Re-submitting the hostname this site already maps: nothing to create -
+    // re-creating it at Cloudflare would just bounce off a conflict. Treat it
+    // as a refresh so the caller gets fresh state back.
+    if (existing && existing.hostname === hostname && existing.cf_hostname_id) {
+      try {
+        const cf = await cfGetCustomHostname(env, existing.cf_hostname_id);
+        const updated = await persistCfState(env, projectId, hostname, cf, cnameTarget);
+        return okResponse({ configured, domain: rowToApi(updated, cnameTarget) });
+      } catch (e) {
+        return cfErrorResponse(e);
+      }
     }
 
     // Globally unique: another site can't already own this hostname.
@@ -174,19 +209,36 @@ export async function handleCustomDomain(
       return Response.json({ ok: false, error: "That domain is already in use by another site." }, { status: 409 });
     }
 
-    // If this site already maps a different hostname, retire the old Cloudflare
-    // custom hostname before creating the new one (best-effort cleanup).
+    // Register the NEW hostname first. If this fails, the old mapping (when
+    // one exists) is untouched and keeps serving - deleting the old hostname
+    // first would strand the site with neither on a create failure.
+    let cf: CfCustomHostname;
+    try {
+      cf = await cfCreateCustomHostname(env, hostname);
+    } catch (e) {
+      return cfErrorResponse(e);
+    }
+
+    let updated: DomainRow;
+    try {
+      updated = await persistCfState(env, projectId, hostname, cf, cnameTarget);
+    } catch (e) {
+      // Most likely the UNIQUE(hostname) race: another site claimed the host
+      // between our pre-check and the insert. Release the CF hostname we just
+      // created (it has no row pointing at it) and report the conflict.
+      try { await cfDeleteCustomHostname(env, cf.id); } catch { /* best-effort */ }
+      if (e instanceof Error && /UNIQUE constraint/i.test(e.message)) {
+        return Response.json({ ok: false, error: "That domain is already in use by another site." }, { status: 409 });
+      }
+      throw e;
+    }
+
+    // Only now retire the replaced Cloudflare hostname (best-effort cleanup).
     if (existing && existing.hostname !== hostname && existing.cf_hostname_id) {
       try { await cfDeleteCustomHostname(env, existing.cf_hostname_id); } catch { /* best-effort */ }
     }
 
-    try {
-      const cf = await cfCreateCustomHostname(env, hostname);
-      const updated = await persistCfState(env, projectId, hostname, cf, cnameTarget);
-      return okResponse({ configured, domain: rowToApi(updated, cnameTarget) });
-    } catch (e) {
-      return cfErrorResponse(e);
-    }
+    return okResponse({ configured, domain: rowToApi(updated, cnameTarget) });
   }
 
   // DELETE /domain - unmap and remove the Cloudflare custom hostname.

@@ -429,21 +429,35 @@ export function SiteSettingsPage() {
 
   // Load the custom-domain mapping when the CUSTOM_LINK feature is enabled and
   // the caller can manage it (admin+). The endpoint enforces both server-side.
+  // While the mapping is pending/erroring, keep re-fetching on an interval -
+  // the GET lazily re-polls Cloudflare server-side, so the status advances
+  // while the owner just leaves this page open.
   const customLinkEnabled = !!(project?.features ?? 0) && !!((project?.features ?? 0) & 1);
+  const domainStatus = domain?.status ?? null;
   useEffect(() => {
     if (!token || !projectId || !customLinkEnabled || !myRole) return;
     if (ROLE_RANK[myRole] < ROLE_RANK["admin"]) return;
-    fetch(`/api/projects/${projectId}/domain`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: { configured: boolean; cnameTarget: string; domain: CustomDomain | null } }) => {
-        if (json.ok && json.data) {
-          setDomainConfigured(json.data.configured);
-          setDomainCnameTarget(json.data.cnameTarget || null);
-          setDomain(json.data.domain);
-        }
-      })
-      .catch(() => {});
-  }, [projectId, token, customLinkEnabled, myRole]);
+    let cancelled = false;
+    const load = () => {
+      fetch(`/api/projects/${projectId}/domain`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then((json: { ok: boolean; data?: { configured: boolean; cnameTarget: string; domain: CustomDomain | null } }) => {
+          if (cancelled) return;
+          if (json.ok && json.data) {
+            setDomainConfigured(json.data.configured);
+            setDomainCnameTarget(json.data.cnameTarget || null);
+            setDomain(json.data.domain);
+          }
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = domainStatus && domainStatus !== "active" ? setInterval(load, 30_000) : null;
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [projectId, token, customLinkEnabled, myRole, domainStatus]);
 
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
@@ -1647,6 +1661,19 @@ export function SiteSettingsPage() {
                         >
                           {domain.hostname}
                         </a>
+                        {domain.status === "active" && (
+                          <button
+                            type="button"
+                            aria-label="Copy site URL"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`https://${domain.hostname}`);
+                              toast({ title: "Site URL copied to clipboard." });
+                            }}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <Badge variant={domain.status === "active" ? "default" : domain.status === "error" ? "destructive" : "secondary"}>
                           {domain.status === "active" ? "Active" : domain.status === "error" ? "Error" : "Pending"}
                         </Badge>
@@ -1671,7 +1698,7 @@ export function SiteSettingsPage() {
                     {domain.status !== "active" && domain.dnsRecords.length > 0 && (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-muted-foreground">
-                          Add these records at your DNS provider. We re-check automatically - click Refresh once they've propagated (this can take a few minutes).
+                          Add these records at your DNS provider. We re-check while this page is open - propagation can take a few minutes, or click Refresh to check right away.
                         </p>
                         <div className="overflow-x-auto rounded-md border border-border">
                           <table className="w-full text-xs">
