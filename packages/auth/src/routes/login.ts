@@ -1,30 +1,51 @@
 import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { verifyPassword, hashPassword, needsRehash, DUMMY_PASSWORD_HASH } from "../password";
-import { signJwt } from "../jwt";
+import { signJwt, verifyJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
 import { validateAndConsumeBackupCode, verifyAndConsumeTotp } from "../mfa";
 import { createSession, SESSION_TTL_MS } from "../sessions";
+import type { Session } from "../lib";
 import type { Env } from "../index";
+
+// Shared column list so the password path and the pre-auth continuation load
+// the exact same user shape.
+const USER_SELECT =
+  "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change, is_admin, email_verified FROM users";
+
+type LoginUserRow = {
+  id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number; email_verified: number;
+};
+
+// Claims carried by the short-lived pre-auth token. Identity only, plus the
+// `pre2fa` marker that gates redemption - a session token or change-token
+// signed with the same secret lacks it and can't be redeemed for 2FA.
+type PreAuthClaims = Session & { pre2fa?: boolean };
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{
-    email: string;
-    password: string;
-    turnstileToken: string;
+    email?: string;
+    password?: string;
+    turnstileToken?: string;
     totpCode?: string;
     backupCode?: string;
+    preAuthToken?: string;
   }>();
+
+  // Continuation path: a prior attempt already cleared password + Turnstile and
+  // returned `totp_required` / `two_factor_required` with a short-lived pre-auth
+  // token. The client now returns just that token plus a 2FA code, so skip
+  // Turnstile and the email/password check entirely. Identity rides in the
+  // token, but nothing beyond `userId` is trusted - the user row is reloaded and
+  // every gate re-run on redemption.
+  if (body.preAuthToken) return handlePreAuthContinuation(request, env, body);
 
   if (!body.email || !body.password) return errorResponse(Errors.BAD_REQUEST);
 
-  const turnstileValid = await verifyTurnstile(body.turnstileToken, env.TURNSTILE_SECRET);
+  const turnstileValid = await verifyTurnstile(body.turnstileToken ?? "", env.TURNSTILE_SECRET);
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
-  const row = await env.DB.prepare(
-    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change, is_admin, email_verified FROM users WHERE email = ?",
-  ).bind(normalizeEmail(body.email)).first<{
-    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number; email_verified: number;
-  }>();
+  const row = await env.DB.prepare(USER_SELECT + " WHERE email = ?")
+    .bind(normalizeEmail(body.email)).first<LoginUserRow>();
 
   // Always run a PBKDF2 derivation, even when the account doesn't exist, so the
   // response time can't be used to enumerate registered emails. The dummy hash
@@ -59,7 +80,13 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     // Both methods available: if totpCode or backupCode supplied the user chose TOTP, otherwise prompt for choice
     if (!body.totpCode && !body.backupCode) {
       return Response.json(
-        { ok: false, error: "two_factor_required", methods: ["totp", "webauthn"], userId: row.id },
+        {
+          ok: false,
+          error: "two_factor_required",
+          methods: ["totp", "webauthn"],
+          userId: row.id,
+          preAuthToken: await signPreAuthToken(env, row.id, row.email),
+        },
         { status: 200 },
       );
     }
@@ -69,20 +96,71 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     return Response.json({ ok: false, error: "webauthn_required", userId: row.id }, { status: 200 });
   } else if (hasTOTP) {
     if (!body.totpCode && !body.backupCode) {
-      return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
+      return Response.json(
+        { ok: false, error: "totp_required", preAuthToken: await signPreAuthToken(env, row.id, row.email) },
+        { status: 200 },
+      );
     }
     const totpError = await verifyTotpOrBackup(env, row.id, row.totp_secret!, body.totpCode, body.backupCode);
     if (totpError) return totpError;
   }
 
   // Authentication succeeded - opportunistically migrate hashes that were
-  // written with an older iteration count.
+  // written with an older iteration count. (Continuation path has no password
+  // in hand, so it skips this and relies on the original login having done it.)
   if (needsRehash(row.password_hash)) {
     const newHash = await hashPassword(body.password);
     await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
       .bind(newHash, row.id).run();
   }
 
+  return issueSessionOrForceChange(request, env, row);
+}
+
+// Redeems a pre-auth token for the 2FA step of a login that already cleared
+// password + Turnstile. Trusts nothing beyond identity: reloads the user row,
+// re-runs moderation, and re-verifies the 2FA code under the same per-user
+// `mfa:<userId>` throttle as the password path.
+async function handlePreAuthContinuation(
+  request: Request,
+  env: Env,
+  body: { preAuthToken?: string; totpCode?: string; backupCode?: string },
+): Promise<Response> {
+  // verifyJwt already checks the signature and generic expiry, but re-assert
+  // the `pre2fa` claim and the expiry here explicitly so a session token or a
+  // change-token signed with the same secret can never be redeemed for 2FA.
+  const claims = (await verifyJwt(body.preAuthToken!, env.JWT_SECRET)) as PreAuthClaims | null;
+  if (!claims || claims.pre2fa !== true || claims.expiresAt <= Date.now()) {
+    return Response.json({ ok: false, error: "pre_auth_expired" }, { status: 401 });
+  }
+
+  const row = await env.DB.prepare(USER_SELECT + " WHERE id = ?")
+    .bind(claims.userId).first<LoginUserRow>();
+  if (!row) return Response.json({ ok: false, error: "pre_auth_expired" }, { status: 401 });
+
+  const moderationResponse = checkModeration(row.moderation);
+  if (moderationResponse) return moderationResponse;
+
+  // TOTP was disabled between issuing the token and redeeming it - a weird
+  // state; refuse rather than issue a session with the 2FA step skipped.
+  if (!row.totp_secret) return errorResponse(Errors.UNAUTHORIZED);
+
+  if (!body.totpCode && !body.backupCode) return errorResponse(Errors.BAD_REQUEST);
+
+  const totpError = await verifyTotpOrBackup(env, row.id, row.totp_secret, body.totpCode, body.backupCode);
+  if (totpError) return totpError;
+
+  return issueSessionOrForceChange(request, env, row);
+}
+
+// Post-2FA tail shared by the password path and the pre-auth continuation:
+// force-change branch, otherwise issue a session. Assumes the caller has
+// already verified credentials (password or pre-auth token) and any 2FA.
+async function issueSessionOrForceChange(
+  request: Request,
+  env: Env,
+  row: LoginUserRow,
+): Promise<Response> {
   if (row.force_password_change) {
     // Pre-session token: short-lived, no `sid`. Only valid against
     // /force-change-password, which checks `forcePasswordChange` explicitly.
@@ -107,6 +185,14 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   );
 
   return okResponse({ token, user: { id: row.id, email: row.email, name: row.name, createdAt: row.created_at } });
+}
+
+// Mints the short-lived pre-auth token handed back with the 2FA prompt so the
+// client needn't re-send password + Turnstile on each 2FA attempt. Carries
+// identity only; redemption reloads the user and re-checks everything.
+async function signPreAuthToken(env: Env, userId: string, email: string): Promise<string> {
+  const payload: PreAuthClaims = { userId, email, expiresAt: Date.now() + 5 * 60 * 1000, pre2fa: true };
+  return signJwt(payload, env.JWT_SECRET);
 }
 
 async function verifyTotpOrBackup(

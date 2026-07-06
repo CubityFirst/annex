@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AuthForm } from "@/components/AuthForm";
-import { Turnstile } from "@/components/Turnstile";
+import { Turnstile, type TurnstileHandle } from "@/components/Turnstile";
 import { clearToken, getToken, setToken } from "@/lib/auth";
 
 type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker" | "force_password_change" | "email_unverified";
@@ -77,6 +77,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -85,6 +86,10 @@ export function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const [usingBackupCode, setUsingBackupCode] = useState(false);
   const [backupCode, setBackupCode] = useState("");
+  // Short-lived (5-minute) single-purpose token returned alongside
+  // totp_required / two_factor_required. The 2FA continuation submits this
+  // instead of re-sending the email/password/turnstile credentials.
+  const [preAuthToken, setPreAuthToken] = useState<string | null>(null);
   const [changeToken, setChangeToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -169,6 +174,26 @@ export function LoginPage() {
     setTurnstileToken(null);
   }, [step]);
 
+  // Auto-submit the authenticator code once all six digits are entered so the
+  // user doesn't have to reach for Verify. The ref remembers the last code we
+  // auto-submitted: a failure that leaves the code in place (network error,
+  // rate limit) must not re-fire when `loading` flips back to false, or this
+  // effect would loop resubmitting forever - the user retries via Verify.
+  // Editing the code below six digits re-arms it.
+  const autoSubmittedCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (totpCode.length < 6) {
+      autoSubmittedCodeRef.current = null;
+      return;
+    }
+    if (step === "totp" && !usingBackupCode && !loading
+      && autoSubmittedCodeRef.current !== totpCode) {
+      autoSubmittedCodeRef.current = totpCode;
+      void handleSubmit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, usingBackupCode, totpCode, loading]);
+
   const runWebauthnFlow = useCallback(async function runWebauthnFlow(userId: string) {
     setLoading(true);
     setError(null);
@@ -247,25 +272,38 @@ export function LoginPage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  // Re-run the credentials-step Turnstile challenge after a failed submit.
+  // The token is single-use at siteverify, so re-sending the consumed one is
+  // rejected as BAD_REQUEST; reset() fetches a fresh token and re-disables the
+  // submit button until it arrives.
+  function resetTurnstile() {
+    turnstileRef.current?.reset();
+    setTurnstileToken(null);
+  }
+
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (loading) return;
     setError(null);
-    if (!turnstileToken) {
+
+    const isTotpStep = step === "totp";
+    if (!isTotpStep && !turnstileToken) {
       setError("Please complete the security challenge.");
       return;
     }
+
     setLoading(true);
     try {
+      // Credentials step sends the full credentials; the 2FA continuation
+      // sends only the short-lived pre-auth token plus the code.
+      const body = isTotpStep
+        ? { preAuthToken, ...(usingBackupCode ? { backupCode } : { totpCode }) }
+        : { email, password, turnstileToken };
+
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password,
-          turnstileToken,
-          ...(step === "totp" && !usingBackupCode ? { totpCode } : {}),
-          ...(step === "totp" && usingBackupCode ? { backupCode } : {}),
-        }),
+        body: JSON.stringify(body),
       });
       const json = await res.json() as {
         ok: boolean;
@@ -275,6 +313,7 @@ export function LoginPage() {
         userId?: string;
         methods?: string[];
         changeToken?: string;
+        preAuthToken?: string;
       };
 
       if (json.ok && json.data) {
@@ -283,6 +322,9 @@ export function LoginPage() {
         setChangeToken(json.changeToken);
         setStep("force_password_change");
       } else if (json.error === "totp_required") {
+        // The password is no longer needed - the continuation uses preAuthToken.
+        setPreAuthToken(json.preAuthToken ?? null);
+        setPassword("");
         setStep("totp");
       } else if (json.error === "webauthn_required" && json.userId) {
         setPendingUserId(json.userId);
@@ -292,9 +334,14 @@ export function LoginPage() {
         return;
       } else if (json.error === "two_factor_required" && json.userId) {
         setPendingUserId(json.userId);
+        setPreAuthToken(json.preAuthToken ?? null);
+        setPassword("");
         setStep("method_picker");
       } else if (json.error === "email_not_verified") {
         setStep("email_unverified");
+      } else if (json.error === "pre_auth_expired") {
+        handleBack();
+        setError("Your sign-in attempt expired. Please sign in again.");
       } else if (json.error === "invalid_backup_code") {
         setError("Invalid or already-used backup code.");
         setBackupCode("");
@@ -303,11 +350,14 @@ export function LoginPage() {
         setTotpCode("");
       } else if (res.status === 403) {
         setError(moderationMessage(json.error, json.until));
+        if (!isTotpStep) resetTurnstile();
       } else {
         setError("Invalid email or password.");
+        if (!isTotpStep) resetTurnstile();
       }
     } catch {
       setError("Could not connect to the server. Please try again.");
+      if (!isTotpStep) resetTurnstile();
     } finally {
       setLoading(false);
     }
@@ -322,6 +372,10 @@ export function LoginPage() {
     setChangeToken(null);
     setNewPassword("");
     setConfirmPassword("");
+    // Returning to credentials discards the in-progress attempt: the password
+    // and pre-auth token must be re-established by signing in again.
+    setPassword("");
+    setPreAuthToken(null);
     setError(null);
   }
 
@@ -423,6 +477,7 @@ export function LoginPage() {
             type="password"
             value={newPassword}
             onChange={e => setNewPassword(e.target.value)}
+            autoComplete="new-password"
             required
             autoFocus
           />
@@ -434,6 +489,7 @@ export function LoginPage() {
             type="password"
             value={confirmPassword}
             onChange={e => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
             required
           />
         </div>
@@ -449,7 +505,6 @@ export function LoginPage() {
         subtitle="Two-factor authentication"
         submitLabel="Verify"
         loading={loading}
-        disabled={!turnstileToken}
         error={error}
         onSubmit={handleSubmit}
         footer={
@@ -513,10 +568,6 @@ export function LoginPage() {
         >
           {usingBackupCode ? "Use authenticator app instead" : "Use a backup code instead"}
         </button>
-        {/* key forces a fresh widget when the user transitions credentials → totp,
-            since AuthForm's last child is also a <Turnstile> on the credentials step
-            and React would otherwise reuse the same instance and skip its mount effect. */}
-        <Turnstile key="totp" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
       </AuthForm>
     );
   }
@@ -692,6 +743,7 @@ export function LoginPage() {
           placeholder="you@example.com"
           value={email}
           onChange={e => setEmail(e.target.value)}
+          autoComplete="username"
           required
         />
       </div>
@@ -702,10 +754,11 @@ export function LoginPage() {
           type="password"
           value={password}
           onChange={e => setPassword(e.target.value)}
+          autoComplete="current-password"
           required
         />
       </div>
-      <Turnstile key="credentials" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      <Turnstile ref={turnstileRef} key="credentials" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
     </AuthForm>
   );
 }

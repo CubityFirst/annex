@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
 declare global {
   interface Window {
@@ -25,13 +25,31 @@ interface TurnstileProps {
   onExpire?: () => void;
 }
 
-export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
+export interface TurnstileHandle {
+  reset: () => void;
+}
+
+export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(function Turnstile(
+  { onVerify, onExpire },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const onVerifyRef = useRef(onVerify);
   const onExpireRef = useRef(onExpire);
   onVerifyRef.current = onVerify;
   onExpireRef.current = onExpire;
+
+  // Turnstile tokens are single-use at siteverify, so a failed submit must
+  // re-run the challenge. reset() replays it and fires the callback with a
+  // fresh token.
+  useImperativeHandle(ref, () => ({
+    reset() {
+      if (widgetIdRef.current) {
+        window.turnstile.reset(widgetIdRef.current);
+      }
+    },
+  }), []);
 
   useEffect(() => {
     const sitekey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string;
@@ -71,4 +89,4 @@ export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
   }, []);
 
   return <div className="flex justify-center"><div ref={containerRef} /></div>;
-}
+});

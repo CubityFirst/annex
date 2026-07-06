@@ -210,8 +210,9 @@ test("TOTP - entering a valid code completes login", async () => {
   // Still on the TOTP challenge screen from the previous test.
   const code = await computeTOTP(totpSecret);
   await fillOTP(page, code);
-  // Turnstile mock fires automatically; "Verify" submits the form.
-  await page.getByRole("button", { name: "Verify" }).click();
+  // The 2FA step auto-submits once six digits are entered (no Turnstile here,
+  // and clicking "Verify" again would replay the now-consumed code), so just
+  // wait for the redirect off the login page.
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 });
 
