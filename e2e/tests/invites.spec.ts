@@ -98,6 +98,9 @@ test.afterAll(async () => {
       if (await btn.isVisible({ timeout: 3000 })) {
         await btn.click();
         await ownerPage.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = ownerPage.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await ownerPage.getByRole("button", { name: /yes.*delete/i }).click();
         await ownerPage.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -241,6 +244,9 @@ test("owner deletes the project", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
   await ownerPage.getByRole("button", { name: /delete site/i }).click();
   await expect(ownerPage.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
+  // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+  const confirmInput = ownerPage.locator("#delete-confirm-name");
+  await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
   await ownerPage.getByRole("button", { name: /yes.*delete/i }).click();
   await expect(ownerPage).not.toHaveURL(/\/projects\//, { timeout: 15000 });
   projectId = "";

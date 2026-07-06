@@ -104,3 +104,37 @@ describe("GET /public/files/:id/stream-url (re-sign endpoint)", () => {
     expect(body.data.url).toBeNull();
   });
 });
+
+describe("GET /public/files/:id (metadata for the file-embed widget)", () => {
+  const url = new URL("http://localhost/public/files/f1?projectId=p1");
+
+  it("returns name/mime/size for a file on a published project", async () => {
+    const env = envReturning({ id: "f1", name: "report.pdf", mime_type: "application/pdf", size: 4096, published_at: "2026-01-01" });
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { id: string; name: string; mime_type: string; size: number; published_at?: unknown } }>();
+    expect(body.ok).toBe(true);
+    expect(body.data).toEqual({ id: "f1", name: "report.pdf", mime_type: "application/pdf", size: 4096 });
+  });
+
+  it("404s when the file's project is not published", async () => {
+    const env = envReturning({ id: "f1", name: "report.pdf", mime_type: "application/pdf", size: 4096, published_at: null });
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(404);
+  });
+
+  it("404s when the file does not exist", async () => {
+    const env = envReturning(null);
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(404);
+  });
+
+  it("scopes the lookup to the projectId (or vanity slug) when provided", async () => {
+    const env = envReturning({ id: "f1", name: "report.pdf", mime_type: "application/pdf", size: 4096, published_at: "2026-01-01" });
+    await handlePublic(new Request(url), env, url);
+    const prepare = (env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
+    expect(prepare.mock.calls[0][0]).toContain("p.id = ? OR p.vanity_slug = ?");
+    const bind = prepare.mock.results[0].value.bind as ReturnType<typeof vi.fn>;
+    expect(bind.mock.calls[0]).toEqual(["f1", "p1", "p1"]);
+  });
+});

@@ -83,6 +83,9 @@ async function deleteSite(p: Page, id: string) {
     if (await btn.isVisible({ timeout: 3000 })) {
       await btn.click();
       await p.getByRole("alertdialog").waitFor({ timeout: 5000 });
+      // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+      const confirmInput = p.locator("#delete-confirm-name");
+      await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
       await p.getByRole("button", { name: /yes.*delete/i }).click();
       await p.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
     }

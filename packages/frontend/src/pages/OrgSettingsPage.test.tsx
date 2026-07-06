@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -110,6 +110,15 @@ describe("OrgSettingsPage", () => {
     expect(await screen.findByText(/organization not found/i)).toBeInTheDocument();
   });
 
+  it("shows a load-error state when the org fetch rejects", async () => {
+    mockApi.mockImplementation(async (url: string) => {
+      if (url === "/api/organizations/o1") throw new Error("network");
+      return { ok: true, status: 200, data: [] } as never;
+    });
+    renderSettings();
+    expect(await screen.findByText(/could not load this organization/i)).toBeInTheDocument();
+  });
+
   it("hides admin-only sections and shows Leave for a non-admin member", async () => {
     installApi({ org: viewerOrg, members: [], sites: [] });
     renderSettings();
@@ -170,11 +179,15 @@ describe("OrgSettingsPage", () => {
     await waitFor(() => expect(screen.queryByText("Alice")).not.toBeInTheDocument());
   });
 
-  it("detaches a site via DELETE attach", async () => {
+  it("detaches a site via DELETE attach after confirming the dialog", async () => {
     installApi({ org: owner, members: [], sites: [attachedSite] });
     renderSettings();
 
+    // Open the per-row confirmation dialog…
     await userEvent.click(await screen.findByRole("button", { name: /detach/i }));
+    // …then confirm via the dialog's Detach action.
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^detach$/i }));
 
     await waitFor(() =>
       expect(mockApi).toHaveBeenCalledWith(
@@ -182,6 +195,7 @@ describe("OrgSettingsPage", () => {
         expect.objectContaining({ method: "DELETE" }),
       ),
     );
+    await waitFor(() => expect(screen.queryByText("Handbook")).not.toBeInTheDocument());
   });
 
   it("deletes the org from the danger zone and returns to the dashboard", async () => {

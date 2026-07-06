@@ -226,6 +226,21 @@ export async function handlePublic(
     return okResponse({ url: enriched.content_stream_url ?? null });
   }
 
+  // /public/files/:id?projectId= - file metadata (name/mime/size) from a
+  // published project. Used by the document file-embed widget (```file fence)
+  // to label its download card on the published site, where the authenticated
+  // GET /files/:id is unavailable.
+  if (parts[0] === "files" && parts[1] && !parts[2]) {
+    const fileId = parts[1];
+    const contextProjectId = url.searchParams.get("projectId");
+    const meta = await env.DB.prepare(
+      "SELECT f.id, f.name, f.mime_type, f.size, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+        (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ id: string; name: string; mime_type: string; size: number; published_at: string | null }>();
+    if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
+    return okResponse({ id: meta.id, name: meta.name, mime_type: meta.mime_type, size: meta.size });
+  }
+
   // /public/files/:id/content - serve a file from a published project. Drawings
   // (mutable files) version their ETag with updated_at and serve no-cache so an
   // edit shows up on the published site; immutable media keep the long cache.

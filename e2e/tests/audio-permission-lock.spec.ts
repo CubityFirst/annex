@@ -175,6 +175,9 @@ async function deleteSite(p: Page, projectId: string) {
     if (await btn.isVisible({ timeout: 3000 })) {
       await btn.click();
       await p.getByRole("alertdialog").waitFor({ timeout: 5000 });
+      // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+      const confirmInput = p.locator("#delete-confirm-name");
+      await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
       await p.getByRole("button", { name: /yes.*delete/i }).click();
       await p.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
     }
@@ -250,9 +253,12 @@ test("registers, creates Site A + Site B, uploads audio to each, and a doc in Si
   projectBId = await createSite(page, PROJECT_B_NAME);
   fileBId = await uploadAudio(page, projectBId, FILE_B_NAME);
 
-  // Create the document in Site B.
+  // Create the document in Site B. Docs are only created on first save, so
+  // save the empty draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
-  await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
+  await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   docId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
 
   expect(projectAId).toBeTruthy();
@@ -273,8 +279,9 @@ test("the 'Copy markdown' button copies the canonical /api/files link for audio"
     await copyBtn.click();
 
     // Visible feedback flips to "Copied!" on every browser (state is set
-    // regardless of clipboard outcome).
-    await expect(page.getByRole("button", { name: /copied!/i })).toBeVisible({ timeout: 5000 });
+    // regardless of clipboard outcome). The accessible name comes from the
+    // aria-label, which is "Copied" without the exclamation mark.
+    await expect(page.getByRole("button", { name: /copied/i })).toBeVisible({ timeout: 5000 });
 
     const expected = `![${fileName}](/api/files/${fileId}/content)`;
     if (browserName === "chromium") {

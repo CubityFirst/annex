@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import { getToken } from "@/lib/auth";
-import { apiFetchJson } from "@/lib/apiFetch";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
 import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
@@ -281,17 +280,12 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     else openFile(item.id);
   }
 
-  async function createDoc() {
+  function createDoc() {
+    // Nothing is created server-side yet - DocPage's new-document mode POSTs
+    // the doc on first save, so cancelling out leaves no orphan behind.
     if (!projectId) return;
-    const result = await apiFetchJson<{ id: string }>("/api/docs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Untitled", content: "", projectId, folderId: null }),
-    });
-    if (result.ok && result.data) {
-      close();
-      navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true } });
-    }
+    close();
+    navigate(`/projects/${projectId}/docs/new`);
   }
 
   function toggleTagMode() {

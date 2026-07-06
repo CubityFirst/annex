@@ -22,7 +22,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Spinner } from "@/components/ui/spinner";
 import { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentGroup } from "@/components/ui/attachment";
-import { fileKind } from "@/lib/fileKind";
+import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -199,7 +199,6 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
-  const [creatingDoc, setCreatingDoc] = useState(false);
   const [creatingDrawing, setCreatingDrawing] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -346,22 +345,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     }
   }
 
-  async function handleNewDoc() {
-    if (creatingDoc) return;
-    setCreatingDoc(true);
-    try {
-      const result = await apiFetchJson<DocItem & { id: string }>("/api/docs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Untitled", content: "", projectId, folderId: currentFolderId }),
-      });
-      if (result.ok && result.data) {
-        onDocCreated(result.data);
-        navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true, folderPath: path } });
-      }
-    } finally {
-      setCreatingDoc(false);
-    }
+  function handleNewDoc() {
+    // Nothing is created server-side yet - DocPage's new-document mode POSTs
+    // the doc on first save, so cancelling out leaves no orphan behind.
+    navigate(`/projects/${projectId}/docs/new`, { state: { folderId: currentFolderId, folderPath: path } });
   }
 
   async function handleNewDrawing() {
@@ -910,7 +897,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       content: (
                         <div className="flex items-center justify-between gap-2 w-full">
                           <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex items-center gap-3.5">
                             {aiEnabled && (
                               <button
                                 type="button"
@@ -1070,12 +1057,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     <Link />
                     Copy link
                   </ContextMenuItem>
-                  {fileKind(file.mime_type, file.name) === "drawing" && (
-                    <ContextMenuItem onClick={() => { navigator.clipboard.writeText("```excalidraw\n" + file.id + "\n```"); toast({ title: "Embed copied" }); }}>
-                      <Code />
-                      Copy embed
-                    </ContextMenuItem>
-                  )}
+                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
+                    <Code />
+                    Copy markdown
+                  </ContextMenuItem>
                   <ContextMenuItem onClick={() => downloadFile(file)}>
                     <Download />
                     Download
@@ -1243,12 +1228,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   <Link />
                   Copy link
                 </DropdownMenuItem>
-                {fileKind(file.mime_type, file.name) === "drawing" && (
-                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText("```excalidraw\n" + file.id + "\n```"); toast({ title: "Embed copied" }); }}>
-                    <Code />
-                    Copy embed
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
+                  <Code />
+                  Copy markdown
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => downloadFile(file)}>
                   <Download />
                   Download
@@ -1387,9 +1370,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" aria-label="New document" title="New document" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDoc} disabled={creatingDoc}>
+            <Button size="sm" aria-label="New document" title="New document" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDoc}>
               <Plus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{creatingDoc ? "Creating…" : "New document"}</span>
+              <span className="hidden sm:inline">New document</span>
             </Button>
           )}
           {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (

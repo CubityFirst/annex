@@ -98,6 +98,9 @@ test.afterAll(async () => {
       if (await btn.isVisible({ timeout: 3000 })) {
         await btn.click();
         await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = page.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await page.getByRole("button", { name: /yes.*delete/i }).click();
         await page.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -123,8 +126,11 @@ test("sets up a project + doc", async () => {
   projectId = page.url().match(/\/projects\/([a-z0-9-]+)/)![1];
   projectSettingsUrl = `/projects/${projectId}/settings`;
 
+  // Docs are only created on first save - save the empty draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
-  await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
+  await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   docId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
 
   await putDoc(page, docId, "Settings Doc", "# Heading from body\n\nBody content here.");

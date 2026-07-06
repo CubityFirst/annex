@@ -288,7 +288,10 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, addDoc, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
+  // Mounted at /docs/new (no :docId param): the document doesn't exist server-side
+  // yet - the editor opens on a synthesized empty doc and the first save POSTs it.
+  const isNewDoc = !docId;
   const REALTIME = 4;
   const realtimeEnabled = !!(projectFeatures & REALTIME);
   const { toast } = useToast();
@@ -421,7 +424,20 @@ export function DocPage() {
   }
 
   useEffect(() => {
-    if (!docId) return;
+    if (!docId) {
+      // New-document mode: synthesize an empty doc (folder target comes from the
+      // creating view via location.state) and open the editor straight away.
+      const folderId = (location.state?.folderId as string | null | undefined) ?? null;
+      setDoc({ id: "", title: "Untitled", content: "", folder_id: folderId, updated_at: new Date().toISOString(), published_at: null, show_heading: 1, show_last_updated: 1 });
+      setTitleDraft("");
+      setDraft("");
+      setSaveError(null);
+      setEditing(true);
+      setLoading(false);
+      setCollabFatal(false);
+      setCollabFatalReason(null);
+      return () => setBreadcrumbs([]);
+    }
     setLoading(true);
     setEditing(false);
     setCollabFatal(false);
@@ -443,12 +459,6 @@ export function DocPage() {
           setMyRole(result.data.myRole ?? null);
           setMyPermission(result.data.myPermission ?? null);
           if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.title, kind: "doc" });
-          if (location.state?.isNew) {
-            setTitleDraft(result.data.title);
-            setDraft(result.data.content);
-            setEditing(true);
-            navigate(location.pathname, { replace: true, state: { folderPath: location.state.folderPath } });
-          }
         }
       })
       .catch(() => {})
@@ -461,7 +471,7 @@ export function DocPage() {
   // - e.g. when a wikilink jumps here - derives the path from doc.folder_id walking
   // up through the folder tree.
   useEffect(() => {
-    if (!doc || !docId || doc.id !== docId) return;
+    if (!doc || (docId ? doc.id !== docId : doc.id !== "")) return;
     const statePath = location.state?.folderPath as { id: string | null; name: string }[] | undefined;
     // Folder ancestry without the project crumb. FileManager prefixes it; wikilink jumps don't.
     let folderAncestry: { id: string | null; name: string }[];
@@ -488,8 +498,8 @@ export function DocPage() {
       name: crumb.name,
       onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : `/projects/${projectId}`),
     }));
-    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId, name: doc.title }]);
-  }, [doc, docId, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
+    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId ?? "new", name: isNewDoc ? "New document" : doc.title }]);
+  }, [doc, docId, isNewDoc, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
 
   function generateSummary() {
     if (!doc || aiSummaryLoading) return;
@@ -510,7 +520,7 @@ export function DocPage() {
   }
 
   useEffect(() => {
-    if (!doc || !aiEnabled || viewingRevision) return;
+    if (!doc || !docId || !aiEnabled || viewingRevision) return;
     if (aiSummarizationType !== "automatic") return;
     // If cached summary is up-to-date, no need to re-fetch
     if (doc.ai_summary && doc.ai_summary_version === doc.updated_at) return;
@@ -526,6 +536,14 @@ export function DocPage() {
   }
 
   function cancelEditing() {
+    if (isNewDoc) {
+      // Nothing was created server-side - just leave. Prefer going back to
+      // wherever the user came from; fall back to the project root when this
+      // page is the first history entry (e.g. the URL was opened directly).
+      if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+      else navigate(`/projects/${projectId}`, { replace: true });
+      return;
+    }
     setEditing(false);
     setSaveError(null);
     // Clear collab-fatal state so the next time the user opens the editor it tries collab fresh.
@@ -553,7 +571,34 @@ export function DocPage() {
   }
 
   async function handleSave(changelog?: string) {
-    if (!docId || !doc) return;
+    if (!doc) return;
+    if (isNewDoc) {
+      if (!projectId) return;
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const title = titleDraft.trim() || "Untitled";
+        const result = await apiFetchJson<{ id: string; folderId?: string | null }>("/api/docs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content: draft, projectId, folderId: doc.folder_id }),
+        });
+        if (result.ok && result.data) {
+          addDoc({ id: result.data.id, title, folder_id: result.data.folderId ?? doc.folder_id });
+          // Swap the /docs/new history entry for the real document, which
+          // refetches through the normal load path (role, shares, etc.).
+          navigate(`/projects/${projectId}/docs/${result.data.id}`, { replace: true, state: { folderPath: location.state?.folderPath } });
+        } else {
+          setSaveError("Failed to save. Please try again.");
+        }
+      } catch {
+        setSaveError("Could not connect to the server.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    if (!docId) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -629,7 +674,9 @@ export function DocPage() {
   }
 
   function handleSaveClick() {
-    if (changelogMode === "off") {
+    // A brand-new document has no "what changed" to record - skip the
+    // changelog prompt even when the project enforces one.
+    if (isNewDoc || changelogMode === "off") {
       handleSave();
     } else {
       setChangelogText("");
@@ -889,10 +936,10 @@ export function DocPage() {
             placeholder="Document title"
             aria-label="Document title"
             className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none"
-            autoFocus={location.state?.isNew}
+            autoFocus={isNewDoc}
           />
           <div className="ml-auto flex items-center gap-2">
-            {realtimeEnabled && <EditorPresence editors={remoteEditors} />}
+            {realtimeEnabled && !isNewDoc && <EditorPresence editors={remoteEditors} />}
             {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
               <Button
@@ -945,9 +992,9 @@ export function DocPage() {
               value={draft}
               onChange={setDraft}
               onSave={handleSaveClick}
-              autoFocus={!location.state?.isNew}
-              collab={!collabFatal && realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
-              onAwarenessChange={realtimeEnabled && !collabFatal ? setRemoteEditors : undefined}
+              autoFocus={!isNewDoc}
+              collab={!collabFatal && realtimeEnabled && !isNewDoc && currentUser ? { docId: doc.id, user: currentUser } : undefined}
+              onAwarenessChange={realtimeEnabled && !collabFatal && !isNewDoc ? setRemoteEditors : undefined}
               onCollabFatal={(reason) => {
                 setCollabFatal(true);
                 setCollabFatalReason(reason || null);

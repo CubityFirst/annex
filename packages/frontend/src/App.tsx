@@ -61,6 +61,9 @@ export function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />
           <Route path="/projects/:projectId/folders/:folderId" element={<ProjectPage />} />
+          {/* /docs/new mounts DocPage with no :docId param - "new document" mode:
+              nothing is created server-side until the first save. */}
+          <Route path="/projects/:projectId/docs/new" element={<DocPage />} />
           <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
           <Route path="/projects/:projectId/files/:fileId" element={<FilePage />} />
           <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />

@@ -9,8 +9,13 @@
 //
 // Deliberate limits: exactly one site ("Demo Site") - site/org creation is
 // refused; everything inside the site (docs, folders, files) is fully mutable.
+// Site/doc publishing works too: /api/public/* requests that reference the
+// demo site are answered from this store (so the published reading view is
+// browsable in-demo), while public requests for real sites still pass through.
 
 import { isDemoMode, DEMO_USER_ID, DEMO_USER_NAME, DEMO_USER_EMAIL } from "./demo";
+import { parseFrontmatter } from "./frontmatter";
+import { EXCALIDRAW_MIME } from "./excalidraw";
 
 const PROJECT_ID = "demo-site";
 
@@ -40,6 +45,7 @@ interface DemoFile {
   size: number;
   folder_id: string | null;
   created_at: string;
+  updated_at: string;
   blob: Blob;
 }
 
@@ -58,8 +64,21 @@ interface DemoRevision {
 interface Store {
   projectName: string;
   projectDescription: string;
+  publishedAt: string | null;
+  changelogMode: string;
+  aiEnabled: number;
+  aiSummarizationType: string;
+  graphEnabled: number;
+  publishedGraphEnabled: number;
+  homeDocId: string | null;
   isFavourite: number;
   isHidden: number;
+  userName: string;
+  userTimezone: string | null;
+  userBio: string | null;
+  readingFont: string | null;
+  editingFont: string | null;
+  uiFont: string | null;
   folders: DemoFolder[];
   docs: DemoDoc[];
   files: DemoFile[];
@@ -94,6 +113,7 @@ const DOC_TOUR = "demo-doc-tour";
 const DOC_COFFEE = "demo-doc-coffee";
 const FILE_IMAGE = "demo-file-image";
 const FILE_NOTES = "demo-file-notes";
+const FILE_DRAWING = "demo-file-drawing";
 
 const DEMO_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420">
   <defs>
@@ -133,8 +153,64 @@ const DEMO_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="800" heig
   <text x="400" y="300" text-anchor="middle" font-family="Georgia, serif" font-size="22" fill="#c7d2fe">An annex for your mind</text>
 </svg>`;
 
-const DEMO_NOTES_TXT = `Session zero planning notes
-===========================
+// A small pre-drawn Excalidraw scene so the drawing editor has something to
+// show. Excalidraw's restore() fills in any element fields left out here.
+function demoDrawingElement(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    angle: 0,
+    strokeColor: "#1e1e1e",
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    roughness: 1,
+    opacity: 100,
+    groupIds: [],
+    frameId: null,
+    roundness: null,
+    seed: 1,
+    version: 1,
+    versionNonce: 1,
+    isDeleted: false,
+    boundElements: null,
+    updated: 1,
+    link: null,
+    locked: false,
+    ...overrides,
+  };
+}
+
+function demoDrawingText(overrides: Record<string, unknown>): Record<string, unknown> {
+  return demoDrawingElement({
+    type: "text",
+    fontSize: 20,
+    fontFamily: 1,
+    textAlign: "center",
+    verticalAlign: "top",
+    containerId: null,
+    lineHeight: 1.25,
+    baseline: 18,
+    ...overrides,
+  });
+}
+
+const DEMO_DRAWING_SCENE = JSON.stringify({
+  type: "excalidraw",
+  version: 2,
+  source: "https://annex",
+  elements: [
+    demoDrawingElement({ id: "demo-el-rect-1", type: "rectangle", x: 140, y: 140, width: 220, height: 90, backgroundColor: "#a5d8ff", roundness: { type: 3 } }),
+    demoDrawingText({ id: "demo-el-text-1", x: 180, y: 172, width: 140, height: 25, text: "The roadmap", originalText: "The roadmap" }),
+    demoDrawingElement({ id: "demo-el-arrow-1", type: "arrow", x: 365, y: 230, width: 110, height: 110, points: [[0, 0], [110, 110]], lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: "arrow" }),
+    demoDrawingElement({ id: "demo-el-rect-2", type: "rectangle", x: 480, y: 340, width: 220, height: 90, backgroundColor: "#ffc9c9", roundness: { type: 3 } }),
+    demoDrawingText({ id: "demo-el-text-2", x: 505, y: 372, width: 170, height: 25, text: "What actually ships", originalText: "What actually ships", fontSize: 16 }),
+  ],
+  appState: { viewBackgroundColor: "#ffffff" },
+  files: {},
+});
+
+const DEMO_NOTES_TXT = `Project kickoff notes
+=====================
 
 This is a plain demo file. In a real site you can upload images, audio,
 PDFs and arbitrary attachments alongside your documents.
@@ -157,6 +233,7 @@ This is a live, fully working copy of Annex. Everything you do here, from editin
 - [ ] Edit this document (pencil icon, top right)
 - [ ] Browse the **File Manager** from the sidebar
 - [ ] Open the [[Editor tour]] for a feature walkthrough
+- [ ] Open **roadmap.excalidraw** in the File Manager and try the drawing editor
 - [ ] Press \`Ctrl+K\` and search for "coffee"
 - [ ] Roll some dice: \`dice: 2d6+1d4 Try your luck\`
 
@@ -176,7 +253,7 @@ Here's a sample image:
 
 ## Ready for the real thing?
 
-When you create your own Annex, everything here works the same, plus publishing, members and roles, realtime co-editing, document history, and more.
+When you create your own Annex, everything here works the same, plus members and roles, realtime co-editing, custom domains, and more. This demo site is even "published" - check out its public face in **Site Settings → Publishing**.
 `;
 
 const TOUR_CONTENT = `# Editor tour
@@ -261,8 +338,24 @@ function seed(): Store {
   return {
     projectName: "Demo Site",
     projectDescription: "A sandbox site preloaded with sample docs and files. Poke around, nothing you do here is saved.",
+    // Seeded as published so the public reading view (/s/demo-site) works even
+    // after a reload reseeds the store - the sessionStorage flag survives the
+    // reload, the in-memory publish toggle wouldn't.
+    publishedAt: minutesAgo(60 * 24),
+    changelogMode: "off",
+    aiEnabled: 0,
+    aiSummarizationType: "manual",
+    graphEnabled: 0,
+    publishedGraphEnabled: 0,
+    homeDocId: null,
     isFavourite: 1,
     isHidden: 0,
+    userName: DEMO_USER_NAME,
+    userTimezone: null,
+    userBio: null,
+    readingFont: null,
+    editingFont: null,
+    uiFont: null,
     folders: [
       { id: FOLDER_GUIDES, name: "Guides", parent_id: null, created_at: minutesAgo(60 * 24 * 3) },
     ],
@@ -272,8 +365,9 @@ function seed(): Store {
       { id: DOC_COFFEE, title: "Coffee brewing guide", content: COFFEE_CONTENT, folder_id: null, updated_at: minutesAgo(60 * 49), published_at: null, show_heading: 0, show_last_updated: 1, tags: ["sample", "coffee"] },
     ],
     files: [
-      { id: FILE_IMAGE, name: "demo-illustration.svg", mime_type: "image/svg+xml", size: DEMO_IMAGE_SVG.length, folder_id: null, created_at: minutesAgo(60 * 24 * 2), blob: new Blob([DEMO_IMAGE_SVG], { type: "image/svg+xml" }) },
-      { id: FILE_NOTES, name: "session-zero-notes.txt", mime_type: "text/plain", size: DEMO_NOTES_TXT.length, folder_id: null, created_at: minutesAgo(60 * 24), blob: new Blob([DEMO_NOTES_TXT], { type: "text/plain" }) },
+      { id: FILE_IMAGE, name: "demo-illustration.svg", mime_type: "image/svg+xml", size: DEMO_IMAGE_SVG.length, folder_id: null, created_at: minutesAgo(60 * 24 * 2), updated_at: minutesAgo(60 * 24 * 2), blob: new Blob([DEMO_IMAGE_SVG], { type: "image/svg+xml" }) },
+      { id: FILE_NOTES, name: "kickoff-notes.txt", mime_type: "text/plain", size: DEMO_NOTES_TXT.length, folder_id: null, created_at: minutesAgo(60 * 24), updated_at: minutesAgo(60 * 24), blob: new Blob([DEMO_NOTES_TXT], { type: "text/plain" }) },
+      { id: FILE_DRAWING, name: "roadmap.excalidraw", mime_type: EXCALIDRAW_MIME, size: DEMO_DRAWING_SCENE.length, folder_id: null, created_at: minutesAgo(60 * 5), updated_at: minutesAgo(60 * 5), blob: new Blob([DEMO_DRAWING_SCENE], { type: EXCALIDRAW_MIME }) },
     ],
     revisions: [
       { id: "demo-rev-1", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(60 * 24 * 2), changelog: "First draft", contributors: null, title: "Welcome", content: "# Welcome\n\nThis page is being written…" },
@@ -316,25 +410,26 @@ function projectListing(s: Store) {
     description: s.projectDescription,
     doc_count: s.docs.length,
     member_count: 1,
-    published_at: null,
-    ai_enabled: 0,
-    ai_summarization_type: "manual",
+    published_at: s.publishedAt,
+    ai_enabled: s.aiEnabled,
+    ai_summarization_type: s.aiSummarizationType,
     is_favourite: s.isFavourite,
     is_hidden: s.isHidden,
     features: 0,
     organization_id: null,
     organization_name: null,
     role: "owner",
-    published_graph_enabled: 0,
-    graph_enabled: 0,
-    changelog_mode: "off",
-    home_doc_id: null,
+    published_graph_enabled: s.publishedGraphEnabled,
+    graph_enabled: s.graphEnabled,
+    changelog_mode: s.changelogMode,
+    home_doc_id: s.homeDocId,
+    vanity_slug: null,
     logo_square_updated_at: null,
     logo_wide_updated_at: null,
   };
 }
 
-function docListing(d: DemoDoc) {
+function docListing(s: Store, d: DemoDoc) {
   return {
     id: d.id,
     title: d.title,
@@ -345,15 +440,15 @@ function docListing(d: DemoDoc) {
     tags: d.tags.length ? JSON.stringify(d.tags) : null,
     updated_at: d.updated_at,
     author_id: DEMO_USER_ID,
-    author_name: DEMO_USER_NAME,
+    author_name: s.userName,
     author_role: "owner",
-    is_home: 0,
+    is_home: d.id === s.homeDocId ? 1 : 0,
   };
 }
 
-function docDetail(d: DemoDoc) {
+function docDetail(s: Store, d: DemoDoc) {
   return {
-    ...docListing(d),
+    ...docListing(s, d),
     content: d.content,
     published_at: d.published_at,
     show_heading: d.show_heading,
@@ -370,7 +465,7 @@ function folderListing(f: DemoFolder) {
   return { id: f.id, name: f.name, parent_id: f.parent_id, project_id: PROJECT_ID, created_at: f.created_at };
 }
 
-function fileListing(f: DemoFile) {
+function fileListing(s: Store, f: DemoFile) {
   return {
     id: f.id,
     name: f.name,
@@ -380,8 +475,8 @@ function fileListing(f: DemoFile) {
     folder_id: f.folder_id,
     uploaded_by: DEMO_USER_ID,
     created_at: f.created_at,
-    updated_at: f.created_at,
-    uploader_name: DEMO_USER_NAME,
+    updated_at: f.updated_at,
+    uploader_name: s.userName,
     uploader_role: "owner",
   };
 }
@@ -425,9 +520,42 @@ function ancestorsOf(s: Store, folderId: string | null): { id: string; name: str
 function deleteFolderRecursive(s: Store, folderId: string): void {
   const childFolders = s.folders.filter(f => f.parent_id === folderId);
   for (const child of childFolders) deleteFolderRecursive(s, child.id);
-  s.docs = s.docs.filter(d => d.folder_id !== folderId);
+  for (const doc of s.docs.filter(d => d.folder_id === folderId)) deleteDoc(s, doc.id);
   s.files = s.files.filter(f => f.folder_id !== folderId);
   s.folders = s.folders.filter(f => f.id !== folderId);
+}
+
+function deleteDoc(s: Store, docId: string): void {
+  s.docs = s.docs.filter(d => d.id !== docId);
+  s.revisions = s.revisions.filter(r => r.doc_id !== docId);
+  if (s.homeDocId === docId) s.homeDocId = null;
+}
+
+// ---------------------------------------------------------------------------
+// Graph
+// ---------------------------------------------------------------------------
+
+// Same payload shape as the real graph endpoint ({nodes, edges}), with edges
+// derived on the fly from [[wikilinks]] in doc bodies instead of doc_links.
+function buildDemoGraph(s: Store) {
+  const byTitle = new Map(s.docs.map(d => [d.title.toLowerCase(), d.id]));
+  const seen = new Set<string>();
+  const edges: { source: string; target: string }[] = [];
+  for (const d of s.docs) {
+    for (const m of d.content.matchAll(/\[\[([^\]|#]+)/g)) {
+      const target = byTitle.get(m[1].trim().toLowerCase());
+      if (!target || target === d.id || seen.has(`${d.id}->${target}`)) continue;
+      seen.add(`${d.id}->${target}`);
+      edges.push({ source: d.id, target });
+    }
+  }
+  const linkCount = new Map<string, number>();
+  for (const e of edges) {
+    linkCount.set(e.source, (linkCount.get(e.source) ?? 0) + 1);
+    linkCount.set(e.target, (linkCount.get(e.target) ?? 0) + 1);
+  }
+  const nodes = s.docs.map(d => ({ id: d.id, title: d.title, links: linkCount.get(d.id) ?? 0, tags: d.tags }));
+  return { nodes, edges };
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +600,36 @@ function buildExcerpt(content: string, term: string): string {
   return `${start > 0 ? "…" : ""}${before}<mark>${match}</mark>${after}${end < content.length ? "…" : ""}`;
 }
 
+// Shared by /search and /public/search (both return the same shape).
+function searchStore(s: Store, q: string | null, tag: string | null) {
+  const folderName = (folderId: string | null) =>
+    folderId ? (s.folders.find(f => f.id === folderId)?.name ?? null) : null;
+  if (tag) {
+    const term = tag.toLowerCase();
+    return {
+      docs: s.docs
+        .filter(d => d.tags.some(t => t.toLowerCase().includes(term)))
+        .map(d => ({ doc_id: d.id, title: d.title, tags: d.tags, folder: folderName(d.folder_id), updated_at: d.updated_at })),
+      files: [],
+      folders: [],
+    };
+  }
+  const term = (q ?? "").trim();
+  if (!term) return { docs: [], files: [], folders: [] };
+  const lower = term.toLowerCase();
+  return {
+    docs: s.docs
+      .filter(d => d.title.toLowerCase().includes(lower) || d.content.toLowerCase().includes(lower))
+      .map(d => ({ doc_id: d.id, title: d.title, excerpt: buildExcerpt(d.content, term), folder: folderName(d.folder_id), updated_at: d.updated_at })),
+    files: s.files
+      .filter(f => f.name.toLowerCase().includes(lower))
+      .map(f => ({ file_id: f.id, name: f.name, mime_type: f.mime_type, folder: folderName(f.folder_id), updated_at: f.updated_at })),
+    folders: s.folders
+      .filter(f => f.name.toLowerCase().includes(lower))
+      .map(f => ({ folder_id: f.id, name: f.name, parent: folderName(f.parent_id) })),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -490,6 +648,16 @@ const PASSTHROUGH_PREFIXES = [
   "/api/dev/",
 ];
 
+// /api/public/* is normally passthrough (a demo visitor can still browse real
+// published sites), EXCEPT when the request references the demo site's own
+// data - every demo entity id starts with "demo-" (seeded ids and nextId ids
+// alike), which real ids (UUIDs) never do. Those requests are answered from
+// the in-memory store so publishing is browsable inside the demo.
+function isDemoPublicRequest(url: URL): boolean {
+  if (!url.pathname.startsWith("/api/public/")) return false;
+  return url.pathname.includes("/demo-") || (url.searchParams.get("projectId")?.startsWith("demo-") ?? false);
+}
+
 async function route(method: string, url: URL, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const s = store ?? (store = seed());
   const seg = url.pathname.replace(/^\/api\//, "").split("/").filter(Boolean);
@@ -497,27 +665,57 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   // --- session / user ---
   if (seg[0] === "me" && seg.length === 1 && method === "GET") {
     return ok({
-      name: DEMO_USER_NAME,
+      name: s.userName,
       userId: DEMO_USER_ID,
       email: DEMO_USER_EMAIL,
+      emailVerified: true,
+      emailVerificationEnabled: false,
+      timezone: s.userTimezone,
+      bio: s.userBio,
       personalPlan: "free",
+      personalPlanSince: null,
+      personalPlanStatus: null,
+      personalPlanCancelAt: null,
       personalPlanStyle: null,
       personalPresenceColor: null,
       personalCritSparkles: true,
-      readingFont: null,
-      editingFont: null,
-      uiFont: null,
+      readingFont: s.readingFont,
+      editingFont: s.editingFont,
+      uiFont: s.uiFont,
       isAdmin: false,
       themeMode: null,
       themeCustomColor: null,
       customThemingEnabled: false,
     });
   }
+  if (seg[0] === "me" && seg.length === 1 && method === "PATCH") {
+    const body = await readJsonBody(input, init);
+    if (typeof body.name === "string" && body.name.trim()) s.userName = body.name.trim();
+    if ("timezone" in body) s.userTimezone = typeof body.timezone === "string" ? body.timezone : null;
+    return ok({ name: s.userName, timezone: s.userTimezone });
+  }
+  if (seg[0] === "me" && seg.length === 1 && method === "DELETE") {
+    return blocked("Account deletion is disabled in the demo.");
+  }
+  if (seg[0] === "me" && seg[1] === "bio" && method === "PATCH") {
+    const body = await readJsonBody(input, init);
+    s.userBio = typeof body.bio === "string" && body.bio ? body.bio : null;
+    return ok({ bio: s.userBio });
+  }
+  if (seg[0] === "me" && seg[1] === "reading-font" && method === "PATCH") {
+    const body = await readJsonBody(input, init);
+    if ("readingFont" in body) s.readingFont = typeof body.readingFont === "string" ? body.readingFont : null;
+    if ("editingFont" in body) s.editingFont = typeof body.editingFont === "string" ? body.editingFont : null;
+    if ("uiFont" in body) s.uiFont = typeof body.uiFont === "string" ? body.uiFont : null;
+    return ok();
+  }
   if (seg[0] === "me" && seg[1] === "sessions" && seg[2] === "logout" && method === "POST") return ok();
+  if (seg[0] === "avatar") return blocked("Avatar changes are disabled in the demo.");
+  if (seg[0] === "billing") return blocked("Billing is disabled in the demo.");
   if (seg[0] === "users" && seg.length === 2 && method === "GET") {
     return ok({
       userId: seg[1],
-      name: seg[1] === DEMO_USER_ID ? DEMO_USER_NAME : "Unknown",
+      name: seg[1] === DEMO_USER_ID ? s.userName : "Unknown",
       createdAt: minutesAgo(60 * 24 * 7),
       sharedProjects: [],
       favouriteSites: [],
@@ -534,12 +732,37 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     const sub = seg[2];
     if (!sub) {
       if (method === "GET") return ok(projectListing(s));
-      if (method === "PUT") {
+      if (method === "PATCH") {
         const body = await readJsonBody(input, init);
+        // Custom links are behind the CUSTOM_LINK feature flag, which the demo
+        // site never has - refuse like the real API does.
+        if ("vanitySlug" in body) return blocked("Custom links aren't available in the demo.");
         if (typeof body.name === "string" && body.name.trim()) s.projectName = body.name.trim();
-        if (typeof body.description === "string") s.projectDescription = body.description;
+        if ("description" in body) s.projectDescription = typeof body.description === "string" ? body.description : "";
+        if ("publishedAt" in body) s.publishedAt = typeof body.publishedAt === "string" ? body.publishedAt : null;
+        if (typeof body.changelogMode === "string") s.changelogMode = body.changelogMode;
+        if (typeof body.aiEnabled === "boolean") s.aiEnabled = body.aiEnabled ? 1 : 0;
+        if (typeof body.aiSummarizationType === "string") s.aiSummarizationType = body.aiSummarizationType;
+        if (typeof body.graphEnabled === "boolean") {
+          s.graphEnabled = body.graphEnabled ? 1 : 0;
+          if (!body.graphEnabled) s.publishedGraphEnabled = 0;
+        }
+        if (typeof body.publishedGraphEnabled === "boolean") {
+          s.publishedGraphEnabled = body.publishedGraphEnabled && s.graphEnabled ? 1 : 0;
+        }
+        // Same semantics as the real API: enabling creates an empty "Home" doc
+        // once; disabling only unsets the pointer (the doc itself survives).
+        if (body.homeDocEnabled === true && !s.homeDocId) {
+          const doc: DemoDoc = { id: nextId("demo-doc"), title: "Home", content: "", folder_id: null, updated_at: nowIso(), published_at: null, show_heading: 0, show_last_updated: 1, tags: [] };
+          s.docs.push(doc);
+          s.homeDocId = doc.id;
+        } else if (body.homeDocEnabled === false) {
+          s.homeDocId = null;
+        }
+        // graphTagColors is accepted and dropped - nothing in the demo reads it back.
         return ok(projectListing(s));
       }
+      if (method === "DELETE") return blocked("Site deletion is disabled in the demo.");
     }
     if (sub === "favourite" && method === "PATCH") {
       s.isFavourite = s.isFavourite ? 0 : 1;
@@ -554,8 +777,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     if (sub === "contents" && method === "GET") {
       const folderId = url.searchParams.get("folderId");
       const folders = s.folders.filter(f => f.parent_id === folderId).map(folderListing);
-      const docs = s.docs.filter(d => d.folder_id === folderId).map(docListing);
-      const files = s.files.filter(f => f.folder_id === folderId).map(fileListing);
+      const docs = s.docs.filter(d => d.folder_id === folderId).map(d => docListing(s, d));
+      const files = s.files.filter(f => f.folder_id === folderId).map(f => fileListing(s, f));
       const folderCounts: Record<string, { docs: number; folders: number }> = {};
       for (const f of folders) {
         folderCounts[f.id] = {
@@ -565,12 +788,18 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       }
       return ok({ folders, docs, files, folderCounts, ancestors: ancestorsOf(s, folderId) });
     }
-    if (sub === "members" && method === "GET") {
-      return ok([{ userId: DEMO_USER_ID, name: DEMO_USER_NAME, email: DEMO_USER_EMAIL, role: "owner" }]);
+    if (sub === "members") {
+      if (method === "GET") return ok([{ userId: DEMO_USER_ID, name: s.userName, email: DEMO_USER_EMAIL, role: "owner", accepted: 1 }]);
+      if (method === "POST") return blocked("Inviting members is disabled in the demo.");
+      return blocked("Member changes are disabled in the demo.");
     }
     if (sub === "api-keys" && method === "GET") return ok([]);
     if (sub === "invite-links" && method === "GET") return ok([]);
-    if (sub === "graph" && method === "GET") return ok({ nodes: [], links: [] });
+    if (sub === "graph" && seg[3] === "reindex" && method === "POST") {
+      return ok({ nextAvailableAt: new Date(Date.now() + 10 * 60_000).toISOString() });
+    }
+    if (sub === "graph" && method === "GET") return ok(buildDemoGraph(s));
+    if (sub === "export") return blocked("Site export is disabled in the demo.");
     if (sub === "api-keys" || sub === "invite-links" || sub === "domain" || sub === "logo" || sub === "folder-shares") {
       return method === "GET" ? notFound() : blocked("Not available in the demo.");
     }
@@ -591,7 +820,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       const rootFolderId = url.searchParams.get("rootFolderId");
       if (rootFolderId) docs = docs.filter(d => isInSubtree(s, d.folder_id, rootFolderId));
       if (q) docs = docs.filter(d => d.title.toLowerCase().includes(q.toLowerCase()));
-      return ok(docs.map(docListing));
+      return ok(docs.map(d => docListing(s, d)));
     }
     if (method === "POST") {
       const body = await readJsonBody(input, init);
@@ -607,14 +836,14 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
         tags: [],
       };
       s.docs.push(doc);
-      return ok(docDetail(doc));
+      return ok(docDetail(s, doc));
     }
   }
   if (seg[0] === "docs" && seg.length >= 2) {
     const doc = s.docs.find(d => d.id === seg[1]);
     if (seg.length === 2) {
       if (!doc) return notFound();
-      if (method === "GET") return ok(docDetail(doc));
+      if (method === "GET") return ok(docDetail(s, doc));
       if (method === "PUT") {
         const body = await readJsonBody(input, init);
         if (typeof body.title === "string") doc.title = body.title;
@@ -630,7 +859,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
             id: nextId("demo-rev"),
             doc_id: doc.id,
             editor_id: DEMO_USER_ID,
-            editor_name: DEMO_USER_NAME,
+            editor_name: s.userName,
             created_at: doc.updated_at,
             changelog: typeof body.changelog === "string" && body.changelog ? body.changelog : null,
             contributors: null,
@@ -640,12 +869,12 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
         }
         // Like the real API, the response carries `content` only when the body
         // actually changed (a no-op save records no revision or changelog).
-        if (contentChanged) return ok(docDetail(doc));
-        const { content: _content, ...rest } = docDetail(doc);
+        if (contentChanged) return ok(docDetail(s, doc));
+        const { content: _content, ...rest } = docDetail(s, doc);
         return ok(rest);
       }
       if (method === "DELETE") {
-        s.docs = s.docs.filter(d => d.id !== seg[1]);
+        deleteDoc(s, seg[1]);
         return ok();
       }
     }
@@ -686,7 +915,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
             id: nextId("demo-rev"),
             doc_id: doc.id,
             editor_id: DEMO_USER_ID,
-            editor_name: DEMO_USER_NAME,
+            editor_name: s.userName,
             created_at: doc.updated_at,
             changelog: typeof body.changelog === "string" && body.changelog ? body.changelog : `Restored version from ${rev.created_at}`,
             contributors: null,
@@ -695,8 +924,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
           });
         }
         // Same response shape as the doc PUT: content only when it changed.
-        if (contentChanged) return ok(docDetail(doc));
-        const { content: _content, ...rest } = docDetail(doc);
+        if (contentChanged) return ok(docDetail(s, doc));
+        const { content: _content, ...rest } = docDetail(s, doc);
         return ok(rest);
       }
     }
@@ -740,28 +969,30 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     const file = form?.get("file");
     if (!(file instanceof File)) return blocked("No file in upload.");
     const folderId = form?.get("folderId");
+    const now = nowIso();
     const record: DemoFile = {
       id: nextId("demo-file"),
       name: file.name || "untitled",
       mime_type: file.type || "application/octet-stream",
       size: file.size,
       folder_id: typeof folderId === "string" && folderId ? folderId : null,
-      created_at: nowIso(),
+      created_at: now,
+      updated_at: now,
       blob: file,
     };
     s.files.push(record);
-    return ok(fileListing(record));
+    return ok(fileListing(s, record));
   }
   if (seg[0] === "files" && seg.length >= 2) {
     const file = s.files.find(f => f.id === seg[1]);
     if (!file) return notFound();
     if (seg.length === 2) {
-      if (method === "GET") return ok(fileListing(file));
+      if (method === "GET") return ok(fileListing(s, file));
       if (method === "PUT") {
         const body = await readJsonBody(input, init);
         if (typeof body.name === "string" && body.name) file.name = body.name;
         if ("folderId" in body) file.folder_id = typeof body.folderId === "string" ? body.folderId : null;
-        return ok(fileListing(file));
+        return ok(fileListing(s, file));
       }
       if (method === "DELETE") {
         s.files = s.files.filter(f => f.id !== seg[1]);
@@ -772,45 +1003,19 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       return new Response(file.blob, { status: 200, headers: { "Content-Type": file.mime_type } });
     }
     // Drawings save in place - overwrite the in-memory blob so a reopen shows the
-    // edits (mirrors PUT /files/:id/content on the real API).
+    // edits (mirrors PUT /files/:id/content on the real API, updated_at bump included).
     if (seg[2] === "content" && method === "PUT") {
       const text = typeof init?.body === "string" ? init.body : "";
       file.blob = new Blob([text], { type: file.mime_type });
       file.size = file.blob.size;
-      return ok({ id: file.id, size: file.size, updated_at: file.created_at });
+      file.updated_at = nowIso();
+      return ok({ id: file.id, size: file.size, updated_at: file.updated_at });
     }
   }
 
   // --- search ---
   if (seg[0] === "search" && method === "GET") {
-    const folderName = (folderId: string | null) =>
-      folderId ? (s.folders.find(f => f.id === folderId)?.name ?? null) : null;
-    const q = url.searchParams.get("q");
-    const tag = url.searchParams.get("tag");
-    if (tag) {
-      const term = tag.toLowerCase();
-      return ok({
-        docs: s.docs
-          .filter(d => d.tags.some(t => t.toLowerCase().includes(term)))
-          .map(d => ({ doc_id: d.id, title: d.title, tags: d.tags, folder: folderName(d.folder_id), updated_at: d.updated_at })),
-        files: [],
-        folders: [],
-      });
-    }
-    const term = (q ?? "").trim();
-    if (!term) return ok({ docs: [], files: [], folders: [] });
-    const lower = term.toLowerCase();
-    return ok({
-      docs: s.docs
-        .filter(d => d.title.toLowerCase().includes(lower) || d.content.toLowerCase().includes(lower))
-        .map(d => ({ doc_id: d.id, title: d.title, excerpt: buildExcerpt(d.content, term), folder: folderName(d.folder_id), updated_at: d.updated_at })),
-      files: s.files
-        .filter(f => f.name.toLowerCase().includes(lower))
-        .map(f => ({ file_id: f.id, name: f.name, mime_type: f.mime_type, folder: folderName(f.folder_id), updated_at: f.created_at })),
-      folders: s.folders
-        .filter(f => f.name.toLowerCase().includes(lower))
-        .map(f => ({ folder_id: f.id, name: f.name, parent: folderName(f.parent_id) })),
-    });
+    return ok(searchStore(s, url.searchParams.get("q"), url.searchParams.get("tag")));
   }
 
   // --- AI ---
@@ -818,7 +1023,112 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     return ok({ summary: "AI summaries aren't available in the demo. In a real site this is a generated summary of the document." });
   }
 
-  return notFound("not_available_in_demo");
+  // --- published site (/api/public/*, demo site only - see the fetch patch) ---
+  if (seg[0] === "public") return routePublic(s, method, url, seg.slice(1));
+
+  // Human-readable because several toast paths surface `error` verbatim.
+  return notFound("Not available in the demo.");
+}
+
+// ---------------------------------------------------------------------------
+// Published-site routes
+// ---------------------------------------------------------------------------
+
+// Mirrors packages/api/src/routes/public.ts (+ handlePublicSearch/Graph) for
+// the demo site so publishing is demoable end-to-end: the copy-link URL from
+// DocPage and the "view site" link both render in-demo instead of 404ing
+// against the real backend (which has no demo-site project).
+function publicProject(s: Store) {
+  return {
+    id: PROJECT_ID,
+    name: s.projectName,
+    description: s.projectDescription,
+    published_at: s.publishedAt,
+    vanity_slug: null,
+    home_doc_id: s.homeDocId,
+    graph_enabled: s.graphEnabled,
+    published_graph_enabled: s.publishedGraphEnabled,
+    logo_square_updated_at: null,
+    logo_wide_updated_at: null,
+    custom_domain: null,
+  };
+}
+
+function publicDocs(s: Store) {
+  return [...s.docs]
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map(d => ({ id: d.id, title: d.title, folder_id: d.folder_id, sidebar_position: null, is_home: d.id === s.homeDocId ? 1 : 0 }));
+}
+
+function publicFolders(s: Store) {
+  return s.folders.map(f => ({ id: f.id, name: f.name, parent_id: f.parent_id }));
+}
+
+function publicFiles(s: Store) {
+  return s.files.map(f => ({ id: f.id, name: f.name, mime_type: f.mime_type, size: f.size, folder_id: f.folder_id }));
+}
+
+function routePublic(s: Store, method: string, url: URL, seg: string[]): Response {
+  if (method !== "GET") return notFound();
+  const sitePublished = s.publishedAt !== null;
+
+  if (seg[0] === "projects" && seg[1] === PROJECT_ID) {
+    if (seg[2] === "graph") {
+      if (!sitePublished || !s.publishedGraphEnabled) return notFound();
+      return ok(buildDemoGraph(s));
+    }
+    if (seg[2]) return notFound(); // logo etc. - the demo site has none
+    if (!sitePublished) return notFound();
+    return ok({ ...publicProject(s), docs: publicDocs(s), folders: publicFolders(s), files: publicFiles(s) });
+  }
+
+  if (seg[0] === "docs" && seg[1] === PROJECT_ID && seg[2]) {
+    const doc = s.docs.find(d => d.id === seg[2]);
+    if (!doc) return notFound();
+    // Same rule as the real API: a published site exposes all its docs; an
+    // unpublished site exposes only per-doc-published ones.
+    if (!sitePublished && doc.published_at === null) return notFound();
+    const fm = parseFrontmatter(doc.content);
+    return ok({
+      doc: {
+        id: doc.id,
+        title: doc.title,
+        display_title: fm.title ?? null,
+        hide_title: fm.hide_title ?? null,
+        description: fm.description ?? null,
+        image: fm.image ?? null,
+        content: doc.content,
+        showHeading: doc.show_heading !== 0,
+        showLastUpdated: doc.show_last_updated !== 0,
+        updatedAt: doc.updated_at,
+      },
+      sitePublished,
+      project: publicProject(s),
+      docs: sitePublished ? publicDocs(s) : null,
+      folders: sitePublished ? publicFolders(s) : null,
+      files: sitePublished ? publicFiles(s) : null,
+    });
+  }
+
+  if (seg[0] === "files" && seg[1]) {
+    const file = s.files.find(f => f.id === seg[1]);
+    // The real API only serves files of a *published* project (even on a page
+    // reached via a per-doc publish) - mirror that.
+    if (!file || !sitePublished) return notFound();
+    if (seg[2] === "content") {
+      return new Response(file.blob, { status: 200, headers: { "Content-Type": file.mime_type } });
+    }
+    if (seg[2] === "stream-url") return ok({ url: null });
+    if (!seg[2]) return ok({ id: file.id, name: file.name, mime_type: file.mime_type, size: file.size });
+    return notFound();
+  }
+
+  if (seg[0] === "search") {
+    if (!sitePublished) return notFound();
+    return ok(searchStore(s, url.searchParams.get("q"), url.searchParams.get("tag")));
+  }
+
+  return notFound();
 }
 
 // ---------------------------------------------------------------------------
@@ -840,7 +1150,7 @@ export function installDemoServer(): void {
     if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/")) {
       return realFetch(input, init);
     }
-    if (PASSTHROUGH_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
+    if (PASSTHROUGH_PREFIXES.some(prefix => url.pathname.startsWith(prefix)) && !isDemoPublicRequest(url)) {
       return realFetch(input, init);
     }
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();

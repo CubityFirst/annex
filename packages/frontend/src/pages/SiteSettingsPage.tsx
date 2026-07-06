@@ -192,6 +192,7 @@ export function SiteSettingsPage() {
   const navigate = useNavigate();
 
   const [project, setProject] = useState<Project | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -321,9 +322,11 @@ export function SiteSettingsPage() {
           if (json.data.graph_reindex_available_at) {
             setReindexAvailableAt(new Date(json.data.graph_reindex_available_at));
           }
+        } else {
+          setLoadError("This site could not be loaded. It may have been deleted, or you may no longer have access.");
         }
       })
-      .catch(() => {});
+      .catch(() => { setLoadError("Could not connect to the server."); });
   }, [projectId]);
 
   useEffect(() => {
@@ -1213,7 +1216,14 @@ export function SiteSettingsPage() {
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        {loadError ? (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button onClick={() => navigate("/dashboard")}>Back to Dashboard</Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
       </div>
     );
   }
@@ -1222,6 +1232,8 @@ export function SiteSettingsPage() {
     { id: "general", label: "General", group: "site" },
     { id: "publishing", label: "Publishing", group: "site", visible: isAdminOrOwner },
     { id: "branding", label: "Branding", group: "site", visible: isAdminOrOwner },
+    { id: "custom-link", label: "Custom Link", group: "site", visible: isAdminOrOwner && customLinkEnabled },
+    { id: "custom-domain", label: "Custom Domain", group: "site", visible: isAdminOrOwner && customLinkEnabled },
     { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
     { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
     { id: "api-keys", label: "API Keys", group: "developer", visible: myRole !== null },
@@ -1683,15 +1695,36 @@ export function SiteSettingsPage() {
                           <RefreshCw className={`h-3.5 w-3.5 ${refreshingDomain ? "animate-spin" : ""}`} />
                           {refreshingDomain ? "Checking…" : "Refresh"}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={handleRemoveDomain}
-                          disabled={removingDomain}
-                        >
-                          {removingDomain ? "Removing…" : "Remove"}
-                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              disabled={removingDomain}
+                            >
+                              {removingDomain ? "Removing…" : "Remove"}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove {domain.hostname}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Your site will stop being served at this domain. The hostname and its certificate will be deleted, and re-adding it later will require verifying DNS records again.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                disabled={removingDomain}
+                                onClick={handleRemoveDomain}
+                              >
+                                Remove domain
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
 

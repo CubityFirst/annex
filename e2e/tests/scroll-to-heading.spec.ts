@@ -120,6 +120,9 @@ test.afterAll(async () => {
       if (await deleteBtn.isVisible({ timeout: 3000 })) {
         await deleteBtn.click();
         await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = page.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await page.getByRole("button", { name: /yes.*delete/i }).click();
         await page.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -150,9 +153,12 @@ test("sets up a published doc with multiple headings", async () => {
   const projectId = projectMatch[1];
   projectSettingsUrl = `/projects/${projectId}/settings`;
 
-  // Create doc
+  // Create doc. Docs are only created on first save - save the empty draft
+  // to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
-  await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
+  await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   const docMatch = page.url().match(/\/docs\/([a-z0-9-]+)/);
   if (!docMatch) throw new Error("could not parse doc id from URL");
   const docId = docMatch[1];

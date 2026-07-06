@@ -105,6 +105,9 @@ test.afterAll(async () => {
       if (await btn.isVisible({ timeout: 3000 })) {
         await btn.click();
         await ownerPage.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = ownerPage.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await ownerPage.getByRole("button", { name: /yes.*delete/i }).click();
         await ownerPage.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -175,12 +178,9 @@ test("limited user accepts the invite", async () => {
 
 test("owner creates a doc with content", async () => {
   await ownerPage.goto(`/projects/${projectId}`);
+  // /docs/new opens straight into the editor; the doc only gets an id on save.
   await ownerPage.getByRole("button", { name: "New document" }).click();
-  await expect(ownerPage).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
-
-  const m = ownerPage.url().match(/\/docs\/([a-z0-9-]+)/);
-  docId = m?.[1] ?? "";
-  expect(docId).not.toBe("");
+  await expect(ownerPage).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
 
   await ownerPage.getByPlaceholder("Document title").fill(DOC_TITLE);
 
@@ -192,6 +192,11 @@ test("owner creates a doc with content", async () => {
   await ownerPage.getByRole("button", { name: "Save" }).click();
   // Reading-mode pencil reappears once the save round-trip completes.
   await expect(ownerPage.getByTitle("Edit document")).toBeVisible({ timeout: 10000 });
+  await expect(ownerPage).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
+
+  const m = ownerPage.url().match(/\/docs\/([a-z0-9-]+)/);
+  docId = m?.[1] ?? "";
+  expect(docId).not.toBe("");
 });
 
 // ── Default state: no access ──────────────────────────────────────────────────
@@ -234,9 +239,10 @@ test("owner grants the limited user VIEW access on the doc", async () => {
 
 test("with VIEW share - limited user sees the doc and the body content", async () => {
   await limitedPage.goto(`/projects/${projectId}`);
-  await expect(limitedPage.getByText(DOC_TITLE)).toBeVisible({ timeout: 5000 });
+  // .first(): the doc renders twice (desktop table + CSS-hidden mobile cards).
+  await expect(limitedPage.getByText(DOC_TITLE).first()).toBeVisible({ timeout: 5000 });
 
-  await limitedPage.getByText(DOC_TITLE).click();
+  await limitedPage.getByText(DOC_TITLE).first().click();
   await expect(limitedPage).toHaveURL(/\/docs\/[a-z0-9-]+/, { timeout: 5000 });
   // Reading mode still mounts CodeMirror with inline widgets, so the body
   // text appears in both the rendered <p> and the cm-line div. Either match
@@ -299,6 +305,9 @@ test("owner deletes the project", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
   await ownerPage.getByRole("button", { name: /delete site/i }).click();
   await expect(ownerPage.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
+  // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+  const confirmInput = ownerPage.locator("#delete-confirm-name");
+  await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
   await ownerPage.getByRole("button", { name: /yes.*delete/i }).click();
   await expect(ownerPage).not.toHaveURL(/\/projects\//, { timeout: 15000 });
   projectId = "";

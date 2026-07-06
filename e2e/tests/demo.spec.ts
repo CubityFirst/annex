@@ -55,7 +55,8 @@ test.describe("demo sandbox", () => {
     // list, so a bare getByText trips strict mode.
     await expect(page.getByText("Welcome to the Annex demo").first()).toBeVisible();
     await expect(page.getByText("demo-illustration.svg").first()).toBeVisible();
-    await expect(page.getByText("session-zero-notes.txt").first()).toBeVisible();
+    await expect(page.getByText("kickoff-notes.txt").first()).toBeVisible();
+    await expect(page.getByText("roadmap.excalidraw").first()).toBeVisible();
     await expect(page.getByText("Guides").first()).toBeVisible();
 
     await page.keyboard.press("Control+k");
@@ -93,6 +94,36 @@ test.describe("demo sandbox", () => {
     await page.click('button[title="View history"]');
     await expect(page.getByText("Current version")).toBeVisible();
     await expect(page.getByText("Added the feature checklist")).toBeVisible();
+  });
+
+  test("seeded drawing opens in the Excalidraw editor", async ({ page }) => {
+    await enterDemo(page);
+    await page.click('div.cursor-pointer:has-text("Demo Site")');
+    await page.click("text=roadmap.excalidraw");
+    // The @excalidraw/excalidraw bundle is lazy-loaded, allow it time in dev.
+    await expect(page.locator(".excalidraw").first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText("Failed to load drawing")).not.toBeVisible();
+  });
+
+  test("public reading view is served from the in-memory store", async ({ page }) => {
+    await enterDemo(page);
+    // The demo site is seeded as published; the sessionStorage flag survives
+    // the hard navigation, so /api/public/* for demo-site resolves in-memory.
+    await page.goto("/s/demo-site/demo-doc-coffee");
+    await expect(page.getByText("Weigh everything").first()).toBeVisible();
+    // Site-published pages carry the sidebar nav built from the public listing.
+    await expect(page.getByText("Editor tour").first()).toBeVisible();
+  });
+
+  test("site settings can unpublish and republish the demo site", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/projects/demo-site/settings");
+    await expect(page.getByText("Published", { exact: true })).toBeVisible();
+    await page.click('button:has-text("Unpublish")');
+    await expect(page.getByText("Site unpublished.")).toBeVisible();
+    await expect(page.getByText("Private", { exact: true })).toBeVisible();
+    await page.click('button:has-text("Publish site")');
+    await expect(page.getByText("Site published.")).toBeVisible();
   });
 
   test("exit demo returns to the landing page", async ({ page }) => {

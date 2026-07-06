@@ -94,6 +94,7 @@ export function OrgSettingsPage() {
   const [sites, setSites] = useState<OrgSite[]>([]);
   const [attachable, setAttachable] = useState<OwnedSite[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -106,6 +107,7 @@ export function OrgSettingsPage() {
 
   const [attachId, setAttachId] = useState<string>("");
   const [attaching, setAttaching] = useState(false);
+  const [detachingId, setDetachingId] = useState<string | null>(null);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
@@ -122,7 +124,7 @@ export function OrgSettingsPage() {
         if (result.status === 404 || result.status === 403) { setNotFound(true); return; }
         if (result.ok && result.data) { setOrg(result.data); setNameDraft(result.data.name); }
       })
-      .catch(() => {});
+      .catch(() => { setLoadError(true); });
     apiFetchJson<OrgSite[]>(`/api/organizations/${orgId}/projects`)
       .then(result => { if (result.ok && result.data) setSites(result.data); })
       .catch(() => {});
@@ -229,6 +231,7 @@ export function OrgSettingsPage() {
 
   async function handleDetach(site: OrgSite) {
     if (!orgId) return;
+    setDetachingId(site.id);
     const result = await apiFetchJson(`/api/organizations/${orgId}/projects/${site.id}/attach`, { method: "DELETE" });
     if (result.ok) {
       setSites(prev => prev.filter(s => s.id !== site.id));
@@ -236,24 +239,37 @@ export function OrgSettingsPage() {
     } else {
       toast({ title: "Failed to detach site.", variant: "destructive" });
     }
+    setDetachingId(null);
   }
 
   async function handleDelete() {
     if (!orgId) return;
     const result = await apiFetchJson(`/api/organizations/${orgId}`, { method: "DELETE" });
-    if (result.ok) navigate("/dashboard");
+    if (result.ok) {
+      navigate("/dashboard");
+    } else {
+      toast({ title: "Failed to delete organization.", variant: "destructive" });
+    }
   }
 
   async function handleLeave() {
     if (!orgId || !currentUser) return;
     const result = await apiFetchJson(`/api/organizations/${orgId}/members/${currentUser.id}`, { method: "DELETE" });
-    if (result.ok) navigate("/dashboard");
+    if (result.ok) {
+      navigate("/dashboard");
+    } else {
+      toast({ title: "Failed to leave organization.", variant: "destructive" });
+    }
   }
 
-  if (notFound) {
+  if (notFound || loadError) {
     return (
       <div className="px-8 py-10">
-        <p className="text-sm text-muted-foreground">Organization not found, or you don't have access.</p>
+        <p className="text-sm text-muted-foreground">
+          {notFound
+            ? "Organization not found, or you don't have access."
+            : "Could not load this organization. Check your connection and try again."}
+        </p>
         <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/dashboard")}>Back to dashboard</Button>
       </div>
     );
@@ -465,14 +481,35 @@ export function OrgSettingsPage() {
                       >
                         {site.name}
                       </button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDetach(site)}
-                      >
-                        Detach
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
+                            disabled={detachingId === site.id}
+                          >
+                            {detachingId === site.id ? "Detaching…" : "Detach"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Detach {site.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Members of the organization will lose the access they had to this site through it. Direct site members are unaffected.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDetach(site)}
+                            >
+                              Detach
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   ))}
                 </div>

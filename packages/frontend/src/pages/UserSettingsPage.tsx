@@ -169,12 +169,14 @@ export function UserSettingsPage() {
   const [backupCodesOpen, setBackupCodesOpen] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [backupCodesLoading, setBackupCodesLoading] = useState(false);
+  const [confirmBackupCodesOpen, setConfirmBackupCodesOpen] = useState(false);
 
   // Delete account state
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [ownedSitesOpen, setOwnedSitesOpen] = useState(false);
   const [ownedSites, setOwnedSites] = useState<Array<{ id: string; name: string }>>([]);
+  const [ownedOrgs, setOwnedOrgs] = useState<Array<{ id: string; name: string }>>([]);
 
   // Change password state
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -334,9 +336,14 @@ export function UserSettingsPage() {
     setAvatarUploading(true);
     try {
       const token = getToken();
-      await fetch(`/api/avatar?variant=${avatarVariant}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
-      setAvatarKey(k => k + 1);
-      toast({ title: "Avatar removed" });
+      const res = await fetch(`/api/avatar?variant=${avatarVariant}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json() as { ok: boolean; error?: string };
+      if (json.ok) {
+        setAvatarKey(k => k + 1);
+        toast({ title: "Avatar removed" });
+      } else {
+        toast({ title: json.error ?? "Failed to remove avatar", variant: "destructive" });
+      }
     } catch {
       toast({ title: "Could not connect to the server", variant: "destructive" });
     } finally {
@@ -473,7 +480,7 @@ export function UserSettingsPage() {
     });
   }
 
-  async function handleViewBackupCodes() {
+  async function handleGenerateBackupCodes() {
     await runWithTwoFA(async (verification) => {
       setBackupCodesLoading(true);
       try {
@@ -704,11 +711,17 @@ export function UserSettingsPage() {
   async function handleDeleteButtonClick() {
     const token = getToken();
     try {
-      const res = await fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string }> };
-      const owned = (json.data ?? []).filter(p => p.role === "owner").map(p => ({ id: p.id, name: p.name }));
-      if (owned.length > 0) {
-        setOwnedSites(owned);
+      const [projectsRes, orgsRes] = await Promise.all([
+        fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/organizations", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const projectsJson = await projectsRes.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string }> };
+      const orgsJson = await orgsRes.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string; site_count: number; member_count: number }> };
+      const ownedSitesList = (projectsJson.data ?? []).filter(p => p.role === "owner").map(p => ({ id: p.id, name: p.name }));
+      const ownedOrgsList = (orgsJson.data ?? []).filter(o => o.role === "owner").map(o => ({ id: o.id, name: o.name }));
+      if (ownedSitesList.length > 0 || ownedOrgsList.length > 0) {
+        setOwnedSites(ownedSitesList);
+        setOwnedOrgs(ownedOrgsList);
         setOwnedSitesOpen(true);
         return;
       }
@@ -1961,8 +1974,8 @@ export function UserSettingsPage() {
               <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
             ) : totpEnabled ? (
               <div className="mt-3 flex gap-2 flex-wrap">
-                <Button variant="outline" onClick={handleViewBackupCodes} disabled={twoFABusy || backupCodesLoading}>
-                  {backupCodesLoading ? "Loading…" : "View Backup Codes"}
+                <Button variant="outline" onClick={() => setConfirmBackupCodesOpen(true)} disabled={twoFABusy || backupCodesLoading}>
+                  {backupCodesLoading ? "Generating…" : "Generate backup codes"}
                 </Button>
                 <Button
                   variant="outline"
@@ -2235,10 +2248,20 @@ export function UserSettingsPage() {
           <AlertDialog open={ownedSitesOpen} onOpenChange={setOwnedSitesOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Transfer or delete your sites first</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {ownedOrgs.length > 0
+                    ? "Transfer or delete your sites and organizations first"
+                    : "Transfer or delete your sites first"}
+                </AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div>
-                    <p>You own the following {ownedSites.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete {ownedSites.length === 1 ? "it" : "them"}:</p>
+                    <p>
+                      {ownedSites.length > 0 && ownedOrgs.length > 0
+                        ? "You own the following sites and organizations and cannot delete your account until you transfer ownership or delete them:"
+                        : ownedOrgs.length > 0
+                          ? `You own the following ${ownedOrgs.length === 1 ? "organization" : "organizations"} and cannot delete your account until you transfer ownership or delete ${ownedOrgs.length === 1 ? "it" : "them"}:`
+                          : `You own the following ${ownedSites.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete ${ownedSites.length === 1 ? "it" : "them"}:`}
+                    </p>
                     <ul className="mt-2 list-disc pl-5 space-y-1">
                       {ownedSites.map(site => (
                         <li key={site.id}>
@@ -2249,6 +2272,18 @@ export function UserSettingsPage() {
                           >
                             {site.name}
                           </Link>
+                        </li>
+                      ))}
+                      {ownedOrgs.map(org => (
+                        <li key={org.id}>
+                          <Link
+                            to={`/orgs/${org.id}`}
+                            className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
+                            onClick={() => setOwnedSitesOpen(false)}
+                          >
+                            {org.name}
+                          </Link>
+                          {" "}(organization)
                         </li>
                       ))}
                     </ul>
@@ -2377,6 +2412,28 @@ export function UserSettingsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+      <AlertDialog open={confirmBackupCodesOpen} onOpenChange={setConfirmBackupCodesOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Generate new backup codes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This creates a fresh set of backup codes and permanently invalidates any codes generated before, so any previously saved codes will stop working.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmBackupCodesOpen(false);
+                void handleGenerateBackupCodes();
+              }}
+            >
+              Generate codes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={backupCodesOpen} onOpenChange={setBackupCodesOpen}>
         <DialogContent>

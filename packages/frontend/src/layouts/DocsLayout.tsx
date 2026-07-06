@@ -325,9 +325,6 @@ export function DocsLayout() {
   // instead of navigating away to the org page.
   const [orgFromSite, setOrgFromSite] = useState(false);
 
-  // doc creation (instant, no form)
-  const [creatingDoc, setCreatingDoc] = useState(false);
-
   // current user
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -585,26 +582,6 @@ export function DocsLayout() {
       setOrgError("Could not connect to the server.");
     } finally {
       setOrgSaving(false);
-    }
-  }
-
-  async function handleNewDoc() {
-    if (!projectId || creatingDoc) return;
-    setCreatingDoc(true);
-    try {
-      const result = await apiFetchJson<Doc & { id: string }>("/api/docs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Untitled", content: "", projectId }),
-      });
-      if (result.ok && result.data) {
-        setDocs(prev => [...prev, result.data!]);
-        navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true } });
-      }
-    } catch {
-      // fail silently - user can retry
-    } finally {
-      setCreatingDoc(false);
     }
   }
 

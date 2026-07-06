@@ -136,22 +136,16 @@ describe("SearchPalette", () => {
     expect(screen.getByText("Site settings")).toBeInTheDocument();
   });
 
-  it("filters actions by query and creates a doc via New document", async () => {
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "POST") {
-        expect(String(input)).toBe("/api/docs");
-        return Promise.resolve(new Response(JSON.stringify({ ok: true, data: { id: "nd1" } }), { status: 200 }));
-      }
-      return Promise.resolve(new Response(JSON.stringify({ ok: true, data: { docs: [], files: [], folders: [] } }), { status: 200 }));
-    }));
+  it("filters actions by query and opens the new-document editor via New document", async () => {
+    const fetchMock = mockFetch({ docs: [], files: [], folders: [] });
     renderPalette({ role: "editor" });
     await userEvent.type(screen.getByPlaceholderText(/Search docs and files/), "new");
     expect(screen.getByText("New document")).toBeInTheDocument();
     expect(screen.queryByText("Go to dashboard")).not.toBeInTheDocument();
     await userEvent.click(screen.getByText("New document"));
-    await vi.waitFor(() => {
-      expect(navigate).toHaveBeenCalledWith("/projects/p1/docs/nd1", { state: { isNew: true } });
-    });
+    // Nothing is created up front - the doc is only POSTed when the editor saves.
+    expect(fetchMock.mock.calls.every(c => (c[1] as RequestInit | undefined)?.method !== "POST")).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/projects/p1/docs/new");
   });
 
   it("navigates to the folder page when a folder hit is selected", async () => {

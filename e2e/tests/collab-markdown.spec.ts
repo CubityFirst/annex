@@ -86,6 +86,9 @@ test.afterAll(async () => {
       if (await btn.isVisible({ timeout: 3000 })) {
         await btn.click();
         await pageA.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = pageA.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await pageA.getByRole("button", { name: /yes.*delete/i }).click();
         await pageA.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -113,9 +116,9 @@ test("sets up a realtime-enabled doc with seeded markdown", async () => {
 
   enableRealtime(projectId);
 
+  // /docs/new opens straight into the editor; the doc only gets an id on save.
   await pageA.getByRole("button", { name: "New document" }).click();
-  await expect(pageA).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
-  docId = pageA.url().match(/\/docs\/([a-z0-9-]+)/)![1];
+  await expect(pageA).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
 
   await pageA.getByPlaceholder("Document title").fill("Collab Markdown");
   const editor = pageA.locator(".cm-content");
@@ -125,6 +128,8 @@ test("sets up a realtime-enabled doc with seeded markdown", async () => {
 
   await pageA.getByRole("button", { name: "Save" }).click();
   await expect(pageA.getByTitle("Edit document")).toBeVisible({ timeout: 10000 });
+  await expect(pageA).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
+  docId = pageA.url().match(/\/docs\/([a-z0-9-]+)/)![1];
 
   await pageA.reload();
   await expect(pageA.locator(".cm-content")).toBeVisible({ timeout: 10000 });

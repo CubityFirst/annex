@@ -3,6 +3,7 @@ import { cursorTouches, type Visitor } from "../types";
 import { CodeFenceWidget } from "../../widgets/CodeFenceWidget";
 import { MermaidWidget } from "../../widgets/MermaidWidget";
 import { ExcalidrawEmbedWidget } from "../../widgets/ExcalidrawEmbedWidget";
+import { FileEmbedWidget } from "../../widgets/FileEmbedWidget";
 import { JuxtaposeWidget } from "../../widgets/JuxtaposeWidget";
 import { parseJuxtapose } from "@/lib/juxtapose";
 
@@ -70,6 +71,22 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
       decos.push(
         Decoration.replace({
           widget: new ExcalidrawEmbedWidget(fileId),
+          block: true,
+        }).range(startLine.from, endLine.to),
+      );
+      return;
+    }
+  }
+
+  // A `file` fence whose body is a stored file id embeds a download card for
+  // that file (icon + name + size + Download button). Same fallthrough rule as
+  // excalidraw: an empty/blank body still renders as a normal code block.
+  if (lang === "file") {
+    const fileId = code.trim();
+    if (fileId) {
+      decos.push(
+        Decoration.replace({
+          widget: new FileEmbedWidget(fileId),
           block: true,
         }).range(startLine.from, endLine.to),
       );

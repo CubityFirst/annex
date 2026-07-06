@@ -105,6 +105,9 @@ test.afterAll(async () => {
       if (await deleteBtn.isVisible({ timeout: 3000 })) {
         await deleteBtn.click();
         await pageA.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = pageA.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await pageA.getByRole("button", { name: /yes.*delete/i }).click();
         await pageA.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -140,12 +143,10 @@ test("sets up a project + doc with the realtime flag enabled", async () => {
   // wiring, since `realtimeEnabled` is computed from the project load.
   enableRealtime(projectId);
 
-  // Create doc - starts in editing mode because location.state.isNew is true.
+  // Create doc - /docs/new opens straight into the editor; the doc itself is
+  // only created (and gets an id) on first save.
   await pageA.getByRole("button", { name: "New document" }).click();
-  await expect(pageA).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
-  const docMatch = pageA.url().match(/\/docs\/([a-z0-9-]+)/);
-  if (!docMatch) throw new Error("could not parse doc id from URL");
-  docId = docMatch[1];
+  await expect(pageA).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
 
   // Set a title and seed some initial content so we have a non-empty baseline
   // that the collab room will load on first connect.
@@ -159,6 +160,10 @@ test("sets up a project + doc with the realtime flag enabled", async () => {
   // touched yet - it'll boot off the R2 snapshot on first peer connect.
   await pageA.getByRole("button", { name: "Save" }).click();
   await expect(pageA.getByTitle("Edit document")).toBeVisible({ timeout: 10000 });
+  await expect(pageA).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
+  const docMatch = pageA.url().match(/\/docs\/([a-z0-9-]+)/);
+  if (!docMatch) throw new Error("could not parse doc id from URL");
+  docId = docMatch[1];
 
   // Hard reload so the project's `features` field (which the DocsLayout
   // outlet computes `realtimeEnabled` from) re-fetches and picks up the bit

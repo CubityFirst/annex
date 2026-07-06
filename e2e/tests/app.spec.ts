@@ -82,6 +82,9 @@ test.afterAll(async () => {
       if (await deleteBtn.isVisible({ timeout: 3000 })) {
         await deleteBtn.click();
         await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
+        // Type-to-confirm: the input expects the site name (mirrored in its placeholder).
+        const confirmInput = page.locator("#delete-confirm-name");
+        await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
         await page.getByRole("button", { name: /yes.*delete/i }).click();
         await page.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
@@ -200,13 +203,15 @@ test("creates a folder", async () => {
   await expect(folderInput).toBeVisible({ timeout: 5000 });
   await folderInput.fill("E2E Folder");
   await page.getByRole("button", { name: "Create" }).click();
-  await expect(page.getByText("E2E Folder")).toBeVisible({ timeout: 5000 });
+  // .first(): the folder renders twice (desktop table + CSS-hidden mobile card
+  // list), and strict mode counts hidden matches too. Desktop row comes first.
+  await expect(page.getByText("E2E Folder").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── FileManager: document inside folder ─────────────────────────────────────
 
 test("navigates into the folder and creates a document inside it", async () => {
-  await page.getByText("E2E Folder").click();
+  await page.getByText("E2E Folder").first().click();
 
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
@@ -237,8 +242,8 @@ test("drags a document into a folder", async () => {
   ).not.toBeVisible({ timeout: 5000 });
 
   // Enter the folder and confirm the doc is now inside.
-  await page.getByText("E2E Folder").click();
-  await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
+  await page.getByText("E2E Folder").first().click();
+  await expect(page.getByText("My E2E Document").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── FileManager: drag doc back to root via breadcrumb ────────────────────────
@@ -246,9 +251,10 @@ test("drags a document into a folder", async () => {
 test("drags a document back to root via the breadcrumb", async () => {
   // We are inside E2E Folder; breadcrumb shows [PROJECT_NAME] > [E2E Folder].
   const docRow = page.locator('[draggable="true"]', { hasText: "My E2E Document" });
-  // The first inner breadcrumb span is the root crumb (project name).
-  // Structure in main: .h-14 > span.flex > span.px-1\.5 (the actual crumb)
-  const rootCrumb = page.locator("main .h-14 span span").first();
+  // The root crumb (project name) is the first clickable button in the
+  // breadcrumb nav - clickable crumbs render as <button>, the current page
+  // as a <span>.
+  const rootCrumb = page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("button").first();
 
   await docRow.dragTo(rootCrumb);
 
@@ -263,7 +269,7 @@ test("drags a document back to root via the breadcrumb", async () => {
 // ── FileManager: right-click context menu - rename ───────────────────────────
 
 test("renames a folder via the context menu", async () => {
-  await page.getByText("E2E Folder").click({ button: "right" });
+  await page.getByText("E2E Folder").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Rename" }).click();
 
   const dialog = page.getByRole("dialog");
@@ -272,20 +278,23 @@ test("renames a folder via the context menu", async () => {
   await dialog.getByRole("textbox").fill("E2E Renamed Folder");
   await dialog.getByRole("button", { name: "Rename" }).click();
 
-  await expect(page.getByText("E2E Renamed Folder")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("E2E Renamed Folder").first()).toBeVisible({ timeout: 5000 });
   await expect(page.getByText("E2E Folder", { exact: true })).not.toBeVisible();
 });
 
 // ── FileManager: right-click context menu - delete ───────────────────────────
 
 test("deletes a document via the context menu", async () => {
-  await page.getByText("My E2E Document").click({ button: "right" });
+  // Target the desktop row - the doc name also appears in the sidebar's
+  // "Recently accessed" link and the CSS-hidden mobile card list.
+  const docRow = page.locator('[draggable="true"]', { hasText: "My E2E Document" });
+  await docRow.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete" }).click();
 
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 3000 });
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
 
-  await expect(page.getByText("My E2E Document")).not.toBeVisible({ timeout: 5000 });
+  await expect(docRow).not.toBeVisible({ timeout: 5000 });
 });
 
 // ── Favourite the project ────────────────────────────────────────────────────
@@ -316,6 +325,9 @@ test("deletes the project", async () => {
   // Already on the settings page from the previous test.
   await page.getByRole("button", { name: /delete site/i }).click();
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
+  // The dialog is type-to-confirm: "Yes, delete" stays disabled until the
+  // site name is typed back.
+  await page.locator("#delete-confirm-name").fill(PROJECT_NAME);
   await page.getByRole("button", { name: /yes.*delete/i }).click();
   await expect(page).not.toHaveURL(/\/projects\//, { timeout: 15000 });
   projectSettingsUrl = ""; // signal afterAll that cleanup is done

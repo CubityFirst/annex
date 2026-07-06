@@ -10,6 +10,7 @@ import { CodeBlock } from "@/components/CodeBlock";
 import { Spinner } from "@/components/ui/spinner";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { fileKind, guessLanguage } from "@/lib/fileKind";
+import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { isLightTheme } from "@/lib/theme";
 import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
@@ -272,26 +273,24 @@ export function FilePage() {
           <Download className="h-4 w-4" />
           {downloading ? "Downloading…" : "Download"}
         </Button>
-        {(kind === "image" || kind === "audio") && (
-          <Button
-            variant="outline"
-            className="gap-2"
-            aria-label={copiedLink ? "Copied" : "Copy markdown"}
-            onClick={() => {
-              navigator.clipboard.writeText(`![${file.name}](/api/files/${file.id}/content)`);
-              setCopiedLink(true);
-              setTimeout(() => setCopiedLink(false), 2000);
-            }}
-          >
-            {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
-            {copiedLink ? "Copied!" : "Copy markdown"}
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          className="gap-2"
+          aria-label={copiedLink ? "Copied" : "Copy markdown"}
+          onClick={() => {
+            navigator.clipboard.writeText(fileEmbedMarkdown(file));
+            setCopiedLink(true);
+            setTimeout(() => setCopiedLink(false), 2000);
+          }}
+        >
+          {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
+          {copiedLink ? "Copied!" : "Copy markdown"}
+        </Button>
       </div>
       {/* Announce the transient copy confirmation to assistive tech (the button
           text swap alone isn't reliably announced). */}
       <div role="status" aria-live="polite" className="sr-only">
-        {copiedLink ? "Markdown link copied to clipboard" : ""}
+        {copiedLink ? "Markdown copied to clipboard" : ""}
       </div>
     </div>
   );
