@@ -87,7 +87,9 @@ simple = { limit = 120, period = 60 }
 #   custom-theming   (default off) - per-user gate for custom themes (index.ts).
 #   ai-summaries     (default on)  - killswitch for the OpenAI summarize endpoint (routes/ai.ts).
 #   realtime-collab  (default on)  - killswitch for new collab WS connections (handleCollabUpgrade).
-# When the binding is unavailable (local dev) the code falls back to each call's default.
+# NOTE: wrangler dev DOES serve this binding locally with the real flag state, so a
+# flag flipped in the Flagship dashboard affects local dev too. The per-call code
+# defaults only apply when the binding itself is missing.
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"

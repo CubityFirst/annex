@@ -55,8 +55,10 @@ allowed_sender_addresses = ["noreply@docs.cubityfir.st"]
 #   signup              (default on)  - when false, /register is refused (handleRegister).
 #   email-verification  (default off) - gates registration verification emails +
 #                                       blocks unverified logins (register.ts / login.ts).
-# When the binding is unavailable (local dev) the code falls back to each call's
-# default.
+# NOTE: wrangler dev DOES serve this binding locally with the real flag state,
+# so a flag flipped in the Flagship dashboard affects local dev too (e.g. a
+# disabled `signup` flag blocks the e2e suites, which register accounts). The
+# per-call code defaults only apply when the binding itself is missing.
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"
