@@ -3,6 +3,12 @@ import type { Env } from "./index";
 
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Admin-panel sessions are the highest-privilege token in the product and
+// live in the admin SPA's sessionStorage - keep them to a working day, not a
+// week. Re-acquiring one is a single silent handoff redirect when the docs
+// session is still alive, so the short TTL costs the operator one click.
+export const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
 export type DeviceKind = "phone" | "tablet" | "laptop" | "desktop";
 
 export interface SessionRow {
@@ -91,7 +97,10 @@ export async function revokeSession(
 
 // Revokes every active session for a user, optionally keeping one alive
 // (the caller's current session). Used by change-password (keep current),
-// force-change-password (keep none), and admin disable flows.
+// force-change-password (keep none), and sessions-revoke-others. Note that
+// admin moderation does NOT revoke sessions: disabling a user leaves their
+// rows intact (every request re-checks moderation, so they're inert), which
+// means re-enabling the user resurrects any still-unexpired sessions.
 export async function revokeAllSessions(
   env: Env,
   userId: string,

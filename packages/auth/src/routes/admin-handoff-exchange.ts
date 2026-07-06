@@ -1,8 +1,8 @@
-import { normalizeAdminCallbackUrl } from "../admin-handoff";
+import { normalizeAdminCallbackUrl, writeAdminHandoffAudit } from "../admin-handoff";
 import { signJwt } from "../jwt";
 import { errorResponse, Errors, okResponse } from "../lib";
 import { checkModeration } from "./login";
-import { createSession, SESSION_TTL_MS } from "../sessions";
+import { createSession, ADMIN_SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleAdminHandoffExchange(request: Request, env: Env): Promise<Response> {
@@ -50,7 +50,11 @@ export async function handleAdminHandoffExchange(request: Request, env: Env): Pr
     return errorResponse(Errors.UNAUTHORIZED);
   }
 
-  const expiresAt = Date.now() + SESSION_TTL_MS;
+  // Deliberately short-lived (hours, not the standard 7 days): this token
+  // carries full admin privilege. createSession stamps ip/device from the
+  // X-Client-IP / User-Agent the admin worker forwards across the
+  // service-binding hop.
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
   const sid = await createSession(env, user.id, request, expiresAt);
   const token = await signJwt(
     {
@@ -62,6 +66,13 @@ export async function handleAdminHandoffExchange(request: Request, env: Env): Pr
     },
     env.JWT_SECRET,
   );
+
+  // Record who obtained admin access, from where, and until when.
+  await writeAdminHandoffAudit(env, { userId: user.id, email: user.email }, "admin.handoff.exchange", {
+    sessionId: sid,
+    expiresAt,
+    ip: request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP"),
+  });
 
   return okResponse({ token });
 }

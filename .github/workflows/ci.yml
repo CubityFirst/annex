@@ -35,7 +35,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # The four packages with vitest unit suites. e2e (Playwright) is excluded
+      # The five packages with vitest unit suites. e2e (Playwright) is excluded
       # on purpose: it has no webServer block, so it needs the full local stack
       # (vite + 3 workers + seeded D1) plus browsers - a separate job, later.
       #
@@ -45,4 +45,4 @@ jobs:
       # suites are excluded from this run via packages/api/vitest.config.ts and
       # run separately with `pnpm --filter @annex/api test:integration`.
       - name: Unit tests
-        run: pnpm --workspace-concurrency=1 --filter @annex/api --filter @annex/auth --filter @annex/frontend --filter @annex/admin run test
+        run: pnpm --workspace-concurrency=1 --filter @annex/api --filter @annex/auth --filter @annex/frontend --filter @annex/admin --filter @annex/admin-frontend run test

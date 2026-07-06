@@ -4,11 +4,18 @@ import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 import { ALL_BADGE_BITS } from "../../../auth/src/badges";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
+import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
 import type { AppEnv, Env } from "../index";
 
 const usersRouter = new Hono<AppEnv>();
 
 const USER_PAGE_SIZE = 25;
+
+// Bound for raw Stripe error bodies before they land in a response, a log
+// line, or an audit detail - they can carry request echoes and grow large.
+function truncateStripeError(body: string, max = 300): string {
+  return body.length > max ? `${body.slice(0, max)}… (truncated)` : body;
+}
 
 type ModerationAction = "disabled" | "suspended" | "re_enabled";
 
@@ -334,8 +341,8 @@ usersRouter.get("/search", async (c) => {
   // The email/id search is always present; the optional status predicate and
   // the keyset cursor are AND-ed onto it. Bind order follows clause order:
   // the two search binds, then status binds, then the keyset binds.
-  const where = ["(u.email LIKE ? OR u.id = ?)"];
-  const binds: unknown[] = [`%${q}%`, q];
+  const where = [`(u.email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR u.id = ?)`];
+  const binds: unknown[] = [`%${escapeLike(q)}%`, q];
   if (statusClause.sql) {
     where.push(statusClause.sql);
     binds.push(...statusClause.binds);
@@ -441,7 +448,9 @@ usersRouter.patch("/:id/badges", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ badges: number }>().catch(() => ({} as { badges?: number }));
   const badges = body.badges;
-  if (!Number.isInteger(badges) || badges! < 0 || (badges! & ~ALL_BADGE_BITS) !== 0) {
+  // The upper bound matters beyond readability: the bitwise mask coerces via
+  // ToInt32, so e.g. 2^32 + <allowed> would slip through a mask-only check.
+  if (!Number.isInteger(badges) || badges! < 0 || badges! > ALL_BADGE_BITS || (badges! & ~ALL_BADGE_BITS) !== 0) {
     return c.json({ ok: false, error: "Invalid badges value" }, 400);
   }
 
@@ -554,7 +563,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
         });
         if (!res.ok) {
           const errBody = await res.text().catch(() => "(unreadable)");
-          cancelStripeWarning = `Stripe cancel returned ${res.status}: ${errBody}`;
+          cancelStripeWarning = `Stripe cancel returned ${res.status}: ${truncateStripeError(errBody)}`;
           console.error("admin cancel-on-grant failed:", cancelStripeWarning);
         }
       }
@@ -621,11 +630,12 @@ usersRouter.post("/:id/gift-month", async (c) => {
   });
   if (!subRes.ok) {
     const errText = await subRes.text().catch(() => "(unreadable)");
-    console.error("admin gift-month: sub fetch failed:", subRes.status, errText);
+    console.error("admin gift-month: sub fetch failed:", subRes.status, truncateStripeError(errText));
     return c.json({ ok: false, error: `Stripe returned ${subRes.status} fetching sub` }, 502);
   }
   const sub = await subRes.json<{
     cancel_at_period_end?: boolean;
+    current_period_end?: number;
     items: { data: Array<{ price: { unit_amount: number | null; currency: string } }> };
   }>();
   if (sub.cancel_at_period_end) {
@@ -638,6 +648,12 @@ usersRouter.post("/:id/gift-month", async (c) => {
     return c.json({ ok: false, error: "Could not determine subscription price" }, 502);
   }
 
+  // Idempotency key scoped to (admin, user, billing period): a double-click,
+  // a retry after a network error, or a "credit succeeded but our 500 made
+  // the operator retry" all replay as the SAME Stripe request instead of
+  // stacking a second credit. A different admin (or the next billing period)
+  // gets a fresh key, so deliberate repeat gifts still work.
+  const idempotencyKey = `gift-month:${session.userId}:${id}:${sub.current_period_end ?? "na"}`;
   const balanceRes = await fetch(
     `https://api.stripe.com/v1/customers/${row.stripe_customer_id}/balance_transactions`,
     {
@@ -645,6 +661,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
       headers: {
         Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
         "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": idempotencyKey,
       },
       body: new URLSearchParams({
         amount: String(-amount),
@@ -655,7 +672,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
   );
   if (!balanceRes.ok) {
     const errText = await balanceRes.text().catch(() => "(unreadable)");
-    console.error("admin gift-month: balance transaction failed:", balanceRes.status, errText);
+    console.error("admin gift-month: balance transaction failed:", balanceRes.status, truncateStripeError(errText));
     return c.json({ ok: false, error: `Stripe returned ${balanceRes.status} creating credit` }, 502);
   }
 
@@ -709,7 +726,7 @@ usersRouter.post("/:id/cancel-subscription", async (c) => {
   const res = await fetch(url, fetchOptions);
   if (!res.ok) {
     const errBody = await res.text().catch(() => "(unreadable)");
-    console.error(`admin cancel-subscription ${immediate ? "immediate" : "period-end"} failed:`, res.status, errBody);
+    console.error(`admin cancel-subscription ${immediate ? "immediate" : "period-end"} failed:`, res.status, truncateStripeError(errBody));
     return c.json({ ok: false, error: `Stripe returned ${res.status}` }, 502);
   }
 
@@ -755,8 +772,6 @@ usersRouter.get("/:id/export", async (c) => {
 
   if (!details) return c.json({ ok: false, error: "User not found" }, 404);
 
-  await writeAdminAudit(c.env, session, "user.data.export", "user", id);
-
   const zip = zipSync({
     "profile.json": strToU8(JSON.stringify(details.profile, null, 2)),
     "moderation.json": strToU8(JSON.stringify(details.moderation, null, 2)),
@@ -765,6 +780,10 @@ usersRouter.get("/:id/export", async (c) => {
     "billing.json": strToU8(JSON.stringify(details.billing, null, 2)),
   });
   const zipBuffer = Uint8Array.from(zip).buffer;
+
+  // Audit AFTER the zip is built (audit-after-success doctrine): if the
+  // build throws, no export happened and no row should claim one did.
+  await writeAdminAudit(c.env, session, "user.data.export", "user", id);
 
   const safeEmail = details.profile.email.replace(/[^a-z0-9]/gi, "_");
   const date = new Date().toISOString().slice(0, 10);

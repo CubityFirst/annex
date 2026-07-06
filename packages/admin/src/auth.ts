@@ -23,11 +23,15 @@ export interface AdminSession {
 export async function verifySession(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<AdminSession | Response | null> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
 
-  const result = await loadCurrentSession(authHeader.slice(7), env.AUTH_DB, env.JWT_SECRET);
+  // `ctx` lets loadCurrentSession refresh the session row's last_used_at
+  // (bounded, post-response) so admin sessions show up as in-use in the
+  // "Active sessions" view instead of appearing dormant forever.
+  const result = await loadCurrentSession(authHeader.slice(7), env.AUTH_DB, env.JWT_SECRET, ctx);
   if (result.kind === "ok") {
     return {
       userId: result.session.userId,
@@ -43,8 +47,9 @@ export async function verifySession(
 export async function requireAdminSession(
   request: Request,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<AdminSession | Response> {
-  const session = await verifySession(request, env);
+  const session = await verifySession(request, env, ctx);
 
   if (session === null) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });

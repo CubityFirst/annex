@@ -4,11 +4,13 @@ import { writeAdminAudit } from "../audit";
 import type { AppEnv } from "../index";
 
 // OIDC client management for the admin dashboard. The admin worker is a thin
-// authenticated proxy here - the oauth_clients table lives in the auth DB,
-// which the admin worker binds read-only by convention, so every read and
-// write is forwarded to the auth worker (which owns auth-DB writes and the
-// client-secret hashing). `enforceAdmin` has already validated the session;
-// the auth worker re-checks it as defence in depth.
+// authenticated proxy here - the oauth_clients table lives in the auth DB and
+// stays auth-worker-owned (it needs the client-secret hashing), so every read
+// and write is forwarded. Note the admin worker does write OTHER auth-DB
+// tables directly (users moderation, user_preferences badges, user_billing
+// grants, admin_audit_log) - see the AUTH_DB write-boundary note in
+// wrangler.toml / CLAUDE.md. `enforceAdmin` has already validated the
+// session; the auth worker re-checks it as defence in depth.
 
 const oauthRouter = new Hono<AppEnv>();
 
@@ -76,11 +78,10 @@ async function forwardMutation(
     await writeAdminAudit(c.env, c.get("session"), action, "oauth_client", clientId, detail);
   }
 
-  // Reconstruct the response (the body stream was consumed above).
-  return new Response(resText, {
-    status: res.status,
-    headers: { "Content-Type": "application/json" },
-  });
+  // Reconstruct the response (the body stream was consumed above),
+  // preserving the auth worker's headers rather than dropping everything
+  // but Content-Type.
+  return new Response(resText, { status: res.status, headers: new Headers(res.headers) });
 }
 
 oauthRouter.post("/", (c) =>

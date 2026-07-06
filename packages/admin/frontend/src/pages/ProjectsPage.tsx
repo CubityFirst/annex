@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Globe, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,14 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +21,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Sheet,
   SheetTrigger,
   SheetContent,
@@ -38,6 +39,12 @@ import {
   SheetBody,
   SheetFooter,
 } from "@/components/ui/sheet";
+import { CursorPaginationFooter } from "@/components/CursorPaginationFooter";
+import { DetailField } from "@/components/DetailField";
+import { expandableRowProps } from "@/components/ExpandableRow";
+import { SearchInput } from "@/components/SearchInput";
+import { useCursorPagination } from "@/hooks/useCursorPagination";
+import { formatDate, formatDateTime, initials } from "@/lib/format";
 import {
   type AdminProject,
   type AdminProjectDetails,
@@ -82,31 +89,12 @@ function setFlag(features: number, bit: number, enabled: boolean): number {
   return enabled ? features | bit : features & ~bit;
 }
 
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, exp);
   return `${value.toFixed(exp === 0 ? 0 : 1)} ${units[exp]}`;
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
-}
-
-function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <div className="text-sm">{value}</div>
-    </div>
-  );
 }
 
 function FeatureState({ on, label }: { on: boolean; label: string }) {
@@ -421,8 +409,8 @@ function ProjectDetailsPanel({ details }: { details: AdminProjectDetails }) {
 interface ProjectRowProps {
   project: AdminProject;
   onSaved: (id: string, features: number) => void;
-  onDeleted: (id: string) => void;
-  onDomainRemoved: (id: string) => void;
+  onDeleted: () => void;
+  onDomainRemoved: () => void;
 }
 
 function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRowProps) {
@@ -432,6 +420,8 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
   const [pendingFeatures, setPendingFeatures] = useState(project.features);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const [removingDomain, setRemovingDomain] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -463,7 +453,9 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
 
   function handleDetailsOpenChange(open: boolean) {
     setDetailsOpen(open);
-    if (open) void loadDetails();
+    // Always refetch on open so the sheet can't show stale data across
+    // close/reopen (cached details keep rendering while the refresh runs).
+    if (open) void loadDetails(true);
   }
 
   async function handleApply() {
@@ -483,11 +475,17 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
     }
   }
 
+  function handleDeleteDialogChange(open: boolean) {
+    setDeleteDialogOpen(open);
+    if (!open) setDeleteConfirmName("");
+  }
+
   async function handleDelete() {
     setDeleting(true);
     try {
       await deleteProject(project.id);
-      onDeleted(project.id);
+      handleDeleteDialogChange(false);
+      onDeleted();
       toast.success("Project deleted");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to delete project");
@@ -512,7 +510,9 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
     setRemovingDomain(true);
     try {
       const { hostname } = await removeProjectDomain(project.id);
-      onDomainRemoved(project.id);
+      // Refresh the list AND an open details sheet - both display the domain.
+      onDomainRemoved();
+      if (details) void loadDetails(true);
       toast.success(hostname ? `Removed custom domain ${hostname}` : "No custom domain was mapped");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to remove custom domain");
@@ -522,22 +522,11 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
   }
 
   const dirty = pendingFeatures !== savedFeatures;
+  const deleteNameMatches = deleteConfirmName.trim() === project.name;
 
   return (
     <>
-      <TableRow
-        className="cursor-pointer"
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        onClick={() => setExpanded(e => !e)}
-        onKeyDown={e => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded(v => !v);
-          }
-        }}
-      >
+      <TableRow {...expandableRowProps(expanded, setExpanded)}>
         <TableCell className="w-8 pr-0">
           {expanded
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -549,12 +538,12 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
             {project.id}
           </span>
           <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground md:hidden">
-            {new Date(project.created_at).toLocaleDateString()}
+            {formatDate(project.created_at)}
           </span>
         </TableCell>
         <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">{project.id}</TableCell>
         <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-          {new Date(project.created_at).toLocaleDateString()}
+          {formatDate(project.created_at)}
         </TableCell>
       </TableRow>
       {expanded && (
@@ -644,28 +633,48 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
                 {reindexing ? "Reindexing..." : "Reindex search"}
               </Button>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
+              <Dialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogChange}>
+                <DialogTrigger asChild>
                   <Button size="sm" variant="destructive" disabled={deleting}>
                     <Trash2 className="h-3.5 w-3.5" />
                     {deleting ? "Deleting..." : "Delete project"}
                   </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete project?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete <strong>{project.name}</strong> and all associated docs, files, and assets. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction variant="destructive" onClick={handleDelete}>
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete project?</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete <strong>{project.name}</strong> and all associated docs,
+                      files, and assets. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor={`delete-confirm-${project.id}`}>
+                      Type <span className="font-semibold">{project.name}</span> to confirm
+                    </Label>
+                    <Input
+                      id={`delete-confirm-${project.id}`}
+                      value={deleteConfirmName}
+                      onChange={e => setDeleteConfirmName(e.target.value)}
+                      placeholder={project.name}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => handleDeleteDialogChange(false)} disabled={deleting}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={deleting || !deleteNameMatches}
+                    >
+                      {deleting ? "Deleting..." : "Delete project"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {project.custom_domain && (
@@ -713,78 +722,38 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
 export function ProjectsPage() {
   // `query` is the live text box; `committedQuery` is the query actually being
   // paged over (set on submit). Paging keeps committedQuery and only moves the
-  // cursor; changing the committed query resets to page 1.
+  // cursor; submitting always refetches (even an unchanged query - that's the
+  // page's refresh).
   const [query, setQuery] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
-  // `cursors` holds the cursor used to fetch each page beyond the first;
-  // page number = cursors.length + 1. Newer = pop, Older = push nextCursor.
-  const [cursors, setCursors] = useState<string[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [projects, setProjects] = useState<AdminProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const abortRef = useRef<AbortController | null>(null);
 
-  const currentCursor = cursors.length > 0 ? cursors[cursors.length - 1] : undefined;
-  const pageNumber = cursors.length + 1;
+  const fetchPage = useCallback(
+    async (cursor: string | undefined, signal: AbortSignal) => {
+      const res = await listProjects({ q: committedQuery || undefined, cursor }, signal);
+      return { items: res.projects, nextCursor: res.nextCursor };
+    },
+    [committedQuery],
+  );
+  const pager = useCursorPagination<AdminProject>(fetchPage);
 
-  // Single fetch effect: re-runs for the committed query and the current page's
-  // cursor. Aborts any in-flight request so a slow earlier response can't
-  // clobber a newer one (last-write-wins).
+  // Optimistic feature-flag overlay (same pattern as UsersPage overrides);
+  // dropped on every refetch.
+  const [featureOverrides, setFeatureOverrides] = useState<Record<string, number>>({});
   useEffect(() => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true);
-    listProjects({ q: committedQuery || undefined, cursor: currentCursor }, controller.signal)
-      .then(res => {
-        if (controller.signal.aborted) return;
-        setProjects(res.projects);
-        setNextCursor(res.nextCursor);
-      })
-      .catch(e => {
-        if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
-        toast.error(e instanceof Error ? e.message : "Failed to load projects");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [committedQuery, currentCursor]);
+    setFeatureOverrides({});
+  }, [pager.items]);
+  const projects = pager.items.map(p =>
+    featureOverrides[p.id] !== undefined ? { ...p, features: featureOverrides[p.id] } : p,
+  );
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    const next = query.trim();
-    // Reset to page 1 so a stale cursor never lands on a different result set.
-    setCursors([]);
-    setCommittedQuery(next);
+    setCommittedQuery(query.trim());
+    pager.reset();
   }
-
-  function goNewer() {
-    // Block while a page is in flight: a second click would otherwise read a
-    // stale `nextCursor` from this render and push a duplicate cursor.
-    if (loading || pageNumber <= 1) return;
-    setCursors(c => c.slice(0, -1));
-  }
-  function goOlder() {
-    if (loading || !nextCursor) return;
-    setCursors(c => [...c, nextCursor]);
-  }
-
-  const canNewer = pageNumber > 1 && !loading;
-  const canOlder = !!nextCursor && !loading;
 
   function handleSaved(id: string, features: number) {
-    setProjects(prev => prev.map(p => (p.id === id ? { ...p, features } : p)));
-  }
-
-  function handleDeleted(id: string) {
-    setProjects(prev => prev.filter(p => p.id !== id));
-  }
-
-  function handleDomainRemoved(id: string) {
-    setProjects(prev =>
-      prev.map(p => (p.id === id ? { ...p, custom_domain: null, custom_domain_status: null } : p)),
-    );
+    setFeatureOverrides(prev => ({ ...prev, [id]: features }));
   }
 
   return (
@@ -800,25 +769,14 @@ export function ProjectsPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative max-w-sm w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="Filter by name..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                className="pl-8 pr-8"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-            <Button type="submit" disabled={loading}>
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Filter by name..."
+              ariaLabel="Filter projects by name"
+              className="max-w-sm w-full"
+            />
+            <Button type="submit" disabled={pager.loading}>
               Search
             </Button>
           </form>
@@ -827,7 +785,7 @@ export function ProjectsPage() {
 
       <Card>
         <CardContent className="pt-5">
-          {loading ? (
+          {pager.loading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
@@ -847,45 +805,19 @@ export function ProjectsPage() {
               </TableHeader>
               <TableBody>
                 {projects.map(project => (
-                  <ProjectRow key={project.id} project={project} onSaved={handleSaved} onDeleted={handleDeleted} onDomainRemoved={handleDomainRemoved} />
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    onSaved={handleSaved}
+                    onDeleted={() => pager.refresh()}
+                    onDomainRemoved={() => pager.refresh()}
+                  />
                 ))}
               </TableBody>
             </Table>
           )}
 
-          {(pageNumber > 1 || !!nextCursor) && (
-            <Pagination className="mt-5">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    href="#"
-                    aria-disabled={!canNewer}
-                    className={!canNewer ? "pointer-events-none opacity-50" : undefined}
-                    onClick={e => {
-                      e.preventDefault();
-                      goNewer();
-                    }}
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationLink href="#" isActive onClick={e => e.preventDefault()}>
-                    {pageNumber}
-                  </PaginationLink>
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    href="#"
-                    aria-disabled={!canOlder}
-                    className={!canOlder ? "pointer-events-none opacity-50" : undefined}
-                    onClick={e => {
-                      e.preventDefault();
-                      goOlder();
-                    }}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          )}
+          <CursorPaginationFooter pager={pager} />
         </CardContent>
       </Card>
     </div>

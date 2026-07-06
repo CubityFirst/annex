@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { KeyRound, ScrollText, Users, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ADMIN_AUTH_INVALIDATED_EVENT, clearToken, getToken } from "@/lib/auth";
 import { buildDocsAdminLoginUrl } from "@/lib/handoff";
-import { type AdminAuthSession, verifyAdminSession } from "@/lib/api";
+import { type AdminAuthSession, TransientVerifyError, logoutAdminSession, verifyAdminSession } from "@/lib/api";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -100,6 +100,14 @@ export function App() {
   const navigate = useNavigate();
   const [session, setSession] = useState<AdminAuthSession | null>(null);
   const [checking, setChecking] = useState(true);
+  // Set when the session couldn't be VERIFIED (network down, API 5xx) as
+  // opposed to being invalid - the token is kept and the operator gets a
+  // retry instead of being bounced through a full re-handoff.
+  const [verifyBlocked, setVerifyBlocked] = useState<string | null>(null);
+  // Latest session for the stable refreshSession callback (its deps are
+  // empty so the closed-over `session` would always be the initial null).
+  const sessionRef = useRef<AdminAuthSession | null>(null);
+  sessionRef.current = session;
 
   const refreshSession = useCallback(async (silent = false) => {
     const token = getToken();
@@ -116,6 +124,7 @@ export function App() {
 
     try {
       const next = await verifyAdminSession();
+      setVerifyBlocked(null);
       // Defense-in-depth: the server already rejects expired sessions,
       // but enforce the token's own expiry client-side too so a stale
       // token can never leave the admin shell rendered.
@@ -125,9 +134,16 @@ export function App() {
       } else {
         setSession(next);
       }
-    } catch {
-      clearToken();
-      setSession(null);
+    } catch (err) {
+      if (err instanceof TransientVerifyError) {
+        // Can't reach the API right now - do NOT log the operator out over
+        // a WiFi blip. Keep any live session rendered; if there is none
+        // yet, show a retry screen instead of the login page.
+        if (!sessionRef.current) setVerifyBlocked(err.message);
+      } else {
+        clearToken();
+        setSession(null);
+      }
     } finally {
       if (!silent) setChecking(false);
     }
@@ -171,7 +187,15 @@ export function App() {
     };
   }, [location.pathname, location.search, navigate]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Revoke the session server-side FIRST (while the token still works):
+    // clearing local state alone would leave any copy of the token valid
+    // until its TTL. Best-effort - local sign-out proceeds regardless.
+    try {
+      await logoutAdminSession();
+    } catch {
+      /* offline / already-revoked - still sign out locally */
+    }
     clearToken();
     setSession(null);
     window.location.assign(buildDocsAdminLoginUrl("/", { logout: true }));
@@ -181,6 +205,20 @@ export function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Checking admin session...
+      </div>
+    );
+  }
+
+  if (!session && verifyBlocked) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4 text-center">
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t reach the admin API to verify your session ({verifyBlocked}).
+          Your sign-in is kept - retry when you&apos;re back online.
+        </p>
+        <Button size="sm" variant="outline" onClick={() => { setVerifyBlocked(null); void refreshSession(); }}>
+          Retry
+        </Button>
       </div>
     );
   }

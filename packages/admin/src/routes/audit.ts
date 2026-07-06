@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../index";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
+import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
 
 const PAGE_SIZE = 25;
 
@@ -50,8 +51,10 @@ export function buildAuditListQuery(
     binds.push(...filters.actions);
   }
   if (filters.q) {
-    where.push("(actor_email LIKE ? OR actor_user_id LIKE ? OR target_id LIKE ?)");
-    const like = `%${filters.q}%`;
+    where.push(
+      `(actor_email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR actor_user_id LIKE ? ${LIKE_ESCAPE_CLAUSE} OR target_id LIKE ? ${LIKE_ESCAPE_CLAUSE})`,
+    );
+    const like = `%${escapeLike(filters.q)}%`;
     binds.push(like, like, like);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";

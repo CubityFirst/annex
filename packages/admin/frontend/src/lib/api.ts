@@ -214,13 +214,31 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
   return response;
 }
 
-// Pulls `{ ok, error }` off a JSON response, falling back to a static
-// message. Centralizes the "surface the server's error string" handling
-// so every endpoint reports the real reason instead of a generic throw.
-async function readOk(res: Response, fallback: string): Promise<void> {
-  const json = (await res.json()) as { ok: boolean; error?: string };
+// Parses the `{ ok, data, error }` envelope every admin endpoint speaks,
+// throwing the server's error string (falling back to `fallback`). A
+// non-JSON body means the request never reached the handler (SPA fallback
+// HTML on an old worker, an edge error page) or the handler died before
+// responding - surface the HTTP status instead of a cryptic SyntaxError.
+async function readData<T>(res: Response, fallback: string): Promise<T> {
+  let json: { ok: boolean; data?: T; error?: string };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    throw new Error(`${fallback} (HTTP ${res.status})`);
+  }
   if (!json.ok) throw new Error(json.error ?? fallback);
+  return json.data as T;
 }
+
+// Envelope check for endpoints whose `data` payload is irrelevant.
+async function readOk(res: Response, fallback: string): Promise<void> {
+  await readData<unknown>(res, fallback);
+}
+
+// Server-side page size for the users/projects/audit lists (kept in sync
+// with USER_PAGE_SIZE / PROJECT_PAGE_SIZE / the audit page size in the
+// worker) - used for UI copy, not for slicing.
+export const LIST_PAGE_SIZE = 25;
 
 export interface UserSearchResult {
   users: AdminUser[];
@@ -236,16 +254,12 @@ export async function searchUsers(
   if (params.status) qs.set("status", params.status);
   if (params.cursor) qs.set("cursor", params.cursor);
   const res = await authFetch(`/api/users/search?${qs.toString()}`, { signal });
-  const json = (await res.json()) as { ok: boolean; data?: UserSearchResult; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to search users");
-  return json.data;
+  return readData<UserSearchResult>(res, "Failed to search users");
 }
 
 export async function getUserDetails(id: string): Promise<AdminUserDetails> {
   const res = await authFetch(`/api/users/${id}`);
-  const json = (await res.json()) as { ok: boolean; data?: AdminUserDetails; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load user details");
-  return json.data;
+  return readData<AdminUserDetails>(res, "Failed to load user details");
 }
 
 export async function updateUserBadges(id: string, badges: number): Promise<void> {
@@ -285,9 +299,7 @@ export async function listProjects(
   if (params.q) qs.set("q", params.q);
   if (params.cursor) qs.set("cursor", params.cursor);
   const res = await authFetch(`/api/projects?${qs.toString()}`, { signal });
-  const json = (await res.json()) as { ok: boolean; data?: ProjectListResult; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to list projects");
-  return json.data;
+  return readData<ProjectListResult>(res, "Failed to list projects");
 }
 
 export async function updateProjectFeatures(id: string, features: number): Promise<void> {
@@ -308,31 +320,18 @@ export async function deleteProject(id: string): Promise<void> {
 // drops the DB row). Returns the removed hostname, or null if none was mapped.
 export async function removeProjectDomain(id: string): Promise<{ hostname: string | null }> {
   const res = await authFetch(`/api/projects/${id}/domain`, { method: "DELETE" });
-  const json = (await res.json()) as { ok: boolean; data?: { hostname: string | null }; error?: string };
-  if (!json.ok) throw new Error(json.error ?? "Failed to remove custom domain");
-  return json.data ?? { hostname: null };
+  const data = await readData<{ hostname: string | null } | undefined>(res, "Failed to remove custom domain");
+  return data ?? { hostname: null };
 }
 
 export async function reindexProjectFts(id: string): Promise<{ indexed: number }> {
   const res = await authFetch(`/api/projects/${id}/reindex`, { method: "POST" });
-  const json = (await res.json()) as { ok: boolean; data?: { indexed: number }; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to reindex project");
-  return json.data;
+  return readData<{ indexed: number }>(res, "Failed to reindex project");
 }
 
 export async function getProjectDetails(id: string): Promise<AdminProjectDetails> {
   const res = await authFetch(`/api/projects/${id}`);
-  let json: { ok: boolean; data?: AdminProjectDetails; error?: string };
-  try {
-    json = (await res.json()) as typeof json;
-  } catch {
-    // A non-JSON body means the request never reached the handler (SPA
-    // fallback HTML) or the handler threw before responding (a plain-text
-    // 500) - surface the status rather than a cryptic JSON parse error.
-    throw new Error(`Failed to load project details (HTTP ${res.status})`);
-  }
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load project details");
-  return json.data;
+  return readData<AdminProjectDetails>(res, "Failed to load project details");
 }
 
 // Fetch a site logo (square|wide) for the admin sheet with the bearer token,
@@ -363,20 +362,13 @@ export async function listAuditLog(
   if (filter?.q) params.set("q", filter.q);
   const qs = params.toString();
   const res = await authFetch(`/api/audit${qs ? `?${qs}` : ""}`, { signal });
-  const json = (await res.json()) as { ok: boolean; data?: AuditPageResult; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load audit log");
-  return json.data;
+  return readData<AuditPageResult>(res, "Failed to load audit log");
 }
 
 export async function listAuditActions(signal?: AbortSignal): Promise<string[]> {
   const res = await authFetch("/api/audit/actions", { signal });
-  const json = (await res.json()) as {
-    ok: boolean;
-    data?: { actions: string[] };
-    error?: string;
-  };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load audit actions");
-  return json.data.actions;
+  const data = await readData<{ actions: string[] }>(res, "Failed to load audit actions");
+  return data.actions;
 }
 
 export interface GrantInkResult {
@@ -396,9 +388,8 @@ export async function grantInk(
       cancel_existing_paid_sub: opts.cancelExistingPaidSub === true,
     }),
   });
-  const json = (await res.json()) as { ok: boolean; error?: string; data?: GrantInkResult };
-  if (!json.ok) throw new Error(json.error ?? "Failed to grant Ink");
-  return json.data ?? {};
+  const data = await readData<GrantInkResult | undefined>(res, "Failed to grant Ink");
+  return data ?? {};
 }
 
 export async function revokeGrantedInk(id: string): Promise<void> {
@@ -408,9 +399,7 @@ export async function revokeGrantedInk(id: string): Promise<void> {
 
 export async function giftFreeMonth(id: string): Promise<{ amount: number; currency: string }> {
   const res = await authFetch(`/api/users/${id}/gift-month`, { method: "POST" });
-  const json = (await res.json()) as { ok: boolean; data?: { amount: number; currency: string }; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to gift free month");
-  return json.data;
+  return readData<{ amount: number; currency: string }>(res, "Failed to gift free month");
 }
 
 export async function cancelUserSubscription(id: string, opts: { immediate?: boolean } = {}): Promise<void> {
@@ -427,7 +416,9 @@ export async function deleteUserAvatar(id: string): Promise<void> {
   await readOk(res, "Failed to delete avatar");
 }
 
-export async function exportUserData(id: string, email: string): Promise<void> {
+// Fetches the export zip; the caller decides how to save it (see
+// lib/download.ts downloadBlob) so this module stays DOM-free.
+export async function exportUserData(id: string, email: string): Promise<{ blob: Blob; filename: string }> {
   const res = await authFetch(`/api/users/${id}/export`);
   if (!res.ok) {
     let msg = "Failed to export user data";
@@ -439,20 +430,37 @@ export async function exportUserData(id: string, email: string): Promise<void> {
     throw new Error(msg);
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const date = new Date().toISOString().slice(0, 10);
-  a.download = `userdata_${email.replace(/[^a-z0-9]/gi, "_")}_${date}.zip`;
-  a.click();
-  URL.revokeObjectURL(url);
+  return { blob, filename: `userdata_${email.replace(/[^a-z0-9]/gi, "_")}_${date}.zip` };
 }
 
+// Thrown by verifyAdminSession for failures that do NOT mean the session is
+// bad - offline, DNS, a gateway 5xx. The caller should keep the token and
+// retry later instead of forcing a fresh handoff.
+export class TransientVerifyError extends Error {}
+
 export async function verifyAdminSession(): Promise<AdminAuthSession> {
-  const res = await authFetch("/api/verify");
-  const json = (await res.json()) as { ok: boolean; data?: AdminAuthSession; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to verify admin session");
-  return json.data;
+  let res: Response;
+  try {
+    res = await authFetch("/api/verify");
+  } catch (err) {
+    // fetch() rejects only on network-level failures (offline, DNS, CORS);
+    // authFetch's own 429 throw is transient too.
+    throw new TransientVerifyError(err instanceof Error ? err.message : "Network error");
+  }
+  if (res.status >= 500) {
+    throw new TransientVerifyError(`Admin API returned ${res.status}`);
+  }
+  return readData<AdminAuthSession>(res, "Failed to verify admin session");
+}
+
+// Server-side sign-out: revokes the session row the current token points
+// at (via the auth worker), so a copied token dies with the sign-out
+// instead of staying valid until its TTL. Best-effort by design - the
+// caller clears local state regardless.
+export async function logoutAdminSession(): Promise<void> {
+  const res = await authFetch("/api/auth/logout", { method: "POST" });
+  await readOk(res, "Failed to sign out");
 }
 
 export class AdminHandoffError extends Error {
@@ -461,7 +469,7 @@ export class AdminHandoffError extends Error {
   }
 }
 
-export async function exchangeAdminHandoff(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
+async function exchangeAdminHandoffUncached(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
   const res = await fetch("/api/auth/handoff/exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -470,6 +478,22 @@ export async function exchangeAdminHandoff(code: string, callbackUrl: string): P
   const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange; error?: string };
   if (!json.ok || !json.data) throw new AdminHandoffError(json.error ?? "unknown");
   return json.data;
+}
+
+// The handoff code is single-use and consumed atomically server-side, so two
+// concurrent exchanges of the same code (React StrictMode's dev double-mount)
+// would race: the loser gets "consumed" and paints an error over a successful
+// sign-in. Cache the in-flight/settled promise per code so every caller
+// observes the SAME exchange outcome.
+const exchangePromises = new Map<string, Promise<AdminHandoffExchange>>();
+
+export function exchangeAdminHandoff(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
+  let promise = exchangePromises.get(code);
+  if (!promise) {
+    promise = exchangeAdminHandoffUncached(code, callbackUrl);
+    exchangePromises.set(code, promise);
+  }
+  return promise;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,9 +542,8 @@ function oauthClientError(error?: string): string {
 
 export async function listOAuthClients(signal?: AbortSignal): Promise<OAuthClient[]> {
   const res = await authFetch("/api/oauth-clients", { signal });
-  const json = (await res.json()) as { ok: boolean; data?: { clients: OAuthClient[] }; error?: string };
-  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load OAuth clients");
-  return json.data.clients;
+  const data = await readData<{ clients: OAuthClient[] }>(res, "Failed to load OAuth clients");
+  return data.clients;
 }
 
 export async function createOAuthClient(input: CreateOAuthClientInput): Promise<CreatedOAuthClient> {
@@ -529,9 +552,11 @@ export async function createOAuthClient(input: CreateOAuthClientInput): Promise<
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const json = (await res.json()) as { ok: boolean; data?: CreatedOAuthClient; error?: string };
-  if (!json.ok || !json.data) throw new Error(oauthClientError(json.error));
-  return json.data;
+  try {
+    return await readData<CreatedOAuthClient>(res, "Failed to register client");
+  } catch (err) {
+    throw new Error(oauthClientError(err instanceof Error ? err.message : undefined));
+  }
 }
 
 export async function setOAuthClientDisabled(clientId: string, disabled: boolean): Promise<void> {
@@ -558,7 +583,10 @@ export async function rotateOAuthClientSecret(clientId: string): Promise<string>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id: clientId }),
   });
-  const json = (await res.json()) as { ok: boolean; data?: { client_secret: string }; error?: string };
-  if (!json.ok || !json.data) throw new Error(oauthClientError(json.error));
-  return json.data.client_secret;
+  try {
+    const data = await readData<{ client_secret: string }>(res, "Failed to rotate secret");
+    return data.client_secret;
+  } catch (err) {
+    throw new Error(oauthClientError(err instanceof Error ? err.message : undefined));
+  }
 }

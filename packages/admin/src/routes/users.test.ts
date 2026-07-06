@@ -1,11 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Hono } from "hono";
+
+vi.mock("../audit", () => ({ writeAdminAudit: vi.fn() }));
+
 import {
+  usersRouter,
   getModerationAction,
   getCurrentStatus,
   buildBillingDetails,
   buildUserStatusClause,
   type BillingRow,
 } from "./users";
+import { writeAdminAudit } from "../audit";
 
 const EMPTY_BILLING: BillingRow = {
   stripe_customer_id: null,
@@ -112,5 +118,216 @@ describe("buildBillingDetails", () => {
       stripe_subscription_id: "sub_456",
     });
     expect(d.stripe).toEqual({ customer_id: "cus_123", subscription_id: "sub_456" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Router handler tests (queue-based D1 mock, per the admin test pattern).
+// ---------------------------------------------------------------------------
+
+const session = { userId: "admin-1", email: "admin@example.com" };
+
+interface PreparedCall {
+  sql: string;
+  binds: unknown[];
+}
+
+function makeDb() {
+  const firstQueue: unknown[] = [];
+  const allQueue: unknown[][] = [];
+  const calls: PreparedCall[] = [];
+  const batches: PreparedCall[][] = [];
+
+  function makeStmt(sql: string) {
+    const call: PreparedCall = { sql, binds: [] };
+    const stmt = {
+      __call: call,
+      bind: (...args: unknown[]) => {
+        call.binds = args;
+        return stmt;
+      },
+      first: async () => {
+        calls.push(call);
+        return firstQueue.shift() ?? null;
+      },
+      all: async () => {
+        calls.push(call);
+        return { results: allQueue.shift() ?? [] };
+      },
+      run: async () => {
+        calls.push(call);
+        return { meta: { changes: 1 } };
+      },
+    };
+    return stmt;
+  }
+
+  return {
+    firstQueue,
+    allQueue,
+    calls,
+    batches,
+    prepare: vi.fn((sql: string) => makeStmt(sql)),
+    batch: vi.fn(async (stmts: Array<{ __call: PreparedCall }>) => {
+      batches.push(stmts.map(s => s.__call));
+      return stmts.map(() => ({ results: [] }));
+    }),
+  };
+}
+
+function makeUsersApp(env: Record<string, unknown>) {
+  const app = new Hono<{ Variables: Record<string, unknown> }>();
+  app.use("*", async (c, next) => {
+    c.set("session", session);
+    await next();
+  });
+  app.route("/", usersRouter);
+  return (path: string, init?: RequestInit) => app.request(path, init, env as never);
+}
+
+function makeEnv() {
+  return {
+    AUTH_DB: makeDb(),
+    DB: makeDb(),
+    ASSETS: { delete: vi.fn(async () => undefined), get: vi.fn(async () => null) },
+    STRIPE_SECRET_KEY: "sk_test_x",
+  };
+}
+
+const realFetch = globalThis.fetch;
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+describe("audit emission - every mutation writes exactly one row, none on 404 (AB-M4 doctrine)", () => {
+  // [label, seed existing user into AUTH_DB.firstQueue?, request]
+  const MUTATIONS: Array<[string, (env: ReturnType<typeof makeEnv>) => void, string, RequestInit]> = [
+    [
+      "PATCH /:id (moderation)",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1",
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ moderation: -1, reason: "spam" }) },
+    ],
+    [
+      "PATCH /:id/badges",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1/badges",
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ badges: 1 }) },
+    ],
+    [
+      "POST /:id/force-password-change",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1/force-password-change",
+      { method: "POST" },
+    ],
+    [
+      "DELETE /:id/avatar",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1/avatar",
+      { method: "DELETE" },
+    ],
+    [
+      "POST /:id/grant-ink",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1/grant-ink",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "vip" }) },
+    ],
+    [
+      "DELETE /:id/grant-ink",
+      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      "/u-1/grant-ink",
+      { method: "DELETE" },
+    ],
+  ];
+
+  it.each(MUTATIONS)("%s: success -> exactly one audit row", async (_label, seed, path, init) => {
+    const env = makeEnv();
+    seed(env);
+    const request = makeUsersApp(env);
+    const res = await request(path, init);
+    expect(res.status).toBe(200);
+    expect(writeAdminAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(MUTATIONS)("%s: unknown user -> 404 and NO audit row", async (_label, _seed, path, init) => {
+    const env = makeEnv();
+    // firstQueue left empty -> existence check returns null.
+    const request = makeUsersApp(env);
+    const res = await request(path, init);
+    expect(res.status).toBe(404);
+    expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /:id/badges - int32 coercion bound", () => {
+  it("rejects 2^32 + allowed (which passes a mask-only check via ToInt32)", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.firstQueue.push({ "1": 1 });
+    const request = makeUsersApp(env);
+    const res = await request("/u-1/badges", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ badges: 2 ** 32 + 1 }),
+    });
+    expect(res.status).toBe(400);
+    expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /:id/gift-month - Stripe idempotency (AB-M3)", () => {
+  it("sends an Idempotency-Key scoped to (admin, user, billing period)", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        cancel_at_period_end: false,
+        current_period_end: 1_700_000_000,
+        items: { data: [{ price: { unit_amount: 500, currency: "usd" } }] },
+      }))
+      .mockResolvedValueOnce(Response.json({ id: "cbtxn_1" }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const request = makeUsersApp(env);
+    const res = await request("/u-1/gift-month", { method: "POST" });
+    expect(res.status).toBe(200);
+
+    const creditInit = fetchMock.mock.calls[1][1] as RequestInit;
+    const headers = new Headers(creditInit.headers);
+    expect(headers.get("Idempotency-Key")).toBe("gift-month:admin-1:u-1:1700000000");
+    expect(writeAdminAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not audit when the Stripe credit fails", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        cancel_at_period_end: false,
+        current_period_end: 1_700_000_000,
+        items: { data: [{ price: { unit_amount: 500, currency: "usd" } }] },
+      }))
+      .mockResolvedValueOnce(new Response("stripe exploded", { status: 500 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const request = makeUsersApp(env);
+    const res = await request("/u-1/gift-month", { method: "POST" });
+    expect(res.status).toBe(502);
+    expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /search - LIKE escaping", () => {
+  it("escapes wildcards in the email search and pairs with ESCAPE", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.allQueue.push([]);
+    const request = makeUsersApp(env);
+    const res = await request("/search?q=a_b%25");
+    expect(res.status).toBe(200);
+    const call = env.AUTH_DB.calls.find(c => c.sql.includes("LIKE"));
+    expect(call?.sql).toContain("ESCAPE");
+    expect(call?.binds[0]).toBe("%a\\_b\\%%");
   });
 });

@@ -59,21 +59,22 @@ async function copy(text: string, label: string): Promise<void> {
   }
 }
 
-// Build the ready-to-paste brief for the connected service's coding agent, with
-// this client's details filled in. `secret` is only available right after
-// create/rotate; for an existing client it's omitted and the prompt points the
-// operator at "rotate" to mint a fresh one.
-function buildAgentPrompt(opts: {
+// Build the ready-to-paste brief for the connected service's coding agent,
+// with this client's details filled in. The plaintext secret is deliberately
+// NEVER inlined: this whole prompt goes on the OS clipboard, and clipboards
+// sync to the cloud on Windows/macOS - the prompt references the secret the
+// operator copies (and stores) separately instead.
+export function buildAgentPrompt(opts: {
   clientId: string;
   redirectUris: string[];
   scopes: string;
   isPublic: boolean;
-  secret?: string | null;
+  hasFreshSecret?: boolean;
 }): string {
   const secretLine = opts.isPublic
     ? "client_secret: (none - public client, PKCE only)"
-    : opts.secret
-      ? `client_secret: ${opts.secret}`
+    : opts.hasFreshSecret
+      ? "client_secret: <the secret shown once in the Annex admin credentials dialog - paste it from your secret manager, NOT from this prompt>"
       : "client_secret: <rotate this client in the Annex admin to mint a fresh secret>";
   const primaryRedirect = opts.redirectUris[0] ?? "<YOUR_EXACT_CALLBACK_URL>";
   const extraRedirects =
@@ -135,7 +136,13 @@ function CopyField({ label, value, mono = true }: { label: string; value: string
         <code className={`flex-1 truncate rounded-md border bg-muted/40 px-2 py-1 text-xs ${mono ? "font-mono" : ""}`}>
           {value}
         </code>
-        <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => void copy(value, label)}>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-7 w-7 shrink-0"
+          aria-label={`Copy ${label}`}
+          onClick={() => void copy(value, label)}
+        >
           <Copy className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -279,17 +286,24 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
 
 export function OAuthClientsPage() {
   const [clients, setClients] = useState<OAuthClient[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialsState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OAuthClient | null>(null);
   const [rotateTarget, setRotateTarget] = useState<OAuthClient | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    setLoadError(null);
     try {
       const list = await listOAuthClients(signal);
       setClients(list);
     } catch (err) {
-      if (!signal?.aborted) toast.error(err instanceof Error ? err.message : "Failed to load clients");
+      if (signal?.aborted) return;
+      const msg = err instanceof Error ? err.message : "Failed to load clients";
+      // A failed load must not strand the page on an infinite skeleton -
+      // record the error so the list renders a retry state.
+      setLoadError(msg);
+      toast.error(msg);
     }
   }, []);
 
@@ -372,7 +386,14 @@ export function OAuthClientsPage() {
 
       <Card>
         <CardContent className="p-0">
-          {clients === null ? (
+          {clients === null && loadError ? (
+            <div className="flex flex-col items-center gap-3 p-8">
+              <p className="text-center text-sm text-destructive">{loadError}</p>
+              <Button size="sm" variant="outline" onClick={() => void load()}>
+                Retry
+              </Button>
+            </div>
+          ) : clients === null ? (
             <div className="space-y-2 p-4">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
@@ -507,7 +528,14 @@ export function OAuthClientsPage() {
           <div className="flex flex-col gap-3">
             <CopyField label="Client ID" value={credentials?.clientId ?? ""} />
             {credentials?.secret ? (
-              <CopyField label="Client secret (shown once)" value={credentials.secret} />
+              <>
+                <CopyField label="Client secret (shown once)" value={credentials.secret} />
+                <p className="text-xs text-muted-foreground">
+                  Copying puts the secret on your OS clipboard, which may sync across devices
+                  (e.g. Windows cloud clipboard). Paste it straight into a secret manager, then
+                  copy something else to clear it.
+                </p>
+              </>
             ) : (
               <p className="text-xs text-muted-foreground">Public client - no secret (PKCE only).</p>
             )}
@@ -524,7 +552,7 @@ export function OAuthClientsPage() {
                     redirectUris: credentials.redirectUris,
                     scopes: credentials.scopes,
                     isPublic: credentials.isPublic,
-                    secret: credentials.secret,
+                    hasFreshSecret: !!credentials.secret,
                   }),
                   "Agent prompt",
                 )

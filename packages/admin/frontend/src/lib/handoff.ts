@@ -6,6 +6,12 @@ export function normalizeAdminNextPath(nextPath: string | null | undefined): str
   if (!nextPath || !nextPath.startsWith("/")) {
     return "/";
   }
+  // Protocol-relative forms ("//evil.com", "/\evil.com") are not an open
+  // redirect (React Router throws on the cross-origin resolve) but that
+  // throw would wedge the callback page after a successful exchange.
+  if (nextPath.startsWith("//") || nextPath.startsWith("/\\")) {
+    return "/";
+  }
 
   return nextPath;
 }

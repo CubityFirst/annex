@@ -1,6 +1,10 @@
 name = "annex-admin"
 main = "src/index.ts"
-compatibility_date = "2024-12-30"
+# Keep in lockstep with the auth worker's compatibility_date: this worker
+# imports auth source (session.ts/jwt.ts) cross-package, so runtime-behavior
+# differences between dates would make shared code behave differently per worker.
+compatibility_date = "2026-02-24"
+workers_dev = false
 
 [assets]
 directory = "./dist"
@@ -13,6 +17,12 @@ binding = "DB"
 database_name = "cubedocs-main"
 database_id = "267490be-7141-4d00-ab23-152742f2f6ef"
 
+# Read+write: unlike the API worker's read-only-by-convention AUTH_DB
+# binding, the admin worker writes users (moderation/force_password_change),
+# user_moderation_events, user_preferences (badges), user_billing (grant
+# columns), and admin_audit_log directly. Credential/session/oauth_clients
+# writes still go through the AUTH service binding. Migrations live only in
+# packages/auth/migrations/.
 [[d1_databases]]
 binding = "AUTH_DB"
 database_name = "cubedocs-auth"
@@ -56,6 +66,14 @@ namespace_id = "2002"
 # Tighter, separate bucket for the unauthenticated handoff-exchange
 # proxy (the only pre-auth endpoint that hits the auth worker + DB).
 simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "RATE_LIMITER_AVATAR"
+namespace_id = "2003"
+# Separate budget for the public avatar route: a 25-row dashboard page
+# costs 25 avatar fetches, which previously drained the shared admin
+# API budget and started 429ing the operator after ~2 searches/min.
+simple = { limit = 300, period = 60 }
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET         (same value as the auth worker's JWT_SECRET - the

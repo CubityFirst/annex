@@ -59,12 +59,19 @@ describe("buildAuditListQuery", () => {
 
   it("emits a user-scope search across actor + target with one bind each", () => {
     const { sql, binds } = buildAuditListQuery(null, { actions: [], q: "alice@example.com" });
-    expect(sql).toContain("(actor_email LIKE ? OR actor_user_id LIKE ? OR target_id LIKE ?)");
+    expect(sql).toContain(
+      "(actor_email LIKE ? ESCAPE '\\' OR actor_user_id LIKE ? ESCAPE '\\' OR target_id LIKE ? ESCAPE '\\')",
+    );
     expect(binds).toEqual([
       "%alice@example.com%",
       "%alice@example.com%",
       "%alice@example.com%",
     ]);
+  });
+
+  it("escapes LIKE wildcards in the user-scope search", () => {
+    const { binds } = buildAuditListQuery(null, { actions: [], q: "50%_x" });
+    expect(binds).toEqual(["%50\\%\\_x%", "%50\\%\\_x%", "%50\\%\\_x%"]);
   });
 
   it("AND-combines cursor + actions + search with binds in SQL order", () => {
@@ -73,7 +80,7 @@ describe("buildAuditListQuery", () => {
       q: "bob",
     });
     expect(sql).toContain(
-      "(created_at < ? OR (created_at = ? AND id < ?)) AND action IN (?) AND (actor_email LIKE ? OR actor_user_id LIKE ? OR target_id LIKE ?)",
+      "(created_at < ? OR (created_at = ? AND id < ?)) AND action IN (?) AND (actor_email LIKE ? ESCAPE '\\' OR actor_user_id LIKE ? ESCAPE '\\' OR target_id LIKE ? ESCAPE '\\')",
     );
     expect(binds).toEqual([
       CURSOR.ts,
