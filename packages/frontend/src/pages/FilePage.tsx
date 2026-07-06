@@ -76,7 +76,15 @@ export function FilePage() {
     setTextContent(null);
     setTextTruncated(false);
     setDrawingDirty(false);
-    apiFetchJson<FileRecord>(`/api/files/${fileId}`)
+    // One automatic retry on 5xx: a single transient server hiccup otherwise
+    // dead-ends the page in "File not found" with no recourse but reload.
+    const loadMeta = async () => {
+      const first = await apiFetchJson<FileRecord>(`/api/files/${fileId}`);
+      if (first.ok || first.redirected || first.status < 500 || cancelled) return first;
+      await new Promise(r => setTimeout(r, 300));
+      return apiFetchJson<FileRecord>(`/api/files/${fileId}`);
+    };
+    loadMeta()
       .then(result => {
         if (cancelled) return;
         if (result.ok && result.data) {

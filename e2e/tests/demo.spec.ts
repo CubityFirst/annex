@@ -76,9 +76,11 @@ test.describe("demo sandbox", () => {
     await page.click("text=Welcome to the Annex demo");
     await expect(page.getByText("Go ahead, break things").first()).toBeVisible();
 
-    // Scroll until the image widget mounts, then require a visible img
-    // resolved to a blob URL (i.e. served from the in-memory store).
-    await scrollUntilVisible(page, page.locator('img[src^="blob:"]:visible').first());
+    // Scroll until the image widget mounts, then require a visible img served
+    // from the in-memory store: raster images resolve to blob: URLs; SVGs
+    // (like the seeded demo illustration) resolve to non-navigable data: URLs
+    // (AuthenticatedImage's stored-XSS defence).
+    await scrollUntilVisible(page, page.locator('img[src^="blob:"]:visible, img[src^="data:image"]:visible').first());
 
     await page.click('button[title="Edit document"]');
     await page.click(".cm-content");

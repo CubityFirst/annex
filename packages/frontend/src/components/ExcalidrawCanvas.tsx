@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/index.css";
-import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
+import { Excalidraw, serializeAsJSON, getSceneVersion } from "@excalidraw/excalidraw";
 import { fileContentEtag } from "@/lib/excalidraw";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,20 @@ function serialize(api: ExcalidrawApi): string {
   );
 }
 
+// Content identity of a serialized scene: the elements minus their bookkeeping
+// fields. Excalidraw bumps version/versionNonce/updated on non-edits too
+// (deselection when the Save button steals focus, post-draw normalization), so
+// deciding "did the user change anything while the save was in flight?" off
+// raw JSON or getSceneVersion() flags pure noise as unsaved edits.
+function sceneContentKey(sceneJson: string): string {
+  try {
+    const parsed = JSON.parse(sceneJson) as { elements?: Record<string, unknown>[] };
+    return JSON.stringify((parsed.elements ?? []).map(({ version, versionNonce, updated, ...rest }) => rest));
+  } catch {
+    return sceneJson;
+  }
+}
+
 export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, theme, onSaved, onDirtyChange, fallbackEtag, saveSlot }: Props) {
   const { toast } = useToast();
   const apiRef = useRef<ExcalidrawApi | null>(null);
@@ -91,14 +105,18 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   const [conflict, setConflict] = useState(false);
   const conflictRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
-  // Every settled onChange bumps this; a save snapshots it at serialize time so
-  // edits made while the PUT is in flight (they were never serialized) can't be
-  // marked clean by the save completing.
-  const changeCounterRef = useRef(0);
   // The in-flight explicit save, resolving to its success. Lets the exit flush
   // wait for the outcome instead of either double-PUTting or silently dropping
   // edits when that save later fails.
   const pendingSaveRef = useRef<Promise<boolean> | null>(null);
+  // Content identity of the scene as of the last load/save, plus the cheap
+  // scene-version fingerprint that goes with it. Excalidraw keeps firing
+  // onChange for selection/hover bookkeeping (including shortly AFTER a save
+  // completes), so "any onChange = unsaved changes" would flip the scene
+  // straight back to dirty on noise; handleChange compares against these
+  // baselines instead.
+  const savedKeyRef = useRef<string | null>(null);
+  const savedVersionRef = useRef<number | null>(null);
   // Excalidraw fires onChange once on mount (and on mere selection/pan), so we
   // ignore changes until the canvas has settled to avoid a false "unsaved" flag.
   const settledRef = useRef(false);
@@ -160,17 +178,37 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   useEffect(() => {
     if (!scene) return;
     settledRef.current = false;
-    const t = setTimeout(() => { settledRef.current = true; }, 300);
+    savedKeyRef.current = null;
+    savedVersionRef.current = null;
+    const t = setTimeout(() => {
+      settledRef.current = true;
+      // Baseline the just-loaded scene once Excalidraw has settled (it
+      // normalizes elements on mount, so the stored JSON isn't reliable).
+      const api = apiRef.current;
+      if (api) {
+        savedVersionRef.current = getSceneVersion(api.getSceneElements() as never);
+        savedKeyRef.current = sceneContentKey(serialize(api));
+      }
+    }, 300);
     return () => clearTimeout(t);
   }, [scene]);
 
   const handleChange = useCallback(() => {
-    if (readOnly || !settledRef.current) return;
-    // Counted even while already dirty (or mid-save): the save path compares
-    // this against its serialize-time snapshot to know whether edits arrived
-    // during the PUT.
-    changeCounterRef.current++;
-    if (dirtyRef.current) return;
+    if (readOnly || !settledRef.current || dirtyRef.current) return;
+    const api = apiRef.current;
+    if (api && savedVersionRef.current !== null) {
+      // Cheap first: unchanged scene version = no element was touched at all
+      // (selection/pan/hover noise) - stay clean.
+      const version = getSceneVersion(api.getSceneElements() as never);
+      if (version === savedVersionRef.current) return;
+      // Version moved but content (minus version/updated bookkeeping) is
+      // still what we saved - a normalization bump, not an edit. Re-baseline
+      // the version so the next noise event takes the cheap path again.
+      if (savedKeyRef.current !== null && sceneContentKey(serialize(api)) === savedKeyRef.current) {
+        savedVersionRef.current = version;
+        return;
+      }
+    }
     setDirtyState(true);
   }, [readOnly, setDirtyState]);
 
@@ -180,9 +218,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
     setSaving(true);
     savingRef.current = true;
     const run = (async (): Promise<boolean> => {
-      // Snapshot which edit generation this save serializes - edits made while
-      // the PUT is in flight were NOT included and must keep the scene dirty.
-      const serializedAt = changeCounterRef.current;
+      const payload = serialize(api);
       try {
         const res = await fetcherRef.current(contentUrl, {
           method: "PUT",
@@ -190,7 +226,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
             "Content-Type": "application/json",
             ...(etagRef.current ? { "If-Match": etagRef.current } : {}),
           },
-          body: serialize(api),
+          body: payload,
         });
         if (res.status === 412) {
           // The drawing changed since we loaded (another tab/editor saved).
@@ -211,12 +247,19 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
         const headerEtag = res.headers.get("ETag");
         if (headerEtag) etagRef.current = headerEtag;
         else if (meta?.updated_at) etagRef.current = fileContentEtag(meta.id, meta.updated_at);
-        if (changeCounterRef.current === serializedAt) {
-          setDirtyState(false);
+        // Clean only if the scene's CONTENT still matches what was sent -
+        // element edits made while the PUT was in flight were never
+        // serialized and must keep the scene dirty (they'd otherwise be
+        // silently lost on navigation). The saved baselines feed
+        // handleChange's noise filter.
+        savedKeyRef.current = sceneContentKey(payload);
+        const clean = sceneContentKey(serialize(api)) === savedKeyRef.current;
+        if (clean) savedVersionRef.current = getSceneVersion(api.getSceneElements() as never);
+        setDirtyState(!clean);
+        if (clean) {
           setJustSaved(true);
           setTimeout(() => setJustSaved(false), 2000);
         }
-        // else: edits landed mid-save; they were never sent - stay dirty.
         if (meta) onSaved?.(meta);
         return true;
       } catch (e) {
@@ -262,12 +305,13 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
       if (readOnlyRef.current || !dirtyRef.current || !api) return;
       if (conflictRef.current) return;
       if (savingRef.current) {
-        // An explicit save is mid-flight. Don't double-PUT - but if that save
-        // fails after we've unmounted, its edits would vanish with no toast
-        // and no retry, so chase the outcome and re-flush on failure (refs
-        // carry the latest state past the unmount).
-        void pendingSaveRef.current?.then((ok) => {
-          if (!ok) flush(keepalive);
+        // An explicit save is mid-flight. Don't double-PUT - but if the scene
+        // is still dirty once it settles (the save failed, or edits landed
+        // while it was in flight), those edits would vanish with no toast and
+        // no retry, so chase the outcome and re-flush (refs carry the latest
+        // state past the unmount).
+        void pendingSaveRef.current?.then(() => {
+          if (dirtyRef.current && !conflictRef.current) flush(keepalive);
         });
         return;
       }

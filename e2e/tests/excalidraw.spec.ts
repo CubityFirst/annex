@@ -147,11 +147,19 @@ test("drawing a shape and saving persists it", async () => {
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
 
+  // Focus the canvas first - Excalidraw's tool shortcuts only fire once its
+  // island has focus; without the click the "r" goes to the page body, the
+  // drag below draws a selection box instead of a rectangle, and the save
+  // persists an empty scene.
+  await page.mouse.click(cx, cy);
   await page.keyboard.press("r");
   await page.mouse.move(cx - 60, cy - 40);
   await page.mouse.down();
   await page.mouse.move(cx + 60, cy + 40, { steps: 8 });
   await page.mouse.up();
+  // The rectangle tool badge ("2") highlights when the shortcut landed; more
+  // importantly the undo control enables once a real element exists.
+  await expect(page.locator('.excalidraw [aria-label="Undo"]')).toBeEnabled({ timeout: 5000 });
 
   // The Save button enables once the scene is dirty; click it.
   const saveBtn = page.getByRole("button", { name: "Save" });
