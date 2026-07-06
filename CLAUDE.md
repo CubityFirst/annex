@@ -111,6 +111,10 @@ Tests exist - run them before reporting work as done when changes are testable.
 - **Playwright e2e tests** live in `e2e/tests/` (`2fa`, `app`, `change-password`, `invites`, `limited-permissions`). Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
 - When adding behavior with existing test coverage in the same area, extend the corresponding suite rather than leaving it untested.
 
+## Commits
+
+Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperative summary>` (e.g. `feat(frontend): draft-first doc creation`, `fix(auth): ...`). Types/scopes are listed in `CONTRIBUTING.md` - scope is the package (`frontend`, `api`, `auth`, `admin`, `e2e`) or feature area (`files`, `search`, `orgs`, `billing`, `collab`, `oidc`, ...).
+
 ## CLI Notes
 
 - All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler d1 execute ...`)
