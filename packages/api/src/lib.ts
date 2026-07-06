@@ -190,21 +190,126 @@ export function isMutableFile(mimeType: string | null): boolean {
   return (mimeType ?? "").toLowerCase().split(";")[0].trim() === EXCALIDRAW_MIME;
 }
 
+// Extension → MIME allowlist for uploads. The client-declared `file.type` is
+// attacker-controlled and everything downstream (isInlineSafeMime,
+// fileServeHeaders, isMutableFile, every kind decision) keys off the stored
+// MIME, so uploads NEVER store the declared type: the extension decides, and
+// anything not on this list is stored as application/octet-stream (which
+// fileServeHeaders forces to download).
+const UPLOAD_EXTENSION_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/x-icon",
+  svg: "image/svg+xml",
+  tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", jfif: "image/jpeg",
+  mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg",
+  m4a: "audio/mp4", flac: "audio/flac", aac: "audio/aac", weba: "audio/webm",
+  // .opus files are Ogg containers - audio/ogg is the inline-safe base type
+  // the player allowlist expects (audio/opus is not on INLINE_SAFE_MIME).
+  opus: "audio/ogg",
+  mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/mp4",
+  ogv: "video/ogg",
+  pdf: "application/pdf",
+  txt: "text/plain", md: "text/markdown", json: "application/json", csv: "text/csv",
+  zip: "application/zip",
+  excalidraw: EXCALIDRAW_MIME,
+};
+
+// Magic-byte check for the raster image types we serve inline. Returns false
+// when the buffer doesn't start with the format's signature, so a scriptable
+// payload named `evil.png` can't be stored under an inline-safe image MIME.
+// Types without a cheap unambiguous signature aren't sniffed (returns true).
+function magicBytesMatch(mime: string, bytes: Uint8Array): boolean {
+  const startsWith = (sig: number[], offset = 0) =>
+    bytes.length >= offset + sig.length && sig.every((b, i) => bytes[offset + i] === b);
+  switch (mime) {
+    case "image/png":
+      return startsWith([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case "image/jpeg":
+      return startsWith([0xff, 0xd8, 0xff]);
+    case "image/gif":
+      return (startsWith([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || startsWith([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]));
+    case "image/webp":
+      return startsWith([0x52, 0x49, 0x46, 0x46]) && startsWith([0x57, 0x45, 0x42, 0x50], 8);
+    default:
+      return true;
+  }
+}
+
+// Server-side MIME for an uploaded file: extension allowlist first, then a
+// magic-byte sniff for the raster image types. Mismatch (or an unknown /
+// missing extension) degrades to application/octet-stream - never to the
+// client's declared type.
+export function deriveUploadMime(filename: string, body: ArrayBuffer): string {
+  const ext = /\.([a-z0-9]+)$/i.exec(filename)?.[1]?.toLowerCase();
+  const mapped = ext ? UPLOAD_EXTENSION_MIME[ext] : undefined;
+  if (!mapped) return "application/octet-stream";
+  if (!magicBytesMatch(mapped, new Uint8Array(body))) return "application/octet-stream";
+  return mapped;
+}
+
+// Content ETag for a stored file's bytes: `"<id>-<updatedAtMs>"`. Uploaded
+// media is immutable so its version stays 0/constant; mutable files (drawings)
+// bump updated_at on every content PUT. Single source for the GET serving
+// path, the PUT If-Match precondition + response header, and the public
+// streaming route - the formats must stay byte-identical or optimistic
+// concurrency silently breaks. Mirrored client-side in
+// packages/frontend/src/lib/excalidraw.ts (fileContentEtag).
+export function fileContentEtag(fileId: string, updatedAt: string | null): string {
+  const version = updatedAt ? new Date(updatedAt).getTime() : 0;
+  return `"${fileId}-${version}"`;
+}
+
+// File-name hygiene shared by upload and rename. The name is echoed into
+// Content-Disposition and rendered everywhere, so control characters, path
+// separators, empty and over-long names are unacceptable. Rename REJECTS
+// (the user typed it and can fix it); upload SANITIZES (an OS filename is
+// not the user's fault and the upload shouldn't fail over it).
+export const FILE_NAME_INVALID_CHARS = /[\u0000-\u001f\u007f/\\]/;
+
+export function sanitizeUploadFileName(raw: string): string {
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[/\\]/g, "_")
+    .trim()
+    .slice(0, 255)
+    .trim();
+  return cleaned || "untitled";
+}
+
+// Content-Disposition value that survives any filename. HTTP header values
+// must be ISO-8859-1 (the Workers Headers constructor throws on anything
+// beyond it - a CJK/emoji name would 500 the whole content route), so the
+// plain `filename="…"` carries an ASCII-only fallback (non-ASCII, quotes,
+// backslashes and control chars replaced - the latter also being the
+// header-injection defence), while the real name rides in RFC 5987's
+// `filename*=UTF-8''…` parameter, percent-encoded. encodeURIComponent leaves
+// `'()*` bare but they're not RFC 5987 attr-chars, so they're encoded too.
+// The `filename*` parameter is only emitted when the fallback is lossy.
+export function contentDispositionValue(disposition: "inline" | "attachment", filename: string): string {
+  const name = filename || "file";
+  // [^ -~] matches anything outside printable ASCII (space..tilde) - both
+  // non-Latin-1 chars and the control chars of header injection.
+  const fallback = name.replace(/[^ -~]|["\\]/g, "_");
+  const encoded = encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  let value = `${disposition}; filename="${fallback}"`;
+  if (encoded !== fallback) value += `; filename*=UTF-8''${encoded}`;
+  return value;
+}
+
 // Headers for serving a stored blob safely. `inline` (with the declared
 // Content-Type) only for the allowlist; otherwise download as octet-stream.
 // `nosniff` blocks MIME-sniffing so e.g. an HTML payload uploaded as image/png
 // can't be re-interpreted as a document. `Referrer-Policy: no-referrer` keeps a
 // capability-token URL (loaded e.g. as a PDF <iframe> document) from leaking the
 // token via the Referer of any sub-request the served content makes. The
-// filename is stripped of quotes, backslashes and control chars to prevent
-// Content-Disposition header injection.
+// filename goes through contentDispositionValue (ASCII fallback + RFC 5987) to
+// prevent Content-Disposition header injection and non-Latin-1 header throws.
 export function fileServeHeaders(mimeType: string | null, filename: string): Record<string, string> {
   const declared = (mimeType ?? "").trim();
   const safe = isInlineSafeMime(declared);
-  const safeName = (filename || "file").replace(/["\\\r\n\t]/g, "_");
   return {
     "Content-Type": safe ? declared : "application/octet-stream",
-    "Content-Disposition": `${safe ? "inline" : "attachment"}; filename="${safeName}"`,
+    "Content-Disposition": contentDispositionValue(safe ? "inline" : "attachment", filename),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
   };

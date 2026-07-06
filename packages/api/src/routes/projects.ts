@@ -165,10 +165,10 @@ export async function handleProjects(
     };
     type FileRow = {
       id: string; name: string; mime_type: string; size: number; project_id: string;
-      folder_id: string | null; uploaded_by: string; created_at: string;
+      folder_id: string | null; uploaded_by: string; created_at: string; updated_at: string;
       uploader_name: string; uploader_role: string | null;
     };
-    type CountRow = { folder_id: string; folders: number; docs: number };
+    type CountRow = { folder_id: string; folders: number; docs: number; files: number };
 
     const foldersQuery = isLimited
       ? env.DB.prepare(
@@ -220,7 +220,7 @@ export async function handleProjects(
               .bind(projectId));
 
     const fileSelect = `
-      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at, f.updated_at,
         COALESCE(pm.name, f.uploaded_by) AS uploader_name,
         pm.role AS uploader_role
       FROM files f
@@ -241,6 +241,10 @@ export async function handleProjects(
     // project. Each count is still a full descendant total; we just stop
     // building closures for folders nobody asked about, which collapses the
     // recursion from O(folders × depth) to ~O(folders) and the docs join with it.
+    // Docs and files are pre-aggregated per folder and joined as at most one
+    // row each per subtree entry - joining the raw tables directly would fan
+    // out to docs×files rows per folder (a 300-doc/300-file folder = 90k join
+    // rows) before any COUNT could collapse them. This keeps the cost additive.
     const countsQuery = isLimited
       ? null
       : env.DB.prepare(`
@@ -254,11 +258,13 @@ export async function handleProjects(
           SELECT
             s.ancestor_id AS folder_id,
             COUNT(DISTINCT CASE WHEN s.folder_id != s.ancestor_id THEN s.folder_id END) AS folders,
-            COUNT(i.id) AS docs
+            COALESCE(SUM(d.n), 0) AS docs,
+            COALESCE(SUM(fl.n), 0) AS files
           FROM subtree s
-          LEFT JOIN docs i ON i.folder_id = s.folder_id AND i.project_id = ?
+          LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM docs WHERE project_id = ? GROUP BY folder_id) d ON d.folder_id = s.folder_id
+          LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM files WHERE project_id = ? GROUP BY folder_id) fl ON fl.folder_id = s.folder_id
           GROUP BY s.ancestor_id
-        `).bind(projectId, folderFilter, projectId, projectId);
+        `).bind(projectId, folderFilter, projectId, projectId, projectId);
 
     // Ancestor chain for the current folder (root → current), so the frontend
     // can rebuild breadcrumbs on a direct folder-URL load. Only fetched when a
@@ -296,8 +302,8 @@ export async function handleProjects(
       ? batchResults[batchResults.length - 1] as D1Result<AncestorRow>
       : { results: [] as AncestorRow[] };
 
-    const folderCounts: Record<string, { docs: number; folders: number }> = {};
-    for (const r of countsRes.results) folderCounts[r.folder_id] = { docs: r.docs, folders: r.folders };
+    const folderCounts: Record<string, { docs: number; files: number; folders: number }> = {};
+    for (const r of countsRes.results) folderCounts[r.folder_id] = { docs: r.docs, files: r.files, folders: r.folders };
 
     return okResponse({
       folders: foldersRes.results,

@@ -9,6 +9,14 @@
 export const EXCALIDRAW_MIME = "application/vnd.excalidraw+json";
 export const EXCALIDRAW_EXT = ".excalidraw";
 
+// Client-side mirror of the content ETag the API maintains for mutable files:
+// `"<fileId>-<updatedAtMs>"` (quoted, per HTTP). Used for If-Match on drawing
+// saves whenever a response's own ETag header isn't available - keep in sync
+// with the server's formula in packages/api/src/routes/files.ts.
+export function fileContentEtag(fileId: string, updatedAtIso: string): string {
+  return `"${fileId}-${new Date(updatedAtIso).getTime()}"`;
+}
+
 // A blank Excalidraw scene, matching the shape the editor reads/writes. Used when
 // creating a new drawing file (FileManager → "New drawing").
 export function emptyExcalidrawScene(): string {

@@ -206,6 +206,46 @@ describe("handleProjects GET /projects/:id/contents", () => {
     expect(json.data.folders).toHaveLength(1);
     expect(json.data.docs).toHaveLength(1);
   });
+
+  it("returns per-subtree folder counts including files (FM-M1)", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("editor");
+    const { env, queueBatch, prepare, bindCalls } = makeEnv();
+    // A folder holding 2 docs + 3 files in its subtree must report both counts.
+    queueBatch([
+      { results: [{ id: "fl1" }] }, // folders
+      { results: [] },              // docs
+      { results: [] },              // files
+      { results: [{ folder_id: "fl1", folders: 1, docs: 2, files: 3 }] }, // counts
+    ]);
+    const res = await call(env, "GET", "/projects/p1/contents");
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { folderCounts: Record<string, { docs: number; files: number; folders: number }> } };
+    expect(json.data.folderCounts["fl1"]).toEqual({ docs: 2, files: 3, folders: 1 });
+
+    // Docs and files must join as PRE-AGGREGATED per-folder counts (one row
+    // each per subtree entry) - joining the raw tables would fan out to a
+    // docs×files cross product per folder, so the SUM of pre-counts is both
+    // the correctness and the row-cost guard.
+    const countsSql = prepare.mock.calls.map((c) => c[0] as string).find((s) => s.includes("WITH RECURSIVE subtree"));
+    expect(countsSql).toBeDefined();
+    expect(countsSql).toContain("COALESCE(SUM(d.n), 0) AS docs");
+    expect(countsSql).toContain("COALESCE(SUM(fl.n), 0) AS files");
+    expect(countsSql).toContain("LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM docs WHERE project_id = ? GROUP BY folder_id) d ON d.folder_id = s.folder_id");
+    expect(countsSql).toContain("LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM files WHERE project_id = ? GROUP BY folder_id) fl ON fl.folder_id = s.folder_id");
+    // …and each aggregate gets its own project bind (5 binds total at root).
+    expect(bindCalls).toContainEqual(["p1", null, "p1", "p1", "p1"]);
+  });
+
+  it("selects f.updated_at in the file listing (FM-L1)", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("editor");
+    const { env, queueBatch, prepare } = makeEnv();
+    queueBatch([{ results: [] }, { results: [] }, { results: [] }, { results: [] }]);
+    const res = await call(env, "GET", "/projects/p1/contents");
+    expect(res.status).toBe(200);
+    const fileSql = prepare.mock.calls.map((c) => c[0] as string).find((s) => s.includes("FROM files f") && s.includes("uploader_name"));
+    expect(fileSql).toBeDefined();
+    expect(fileSql).toContain("f.updated_at");
+  });
 });
 
 describe("handleProjects GET /projects/:id", () => {

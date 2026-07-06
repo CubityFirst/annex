@@ -87,6 +87,20 @@ describe("sortFiles", () => {
     expect(names(sortFiles(files, asc(SortCol.Updated)))).toEqual(["b.txt", "c.txt", "a.txt"]);
   });
 
+  it("prefers updated_at over created_at for the Updated column (mutable drawings)", () => {
+    const withUpdated = [
+      { name: "old-upload.png", size: 1, created_at: "2026-01-05T00:00:00Z" },
+      // Created first but saved most recently - must sort as newest.
+      { name: "drawing.excalidraw", size: 1, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-09T00:00:00Z" },
+      { name: "new-upload.png", size: 1, created_at: "2026-01-07T00:00:00Z" },
+    ];
+    expect(names(sortFiles(withUpdated, desc(SortCol.Updated)))).toEqual([
+      "drawing.excalidraw",
+      "new-upload.png",
+      "old-upload.png",
+    ]);
+  });
+
   it("sorts by uploader_name with missing uploader last in both directions", () => {
     expect(names(sortFiles(files, asc(SortCol.CreatedBy)))).toEqual(["a.txt", "b.txt", "c.txt"]);
     expect(names(sortFiles(files, desc(SortCol.CreatedBy)))).toEqual(["b.txt", "a.txt", "c.txt"]);

@@ -1,10 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { signContentToken, verifyContentToken, CONTENT_TOKEN_TTL_SECONDS } from "./contentToken";
+import { PRESIGN_URL_TTL_SECONDS } from "./r2Presign";
 
 const SECRET = "test-secret-please-ignore";
 const NOW = 1_700_000_000;
 
 describe("contentToken", () => {
+  it("caps the TTL at the presigned-R2-URL ceiling (both are unrevocable capabilities)", () => {
+    expect(CONTENT_TOKEN_TTL_SECONDS).toBe(3 * 60 * 60);
+    expect(CONTENT_TOKEN_TTL_SECONDS).toBeLessThanOrEqual(PRESIGN_URL_TTL_SECONDS);
+  });
+
   it("verifies a freshly minted token for the same file", async () => {
     const token = await signContentToken(SECRET, "file-abc", NOW);
     expect(await verifyContentToken(SECRET, "file-abc", token, NOW)).toBe(true);

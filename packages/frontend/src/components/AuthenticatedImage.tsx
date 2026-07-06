@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/apiFetch";
+import { HELP_MISSING_IMAGES_URL } from "@/lib/helpLinks";
 import { Badge } from "@/components/ui/badge";
 import { ImageOff } from "lucide-react";
 
@@ -10,9 +11,9 @@ interface Props extends React.ComponentPropsWithoutRef<"img"> {
   /**
    * Declared MIME type of the source. When set and the fetched blob's type
    * differs (e.g. an SVG the API serves as application/octet-stream so it can't
-   * be navigated to as a scriptable document), the blob is re-wrapped with this
-   * type so the <img> decoder accepts it. <img>-loaded SVG can't run script, so
-   * this stays XSS-safe.
+   * be navigated to as a scriptable document), the bytes are re-typed so the
+   * <img> decoder accepts them. SVG is special-cased to a data: URL (never a
+   * same-origin blob: URL) - see the comment in the effect below.
    */
   mimeType?: string;
 }
@@ -24,6 +25,17 @@ interface Props extends React.ComponentPropsWithoutRef<"img"> {
 // concurrent fetch() calls. We hold the resolved promise briefly after
 // resolution so adjacent component mounts can hit the same in-memory blob.
 const inflight = new Map<string, Promise<Blob | null>>();
+
+// btoa wants a binary string; build it in chunks so a large SVG doesn't blow
+// the engine's argument-count limit for String.fromCharCode(...spread).
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
 
 function getImageBlob(src: string): Promise<Blob | null> {
   const existing = inflight.get(src);
@@ -71,8 +83,24 @@ export function AuthenticatedImage({ src, alt, projectId, isPublic, mimeType, ..
       if (!blob) { setFailed(true); return; }
       // The API serves non-inline-safe images (notably SVG) as
       // application/octet-stream so they can't be navigated to as scriptable
-      // documents. The <img> decoder won't accept octet-stream, so re-wrap the
-      // bytes with the declared type. <img>-loaded SVG can't run script.
+      // documents. The <img> decoder won't accept octet-stream, so we have to
+      // restore a renderable type - but HOW matters:
+      //   • SVG gets a data: URL. A same-origin blob: URL typed image/svg+xml
+      //     would be navigable ("open image in new tab", or any surfacing of
+      //     resolvedSrc) and a scripted SVG would then execute in the app
+      //     origin with the user's session - undoing the server's defence.
+      //     <img> renders data: SVG fine, the URL carries no origin, and
+      //     browsers block top-level navigation to data: URLs, so the
+      //     script-execution vector is gone.
+      //   • Other declared types keep the plain blob: re-wrap - <img>-loaded
+      //     rasters can't run script, and blob avoids base64-copying large
+      //     images in memory.
+      if (/svg/i.test(mimeType ?? "") || /svg/i.test(blob.type)) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (cancelled) return;
+        setResolvedSrc(`data:image/svg+xml;base64,${bytesToBase64(bytes)}`);
+        return;
+      }
       const typed = mimeType && blob.type !== mimeType
         ? new Blob([await blob.arrayBuffer()], { type: mimeType })
         : blob;
@@ -88,7 +116,7 @@ export function AuthenticatedImage({ src, alt, projectId, isPublic, mimeType, ..
 
   if (failed) {
     return (
-      <a href="https://docs.cubityfir.st/s/e6d11927-cc6b-48d1-8577-af8b08019d61/258a2eb4-edac-4c86-91aa-afdc46c29c00" target="_blank" rel="noopener noreferrer" aria-label="Image unavailable - learn more">
+      <a href={HELP_MISSING_IMAGES_URL} target="_blank" rel="noopener noreferrer" aria-label="Image unavailable - learn more">
         <Badge variant="destructive" className="inline-flex items-center gap-1.5 font-normal cursor-pointer" title={alt}>
           <ImageOff className="h-3.5 w-3.5 shrink-0" />
           Image unavailable: Learn more about missing images and permissions.

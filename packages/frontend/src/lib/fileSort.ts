@@ -85,7 +85,7 @@ export function sortDocs<
 }
 
 export function sortFiles<
-  T extends { name: string; uploader_name?: string | null; size: number; created_at: string },
+  T extends { name: string; uploader_name?: string | null; size: number; created_at: string; updated_at?: string },
 >(files: T[], sort: SortState | null): T[] {
   if (!sort) return files;
   switch (sort.colIdx) {
@@ -96,7 +96,9 @@ export function sortFiles<
     case SortCol.Size:
       return stableSort(files, f => f.size, "number", sort.dir);
     case SortCol.Updated:
-      return stableSort(files, f => f.created_at, "date", sort.dir);
+      // Mutable files (drawings) carry updated_at; immutable uploads fall back
+      // to created_at - matching what the "Last updated" column displays.
+      return stableSort(files, f => f.updated_at ?? f.created_at, "date", sort.dir);
     default:
       return files;
   }

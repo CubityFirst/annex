@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { fileKind } from "@/lib/fileKind";
+import { formatBytes } from "@/lib/fileManager";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
 import { EditorView } from "@codemirror/view";
@@ -82,12 +83,6 @@ interface PublicData {
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function flattenDocs(folders: NavFolder[], docs: NavDoc[], parentId: string | null = null): NavDoc[] {

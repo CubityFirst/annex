@@ -53,7 +53,11 @@ describe("enrichFilesWithStreamUrls", () => {
       file({ id: "f2", name: 'ev"il\n.mp4', mime_type: "video/webm" }),
     ]);
     const u = new URL(row.content_stream_url!);
-    expect(u.searchParams.get("response-content-disposition")).toBe('inline; filename="ev_il_.mp4"');
+    // Shared contentDispositionValue: ASCII-only fallback plus the RFC 5987
+    // percent-encoded original (quote/newline stay encoded - no injection).
+    expect(u.searchParams.get("response-content-disposition")).toBe(
+      "inline; filename=\"ev_il_.mp4\"; filename*=UTF-8''ev%22il%0A.mp4",
+    );
   });
 
   it("presigns concurrently and preserves order/other fields", async () => {

@@ -11,6 +11,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { fileKind, guessLanguage } from "@/lib/fileKind";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
+import { fileContentEtag } from "@/lib/excalidraw";
+import { formatBytes } from "@/lib/fileManager";
+import { downloadStoredFile } from "@/lib/downloadStoredFile";
+import { useToast } from "@/hooks/use-toast";
 import { isLightTheme } from "@/lib/theme";
 import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
@@ -28,18 +32,13 @@ interface FileRecord {
   folder_id: string | null;
   uploaded_by: string;
   created_at: string;
+  updated_at: string;
   // Short-lived capability token for streaming this file's bytes by URL, so
   // <video>/<audio>/<iframe> (which can't send the auth header) can seek/stream.
   content_token?: string;
   // Presigned R2 URL for video - streams directly from R2 (no Worker in the byte
   // path). Present only for video when R2 S3 creds are configured server-side.
   content_stream_url?: string | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // Guard rail so a huge log/dump doesn't lock up the tab - preview the first
@@ -58,18 +57,28 @@ export function FilePage() {
   const { setBreadcrumbs, projectName, myRole, theme, customColor, headerActionSlot } = useOutletContext<DocsLayoutContext>();
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [file, setFile] = useState<FileRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textTruncated, setTextTruncated] = useState(false);
+  const [drawingDirty, setDrawingDirty] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     if (!fileId) return;
+    // `cancelled` guards every setState below so a fast fileId change can't
+    // land file A's metadata/body under file B (same pattern as the other
+    // fetch effects in AuthenticatedImage/ExcalidrawCanvas).
+    let cancelled = false;
+    setTextContent(null);
+    setTextTruncated(false);
+    setDrawingDirty(false);
     apiFetchJson<FileRecord>(`/api/files/${fileId}`)
       .then(result => {
+        if (cancelled) return;
         if (result.ok && result.data) {
           setFile(result.data);
           if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.name, kind: "file", mime: result.data.mime_type });
@@ -95,6 +104,7 @@ export function FilePage() {
             apiFetch(`/api/files/${fileId}/content`)
               .then(r => r.arrayBuffer())
               .then(buf => {
+                if (cancelled) return;
                 const truncated = buf.byteLength > MAX_TEXT_PREVIEW_BYTES;
                 const slice = truncated ? buf.slice(0, MAX_TEXT_PREVIEW_BYTES) : buf;
                 // Decode as UTF-8 explicitly so non-ASCII bytes render correctly.
@@ -107,8 +117,20 @@ export function FilePage() {
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn before the tab/window closes while the drawing has unsaved edits.
+  // In-app route changes can't be blocked this way: react-router's useBlocker
+  // needs a data router and the app mounts a plain <BrowserRouter>, so those
+  // navigations rely on the canvas's guarded final-save-on-unmount instead.
+  useEffect(() => {
+    if (!drawingDirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [drawingDirty]);
 
   // URL the browser can stream/seek directly (token authenticates the request,
   // since media elements can't attach the Authorization header). Null until the
@@ -123,17 +145,15 @@ export function FilePage() {
 
   async function handleDownload() {
     if (!file) return;
+    // Shared streaming path (lib/downloadStoredFile): mints a FRESH token per
+    // click - the page-load token expires after 3h, so a long-open tab would
+    // otherwise download the API's error JSON - and falls back to an
+    // authenticated blob when no token is available.
     setDownloading(true);
     try {
-      const res = await apiFetch(`/api/files/${file.id}/content`);
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (!(await downloadStoredFile(file.id, file.name))) {
+        toast({ title: "Download failed.", variant: "destructive" });
+      }
     } finally {
       setDownloading(false);
     }
@@ -171,6 +191,13 @@ export function FilePage() {
             readOnly={!canEdit}
             name={file.name}
             theme={exTheme}
+            // If-Match fallback for saves when the content GET exposes no ETag
+            // header (same scheme the server uses - see lib/excalidraw).
+            fallbackEtag={file.updated_at ? fileContentEtag(file.id, file.updated_at) : undefined}
+            // Keep the displayed metadata fresh after each save.
+            onSaved={(meta) => setFile(f => (f && f.id === meta.id ? { ...f, size: meta.size, updated_at: meta.updated_at } : f))}
+            // Track unsaved edits so the beforeunload warning above can arm.
+            onDirtyChange={setDrawingDirty}
             // Render Save in the top bar (title bar) rather than floating over
             // the canvas, where it overlapped Excalidraw's bottom-right "?".
             saveSlot={headerActionSlot}
@@ -242,7 +269,10 @@ export function FilePage() {
 
       {kind === "pdf" && contentUrl && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" className="hidden h-[75vh] w-full sm:block" />
+          {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
+              origin, so the browser's PDF script can't touch the app origin;
+              allow-scripts keeps the viewer itself functional. */}
+          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" sandbox="allow-scripts" className="hidden h-[75vh] w-full sm:block" />
           <div className="flex flex-col items-center gap-3 p-6 text-center sm:hidden">
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">PDF preview isn’t available on small screens.</p>

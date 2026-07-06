@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
+import { formatBytes, formatRelativeTime, moveDestinations, folderPathLabel, shiftSelectionRange, folderCountLabel } from "@/lib/fileManager";
+import { downloadStoredFile } from "@/lib/downloadStoredFile";
+import { useFolderContents, type FolderItem, type DocItem, type FileItem } from "@/hooks/useFolderContents";
+import { useUploads } from "@/hooks/useUploads";
 import { emptyExcalidrawScene, EXCALIDRAW_MIME, EXCALIDRAW_EXT } from "@/lib/excalidraw";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -27,70 +31,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 
-interface FolderItem {
-  id: string;
-  name: string;
-  project_id: string;
-  parent_id: string | null;
-  created_at: string;
-}
-
-// An in-flight (or just-failed) file upload, rendered as an Attachment card.
-interface UploadEntry {
-  id: number;
-  name: string;
-  size: number;
-  mime: string;
-  status: "uploading" | "error";
-}
-
 type Role = "viewer" | "editor" | "admin" | "owner";
-
-interface DocItem {
-  id: string;
-  title: string;
-  folder_id: string | null;
-  updated_at: string;
-  author_id?: string;
-  author_name?: string;
-  author_role?: Role | null;
-  is_home?: number;
-}
-
-interface FileItem {
-  id: string;
-  name: string;
-  mime_type: string;
-  size: number;
-  folder_id: string | null;
-  uploaded_by: string;
-  created_at: string;
-  uploader_name?: string;
-  uploader_role?: Role | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-interface BreadcrumbEntry {
-  id: string | null;
-  name: string;
-}
-
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 
 const ROLE_LABELS: Record<Role, string> = {
   viewer: "Viewer",
@@ -148,6 +89,19 @@ const FILE_COLUMNS = [
   { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
 ];
 
+// The same five actions repeat across the desktop context menu, the desktop
+// kebab, and the mobile kebab - render them once from a "kit" of menu-item
+// components (ContextMenuItem vs DropdownMenuItem) so the sets can't drift.
+interface MenuKit {
+  Item: React.ElementType;
+  Separator: React.ElementType;
+}
+
+// Stable empty arrays for search mode - fresh [] literals per render would
+// defeat the sorted-list/measureKey memos below.
+const EMPTY_FOLDERS: FolderItem[] = [];
+const EMPTY_FILES: FileItem[] = [];
+
 interface Props {
   projectId: string;
   projectName: string;
@@ -163,13 +117,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const { toast } = useToast();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
 
-  const [folders, setFolders] = useState<FolderItem[]>([]);
-  const [docs, setDocs] = useState<DocItem[]>([]);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  // Breadcrumb path is rebuilt from the API ancestors response on every load.
-  // URL (folderId prop) is the source of truth for the current folder.
-  const [path, setPath] = useState<BreadcrumbEntry[]>([{ id: null, name: projectName }]);
   const currentFolderId = folderId;
+  const {
+    folders, setFolders,
+    docs, setDocs,
+    files, setFiles,
+    folderCounts, path, loading, error: loadError, reload,
+  } = useFolderContents(projectId, currentFolderId, projectName);
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -177,20 +131,25 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const lastCheckedFileIndex = useRef<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; currentName: string } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string } | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [contextDeleteTarget, setContextDeleteTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; name: string } | null>(null);
   const [contextDeleting, setContextDeleting] = useState(false);
-  const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<DocItem[] | null>(null);
+  const searchSeqRef = useRef(0);
+  const inSearch = searchResults !== null;
 
   // Column sort for the listing - applied within each group (folders, docs,
   // files). Defaults to Name ascending; clicking the active column toggles dir.
   const [sort, setSort] = useState<{ colIdx: number; dir: SortDir }>({ colIdx: 0, dir: "asc" });
   const handleSort = useCallback((colIdx: number) => {
+    // A sort change reorders the lists, so the shift-select anchors point at
+    // different rows than the user last clicked - drop them.
+    lastCheckedDocIndex.current = null;
+    lastCheckedFileIndex.current = null;
     setSort(prev => prev.colIdx === colIdx
       ? { colIdx, dir: prev.dir === "asc" ? "desc" : "asc" }
       : { colIdx, dir: "asc" });
@@ -201,12 +160,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingDrawing, setCreatingDrawing] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const [summaryDoc, setSummaryDoc] = useState<DocItem | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+  const summarySeqRef = useRef(0);
 
   // "Move to folder…" picker - a single-pointer / keyboard alternative to the
   // drag-and-drop move. Opening it loads every folder in the project so the user
@@ -221,29 +178,51 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   // external file drop state
   const [externalDragOver, setExternalDragOver] = useState(false);
-  // In-flight uploads, one entry per file, surfaced as Attachment cards. A
-  // successful upload removes its entry; a failed one flips to "error" so the
-  // user can see it failed and dismiss it.
-  const [uploads, setUploads] = useState<UploadEntry[]>([]);
-  const uploadIdRef = useRef(0);
+
+  const { uploads, enqueueFiles, dismissUpload } = useUploads({
+    projectId,
+    currentFolderId,
+    onDocCreated,
+    appendDoc: useCallback((doc: DocItem) => setDocs(prev => [...prev, doc]), [setDocs]),
+    appendFile: useCallback((file: FileItem) => setFiles(prev => [...prev, file]), [setFiles]),
+  });
 
   // Hidden <input> backing the explicit toolbar Upload button (touch devices
-  // can't drag-and-drop). Reuses the same uploadFileAndCreateDoc pipeline.
+  // can't drag-and-drop). Reuses the same upload pipeline.
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Selections and shift-select anchors are scoped to what's on screen: leaving
+  // the folder (or project) or entering/leaving search mode invalidates both.
+  // Without this, "Delete (N)" can silently include items selected in a folder
+  // the user is no longer looking at, and a stale anchor can index past the end
+  // of a shorter list.
   useEffect(() => {
-    loadContents();
-  }, [currentFolderId, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSelectedDocs(new Set());
+    setSelectedFiles(new Set());
+    lastCheckedDocIndex.current = null;
+    lastCheckedFileIndex.current = null;
+  }, [projectId, currentFolderId, inSearch]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
+      // Invalidate any in-flight search too, or its late response would
+      // re-enter search mode under an empty box.
+      searchSeqRef.current++;
       setSearchResults(null);
       return;
     }
     const timer = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
       const folderParam = currentFolderId ? `&rootFolderId=${currentFolderId}` : "";
       const result = await apiFetchJson<DocItem[]>(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}${folderParam}`);
+      // Only the newest in-flight search may write results - a slower older
+      // response must not overwrite a fresher query's rows.
+      if (seq !== searchSeqRef.current) return;
       if (result.ok && result.data) setSearchResults(result.data);
+      else if (!result.redirected) {
+        setSearchResults([]);
+        toast({ title: "Search failed.", description: result.error, variant: "destructive" });
+      }
     }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery, projectId, currentFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -265,40 +244,6 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     }));
     return () => setBreadcrumbs([]);
   }, [path, dropTarget]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function loadContents() {
-    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
-    loadingTimerRef.current = setTimeout(() => {
-      setLoading(true);
-      setFolders([]);
-      setDocs([]);
-      setFiles([]);
-    }, 150);
-
-    const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : "";
-    const result = await apiFetchJson<{
-      folders: FolderItem[];
-      docs: DocItem[];
-      files: FileItem[];
-      folderCounts: Record<string, { docs: number; folders: number }>;
-      ancestors: { id: string; name: string }[];
-    }>(`/api/projects/${projectId}/contents${folderParam}`);
-
-    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-    if (result.ok && result.data) {
-      setFolders(result.data.folders);
-      setDocs(result.data.docs);
-      setFiles(result.data.files);
-      const counts = new Map<string, { files: number; folders: number }>();
-      for (const [id, c] of Object.entries(result.data.folderCounts)) {
-        counts.set(id, { files: c.docs, folders: c.folders });
-      }
-      setFolderCounts(counts);
-      const ancestorCrumbs: BreadcrumbEntry[] = (result.data.ancestors ?? []).map(a => ({ id: a.id, name: a.name }));
-      setPath([{ id: null, name: projectName }, ...ancestorCrumbs]);
-    }
-    setLoading(false);
-  }
 
   function folderUrl(id: string | null) {
     return id ? `/projects/${projectId}/folders/${id}` : `/projects/${projectId}`;
@@ -325,6 +270,19 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     navigate(folderUrl(target.id));
   }
 
+  function openRename(type: "folder" | "doc" | "file", id: string, currentName: string) {
+    setRenameTarget({ type, id });
+    setRenameName(currentName);
+  }
+
+  // Doc rows can be visible in two stores at once - the folder list and the
+  // search results. Route every doc mutation through this so neither goes
+  // stale (deleted rows lingering / renamed rows keeping old titles in search).
+  function updateDocLists(fn: (docs: DocItem[]) => DocItem[]) {
+    setDocs(fn);
+    setSearchResults(prev => (prev ? fn(prev) : prev));
+  }
+
   async function handleCreateFolder(e: React.FormEvent) {
     e.preventDefault();
     if (!newFolderName.trim() || creatingFolder) return;
@@ -336,9 +294,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         body: JSON.stringify({ name: newFolderName.trim(), projectId, parentId: currentFolderId, type: "docs" }),
       });
       if (result.ok && result.data) {
-        setFolders(prev => [...prev, result.data!].sort((a, b) => a.name.localeCompare(b.name)));
+        // Display order comes from sortFolders - a plain append is enough here.
+        setFolders(prev => [...prev, result.data!]);
         setNewFolderName("");
         setShowNewFolder(false);
+      } else if (!result.redirected) {
+        toast({ title: "Couldn't create the folder.", description: result.error, variant: "destructive" });
       }
     } finally {
       setCreatingFolder(false);
@@ -366,6 +327,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       const result = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
       if (result.ok && result.data) {
         navigate(`/projects/${projectId}/files/${result.data.id}`, { state: { isNew: true, folderPath: path } });
+      } else if (!result.redirected) {
+        toast({ title: "Couldn't create the drawing.", description: result.error, variant: "destructive" });
       }
     } finally {
       setCreatingDrawing(false);
@@ -373,37 +336,40 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   }
 
   async function moveDoc(docId: string, targetFolderId: string | null) {
-    if (targetFolderId === currentFolderId) return;
-    setDocs(prev => prev.filter(d => d.id !== docId));
+    if (targetFolderId === currentFolderId && !inSearch) return;
+    updateDocLists(prev => prev.filter(d => d.id !== docId));
     setSelectedDocs(prev => { if (!prev.has(docId)) return prev; const next = new Set(prev); next.delete(docId); return next; });
     const result = await apiFetchJson(`/api/docs/${docId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    if (!result.ok) {
-      toast({ title: "Failed to move document.", variant: "destructive" });
-      await loadContents();
+    if (!result.ok && !result.redirected) {
+      toast({ title: "Failed to move document.", description: result.error, variant: "destructive" });
+      await reload();
     }
   }
 
-  async function moveFolder(folderId: string, targetParentId: string | null) {
+  async function moveFolder(movedFolderId: string, targetParentId: string | null) {
     if (targetParentId === currentFolderId) return;
-    setFolders(prev => prev.filter(f => f.id !== folderId));
-    const result = await apiFetchJson(`/api/folders/${folderId}`, {
+    setFolders(prev => prev.filter(f => f.id !== movedFolderId));
+    const result = await apiFetchJson(`/api/folders/${movedFolderId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ parentId: targetParentId }),
     });
-    if (!result.ok) {
-      toast({ title: "Failed to move folder.", variant: "destructive" });
-      await loadContents();
+    if (!result.ok && !result.redirected) {
+      toast({ title: "Failed to move folder.", description: result.error, variant: "destructive" });
+      await reload();
     }
   }
 
   async function downloadDoc(doc: DocItem) {
     const result = await apiFetchJson<{ content: string; title: string }>(`/api/docs/${doc.id}`);
-    if (!result.ok || !result.data) return;
+    if (!result.ok || !result.data) {
+      if (!result.redirected) toast({ title: "Download failed.", description: result.error, variant: "destructive" });
+      return;
+    }
     const content = result.data.content ?? "";
     const title = result.data.title || "Untitled";
     const filename = `${title.replace(/[<>:"/\\|?*]/g, "_")}.md`;
@@ -423,6 +389,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   async function handleSummarize(e: React.MouseEvent, doc: DocItem) {
     e.stopPropagation();
+    // Sequence guard: opening a second summary while the first is in flight
+    // must not let the slower response land under the newer doc's title.
+    const seq = ++summarySeqRef.current;
     setSummaryDoc(doc);
     setSummary(null);
     setSummarizing(true);
@@ -432,12 +401,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ docId: doc.id }),
       });
+      if (seq !== summarySeqRef.current) return;
       if (result.ok && result.data) setSummary(result.data.summary);
       else setSummary("Failed to generate summary.");
     } catch {
-      setSummary("Failed to generate summary.");
+      if (seq === summarySeqRef.current) setSummary("Failed to generate summary.");
     } finally {
-      setSummarizing(false);
+      if (seq === summarySeqRef.current) setSummarizing(false);
     }
   }
 
@@ -446,15 +416,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   }
 
   async function downloadFile(file: FileItem) {
-    const res = await apiFetch(`/api/files/${file.id}/content`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!(await downloadStoredFile(file.id, file.name))) {
+      toast({ title: "Download failed.", variant: "destructive" });
+    }
   }
 
   async function moveFile(fileId: string, targetFolderId: string | null) {
@@ -466,9 +430,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    if (!result.ok) {
-      toast({ title: "Failed to move file.", variant: "destructive" });
-      await loadContents();
+    if (!result.ok && !result.redirected) {
+      toast({ title: "Failed to move file.", description: result.error, variant: "destructive" });
+      await reload();
     }
   }
 
@@ -477,28 +441,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     setMoveFolders(null);
     const result = await apiFetchJson<FolderItem[]>(`/api/folders?projectId=${projectId}&all=1`);
     if (result.ok && result.data) setMoveFolders(result.data);
-    else setMoveFolders([]);
+    else {
+      setMoveFolders([]);
+      if (!result.redirected) toast({ title: "Couldn't load folders.", description: result.error, variant: "destructive" });
+    }
   }
 
-  // Destinations offered in the move picker: every folder in the project, minus
-  // (for a folder being moved) itself and its descendants, since the API rejects
-  // a move that would create a cycle. "Home" (root) is added separately in the UI.
-  function moveDestinations(): FolderItem[] {
+  // Destinations with their full ancestry label, sorted by path so siblings
+  // group together and duplicate names in different branches stay tellable
+  // apart. Memoized - the O(n²) descendant exclusion used to run twice per
+  // dialog render.
+  const destinations = useMemo(() => {
     const all = moveFolders ?? [];
-    if (!moveTarget || moveTarget.type !== "folder") return all;
-    const banned = new Set<string>([moveTarget.id]);
-    let added = true;
-    while (added) {
-      added = false;
-      for (const f of all) {
-        if (f.parent_id && banned.has(f.parent_id) && !banned.has(f.id)) {
-          banned.add(f.id);
-          added = true;
-        }
-      }
-    }
-    return all.filter(f => !banned.has(f.id));
-  }
+    const byId = new Map(all.map(f => [f.id, f]));
+    return moveDestinations(all, moveTarget)
+      .map(f => ({ folder: f, label: folderPathLabel(all, f, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [moveFolders, moveTarget]);
 
   async function handleMoveTo(targetFolderId: string | null) {
     if (!moveTarget || moving) return;
@@ -528,7 +487,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       const deletedDocs = new Set(results.filter(r => r.kind === "doc" && r.ok).map(r => r.id));
       const deletedFiles = new Set(results.filter(r => r.kind === "file" && r.ok).map(r => r.id));
       const failed = results.filter(r => !r.ok).length;
-      setDocs(prev => prev.filter(d => !deletedDocs.has(d.id)));
+      updateDocLists(prev => prev.filter(d => !deletedDocs.has(d.id)));
       setFiles(prev => prev.filter(f => !deletedFiles.has(f.id)));
       setSelectedDocs(prev => { const next = new Set(prev); for (const id of deletedDocs) next.delete(id); return next; });
       setSelectedFiles(prev => { const next = new Set(prev); for (const id of deletedFiles) next.delete(id); return next; });
@@ -546,29 +505,38 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     setRenaming(true);
     try {
       const trimmed = renameName.trim();
+      // Apply locally only after the server accepted the rename - a 403 or
+      // validation failure keeps the dialog open with the error instead of
+      // showing a name that silently reverts on the next load.
+      let result;
       if (renameTarget.type === "folder") {
-        await apiFetch(`/api/folders/${renameTarget.id}`, {
+        result = await apiFetchJson(`/api/folders/${renameTarget.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: trimmed }),
         });
-        setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
+        if (result.ok) setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
       } else if (renameTarget.type === "doc") {
-        await apiFetch(`/api/docs/${renameTarget.id}`, {
+        result = await apiFetchJson(`/api/docs/${renameTarget.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: trimmed }),
         });
-        setDocs(prev => prev.map(d => d.id === renameTarget.id ? { ...d, title: trimmed } : d));
+        if (result.ok) {
+          updateDocLists(prev => prev.map(d => d.id === renameTarget.id ? { ...d, title: trimmed } : d));
+        }
       } else {
-        await apiFetch(`/api/files/${renameTarget.id}`, {
+        result = await apiFetchJson(`/api/files/${renameTarget.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: trimmed }),
         });
-        setFiles(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
+        if (result.ok) setFiles(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
       }
-      setRenameTarget(null);
+      if (result.ok) setRenameTarget(null);
+      else if (!result.redirected) {
+        toast({ title: "Rename failed.", description: result.error, variant: "destructive" });
+      }
     } finally {
       setRenaming(false);
     }
@@ -579,79 +547,28 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     setContextDeleting(true);
     const { type, id } = contextDeleteTarget;
     try {
-      if (type === "folder") {
-        await apiFetch(`/api/folders/${id}`, { method: "DELETE" });
-        setFolders(prev => prev.filter(f => f.id !== id));
-      } else if (type === "doc") {
-        await apiFetch(`/api/docs/${id}`, { method: "DELETE" });
-        setDocs(prev => prev.filter(d => d.id !== id));
-      } else {
-        await apiFetch(`/api/files/${id}`, { method: "DELETE" });
-        setFiles(prev => prev.filter(f => f.id !== id));
+      const endpoint = type === "folder" ? `/api/folders/${id}` : type === "doc" ? `/api/docs/${id}` : `/api/files/${id}`;
+      const result = await apiFetchJson(endpoint, { method: "DELETE" });
+      if (result.ok) {
+        if (type === "folder") setFolders(prev => prev.filter(f => f.id !== id));
+        else if (type === "doc") updateDocLists(prev => prev.filter(d => d.id !== id));
+        else setFiles(prev => prev.filter(f => f.id !== id));
+        setContextDeleteTarget(null);
+      } else if (!result.redirected) {
+        toast({ title: "Delete failed.", description: result.error, variant: "destructive" });
+        setContextDeleteTarget(null);
       }
-      setContextDeleteTarget(null);
     } finally {
       setContextDeleting(false);
     }
   }
 
-  const uploadFileAndCreateDoc = useCallback(async (file: File) => {
-    const id = ++uploadIdRef.current;
-    setUploads(prev => [...prev, { id, name: file.name, size: file.size, mime: file.type, status: "uploading" }]);
-    let ok = false;
-    try {
-      // .md / .txt files → import content as a new document. Everything else
-      // (including dropped .excalidraw drawings) falls through to a file upload.
-      if (file.name.endsWith(".md") || file.name.endsWith(".txt")) {
-        const content = await file.text();
-        const title = file.name.replace(/\.(md|txt)$/i, "") || "Untitled";
-        const docResult = await apiFetchJson<DocItem & { id: string }>("/api/docs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, content, projectId, folderId: currentFolderId }),
-        });
-        if (docResult.ok && docResult.data) {
-          onDocCreated(docResult.data);
-          setDocs(prev => [...prev, docResult.data!].sort((a, b) => a.title.localeCompare(b.title)));
-          ok = true;
-        }
-      } else {
-        // Everything else → upload as a native file entry. Imported/dropped
-        // .excalidraw files arrive with an empty or application/json MIME, so
-        // re-type them to the vendor MIME - otherwise the API wouldn't treat them
-        // as mutable drawings and saving edits would 400 (isMutableFile).
-        const upload = file.name.toLowerCase().endsWith(EXCALIDRAW_EXT)
-          ? new File([file], file.name, { type: EXCALIDRAW_MIME })
-          : file;
-        const form = new FormData();
-        form.append("file", upload);
-        form.append("projectId", projectId);
-        if (currentFolderId) form.append("folderId", currentFolderId);
-        const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
-        if (uploadResult.ok && uploadResult.data) {
-          setFiles(prev => [...prev, uploadResult.data!].sort((a, b) => a.name.localeCompare(b.name)));
-          ok = true;
-        }
-      }
-    } catch {
-      ok = false;
-    } finally {
-      // On success drop the card; on failure flip it to "error" so it lingers
-      // (with a dismiss action) instead of vanishing silently.
-      setUploads(prev =>
-        ok
-          ? prev.filter(u => u.id !== id)
-          : prev.map(u => (u.id === id ? { ...u, status: "error" } : u)),
-      );
-    }
-  }, [projectId, currentFolderId, onDocCreated]);
-
   const handleExternalDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setExternalDragOver(false);
     if (draggedItem.current) return; // internal drag, not our concern
-    Array.from(e.dataTransfer.files).forEach(uploadFileAndCreateDoc);
-  }, [uploadFileAndCreateDoc]);
+    enqueueFiles(Array.from(e.dataTransfer.files));
+  }, [enqueueFiles]);
 
   function onDragStart(e: React.DragEvent, type: "doc" | "folder" | "file", id: string) {
     draggedItem.current = { type, id };
@@ -664,7 +581,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     setDropTarget(null);
   }
 
+  // Folder rows / crumbs are drop targets for *internal* drags only. An OS file
+  // drag must not highlight them - dropped files always upload to the folder
+  // being viewed (the full-page overlay is the affordance for that), so ringing
+  // a row would promise a per-folder upload that doesn't happen.
   function onCrumbDragOver(e: React.DragEvent, crumbId: string | null) {
+    if (!draggedItem.current) return;
     e.preventDefault();
     setDropTarget(crumbId ?? "root");
   }
@@ -686,27 +608,129 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     }
   }
 
-  function renderTable(folderRows: FolderItem[], docRows: DocItem[], fileRows: FileItem[] = []) {
-    // Sort within each group; folders stay pinned above docs above files.
-    const sortedFolders = sortFolders(folderRows, sort);
-    const sortedDocs = sortDocs(docRows, sort);
-    const sortedFiles = sortFiles(fileRows, sort);
-    // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
-    // shown in them changes - folder/doc/file names plus author/uploader names.
-    // Deliberately excludes selection state, so checkbox toggles don't re-measure.
-    const measureKey = [
-      ...sortedFolders.map(f => f.name),
-      ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
-      ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
-    ].join("|");
+  // --- shared per-item action menus (context menu + desktop/mobile kebabs) ---
 
-    // Mobile card helpers. The kebab is the sole per-row action entry point in
-    // the card layout; its items mirror the desktop ContextMenu exactly.
+  const folderActionItems = (M: MenuKit, folder: FolderItem) => (
+    <>
+      <M.Item onClick={() => openRename("folder", folder.id, folder.name)}>
+        <Pencil />
+        Rename
+      </M.Item>
+      <M.Item onClick={() => openMoveDialog({ type: "folder", id: folder.id, name: folder.name })}>
+        <FolderInput />
+        Move to folder…
+      </M.Item>
+      <M.Separator />
+      <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
+        <Trash2 />
+        Delete
+      </M.Item>
+    </>
+  );
+
+  const docActionItems = (M: MenuKit, doc: DocItem) => {
+    const isHome = doc.is_home === 1;
+    const title = doc.title || "Untitled";
+    return (
+      <>
+        <M.Item onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${doc.id}`); toast({ title: "Link copied" }); }}>
+          <Link />
+          Copy link
+        </M.Item>
+        <M.Item onClick={() => downloadDoc(doc)}>
+          <Download />
+          Download
+        </M.Item>
+        {canEdit && <M.Separator />}
+        {canEdit && (
+          <M.Item onClick={() => openRename("doc", doc.id, title)}>
+            <Pencil />
+            Rename
+          </M.Item>
+        )}
+        {canEdit && !isHome && (
+          <M.Item onClick={() => openMoveDialog({ type: "doc", id: doc.id, name: title })}>
+            <FolderInput />
+            Move to folder…
+          </M.Item>
+        )}
+        {canEdit && !isHome && (
+          <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: title })}>
+            <Trash2 />
+            Delete
+          </M.Item>
+        )}
+      </>
+    );
+  };
+
+  const fileActionItems = (M: MenuKit, file: FileItem) => (
+    <>
+      <M.Item onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/files/${file.id}`); toast({ title: "Link copied" }); }}>
+        <Link />
+        Copy link
+      </M.Item>
+      <M.Item onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
+        <Code />
+        Copy markdown
+      </M.Item>
+      <M.Item onClick={() => downloadFile(file)}>
+        <Download />
+        Download
+      </M.Item>
+      {canEdit && <M.Separator />}
+      {canEdit && (
+        <M.Item onClick={() => openRename("file", file.id, file.name)}>
+          <Pencil />
+          Rename
+        </M.Item>
+      )}
+      {canEdit && (
+        <M.Item onClick={() => openMoveDialog({ type: "file", id: file.id, name: file.name })}>
+          <FolderInput />
+          Move to folder…
+        </M.Item>
+      )}
+      {canEdit && (
+        <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
+          <Trash2 />
+          Delete
+        </M.Item>
+      )}
+    </>
+  );
+
+  const contextKit: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
+  const dropdownKit: MenuKit = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
+
+  // Sort within each group; folders stay pinned above docs above files. In
+  // search mode the doc results replace the folder view's lists. Memoized so a
+  // checkbox toggle doesn't re-sort all three arrays.
+  const displayFolders = inSearch ? EMPTY_FOLDERS : folders;
+  const displayDocs = searchResults ?? docs;
+  const displayFiles = inSearch ? EMPTY_FILES : files;
+  const sortedFolders = useMemo(() => sortFolders(displayFolders, sort), [displayFolders, sort]);
+  const sortedDocs = useMemo(() => sortDocs(displayDocs, sort), [displayDocs, sort]);
+  const sortedFiles = useMemo(() => sortFiles(displayFiles, sort), [displayFiles, sort]);
+
+  // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
+  // shown in them changes - folder/doc/file names plus author/uploader names.
+  // Deliberately excludes selection state, so checkbox toggles don't re-measure.
+  const measureKey = useMemo(() => [
+    ...sortedFolders.map(f => f.name),
+    ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
+    ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
+  ].join("|"), [sortedFolders, sortedDocs, sortedFiles]);
+
+  function renderTable() {
+    // Mobile card helpers. The kebab mirrors the desktop ContextMenu exactly;
+    // on desktop the same kebab renders in the row's last cell so keyboard
+    // users can reach Move/Delete/Copy without a right-click.
     const toggleDocSel = (id: string) =>
       setSelectedDocs(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     const toggleFileSel = (id: string) =>
       setSelectedFiles(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    const renderKebab = (label: string, items: React.ReactNode) => (
+    const renderKebab = (label: string, items: React.ReactNode, compact = false) => (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -714,9 +738,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             aria-label={label}
             title={label}
             onClick={e => e.stopPropagation()}
-            className="inline-flex items-center justify-center h-9 w-9 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+            className={compact
+              ? "inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+              : "inline-flex items-center justify-center h-9 w-9 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"}
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreVertical className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">{items}</DropdownMenuContent>
@@ -731,6 +757,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <>
           {sortedFolders.map(folder => {
             const isDropTarget = dropTarget === folder.id;
+            const countLabel = folderCountLabel(folderCounts.get(folder.id));
             const folderRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
@@ -738,7 +765,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   onDragStart={e => onDragStart(e, "folder", folder.id)}
                   onDragEnd={onDragEnd}
                   onDragOver={e => {
-                    if (draggedItem.current?.id === folder.id) return;
+                    // Internal drags only - see onCrumbDragOver.
+                    if (!draggedItem.current || draggedItem.current.id === folder.id) return;
                     e.preventDefault();
                     setDropTarget(folder.id);
                   }}
@@ -765,22 +793,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
-                          {folderCounts.has(folder.id) && (() => {
-                            const c = folderCounts.get(folder.id)!;
-                            const parts = [];
-                            if (c.files > 0) parts.push(`${c.files} ${c.files === 1 ? "file" : "files"}`);
-                            if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
-                            return parts.length > 0 ? (
-                              <Badge variant="outline" className="ml-2 shrink-0 text-xs text-muted-foreground">
-                                {parts.join(", ")}
-                              </Badge>
-                            ) : null;
-                          })()}
+                          {countLabel && (
+                            <Badge variant="outline" className="ml-2 shrink-0 text-xs text-muted-foreground">
+                              {countLabel}
+                            </Badge>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
                               aria-label={`Rename folder ${folder.name}`}
-                              onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
+                              onClick={e => { e.stopPropagation(); openRename("folder", folder.id, folder.name); }}
                               className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:focus-visible:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
@@ -793,7 +815,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     },
                     { content: null },
                     { content: null },
-                    { content: null },
+                    {
+                      content: canEdit ? (
+                        <div className="flex items-center justify-end w-full">
+                          {renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true)}
+                        </div>
+                      ) : null,
+                    },
                   ]}
                 />
             );
@@ -801,21 +829,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             return (
               <ContextMenu key={folder.id}>
                 <ContextMenuTrigger asChild><div>{folderRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
-                    <Pencil />
-                    Rename
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => openMoveDialog({ type: "folder", id: folder.id, name: folder.name })}>
-                    <FolderInput />
-                    Move to folder…
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
-                    <Trash2 />
-                    Delete
-                  </ContextMenuItem>
-                </ContextMenuContent>
+                <ContextMenuContent>{folderActionItems(contextKit, folder)}</ContextMenuContent>
               </ContextMenu>
             );
             })}
@@ -834,12 +848,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       checked={selectedDocs.has(doc.id)}
                       onClick={(e) => {
                         const willBeChecked = !selectedDocs.has(doc.id);
-                        if (e.shiftKey && lastCheckedDocIndex.current !== null) {
-                          const from = Math.min(lastCheckedDocIndex.current, docIdx);
-                          const to = Math.max(lastCheckedDocIndex.current, docIdx);
+                        const range = e.shiftKey
+                          ? shiftSelectionRange(lastCheckedDocIndex.current, docIdx, sortedDocs.length)
+                          : null;
+                        if (range) {
                           setSelectedDocs(prev => {
                             const next = new Set(prev);
-                            for (let i = from; i <= to; i++) {
+                            for (let i = range.from; i <= range.to; i++) {
                               if (sortedDocs[i].is_home === 1) continue;
                               if (willBeChecked) next.add(sortedDocs[i].id);
                               else next.delete(sortedDocs[i].id);
@@ -877,7 +892,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             <button
                               type="button"
                               aria-label={`Rename ${doc.title || "Untitled"}`}
-                              onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
+                              onClick={e => { e.stopPropagation(); openRename("doc", doc.id, doc.title || "Untitled"); }}
                               className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:focus-visible:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                               title="Rename"
                             >
@@ -918,6 +933,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             >
                               <Download className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
+                            {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
                           </div>
                         </div>
                       ),
@@ -928,35 +944,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             return (
               <ContextMenu key={doc.id}>
                 <ContextMenuTrigger asChild><div>{docRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${doc.id}`); toast({ title: "Link copied" }); }}>
-                    <Link />
-                    Copy link
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => downloadDoc(doc)}>
-                    <Download />
-                    Download
-                  </ContextMenuItem>
-                  {canEdit && <ContextMenuSeparator />}
-                  {canEdit && (
-                    <ContextMenuItem onClick={() => { setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}>
-                      <Pencil />
-                      Rename
-                    </ContextMenuItem>
-                  )}
-                  {canEdit && !isHome && (
-                    <ContextMenuItem onClick={() => openMoveDialog({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
-                      <FolderInput />
-                      Move to folder…
-                    </ContextMenuItem>
-                  )}
-                  {canEdit && !isHome && (
-                    <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
-                      <Trash2 />
-                      Delete
-                    </ContextMenuItem>
-                  )}
-                </ContextMenuContent>
+                <ContextMenuContent>{docActionItems(contextKit, doc)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -973,12 +961,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     checked={selectedFiles.has(file.id)}
                     onClick={(e) => {
                       const willBeChecked = !selectedFiles.has(file.id);
-                      if (e.shiftKey && lastCheckedFileIndex.current !== null) {
-                        const from = Math.min(lastCheckedFileIndex.current, fileIdx);
-                        const to = Math.max(lastCheckedFileIndex.current, fileIdx);
+                      const range = e.shiftKey
+                        ? shiftSelectionRange(lastCheckedFileIndex.current, fileIdx, sortedFiles.length)
+                        : null;
+                      if (range) {
                         setSelectedFiles(prev => {
                           const next = new Set(prev);
-                          for (let i = from; i <= to; i++) {
+                          for (let i = range.from; i <= range.to; i++) {
                             if (willBeChecked) next.add(sortedFiles[i].id);
                             else next.delete(sortedFiles[i].id);
                           }
@@ -1012,7 +1001,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           <button
                             type="button"
                             aria-label={`Rename ${file.name}`}
-                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}
+                            onClick={e => { e.stopPropagation(); openRename("file", file.id, file.name); }}
                             className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 inline-flex items-center justify-center min-h-6 min-w-6 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                             title="Rename"
                           >
@@ -1033,16 +1022,19 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   {
                     content: (
                       <div className="flex items-center justify-between gap-2 w-full">
-                        <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
-                        <button
-                          type="button"
-                          aria-label={`Download ${file.name}`}
-                          onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                          className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                          title="Download"
-                        >
-                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
+                        <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>
+                        <div className="flex items-center gap-3.5">
+                          <button
+                            type="button"
+                            aria-label={`Download ${file.name}`}
+                            onClick={e => { e.stopPropagation(); downloadFile(file); }}
+                            className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Download"
+                          >
+                            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                          {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
+                        </div>
                       </div>
                     ),
                   },
@@ -1052,39 +1044,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             return (
               <ContextMenu key={file.id}>
                 <ContextMenuTrigger asChild><div>{fileRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/files/${file.id}`); toast({ title: "Link copied" }); }}>
-                    <Link />
-                    Copy link
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
-                    <Code />
-                    Copy markdown
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => downloadFile(file)}>
-                    <Download />
-                    Download
-                  </ContextMenuItem>
-                  {canEdit && <ContextMenuSeparator />}
-                  {canEdit && (
-                    <ContextMenuItem onClick={() => { setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}>
-                      <Pencil />
-                      Rename
-                    </ContextMenuItem>
-                  )}
-                  {canEdit && (
-                    <ContextMenuItem onClick={() => openMoveDialog({ type: "file", id: file.id, name: file.name })}>
-                      <FolderInput />
-                      Move to folder…
-                    </ContextMenuItem>
-                  )}
-                  {canEdit && (
-                    <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
-                      <Trash2 />
-                      Delete
-                    </ContextMenuItem>
-                  )}
-                </ContextMenuContent>
+                <ContextMenuContent>{fileActionItems(contextKit, file)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -1095,12 +1055,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       {/* Mobile: card list (below md) - same data, tappable rows + kebab actions */}
       <div className="md:hidden rounded-md border bg-background overflow-hidden">
         {sortedFolders.map(folder => {
-          const c = folderCounts.get(folder.id);
-          const parts: string[] = [];
-          if (c) {
-            if (c.files > 0) parts.push(`${c.files} ${c.files === 1 ? "file" : "files"}`);
-            if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
-          }
+          const countLabel = folderCountLabel(folderCounts.get(folder.id));
           return (
             <div
               key={folder.id}
@@ -1114,27 +1069,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
-                {parts.length > 0 && (
-                  <div className="truncate text-xs text-muted-foreground">{parts.join(", ")}</div>
+                {countLabel && (
+                  <div className="truncate text-xs text-muted-foreground">{countLabel}</div>
                 )}
               </div>
-              {canEdit && renderKebab("Folder actions", (
-                <>
-                  <DropdownMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
-                    <Pencil />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openMoveDialog({ type: "folder", id: folder.id, name: folder.name })}>
-                    <FolderInput />
-                    Move to folder…
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
-                    <Trash2 />
-                    Delete
-                  </DropdownMenuItem>
-                </>
-              ))}
+              {canEdit && renderKebab("Folder actions", folderActionItems(dropdownKit, folder))}
             </div>
           );
         })}
@@ -1166,37 +1105,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
                 </div>
               </div>
-              {renderKebab("Document actions", (
-                <>
-                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${doc.id}`); toast({ title: "Link copied" }); }}>
-                    <Link />
-                    Copy link
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => downloadDoc(doc)}>
-                    <Download />
-                    Download
-                  </DropdownMenuItem>
-                  {canEdit && <DropdownMenuSeparator />}
-                  {canEdit && (
-                    <DropdownMenuItem onClick={() => { setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}>
-                      <Pencil />
-                      Rename
-                    </DropdownMenuItem>
-                  )}
-                  {canEdit && !isHome && (
-                    <DropdownMenuItem onClick={() => openMoveDialog({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
-                      <FolderInput />
-                      Move to folder…
-                    </DropdownMenuItem>
-                  )}
-                  {canEdit && !isHome && (
-                    <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
-                      <Trash2 />
-                      Delete
-                    </DropdownMenuItem>
-                  )}
-                </>
-              ))}
+              {renderKebab("Document actions", docActionItems(dropdownKit, doc))}
             </div>
           );
         })}
@@ -1219,44 +1128,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm">{file.name}</div>
               <div className="truncate text-xs text-muted-foreground">
-                {formatBytes(file.size)} · {formatRelativeTime(file.created_at)}
+                {formatBytes(file.size)} · {formatRelativeTime(file.updated_at ?? file.created_at)}
               </div>
             </div>
-            {renderKebab("File actions", (
-              <>
-                <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/files/${file.id}`); toast({ title: "Link copied" }); }}>
-                  <Link />
-                  Copy link
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
-                  <Code />
-                  Copy markdown
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadFile(file)}>
-                  <Download />
-                  Download
-                </DropdownMenuItem>
-                {canEdit && <DropdownMenuSeparator />}
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => { setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}>
-                    <Pencil />
-                    Rename
-                  </DropdownMenuItem>
-                )}
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => openMoveDialog({ type: "file", id: file.id, name: file.name })}>
-                    <FolderInput />
-                    Move to folder…
-                  </DropdownMenuItem>
-                )}
-                {canEdit && (
-                  <DropdownMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
-                    <Trash2 />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </>
-            ))}
+            {renderKebab("File actions", fileActionItems(dropdownKit, file))}
           </div>
         ))}
       </div>
@@ -1290,23 +1165,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         >
           <AttachmentGroup className="flex-col">
             {uploads.map(u => (
-              <Attachment key={u.id} size="sm" status={u.status} className="w-full bg-background shadow-md">
+              <Attachment key={u.id} size="sm" status={u.status === "queued" ? "uploading" : u.status} className="w-full bg-background shadow-md">
                 <AttachmentMedia>
-                  {u.status === "uploading"
-                    ? <Spinner className="size-4" />
-                    : <FileTypeIcon mimeType={u.mime} name={u.name} className="size-4" />}
+                  {u.status === "error"
+                    ? <FileTypeIcon mimeType={u.mime} name={u.name} className="size-4" />
+                    : <Spinner className="size-4" />}
                 </AttachmentMedia>
                 <AttachmentContent>
                   <AttachmentTitle>{u.name}</AttachmentTitle>
                   <AttachmentDescription className={u.status === "error" ? "text-destructive" : undefined}>
-                    {u.status === "uploading" ? `Uploading… · ${formatBytes(u.size)}` : "Upload failed"}
+                    {u.status === "queued"
+                      ? `Queued · ${formatBytes(u.size)}`
+                      : u.status === "uploading"
+                        ? `Uploading… · ${formatBytes(u.size)}`
+                        : u.error ?? "Upload failed"}
                   </AttachmentDescription>
                 </AttachmentContent>
                 {u.status === "error" && (
                   <AttachmentActions>
                     <AttachmentAction
                       aria-label={`Dismiss ${u.name}`}
-                      onClick={() => setUploads(prev => prev.filter(x => x.id !== u.id))}
+                      onClick={() => dismissUpload(u.id)}
                     >
                       <X />
                     </AttachmentAction>
@@ -1324,7 +1203,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         multiple
         ref={fileInputRef}
         className="hidden"
-        onChange={e => { Array.from(e.target.files ?? []).forEach(uploadFileAndCreateDoc); e.target.value = ""; }}
+        onChange={e => { enqueueFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
       />
 
       {/* Toolbar */}
@@ -1332,8 +1211,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
-            placeholder="Search files…"
-            aria-label="Search files"
+            placeholder="Search documents…"
+            aria-label="Search documents"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-9 pr-8"
@@ -1392,19 +1271,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : searchResults !== null ? (
-          searchResults.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-muted-foreground">No files found</p>
-            </div>
-          ) : renderTable([], searchResults)
-        ) : folders.length === 0 && docs.length === 0 && files.length === 0 ? (
+        ) : loadError && !inSearch ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">Couldn't load this folder.</p>
+            <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+            <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => reload()}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Retry
+            </Button>
+          </div>
+        ) : inSearch && sortedDocs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">No documents found</p>
+          </div>
+        ) : !inSearch && folders.length === 0 && docs.length === 0 && files.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm font-medium text-muted-foreground">This folder is empty</p>
           </div>
-        ) : renderTable(folders, docs, files)}
+        ) : renderTable()}
       </div>
 
       {/* New folder dialog */}
@@ -1477,19 +1364,20 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                   <span className="truncate">{projectName} (home)</span>
                 </button>
-                {moveDestinations().map(f => (
+                {destinations.map(({ folder: f, label }) => (
                   <button
                     key={f.id}
                     type="button"
                     disabled={moving || currentFolderId === f.id}
                     onClick={() => handleMoveTo(f.id)}
+                    title={label}
                     className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
-                    <span className="truncate">{f.name}</span>
+                    <span className="truncate">{label}</span>
                   </button>
                 ))}
-                {moveDestinations().length === 0 && currentFolderId !== null && (
+                {destinations.length === 0 && currentFolderId !== null && (
                   <p className="px-2 py-2 text-sm text-muted-foreground">No other folders available.</p>
                 )}
               </>

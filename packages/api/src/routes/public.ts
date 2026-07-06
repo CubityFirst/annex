@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile, isInlineSafeMime } from "../lib";
+import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile, isInlineSafeMime, contentDispositionValue, fileContentEtag } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "../lib/r2Presign";
 import type { Env } from "../index";
@@ -50,17 +50,17 @@ export async function enrichFilesWithStreamUrls(env: Env, files: PublicFile[]): 
   return Promise.all(
     files.map(async (f) => {
       if (!(f.mime_type.startsWith("video/") && isInlineSafeMime(f.mime_type))) return f;
-      // Force a Worker-controlled Content-Type/Disposition on the header-less
-      // direct R2 path; strip quotes/backslashes/control chars from the name.
-      const safeName = f.name.replace(/["\\\r\n\t]/g, "_");
       // A presign failure must degrade to the in-Worker route for that one file
       // (content_stream_url: null), never reject the whole list - otherwise a
       // single signing error would 500 the entire published page (nav + docs +
       // files), not just the offending video.
       try {
+        // Force a Worker-controlled Content-Type/Disposition on the header-less
+        // direct R2 path; contentDispositionValue handles quoting, control
+        // chars, and non-ASCII names (RFC 5987).
         const content_stream_url = await presignR2GetUrl(env, `files/${f.id}`, PRESIGN_URL_TTL_SECONDS, {
           contentType: f.mime_type,
-          contentDisposition: `inline; filename="${safeName}"`,
+          contentDisposition: contentDispositionValue("inline", f.name),
         });
         return { ...f, content_stream_url };
       } catch {
@@ -254,12 +254,11 @@ export async function handlePublic(
     if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
 
     const mutable = isMutableFile(meta.mime_type);
-    const version = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     return serveR2Object(env.ASSETS, `files/${fileId}`, {
       mimeType: meta.mime_type,
       filename: meta.name,
       size: meta.size,
-      etag: `"${fileId}-${version}"`,
+      etag: fileContentEtag(fileId, meta.updated_at),
       cacheControl: mutable ? "public, no-cache" : "public, max-age=3600",
       request,
     });

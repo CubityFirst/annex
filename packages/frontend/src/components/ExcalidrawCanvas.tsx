@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/index.css";
 import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
+import { fileContentEtag } from "@/lib/excalidraw";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -40,8 +41,15 @@ interface Props {
   readOnly: boolean;
   name: string;
   theme: "light" | "dark";
-  /** Called after a successful save (e.g. so the page can refresh metadata). */
-  onSaved?: () => void;
+  /** Called after a successful save with the PUT response's fresh metadata. */
+  onSaved?: (meta: { id: string; size: number; updated_at: string }) => void;
+  /** Called whenever the unsaved-changes flag flips (so the page can warn). */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Content ETag ("<fileId>-<updatedAtMs>", quoted) derived from the file's
+   * metadata, used for If-Match when the GET response exposes no ETag header.
+   */
+  fallbackEtag?: string;
   /**
    * Where to render the Save button (editable only). Controls placement:
    *   • undefined → floating button overlaid on the canvas (default; public
@@ -63,15 +71,34 @@ function serialize(api: ExcalidrawApi): string {
   );
 }
 
-export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, theme, onSaved, saveSlot }: Props) {
+export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, theme, onSaved, onDirtyChange, fallbackEtag, saveSlot }: Props) {
   const { toast } = useToast();
   const apiRef = useRef<ExcalidrawApi | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [justSaved, setJustSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
+  // Concurrency guard (server returns 412 when the content changed since we
+  // loaded): the content ETag of the scene we're editing, sent as If-Match on
+  // every save. Captured from the GET response, refreshed from each save.
+  const etagRef = useRef<string | null>(null);
+  // Set when a save came back 412 - someone else saved since we loaded. All
+  // saving (explicit, Ctrl-S, exit flush) is parked until the user reloads,
+  // so a stale tab can never clobber the newer scene.
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Every settled onChange bumps this; a save snapshots it at serialize time so
+  // edits made while the PUT is in flight (they were never serialized) can't be
+  // marked clean by the save completing.
+  const changeCounterRef = useRef(0);
+  // The in-flight explicit save, resolving to its success. Lets the exit flush
+  // wait for the outcome instead of either double-PUTting or silently dropping
+  // edits when that save later fails.
+  const pendingSaveRef = useRef<Promise<boolean> | null>(null);
   // Excalidraw fires onChange once on mount (and on mere selection/pan), so we
   // ignore changes until the canvas has settled to avoid a false "unsaved" flag.
   const settledRef = useRef(false);
@@ -84,9 +111,28 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   contentUrlRef.current = contentUrl;
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  const fallbackEtagRef = useRef(fallbackEtag);
+  fallbackEtagRef.current = fallbackEtag;
+
+  // Single place dirty flips so the ref, the state, and the parent stay in sync.
+  const setDirtyState = useCallback((v: boolean) => {
+    dirtyRef.current = v;
+    setDirty(v);
+    onDirtyChangeRef.current?.(v);
+  }, []);
+
+  // Same for the conflict flag - ref (read by the save/flush paths) and state
+  // (drives the banner + disabled button) must never drift.
+  const setConflictState = useCallback((v: boolean) => {
+    conflictRef.current = v;
+    setConflict(v);
+  }, []);
 
   // Load the scene JSON. cache:"no-store" so an edit-save-reopen always sees the
   // freshly-saved bytes rather than a cached body (the API also no-caches drawings).
+  // reloadKey re-runs the load after a 412 conflict ("Reload latest").
   useEffect(() => {
     let cancelled = false;
     setScene(null);
@@ -94,17 +140,22 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
     // Reset edit state for the new file so the just-loaded scene isn't flagged
     // dirty by Excalidraw's mount-time onChange.
     settledRef.current = false;
-    dirtyRef.current = false;
-    setDirty(false);
+    setDirtyState(false);
+    setConflictState(false);
+    etagRef.current = null;
     fetcherRef.current(contentUrl, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Failed to load drawing (${res.status})`);
+        // Remember which content version we loaded so saves can send If-Match
+        // (the server 412s a stale save). Fall back to the metadata-derived
+        // value when the header isn't exposed (e.g. a stripping proxy).
+        etagRef.current = res.headers.get("ETag") ?? fallbackEtagRef.current ?? null;
         return res.json();
       })
       .then((data: Scene) => { if (!cancelled) setScene(data ?? {}); })
       .catch((e: unknown) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e)); });
     return () => { cancelled = true; };
-  }, [contentUrl]);
+  }, [contentUrl, reloadKey, setDirtyState, setConflictState]);
 
   useEffect(() => {
     if (!scene) return;
@@ -114,33 +165,71 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   }, [scene]);
 
   const handleChange = useCallback(() => {
-    if (readOnly || !settledRef.current || dirtyRef.current) return;
-    dirtyRef.current = true;
-    setDirty(true);
-  }, [readOnly]);
+    if (readOnly || !settledRef.current) return;
+    // Counted even while already dirty (or mid-save): the save path compares
+    // this against its serialize-time snapshot to know whether edits arrived
+    // during the PUT.
+    changeCounterRef.current++;
+    if (dirtyRef.current) return;
+    setDirtyState(true);
+  }, [readOnly, setDirtyState]);
 
   const handleSave = useCallback(async () => {
     const api = apiRef.current;
-    if (!api || readOnly || !dirtyRef.current) return;
+    if (!api || readOnly || !dirtyRef.current || conflictRef.current || savingRef.current) return;
     setSaving(true);
-    try {
-      const res = await fetcherRef.current(contentUrl, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: serialize(api),
-      });
-      if (!res.ok) throw new Error(`Save failed (${res.status})`);
-      dirtyRef.current = false;
-      setDirty(false);
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 2000);
-      onSaved?.();
-    } catch (e) {
-      toast({ title: "Couldn't save drawing", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }, [contentUrl, readOnly, onSaved, toast]);
+    savingRef.current = true;
+    const run = (async (): Promise<boolean> => {
+      // Snapshot which edit generation this save serializes - edits made while
+      // the PUT is in flight were NOT included and must keep the scene dirty.
+      const serializedAt = changeCounterRef.current;
+      try {
+        const res = await fetcherRef.current(contentUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(etagRef.current ? { "If-Match": etagRef.current } : {}),
+          },
+          body: serialize(api),
+        });
+        if (res.status === 412) {
+          // The drawing changed since we loaded (another tab/editor saved).
+          // Never retry-overwrite: park all saving until the user reloads.
+          setConflictState(true);
+          toast({
+            title: "Drawing changed elsewhere",
+            description: "Someone saved a newer version. Reload to get it - saving is paused so it isn't overwritten.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (!res.ok) throw new Error(`Save failed (${res.status})`);
+        // Advance the If-Match baseline to the version we just wrote - prefer
+        // the server's own ETag header over re-deriving the formula.
+        const body = await res.json().catch(() => null) as { data?: { id: string; size: number; updated_at: string } } | null;
+        const meta = body?.data;
+        const headerEtag = res.headers.get("ETag");
+        if (headerEtag) etagRef.current = headerEtag;
+        else if (meta?.updated_at) etagRef.current = fileContentEtag(meta.id, meta.updated_at);
+        if (changeCounterRef.current === serializedAt) {
+          setDirtyState(false);
+          setJustSaved(true);
+          setTimeout(() => setJustSaved(false), 2000);
+        }
+        // else: edits landed mid-save; they were never sent - stay dirty.
+        if (meta) onSaved?.(meta);
+        return true;
+      } catch (e) {
+        toast({ title: "Couldn't save drawing", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
+        return false;
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    })();
+    pendingSaveRef.current = run;
+    await run;
+  }, [contentUrl, readOnly, onSaved, toast, setDirtyState, setConflictState]);
 
   // Ctrl/Cmd-S saves (editable only).
   useEffect(() => {
@@ -157,26 +246,53 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
 
   // Best-effort save-on-exit so an SPA navigation (react-router unmount, which
   // beforeunload can't catch) or a tab close doesn't silently drop unsaved edits.
-  // keepalive lets the request outlive the unmount and still carries the auth
-  // header (uses refs so it always sees the latest scene/url). The explicit Save
-  // button remains the primary, user-visible path.
+  // Guards (uses refs so it always sees the latest scene/url/etag):
+  //   • skipped while a save is in flight - a second concurrent PUT could land
+  //     older bytes after the newer ones;
+  //   • skipped after a 412 conflict - a parked stale tab must never clobber;
+  //   • sends the same If-Match as the explicit path, so a stale flush 412s
+  //     server-side instead of overwriting.
+  // keepalive (lets the request outlive the document) is reserved for genuine
+  // page dismissal (pagehide); a plain in-app unmount uses a normal fetch,
+  // which the browser completes even after the component is gone. The explicit
+  // Save button remains the primary, user-visible path.
   useEffect(() => {
-    const flush = () => {
+    const flush = (keepalive: boolean) => {
       const api = apiRef.current;
       if (readOnlyRef.current || !dirtyRef.current || !api) return;
+      if (conflictRef.current) return;
+      if (savingRef.current) {
+        // An explicit save is mid-flight. Don't double-PUT - but if that save
+        // fails after we've unmounted, its edits would vanish with no toast
+        // and no retry, so chase the outcome and re-flush on failure (refs
+        // carry the latest state past the unmount).
+        void pendingSaveRef.current?.then((ok) => {
+          if (!ok) flush(keepalive);
+        });
+        return;
+      }
       try {
         void fetcherRef.current(contentUrlRef.current, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(etagRef.current ? { "If-Match": etagRef.current } : {}),
+          },
           body: serialize(api),
-          keepalive: true,
+          ...(keepalive ? { keepalive: true } : {}),
         });
-        dirtyRef.current = false;
+        // setDirtyState (not raw ref writes) so state/ref/parent stay in sync;
+        // after unmount the setState inside is a harmless no-op.
+        setDirtyState(false);
       } catch { /* best effort */ }
     };
-    window.addEventListener("pagehide", flush);
-    return () => { window.removeEventListener("pagehide", flush); flush(); };
-  }, []);
+    const onPageHide = () => flush(true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      flush(false);
+    };
+  }, [setDirtyState]);
 
   if (loadError !== null) {
     return (
@@ -211,7 +327,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
     <Button
       size="sm"
       onClick={() => void handleSave()}
-      disabled={saving || !dirty}
+      disabled={saving || !dirty || conflict}
       className={inHeader
         ? "h-8 gap-1.5"
         : "absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"}
@@ -223,6 +339,19 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
 
   return (
     <div className="relative h-full w-full">
+      {/* 412 conflict: a newer version exists on the server. Reload swaps in
+          the latest scene (discarding the local unsaved edits it refused to
+          save over); until then every save path stays parked. */}
+      {conflict && (
+        <div className="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-background/95 px-4 py-2 text-sm">
+          <span className="text-destructive">
+            This drawing was changed elsewhere - saving is paused so the newer version isn't overwritten.
+          </span>
+          <Button size="sm" variant="outline" className="h-7" onClick={() => setReloadKey(k => k + 1)}>
+            Reload latest
+          </Button>
+        </div>
+      )}
       <Excalidraw
         excalidrawAPI={(api) => { apiRef.current = api as unknown as ExcalidrawApi; }}
         initialData={initialData as never}

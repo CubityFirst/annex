@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, isMutableFile, folderInProject, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, isMutableFile, folderInProject, contentDispositionValue, deriveUploadMime, fileContentEtag, sanitizeUploadFileName, FILE_NAME_INVALID_CHARS, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 import { signContentToken, verifyContentToken } from "../lib/contentToken";
@@ -67,12 +67,11 @@ export async function handleFiles(
     // serve no-cache, so a save always revalidates and never returns stale bytes.
     // Cache-Control: private keeps authenticated reads off shared caches.
     const mutable = isMutableFile(meta.mime_type);
-    const version = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     return serveR2Object(env.ASSETS, `files/${fileId}`, {
       mimeType: meta.mime_type,
       filename: meta.name,
       size: meta.size,
-      etag: `"${fileId}-${version}"`,
+      etag: fileContentEtag(fileId, meta.updated_at),
       cacheControl: mutable
         ? (canUsePublishedAccess ? "public, no-cache" : "private, no-cache")
         : (canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate"),
@@ -103,11 +102,10 @@ export async function handleFiles(
     // Gated to the exact inline-safe video allowlist (not just `video/*`) since
     // the direct R2 path skips fileServeHeaders' nosniff; the response-type
     // override then forces a Worker-controlled Content-Type/Disposition.
-    const safeName = record.name.replace(/["\\\r\n\t]/g, "_");
     const contentStreamUrl = record.mime_type.startsWith("video/") && isInlineSafeMime(record.mime_type)
       ? await presignR2GetUrl(env, `files/${record.id}`, PRESIGN_URL_TTL_SECONDS, {
           contentType: record.mime_type,
-          contentDisposition: `inline; filename="${safeName}"`,
+          contentDisposition: contentDispositionValue("inline", record.name),
         })
       : null;
     return okResponse({ ...record, content_token: contentToken, content_stream_url: contentStreamUrl });
@@ -166,17 +164,23 @@ export async function handleFiles(
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const mimeType = file.type || "application/octet-stream";
+    // The OS-provided name is sanitized (not rejected - the uploader can't help
+    // what their filesystem calls the file), and the client-declared file.type
+    // is never stored - the extension (plus a magic-byte sniff for raster
+    // images) decides the MIME server-side.
+    const name = sanitizeUploadFileName(file.name);
+    const buffer = await file.arrayBuffer();
+    const mimeType = deriveUploadMime(name, buffer);
 
-    await env.ASSETS.put(`files/${id}`, await file.arrayBuffer(), {
+    await env.ASSETS.put(`files/${id}`, buffer, {
       httpMetadata: { contentType: mimeType },
     });
 
     await env.DB.prepare(
       "INSERT INTO files (id, name, mime_type, size, project_id, folder_id, uploaded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(id, file.name, mimeType, file.size, projectId, folderId ?? null, user.userId, now, now).run();
+    ).bind(id, name, mimeType, file.size, projectId, folderId ?? null, user.userId, now, now).run();
 
-    const record: FileRecord = { id, name: file.name, mime_type: mimeType, size: file.size, project_id: projectId, folder_id: folderId ?? null, uploaded_by: user.userId, created_at: now, updated_at: now };
+    const record: FileRecord = { id, name, mime_type: mimeType, size: file.size, project_id: projectId, folder_id: folderId ?? null, uploaded_by: user.userId, created_at: now, updated_at: now };
     return okResponse(record, 201);
   }
 
@@ -193,6 +197,30 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
+    // Optimistic concurrency: the client sends the content ETag it loaded
+    // (fileContentEtag, the same formula the GET path serves). A mismatch
+    // means someone else saved since - refuse with 412 instead of silently
+    // overwriting their elements. `*` matches any current representation
+    // (RFC 7232) - the row exists, so it passes. Absent header keeps the old
+    // last-write-wins behavior (older clients).
+    const conflictResponse = () =>
+      Response.json({ ok: false, error: "The drawing was modified by someone else. Reload to get the latest version." }, { status: 412 });
+    const ifMatch = request.headers.get("If-Match");
+    if (ifMatch !== null) {
+      const supplied = ifMatch.trim().replace(/^W\//, "").replace(/^"|"$/g, "");
+      if (supplied !== "*" && `"${supplied}"` !== fileContentEtag(fileId, meta.updated_at)) {
+        return conflictResponse();
+      }
+    }
+
+    // Refuse an over-sized body up front from its declared Content-Length so
+    // we never buffer 50MB+ just to reject it; the byteLength check below
+    // stays as the backstop for a missing/lying header.
+    const declaredLength = parseInt(request.headers.get("Content-Length") ?? "", 10);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_SIZE) {
+      return Response.json({ ok: false, error: "File too large. Maximum size is 50MB." }, { status: 400 });
+    }
+
     const body = await request.arrayBuffer();
     if (body.byteLength > MAX_SIZE) {
       return Response.json({ ok: false, error: "File too large. Maximum size is 50MB." }, { status: 400 });
@@ -205,13 +233,33 @@ export async function handleFiles(
     const prevMs = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     if (nowMs <= prevMs) nowMs = prevMs + 1;
     const now = new Date(nowMs).toISOString();
+
+    if (ifMatch !== null) {
+      // The header check above raced the body read - a concurrent save may
+      // have landed in between. The conditional UPDATE is the serialization
+      // point: it only wins if updated_at is still the value the precondition
+      // was validated against (IS handles the NULL legacy case). It runs
+      // BEFORE the R2 put - the other way round, a losing writer would have
+      // already overwritten the winner's bytes by the time it discovers the
+      // conflict.
+      const update = await env.DB.prepare(
+        "UPDATE files SET size = ?, updated_at = ? WHERE id = ? AND updated_at IS ?",
+      ).bind(body.byteLength, now, fileId, meta.updated_at).run();
+      if ((update.meta?.changes ?? 0) === 0) return conflictResponse();
+    } else {
+      await env.DB.prepare("UPDATE files SET size = ?, updated_at = ? WHERE id = ?")
+        .bind(body.byteLength, now, fileId).run();
+    }
     // Re-use the stored MIME - a drawing stays a drawing; never trust the client's
     // request Content-Type here (the editor PUTs application/json).
     await env.ASSETS.put(`files/${fileId}`, body, { httpMetadata: { contentType: meta.mime_type } });
-    await env.DB.prepare("UPDATE files SET size = ?, updated_at = ? WHERE id = ?")
-      .bind(body.byteLength, now, fileId).run();
 
-    return okResponse({ id: fileId, size: body.byteLength, updated_at: now });
+    // Echo the new content ETag so the client can carry it into its next
+    // If-Match without re-deriving the formula.
+    return Response.json(
+      { ok: true, data: { id: fileId, size: body.byteLength, updated_at: now } },
+      { status: 200, headers: { ETag: fileContentEtag(fileId, now) } },
+    );
   }
 
   // PUT /files/:id - move to a different folder (editor+)
@@ -226,8 +274,14 @@ export async function handleFiles(
 
     const body = await request.json<{ folderId?: string | null; name?: string }>();
     if (body.name !== undefined) {
+      // The name is echoed into Content-Disposition and rendered everywhere -
+      // reject empty, over-long, control chars and path separators.
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name || name.length > 255 || FILE_NAME_INVALID_CHARS.test(name)) {
+        return errorResponse(Errors.BAD_REQUEST);
+      }
       await env.DB.prepare("UPDATE files SET name = ? WHERE id = ?")
-        .bind(body.name, fileId).run();
+        .bind(name, fileId).run();
     }
     if (body.folderId !== undefined) {
       // Target folder must belong to this file's own project.

@@ -14,7 +14,10 @@ const PREFIX = "filecontent.v1";
 
 // Long enough to watch a long video straight through, short enough to bound the
 // blast radius of a leaked URL. A fresh token is minted on every metadata load.
-export const CONTENT_TOKEN_TTL_SECONDS = 6 * 60 * 60; // 6h
+// The token is a pure capability with no revocation: a removed member's URL
+// keeps working for at most this TTL, so it's capped to match the presigned-R2
+// ceiling (PRESIGN_URL_TTL_SECONDS) - the tightest window we serve anywhere.
+export const CONTENT_TOKEN_TTL_SECONDS = 3 * 60 * 60; // 3h
 
 function bytesToB64Url(buf: ArrayBuffer): string {
   const arr = new Uint8Array(buf);

@@ -779,11 +779,23 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       const folders = s.folders.filter(f => f.parent_id === folderId).map(folderListing);
       const docs = s.docs.filter(d => d.folder_id === folderId).map(d => docListing(s, d));
       const files = s.files.filter(f => f.folder_id === folderId).map(f => fileListing(s, f));
-      const folderCounts: Record<string, { docs: number; folders: number }> = {};
+      // Full descendant totals per folder, matching the API's recursive
+      // subtree counts (a folder whose content sits one level down must still
+      // show a badge, like in production).
+      const folderCounts: Record<string, { docs: number; files: number; folders: number }> = {};
       for (const f of folders) {
+        const subtree = new Set<string>([f.id]);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const x of s.folders) {
+            if (x.parent_id && subtree.has(x.parent_id) && !subtree.has(x.id)) { subtree.add(x.id); grew = true; }
+          }
+        }
         folderCounts[f.id] = {
-          docs: s.docs.filter(d => d.folder_id === f.id).length + s.files.filter(x => x.folder_id === f.id).length,
-          folders: s.folders.filter(x => x.parent_id === f.id).length,
+          docs: s.docs.filter(d => d.folder_id !== null && subtree.has(d.folder_id)).length,
+          files: s.files.filter(x => x.folder_id !== null && subtree.has(x.folder_id)).length,
+          folders: subtree.size - 1,
         };
       }
       return ok({ folders, docs, files, folderCounts, ancestors: ancestorsOf(s, folderId) });

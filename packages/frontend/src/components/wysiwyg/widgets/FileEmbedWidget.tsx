@@ -7,6 +7,7 @@ import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
+import { formatBytes } from "@/lib/fileManager";
 
 // A ```file fenced block whose body is a file id renders a download card for
 // that file: type icon, name, size, and a Download button. The syntax is what
@@ -17,12 +18,6 @@ interface FileMeta {
   name: string;
   mime_type: string;
   size: number;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {

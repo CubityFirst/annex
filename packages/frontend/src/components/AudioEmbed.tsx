@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { apiFetch } from "@/lib/apiFetch";
+import { HELP_MISSING_IMAGES_URL } from "@/lib/helpLinks";
 import type { AudioSize } from "@/lib/audioUrl";
 import { cn } from "@/lib/utils";
 
@@ -19,15 +20,12 @@ interface Props {
   className?: string;
 }
 
-// Same docs page AuthenticatedImage links to. Audio inherits the file's
-// access rules (published-project read or authenticated member with access),
-// so failures resolve to the same explainer.
-const PERMISSIONS_DOC_URL =
-  "https://docs.cubityfir.st/s/e6d11927-cc6b-48d1-8577-af8b08019d61/258a2eb4-edac-4c86-91aa-afdc46c29c00";
-
 function UnavailableBadge({ alt }: { alt?: string }) {
+  // Same docs page AuthenticatedImage links to. Audio inherits the file's
+  // access rules (published-project read or authenticated member with access),
+  // so failures resolve to the same explainer.
   return (
-    <a href={PERMISSIONS_DOC_URL} target="_blank" rel="noopener noreferrer" aria-label="Audio unavailable - learn more">
+    <a href={HELP_MISSING_IMAGES_URL} target="_blank" rel="noopener noreferrer" aria-label="Audio unavailable - learn more">
       <Badge variant="destructive" className="inline-flex items-center gap-1.5 font-normal cursor-pointer" title={alt}>
         <FileAudio className="h-3.5 w-3.5 shrink-0" />
         Audio unavailable: Learn more about missing files and permissions.
