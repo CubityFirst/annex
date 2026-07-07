@@ -47,8 +47,11 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
       // fmRange.to`) also catches malformed nodes that begin inside the YAML
       // but extend past it (e.g. an unclosed fence): letting those through
       // would stack a second block replace partially overlapping the
-      // frontmatter's own, which CM renders unpredictably.
-      if (fmRange && node.from >= fmRange.from && node.from < fmRange.to) {
+      // frontmatter's own, which CM renders unpredictably. The tree ROOT also
+      // starts at 0 when frontmatter opens the doc - it must stay exempt or
+      // this check prunes the entire document and everything below the
+      // frontmatter renders as raw markdown.
+      if (fmRange && node.from >= fmRange.from && node.from < fmRange.to && !node.type.isTop) {
         return false;
       }
       const args = { node, state, sel, reveal, ctx, decos, pass };

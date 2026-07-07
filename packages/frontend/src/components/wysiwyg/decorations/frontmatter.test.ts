@@ -32,6 +32,27 @@ describe("frontmatterPass - hiding", () => {
   });
 });
 
+describe("frontmatter + walker - content below still decorates", () => {
+  // Regression: the walker's frontmatter node-skip pruned the tree ROOT
+  // (which also starts at 0 when frontmatter opens the doc), so every doc
+  // with frontmatter rendered its whole body as raw markdown.
+  it("a heading and inline markup after the frontmatter get decorations", () => {
+    const doc = "---\ncover: /api/files/x/content\n---\n\n# Hello\n\nSome **bold** text.\n";
+    const state = stateFor(doc);
+    const visible = visibleTextFor(state);
+    expect(visible).not.toContain("cover:");
+    expect(visible).not.toContain("# Hello"); // heading mark hidden
+    expect(visible).toContain("Hello");
+    expect(visible).not.toContain("**"); // emphasis marks hidden
+  });
+
+  it("special fences after frontmatter still become widgets", () => {
+    const doc = "---\ntitle: x\n---\n\n```js\nconst a = 1;\n```\n";
+    const state = stateFor(doc);
+    expect(widgetsFor(state).some((w) => w instanceof CodeFenceWidget)).toBe(true);
+  });
+});
+
 describe("frontmatterPass - edge cases", () => {
   it("an unclosed --- is not frontmatter; the opening --- degrades to an HR", () => {
     const state = stateFor("---\ntitle: x\n\nBody");

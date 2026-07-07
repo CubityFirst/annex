@@ -254,9 +254,18 @@ test("renders every supported markdown element in reading mode", async () => {
   await expect(mirror).toContainText("Footnote body.");
 
   // The DiceRoll widget is a CodeMirror decoration so it lives inside the
-  // on-screen .cm-content rather than the print mirror. Confirm at least one
-  // dice button rendered (the parser turned `1d20` into a clickable widget).
-  await expect(page.locator(".cm-content button").filter({ hasText: "1d20" }).first()).toBeVisible({ timeout: 5000 });
+  // on-screen .cm-content rather than the print mirror. The reading view is
+  // CM-virtualized (lines mount as they scroll in - see demo.spec's
+  // scrollUntilVisible), and the dice line sits at the end of this doc, so
+  // scroll until it renders before asserting.
+  const diceButton = page.locator(".cm-content button").filter({ hasText: "1d20" }).first();
+  await expect(async () => {
+    await page.evaluate(() => {
+      const scroller = document.querySelector("main .overflow-y-auto");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    await expect(diceButton).toBeVisible({ timeout: 500 });
+  }).toPass({ timeout: 10000 });
 });
 
 test("frontmatter title override is honored in reading mode", async () => {
