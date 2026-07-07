@@ -1,45 +1,30 @@
-import { syntaxTree } from "@codemirror/language";
-import type { Command, EditorView } from "@codemirror/view";
-import { parseCalloutHeader } from "@/lib/callout";
+import type { Command } from "@codemirror/view";
 
-function isInsideCallout(view: EditorView): boolean {
-  const sel = view.state.selection.main;
-  const tree = syntaxTree(view.state);
-  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(sel.from, -1);
-  while (node && node.name !== "Blockquote") {
-    node = node.parent;
-  }
-  if (!node) return false;
+// ── Deliberately inert (T-M2 / T-L8) ─────────────────────────────────────────
+//
+// These commands used to insert "\n> " (Enter) / "\n" (Shift+Enter) inside a
+// callout. Both are retired:
+//
+// - Enter: the built-in markdown continuation (`insertNewlineContinueMarkupCommand`,
+//   bound at Prec.high in WysiwygEditor) already handles blockquote/callout
+//   continuation AND empty-line exit, and it runs BEFORE this keymap - so the
+//   old implementation was shadowed in every normal case. The residual cases
+//   it did catch were corrupting: Enter at column 0 of a body line produced a
+//   blank line + `> > body` (a detached nested quote), and a selection
+//   spanning past the callout end was replaced with "\n> ", quote-prefixing
+//   merged content.
+// - Shift+Enter: inserting a plain "\n" is exactly what the default keymap
+//   does anyway, and doing it mid-callout just split it into a callout plus a
+//   headerless orphan blockquote.
+//
+// Returning false hands Enter/Shift+Enter to the next binding (the built-in
+// continuation / default newline), which does the right thing in all cases.
+//
+// TODO(cleanup): remove the two keymap registrations and imports in
+// WysiwygEditor.tsx, then delete this file.
 
-  const firstLine = view.state.doc.lineAt(node.from);
-  const firstSrc = view.state.doc.sliceString(firstLine.from, firstLine.to);
-  const stripped = firstSrc.replace(/^>\s?/, "");
-  return parseCalloutHeader(stripped) !== null;
-}
+/** Retired - always declines so the built-in markup continuation handles Enter. */
+export const calloutContinueOnEnter: Command = () => false;
 
-/** Enter inside a callout: insert "\n> " so the next line continues the callout. */
-export const calloutContinueOnEnter: Command = (view) => {
-  if (!isInsideCallout(view)) return false;
-  const sel = view.state.selection.main;
-  const insert = "\n> ";
-  view.dispatch({
-    changes: { from: sel.from, to: sel.to, insert },
-    selection: { anchor: sel.from + insert.length },
-    scrollIntoView: true,
-    userEvent: "input.type",
-  });
-  return true;
-};
-
-/** Shift+Enter inside a callout: insert plain "\n" to break out of the callout. */
-export const calloutBreakOnShiftEnter: Command = (view) => {
-  if (!isInsideCallout(view)) return false;
-  const sel = view.state.selection.main;
-  view.dispatch({
-    changes: { from: sel.from, to: sel.to, insert: "\n" },
-    selection: { anchor: sel.from + 1 },
-    scrollIntoView: true,
-    userEvent: "input.type",
-  });
-  return true;
-};
+/** Retired - always declines so the default keymap inserts the plain newline. */
+export const calloutBreakOnShiftEnter: Command = () => false;

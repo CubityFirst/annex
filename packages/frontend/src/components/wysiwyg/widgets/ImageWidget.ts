@@ -3,6 +3,7 @@ import { WidgetType } from "@codemirror/view";
 import { ReactWidget } from "./ReactWidget";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { useRendererCtx } from "../context/RendererContext";
+import { parseInlineStyle } from "@/lib/imageAttrs";
 
 interface Props {
   src: string;
@@ -13,7 +14,7 @@ interface Props {
 
 function ImageInner({ src, alt, style, inline }: Props) {
   const ctx = useRendererCtx();
-  const styleObj = style ? parseStyle(style) : undefined;
+  const styleObj = style ? parseInlineStyle(style) : undefined;
   const cls = inline ? "cm-wysiwyg-image cm-wysiwyg-image--inline" : "cm-wysiwyg-image cm-wysiwyg-image--block";
   return createElement(AuthenticatedImage, {
     src,
@@ -23,20 +24,6 @@ function ImageInner({ src, alt, style, inline }: Props) {
     style: styleObj,
     className: cls,
   });
-}
-
-function parseStyle(s: string): React.CSSProperties {
-  const out: React.CSSProperties = {};
-  for (const decl of s.split(";")) {
-    const [k, v] = decl.split(":").map(p => p.trim());
-    if (!k || !v) continue;
-    if (k === "width") out.width = v;
-    else if (k === "height") out.height = v;
-    else if (k === "display") out.display = v;
-    else if (k === "margin-left") out.marginLeft = v;
-    else if (k === "margin-right") out.marginRight = v;
-  }
-  return out;
 }
 
 export class ImageWidget extends ReactWidget {
@@ -51,6 +38,17 @@ export class ImageWidget extends ReactWidget {
 
   protected revealOnClick(): boolean {
     return true;
+  }
+
+  // Honor an explicit height attr; otherwise a round block-image guess keeps
+  // reading-mode scrolling from jumping as images load. Inline images are
+  // roughly line-height and don't need an estimate.
+  get estimatedHeight(): number {
+    if (this.props.style) {
+      const h = parseInlineStyle(this.props.style).height;
+      if (typeof h === "string" && /^\d+(?:\.\d+)?px$/.test(h)) return parseFloat(h);
+    }
+    return this.props.inline ? -1 : 250;
   }
 
   eq(other: WidgetType): boolean {

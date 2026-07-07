@@ -1,25 +1,16 @@
 import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
-import { visitDice } from "./dice";
+import { findEdgeMarks } from "../helpers";
+import { renderDice } from "./dice";
 
 export const visitInlineCode: Visitor = (args) => {
   const { node, state, sel, reveal, decos } = args;
-  const parent = node.node;
-  let firstMark: { from: number; to: number } | null = null;
-  let lastMark: { from: number; to: number } | null = null;
-  let cur = parent.firstChild;
-  while (cur) {
-    if (cur.name === "CodeMark") {
-      if (!firstMark) firstMark = { from: cur.from, to: cur.to };
-      lastMark = { from: cur.from, to: cur.to };
-    }
-    cur = cur.nextSibling;
-  }
-  if (!firstMark || !lastMark) return;
+  const marks = findEdgeMarks(node.node, "CodeMark");
+  if (!marks) return;
 
-  const innerSrc = state.doc.sliceString(firstMark.to, lastMark.from);
+  const innerSrc = state.doc.sliceString(marks.first.to, marks.last.from);
   if (innerSrc.startsWith("dice:")) {
-    visitDice(args);
+    renderDice(args, marks);
     return;
   }
 
@@ -27,7 +18,7 @@ export const visitInlineCode: Visitor = (args) => {
 
   const cursorOn = reveal && cursorTouches(sel, node.from, node.to);
   if (!cursorOn) {
-    decos.push(Decoration.replace({ atomicHide: true }).range(firstMark.from, firstMark.to));
-    decos.push(Decoration.replace({ atomicHide: true }).range(lastMark.from, lastMark.to));
+    decos.push(Decoration.replace({ atomicHide: true }).range(marks.first.from, marks.first.to));
+    decos.push(Decoration.replace({ atomicHide: true }).range(marks.last.from, marks.last.to));
   }
 };

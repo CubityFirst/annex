@@ -1,8 +1,9 @@
 import { useEffect, useState, createElement, type ReactElement } from "react";
-import { WidgetType, type EditorView } from "@codemirror/view";
+import { WidgetType } from "@codemirror/view";
 import { Download } from "lucide-react";
 import { ReactWidget } from "./ReactWidget";
 import { useRendererCtx } from "../context/RendererContext";
+import { isSafeFileId } from "./fileId";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -20,7 +21,31 @@ interface FileMeta {
   size: number;
 }
 
-function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {
+// Module-level dedup so reveal cycles (and multiple embeds of one file) share
+// a single metadata fetch - same pattern as AuthenticatedImage. Held briefly
+// after resolution so a hide→reveal remount hits the in-memory result instead
+// of refetching.
+const metaInflight = new Map<string, Promise<FileMeta | null>>();
+
+function getFileMeta(url: string, isPublic: boolean): Promise<FileMeta | null> {
+  const existing = metaInflight.get(url);
+  if (existing) return existing;
+  const p: Promise<FileMeta | null> = isPublic
+    ? fetch(url)
+        .then(r => (r.ok ? r.json() : null))
+        .then((body: { ok?: boolean; data?: FileMeta } | null) => (body?.ok && body.data ? body.data : null))
+        .catch(() => null)
+    : apiFetchJson<FileMeta>(url)
+        .then(result => (result.ok && result.data ? result.data : null))
+        .catch(() => null);
+  metaInflight.set(url, p);
+  p.then(() => setTimeout(() => {
+    if (metaInflight.get(url) === p) metaInflight.delete(url);
+  }, 5_000));
+  return p;
+}
+
+export function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {
   const ctx = useRendererCtx();
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [metaFailed, setMetaFailed] = useState(false);
@@ -31,33 +56,39 @@ function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {
   // in the app, plain fetch for published content (which needs no auth header).
   const isPublic = ctx.isPublic;
   const projectId = ctx.projectId;
+  // Fence bodies are author-controlled text; only an id-shaped body may be
+  // interpolated into an API path (encodeURIComponent is belt-and-braces).
+  const validId = isSafeFileId(fileId);
+  const encodedId = encodeURIComponent(fileId);
 
   useEffect(() => {
+    // Reset - with DOM-reuse (updateDOM) this component can be re-targeted at
+    // a different fileId, and stale meta must not label the new file.
+    setMeta(null);
+    setMetaFailed(false);
+    setDownloadFailed(false);
+    if (!validId) {
+      setMetaFailed(true);
+      return;
+    }
     let cancelled = false;
-    const apply = (m: FileMeta | null) => {
+    const metaUrl = isPublic
+      ? `/api/public/files/${encodedId}?projectId=${encodeURIComponent(projectId ?? "")}`
+      : `/api/files/${encodedId}`;
+    getFileMeta(metaUrl, isPublic).then(m => {
       if (cancelled) return;
       if (m) setMeta(m); else setMetaFailed(true);
-    };
-    if (isPublic) {
-      fetch(`/api/public/files/${fileId}?projectId=${projectId ?? ""}`)
-        .then(r => (r.ok ? r.json() : null))
-        .then((body: { ok?: boolean; data?: FileMeta } | null) => apply(body?.ok && body.data ? body.data : null))
-        .catch(() => apply(null));
-    } else {
-      apiFetchJson<FileMeta>(`/api/files/${fileId}`)
-        .then(result => apply(result.ok && result.data ? result.data : null))
-        .catch(() => apply(null));
-    }
+    });
     return () => { cancelled = true; };
-  }, [fileId, isPublic, projectId]);
+  }, [encodedId, validId, isPublic, projectId]);
 
   async function handleDownload() {
     setDownloading(true);
     setDownloadFailed(false);
     try {
       const contentUrl = isPublic
-        ? `/api/public/files/${fileId}/content?projectId=${projectId ?? ""}`
-        : `/api/files/${fileId}/content`;
+        ? `/api/public/files/${encodedId}/content?projectId=${encodeURIComponent(projectId ?? "")}`
+        : `/api/files/${encodedId}/content`;
       const res = isPublic ? await fetch(contentUrl) : await apiFetch(contentUrl);
       if (!res.ok) { setDownloadFailed(true); return; }
       const blob = await res.blob();
@@ -66,7 +97,9 @@ function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {
       a.href = url;
       a.download = meta?.name ?? "download";
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoking immediately races the browser's navigation to the blob URL
+      // (the download can silently fail). Give it a generous grace period.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch {
       setDownloadFailed(true);
     } finally {
@@ -98,7 +131,7 @@ function FileEmbedInner({ fileId }: { fileId: string }): ReactElement {
         size="sm"
         className="shrink-0 gap-2"
         onClick={handleDownload}
-        disabled={downloading}
+        disabled={downloading || !validId}
         aria-label={`Download ${meta?.name ?? "file"}`}
       >
         {downloading ? <Spinner /> : <Download className="h-4 w-4" aria-hidden="true" />}
@@ -115,10 +148,8 @@ export class FileEmbedWidget extends ReactWidget {
     super();
   }
 
-  toDOM(view: EditorView): HTMLElement {
-    const el = super.toDOM(view);
-    el.classList.add("cm-codefence-widget-root");
-    return el;
+  protected rootClass(): string {
+    return "cm-codefence-widget-root";
   }
 
   protected render(): ReactElement {
@@ -129,6 +160,11 @@ export class FileEmbedWidget extends ReactWidget {
   // edits/removes the block by arrowing the cursor into its range (keyboard
   // reveal still fires in codeFence.ts) - matching the excalidraw-embed
   // convention.
+
+  // Card height: h-10 icon + py-3 padding + border.
+  get estimatedHeight(): number {
+    return 66;
+  }
 
   eq(other: WidgetType): boolean {
     return other instanceof FileEmbedWidget && other.fileId === this.fileId;

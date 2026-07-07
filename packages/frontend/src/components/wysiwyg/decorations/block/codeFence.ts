@@ -1,5 +1,6 @@
 import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
+import { eachLine } from "../helpers";
 import { CodeFenceWidget } from "../../widgets/CodeFenceWidget";
 import { MermaidWidget } from "../../widgets/MermaidWidget";
 import { ExcalidrawEmbedWidget } from "../../widgets/ExcalidrawEmbedWidget";
@@ -9,41 +10,43 @@ import { parseJuxtapose } from "@/lib/juxtapose";
 
 export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => {
   const startLine = state.doc.lineAt(node.from);
-  const endLine = state.doc.lineAt(Math.min(node.to, state.doc.length));
+  const endLine = state.doc.lineAt(node.to);
   const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
 
   if (cursorIn) {
     // Cursor inside - show raw lines so the user can edit. Each line gets
     // monospace + tinted bg so it reads as code while editing.
-    for (let n = startLine.number; n <= endLine.number; n++) {
-      const line = state.doc.line(n);
+    eachLine(state, node, (line) => {
       const classes = [
         "cm-code-line",
-        n === startLine.number ? "cm-code-line--first" : "",
-        n === endLine.number ? "cm-code-line--last" : "",
+        line.number === startLine.number ? "cm-code-line--first" : "",
+        line.number === endLine.number ? "cm-code-line--last" : "",
       ].filter(Boolean).join(" ");
       decos.push(Decoration.line({ class: classes }).range(line.from));
-    }
+    });
     return;
   }
 
   // Cursor outside - render Shiki-highlighted widget for the whole block.
+  // The language is the FIRST word of the info string, lowercased - trailing
+  // meta (```js title=x) must not break Shiki or the special-fence matches.
   let lang = "text";
-  let codeFrom: number | null = null;
-  let codeTo: number | null = null;
+  const codeParts: string[] = [];
   let cur = node.node.firstChild;
   while (cur) {
     if (cur.name === "CodeInfo") {
-      lang = state.doc.sliceString(cur.from, cur.to).trim() || "text";
+      const info = state.doc.sliceString(cur.from, cur.to).trim();
+      lang = info.split(/\s+/)[0]!.toLowerCase() || "text";
     } else if (cur.name === "CodeText") {
-      codeFrom = cur.from;
-      codeTo = cur.to;
+      // A fence inside a blockquote/callout emits one CodeText node PER LINE
+      // (each slice keeps its trailing newline; the quote markers sit between
+      // them as QuoteMark siblings). Concatenating every slice reconstructs
+      // the full code for both the quoted and the plain single-node case.
+      codeParts.push(state.doc.sliceString(cur.from, cur.to));
     }
     cur = cur.nextSibling;
   }
-  const code = codeFrom !== null && codeTo !== null
-    ? state.doc.sliceString(codeFrom, codeTo)
-    : "";
+  const code = codeParts.join("");
 
   // A `juxtapose` fence is a before/after image comparison slider, not code.
   // Reading mode (reveal === false) gets the interactive draggable widget;

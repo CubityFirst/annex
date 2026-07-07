@@ -1,16 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { EditorView, keymap } from "@codemirror/view";
-import { ChangeSet, EditorState, Prec } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
+import { EditorState, Prec, type Text } from "@codemirror/state";
 import { defaultKeymap, historyKeymap, history, indentWithTab, undo, redo } from "@codemirror/commands";
-import { search, openSearchPanel, closeSearchPanel, searchPanelOpen } from "@codemirror/search";
+import { search, searchKeymap, openSearchPanel, closeSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { markdown, markdownLanguage, insertNewlineContinueMarkupCommand, deleteMarkupBackward } from "@codemirror/lang-markdown";
 import { Wikilink } from "./lezer/wikilinkExtension";
 import { Comment as MdCommentExt } from "./lezer/commentExtension";
-import { calloutContinueOnEnter, calloutBreakOnShiftEnter } from "./commands/calloutEnter";
 import { tableContinueOnEnter } from "./commands/tableEnter";
+import {
+  applyMarkerCm,
+  applyLinePrefixCm,
+  applyBlockquoteCm,
+  applyHrCm,
+  applyCodeFenceCm,
+  insertTableCm,
+  insertCalloutCm,
+  applyHeadingCm,
+  computeActiveFormats,
+  type InlineMarker,
+  type ListKind,
+  type HeadingLevel,
+} from "./commands/formatting";
+import {
+  trackedRangesField,
+  addTrackedRange,
+  clearTrackedRange,
+  getTrackedRange,
+  newTrackedRangeId,
+} from "./commands/trackedRanges";
 import * as Y from "yjs";
-import { yCollab } from "y-codemirror.next";
+import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import { userColor, userColorLight } from "@/lib/userColor";
 import { CollabProvider } from "@/lib/collabProvider";
@@ -27,14 +47,17 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { ColorPicker } from "@/components/ui/color-picker";
-import { Bold, Check, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Loader2, Pilcrow, Scissors, Strikethrough, Type, Underline, Upload } from "lucide-react";
-import { WysiwygToolbar, defaultActiveFormats, type ActiveFormats } from "./WysiwygToolbar";
+import { Bold, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Pilcrow, Scissors, Strikethrough, Type, Underline } from "lucide-react";
+import { WysiwygToolbar, defaultActiveFormats, modShortcut, type ActiveFormats } from "./WysiwygToolbar";
+import { LinkDialog } from "./dialogs/LinkDialog";
+import { ImageDialog } from "./dialogs/ImageDialog";
+import { CompareDialog } from "./dialogs/CompareDialog";
 import "./styles.css";
+
+// A4: onChange serialization (doc.toString() / yText.toString()) is O(doc) per
+// keystroke and triggers a parent re-render each time. Debounce it; flush on
+// blur, before save (Mod-s) and before the view is destroyed.
+const CHANGE_DEBOUNCE_MS = 200;
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -79,225 +102,34 @@ interface Props {
   onPasteImage?: (file: File) => Promise<{ url: string; alt: string }>;
 }
 
-function applyMarkerCm(view: EditorView, marker: string) {
-  const sel = view.state.selection.main;
-  const selected = view.state.sliceDoc(sel.from, sel.to);
-  const ml = marker.length;
-
-  const before = sel.from >= ml ? view.state.sliceDoc(sel.from - ml, sel.from) : "";
-  const after = view.state.sliceDoc(sel.to, sel.to + ml);
-
-  const exactWrap = (s: string) => {
-    if (s.length < ml * 2 + 1 || !s.startsWith(marker) || !s.endsWith(marker)) return false;
-    if (marker === "*") return s[ml] !== "*" && s[s.length - ml - 1] !== "*";
-    return true;
-  };
-
-  const outerMatch =
-    before === marker &&
-    after === marker &&
-    (marker !== "*" || (
-      view.state.sliceDoc(sel.from - ml - 1, sel.from - ml) !== "*" &&
-      view.state.sliceDoc(sel.to + ml, sel.to + ml + 1) !== "*"
-    ));
-
-  if (outerMatch) {
-    view.dispatch({
-      changes: [
-        { from: sel.from - ml, to: sel.from, insert: "" },
-        { from: sel.to, to: sel.to + ml, insert: "" },
-      ],
-      selection: { anchor: sel.from - ml, head: sel.to - ml },
-    });
-    return;
-  }
-
-  if (exactWrap(selected)) {
-    const inner = selected.slice(ml, selected.length - ml);
-    view.dispatch({
-      changes: { from: sel.from, to: sel.to, insert: inner },
-      selection: { anchor: sel.from, head: sel.from + inner.length },
-    });
-    return;
-  }
-
-  view.dispatch({
-    changes: { from: sel.from, to: sel.to, insert: marker + selected + marker },
-    selection: { anchor: sel.from + ml, head: sel.to + ml },
+/** Keeps a ref pointing at the latest render's value (O3) - for callback props
+ * consumed inside the once-mounted CodeMirror closure. */
+function useLatestRef<T>(value: T): React.MutableRefObject<T> {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
   });
+  return ref;
 }
 
-type ListKind = "bullet" | "numbered" | "task";
-const ANY_LIST_PREFIX = /^(\s*)(?:- \[[ xX]\] |- |\d+\. )/;
-
-function applyLinePrefixCm(view: EditorView, kind: ListKind) {
+/** C1/C2: capture the current main selection as a tracked range so it can be
+ * remapped through any edits (local typing or remote collab ops) that land
+ * before the deferred consumer (async upload, dialog submit) uses it. */
+function beginTrackedRange(view: EditorView): number {
   const sel = view.state.selection.main;
-  const startLine = view.state.doc.lineAt(sel.from);
-  const endLine = view.state.doc.lineAt(sel.to);
-
-  const lines: { from: number; text: string; existing: RegExpMatchArray | null }[] = [];
-  for (let n = startLine.number; n <= endLine.number; n++) {
-    const line = view.state.doc.line(n);
-    lines.push({ from: line.from, text: line.text, existing: line.text.match(ANY_LIST_PREFIX) });
-  }
-
-  const isThisKind = (m: RegExpMatchArray | null) => {
-    if (!m) return false;
-    const rest = m[0].slice(m[1].length);
-    if (kind === "bullet") return rest === "- ";
-    if (kind === "task") return /^- \[[ xX]\] $/.test(rest);
-    return /^\d+\. $/.test(rest);
-  };
-  const allThisKind = lines.length > 0 && lines.every(l => isThisKind(l.existing));
-
-  const newPrefix = (i: number, indent: string): string => {
-    if (kind === "bullet") return `${indent}- `;
-    if (kind === "task") return `${indent}- [ ] `;
-    return `${indent}${i + 1}. `;
-  };
-
-  const changes = lines.map((l, i) => {
-    const indent = l.existing?.[1] ?? "";
-    const existingLen = l.existing?.[0].length ?? indent.length;
-    if (allThisKind) {
-      return { from: l.from + indent.length, to: l.from + existingLen, insert: "" };
-    }
-    return { from: l.from, to: l.from + existingLen, insert: newPrefix(i, indent) };
-  });
-
-  const changeSet = ChangeSet.of(changes, view.state.doc.length);
-  view.dispatch({
-    changes: changeSet,
-    selection: {
-      anchor: changeSet.mapPos(sel.anchor, 1),
-      head: changeSet.mapPos(sel.head, 1),
-    },
-  });
+  const id = newTrackedRangeId();
+  view.dispatch({ effects: addTrackedRange.of({ id, from: sel.from, to: sel.to }) });
+  return id;
 }
 
-function computeActiveFormats(state: EditorState): ActiveFormats {
-  const pos = state.selection.main.head;
-  const tree = syntaxTree(state);
-  let headingLevel: ActiveFormats["headingLevel"] = 0;
-  let bold = false, italic = false, underline = false, strike = false;
-  let blockquote = false, codeFence = false;
-
-  let node = tree.resolveInner(pos, -1);
-  while (node) {
-    const name = node.name;
-    const hMatch = name.match(/^ATXHeading(\d)$/);
-    if (hMatch) {
-      headingLevel = Math.min(parseInt(hMatch[1]!, 10), 6) as ActiveFormats["headingLevel"];
-    }
-    if (name === "StrongEmphasis") {
-      if (state.doc.sliceString(node.from, node.from + 1) === "_") underline = true;
-      else bold = true;
-    }
-    if (name === "Emphasis") italic = true;
-    if (name === "Strikethrough") strike = true;
-    if (name === "Blockquote") blockquote = true;
-    if (name === "FencedCode") codeFence = true;
-    if (!node.parent) break;
-    node = node.parent;
-  }
-
-  return { headingLevel, bold, italic, underline, strike, blockquote, codeFence };
-}
-
-function applyBlockquoteCm(view: EditorView) {
+/** Resolve a tracked range's CURRENT position. Falls back to the live selection
+ * if the range is unknown (field missing / id never registered). The caller is
+ * responsible for including `clearTrackedRange.of(id)` in its dispatch. */
+function resolveTrackedRange(view: EditorView, id: number | null): { from: number; to: number } {
+  const range = id != null ? getTrackedRange(view.state, id) : null;
+  if (range) return { from: range.from, to: range.to };
   const sel = view.state.selection.main;
-  const startLine = view.state.doc.lineAt(sel.from);
-  const endLine = view.state.doc.lineAt(sel.to);
-
-  const lines: { from: number; text: string }[] = [];
-  for (let n = startLine.number; n <= endLine.number; n++) {
-    const line = view.state.doc.line(n);
-    lines.push({ from: line.from, text: line.text });
-  }
-
-  const allBlockquote = lines.every(l => l.text.startsWith("> ") || l.text === ">");
-  const changes = lines.map(l => {
-    if (allBlockquote) {
-      const removeLen = l.text.startsWith("> ") ? 2 : 1;
-      return { from: l.from, to: l.from + removeLen, insert: "" };
-    }
-    return { from: l.from, to: l.from, insert: "> " };
-  });
-
-  const changeSet = ChangeSet.of(changes, view.state.doc.length);
-  view.dispatch({
-    changes: changeSet,
-    selection: { anchor: changeSet.mapPos(sel.anchor, 1), head: changeSet.mapPos(sel.head, 1) },
-  });
-}
-
-function applyHrCm(view: EditorView) {
-  const sel = view.state.selection.main;
-  const line = view.state.doc.lineAt(sel.head);
-  const insertPos = line.to;
-  const prefix = line.text.trim() === "" ? "" : "\n";
-  const text = `${prefix}\n---\n`;
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: text },
-    selection: { anchor: insertPos + text.length },
-  });
-}
-
-function applyCodeFenceCm(view: EditorView) {
-  const sel = view.state.selection.main;
-  const line = view.state.doc.lineAt(sel.head);
-  const insertPos = line.to;
-  const prefix = line.text.trim() === "" ? "" : "\n";
-  const text = `${prefix}\n\`\`\`\n\n\`\`\`\n`;
-  const cursorPos = insertPos + prefix.length + 5; // land inside the fence
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: text },
-    selection: { anchor: cursorPos },
-  });
-}
-
-function insertTableCm(view: EditorView, rows: number, cols: number) {
-  const sel = view.state.selection.main;
-  const line = view.state.doc.lineAt(sel.head);
-  const insertPos = line.to;
-  const header = "| " + Array.from({ length: cols }, (_, i) => `Col ${i + 1}`).join(" | ") + " |";
-  const sep    = "| " + Array(cols).fill("---").join(" | ") + " |";
-  const row    = "| " + Array(cols).fill("   ").join(" | ") + " |";
-  const prefix = line.text.trim() === "" ? "" : "\n";
-  const text = `${prefix}\n${[header, sep, ...Array(rows).fill(row)].join("\n")}\n`;
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: text },
-    selection: { anchor: insertPos + prefix.length + 2 },
-  });
-}
-
-function insertCalloutCm(view: EditorView, type: string) {
-  const sel = view.state.selection.main;
-  const line = view.state.doc.lineAt(sel.head);
-  const insertPos = line.to;
-  const prefix = line.text.trim() === "" ? "" : "\n";
-  const text = `${prefix}\n> [!${type}]\n> `;
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: text },
-    selection: { anchor: insertPos + text.length },
-  });
-}
-
-function applyHeadingCm(view: EditorView, level: 0 | 1 | 2 | 3 | 4 | 5 | 6) {
-  const sel = view.state.selection.main;
-  const line = view.state.doc.lineAt(sel.head);
-  const m = line.text.match(/^(#{1,6}) /);
-  const currentPrefixLen = m ? m[1].length + 1 : 0;
-  const newPrefix = level > 0 ? "#".repeat(level) + " " : "";
-  const delta = newPrefix.length - currentPrefixLen;
-  const adjustPos = (pos: number) => {
-    if (pos < line.from) return pos;
-    return Math.max(line.from + newPrefix.length, pos + delta);
-  };
-  view.dispatch({
-    changes: { from: line.from, to: line.from + currentPrefixLen, insert: newPrefix },
-    selection: { anchor: adjustPos(sel.anchor), head: adjustPos(sel.head) },
-  });
+  return { from: sel.from, to: sel.to };
 }
 
 export function WysiwygEditor({
@@ -316,23 +148,21 @@ export function WysiwygEditor({
   const viewRef = useRef<EditorView | null>(null);
   const lastExternalValue = useRef(value);
 
-  const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  const onAwarenessChangeRef = useRef(onAwarenessChange);
-  onAwarenessChangeRef.current = onAwarenessChange;
-  const onCollabFatalRef = useRef(onCollabFatal);
-  onCollabFatalRef.current = onCollabFatal;
-  const onPasteImageRef = useRef(onPasteImage);
-  onPasteImageRef.current = onPasteImage;
+  const onSaveRef = useLatestRef(onSave);
+  const onChangeRef = useLatestRef(onChange);
+  const onAwarenessChangeRef = useLatestRef(onAwarenessChange);
+  const onCollabFatalRef = useLatestRef(onCollabFatal);
+  const onPasteImageRef = useLatestRef(onPasteImage);
 
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(defaultActiveFormats);
-  const setActiveFormatsRef = useRef(setActiveFormats);
-  setActiveFormatsRef.current = setActiveFormats;
 
-  // Populated after the link dialog callbacks are defined below; used by Ctrl+K keymap.
+  // Populated by an effect after the link dialog callbacks are defined below
+  // (O2); used by the Ctrl+K keymap.
   const openLinkDialogRef = useRef<() => void>(() => {});
+
+  // A3/T-H2: in collab mode undo/redo go through a Y.UndoManager scoped to
+  // local edits (CM history is not installed there). Null in non-collab mode.
+  const collabUndoRef = useRef<Y.UndoManager | null>(null);
 
   const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
@@ -346,9 +176,35 @@ export function WysiwygEditor({
     let ydoc: Y.Doc | null = null;
     let awareness: Awareness | null = null;
     let provider: CollabProvider | null = null;
+    let yText: Y.Text | null = null;
     const collabOpts = collabRef.current;
     const initialMode = initialModeRef.current;
     const initialCtx = buildCtxForMode(initialCtxRef.current, initialMode);
+
+    // ── A4: debounced onChange serialization ────────────────────────────────
+    // `pendingDoc` holds a cheap Text reference (non-collab); serialization
+    // happens once per debounce window, not per keystroke. In collab mode the
+    // current text is read from yText at emit time instead.
+    let changeTimer: ReturnType<typeof setTimeout> | null = null;
+    let changeDirty = false;
+    let pendingDoc: Text | null = null;
+    const emitChange = () => {
+      if (changeTimer !== null) {
+        clearTimeout(changeTimer);
+        changeTimer = null;
+      }
+      if (!changeDirty) return;
+      changeDirty = false;
+      const next = yText ? yText.toString() : pendingDoc?.toString();
+      if (next === undefined || next === lastExternalValue.current) return;
+      lastExternalValue.current = next;
+      onChangeRef.current?.(next);
+    };
+    const scheduleChange = () => {
+      changeDirty = true;
+      if (changeTimer !== null) clearTimeout(changeTimer);
+      changeTimer = setTimeout(emitChange, CHANGE_DEBOUNCE_MS);
+    };
 
     // Yjs collab setup must happen BEFORE building the extensions array so we
     // can insert yCollab ahead of the decoration plugin. Otherwise our
@@ -357,11 +213,11 @@ export function WysiwygEditor({
     const yjsExtensions: ReturnType<typeof yCollab>[] = [];
     if (collabOpts) {
       ydoc = new Y.Doc();
-      const yText = ydoc.getText("content");
+      yText = ydoc.getText("content");
 
       const initialValue = initialValueRef.current;
       if (initialValue.length > 0) {
-        ydoc.transact(() => { yText.insert(0, initialValue); });
+        ydoc.transact(() => { yText!.insert(0, initialValue); });
       }
 
       awareness = new Awareness(ydoc);
@@ -382,11 +238,7 @@ export function WysiwygEditor({
         personalPlanStyle: collabOpts.user.personalPlanStyle ?? null,
       });
 
-      yText.observe(() => {
-        const next = yText.toString();
-        lastExternalValue.current = next;
-        onChangeRef.current?.(next);
-      });
+      yText.observe(() => scheduleChange());
 
       awareness.on("change", () => {
         if (!onAwarenessChangeRef.current) return;
@@ -407,7 +259,18 @@ export function WysiwygEditor({
         onAwarenessChangeRef.current(editors);
       });
 
-      yjsExtensions.push(yCollab(yText, awareness));
+      // A3/T-H2: undo must never revert other users' edits. The UndoManager
+      // starts with NO tracked origins (Y.UndoManager's default tracks the
+      // null origin, which would capture the seed insert above AND
+      // CollabProvider's seed-delete - undoing right after connect would then
+      // re-insert the seed and duplicate the doc for everyone). y-codemirror's
+      // yUndoManager plugin registers the local ySync origin itself, so only
+      // this client's own edits become undoable. Remote updates arrive with
+      // the websocket as origin and are never captured.
+      const undoManager = new Y.UndoManager(yText, { trackedOrigins: new Set() });
+      collabUndoRef.current = undoManager;
+
+      yjsExtensions.push(yCollab(yText, awareness, { undoManager }));
 
       provider = new CollabProvider(ydoc, awareness, collabOpts.docId, {
         onFatal: (reason) => onCollabFatalRef.current?.(reason),
@@ -415,8 +278,11 @@ export function WysiwygEditor({
     }
 
     const extensions = [
-      history(),
+      // A3/T-H2: CM history only in non-collab mode - in collab mode it would
+      // record remote Yjs updates as undoable local history.
+      ...(collabOpts ? [] : [history()]),
       search(),
+      trackedRangesField,
       markdown({ base: markdownLanguage, extensions: [Wikilink, MdCommentExt], addKeymap: false }),
       // Re-add the markdown keymap manually with nonTightLists:false so that pressing
       // Enter on an empty list item exits the list rather than converting it to a
@@ -431,7 +297,15 @@ export function WysiwygEditor({
       keymap.of([
         {
           key: "Mod-s",
-          run: () => { onSaveRef.current?.(); return true; },
+          run: () => {
+            // A4: a debounced onChange may still be pending. flushSync commits
+            // it into the parent's state synchronously (and re-renders, so
+            // onSaveRef points at a closure that sees the current content)
+            // before the save handler runs.
+            if (changeDirty) flushSync(emitChange);
+            onSaveRef.current?.();
+            return true;
+          },
           preventDefault: true,
         },
         {
@@ -454,13 +328,18 @@ export function WysiwygEditor({
           run: () => { openLinkDialogRef.current(); return true; },
           preventDefault: true,
         },
-        // Context-aware Enter handling. Each command returns false when not
-        // applicable so the next handler (or the default) gets a turn.
+        // Context-aware Enter handling: declines (returns false) when the
+        // cursor isn't in a table so the default newline gets a turn. The
+        // retired callout Enter/Shift+Enter commands are gone - the built-in
+        // markup continuation bound at Prec.high above owns blockquote/callout
+        // continuation and empty-line exit (T-M2/T-L8).
         { key: "Enter", run: tableContinueOnEnter },
-        { key: "Enter", run: calloutContinueOnEnter },
-        { key: "Shift-Enter", run: calloutBreakOnShiftEnter },
         indentWithTab,
-        ...historyKeymap,
+        // A3/T-H2: Mod-z/Mod-y route to the Y.UndoManager in collab mode.
+        ...(collabOpts ? yUndoManagerKeymap : historyKeymap),
+        // U1/T-M1: Mod-f opens CM's search panel (browser find can't see
+        // virtualized/hidden content); Escape closes it, F3/Mod-g navigate.
+        ...searchKeymap,
         ...defaultKeymap,
       ]),
       ...yjsExtensions,
@@ -480,7 +359,10 @@ export function WysiwygEditor({
           }
           if (imageFiles.length === 0) return false;
           event.preventDefault();
-          const pasteSel = view.state.selection.main;
+          // C1/T-M10: uploads take seconds; local typing or remote collab
+          // edits meanwhile shift positions. Track the captured selection so
+          // the insert lands at the mapped range, not the stale offsets.
+          const rangeId = beginTrackedRange(view);
           (async () => {
             const inserts: string[] = [];
             for (const file of imageFiles) {
@@ -489,26 +371,36 @@ export function WysiwygEditor({
                 inserts.push(`![${alt}](${url})`);
               } catch { /* parent surfaces error toast */ }
             }
-            if (inserts.length === 0) return;
+            if (viewRef.current !== view) return; // editor unmounted mid-upload
+            if (inserts.length === 0) {
+              view.dispatch({ effects: clearTrackedRange.of(rangeId) });
+              return;
+            }
+            const { from, to } = resolveTrackedRange(view, rangeId);
             const text = inserts.join("\n");
             view.dispatch({
-              changes: { from: pasteSel.from, to: pasteSel.to, insert: text },
-              selection: { anchor: pasteSel.from + text.length },
+              changes: { from, to, insert: text },
+              selection: { anchor: from + text.length },
+              effects: clearTrackedRange.of(rangeId),
             });
           })();
           return true;
+        },
+        blur: () => {
+          // A4: don't leave a pending onChange behind when focus moves away
+          // (e.g. to the Save button) - the parent must see current content.
+          emitChange();
         },
       }),
       ctxCompartment.of(ctxExtension(initialCtx)),
       modeCompartment.of(modeExtension(initialMode)),
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || update.docChanged) {
-          setActiveFormatsRef.current(computeActiveFormats(update.state));
+          setActiveFormats(computeActiveFormats(update.state));
         }
         if (update.docChanged && !collabOpts) {
-          const next = update.state.doc.toString();
-          lastExternalValue.current = next;
-          onChangeRef.current?.(next);
+          pendingDoc = update.state.doc; // cheap reference; serialized at emit time (A4)
+          scheduleChange();
         }
       }),
     ];
@@ -529,9 +421,16 @@ export function WysiwygEditor({
     if (autoFocus) view.focus();
 
     return () => {
+      emitChange(); // A4: flush any pending onChange before teardown
       provider?.destroy();
       view.destroy();
       viewRef.current = null;
+      collabUndoRef.current = null;
+      // C5: destroy the Y.Doc and Awareness too - they hold observer lists and
+      // Awareness runs a heartbeat interval that would otherwise leak per
+      // collab session.
+      awareness?.destroy();
+      ydoc?.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -540,6 +439,15 @@ export function WysiwygEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    // T-L7: reading mode renders the container div in a different JSX position
+    // than editing/raw, so flipping across that boundary makes React discard
+    // the old div and mount a new one - stranding the CodeMirror DOM on the
+    // discarded element. No current caller flips modes mid-mount, but if one
+    // ever does, re-attach the editor DOM to the live container.
+    const container = containerRef.current;
+    if (container && view.dom.parentElement !== container) {
+      container.appendChild(view.dom);
+    }
     const ctx = buildCtxForMode(rendererCtx ?? defaultRendererCtx, mode);
     view.dispatch({
       effects: [
@@ -606,14 +514,14 @@ export function WysiwygEditor({
     view.focus();
   }, []);
 
-  const handleFormat = useCallback((marker: "**" | "*" | "__" | "~~") => {
+  const handleFormat = useCallback((marker: InlineMarker) => {
     const view = viewRef.current;
     if (!view) return;
     applyMarkerCm(view, marker);
     view.focus();
   }, []);
 
-  const handleHeading = useCallback((level: 0 | 1 | 2 | 3 | 4 | 5 | 6) => {
+  const handleHeading = useCallback((level: HeadingLevel) => {
     const view = viewRef.current;
     if (!view) return;
     applyHeadingCm(view, level);
@@ -630,22 +538,34 @@ export function WysiwygEditor({
   const handleUndo = useCallback(() => {
     const view = viewRef.current;
     if (!view) return;
-    undo(view);
+    // A3/T-H2: collab undo goes through the Y.UndoManager (local edits only);
+    // CM history isn't installed in collab mode.
+    const um = collabUndoRef.current;
+    if (um) um.undo();
+    else undo(view);
     view.focus();
   }, []);
 
   const handleRedo = useCallback(() => {
     const view = viewRef.current;
     if (!view) return;
-    redo(view);
+    const um = collabUndoRef.current;
+    if (um) um.redo();
+    else redo(view);
     view.focus();
   }, []);
 
   const handleFind = useCallback(() => {
     const view = viewRef.current;
     if (!view) return;
-    if (searchPanelOpen(view.state)) closeSearchPanel(view);
-    else openSearchPanel(view);
+    if (searchPanelOpen(view.state)) {
+      closeSearchPanel(view);
+      view.focus();
+    } else {
+      // U5: openSearchPanel focuses (and selects) the panel's query field, so
+      // the user can type their search immediately.
+      openSearchPanel(view);
+    }
   }, []);
 
   const handleBlockquote = useCallback(() => {
@@ -683,151 +603,127 @@ export function WysiwygEditor({
     view.focus();
   }, []);
 
-  const [imageDialogOpen, setImageDialogOpen] = useState(false);
-  const [imageAlt, setImageAlt] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const imageRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
-
-  const handleOpenImageDialog = useCallback(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const sel = view.state.selection.main;
-    const selected = view.state.sliceDoc(sel.from, sel.to);
-    imageRangeRef.current = { from: sel.from, to: sel.to };
-    setImageAlt(selected);
-    setImageUrl("");
-    setImageDialogOpen(true);
-  }, []);
-
-  const handleSubmitImage = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    const view = viewRef.current;
-    if (!view) return;
-    const url = imageUrl.trim();
-    if (!url) return;
-    const alt = imageAlt.trim();
-    const insert = `![${alt}](${url})`;
-    const { from, to } = imageRangeRef.current;
-    view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + insert.length },
-    });
-    setImageDialogOpen(false);
-    view.focus();
-  }, [imageAlt, imageUrl]);
-
-  // ── Image comparison slider (juxtapose fenced block) ──────────────────────
-  const [compareOpen, setCompareOpen] = useState(false);
-  const [cmpBefore, setCmpBefore] = useState("");
-  const [cmpAfter, setCmpAfter] = useState("");
-  const [cmpBeforeLabel, setCmpBeforeLabel] = useState("");
-  const [cmpAfterLabel, setCmpAfterLabel] = useState("");
-  const [cmpOrientation, setCmpOrientation] = useState<"horizontal" | "vertical">("horizontal");
-  const [cmpHandle, setCmpHandle] = useState<"arrows" | "bar">("arrows");
-  const [cmpColorMode, setCmpColorMode] = useState<"default" | "accent" | "custom">("default");
-  const [cmpCustomColor, setCmpCustomColor] = useState("#3b82f6");
-  const [cmpUploading, setCmpUploading] = useState<null | "before" | "after">(null);
-  const compareRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
-  const cmpBeforeFileRef = useRef<HTMLInputElement>(null);
-  const cmpAfterFileRef = useRef<HTMLInputElement>(null);
-
-  const handleOpenCompareDialog = useCallback(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const sel = view.state.selection.main;
-    compareRangeRef.current = { from: sel.from, to: sel.to };
-    setCmpBefore("");
-    setCmpAfter("");
-    setCmpBeforeLabel("");
-    setCmpAfterLabel("");
-    setCmpOrientation("horizontal");
-    setCmpHandle("arrows");
-    setCmpColorMode("default");
-    setCmpCustomColor("#3b82f6");
-    setCmpUploading(null);
-    setCompareOpen(true);
-  }, []);
-
-  const handleCompareUpload = useCallback(async (which: "before" | "after", file: File) => {
-    const handler = onPasteImageRef.current;
-    if (!handler) return;
-    setCmpUploading(which);
-    try {
-      const { url } = await handler(file);
-      if (which === "before") setCmpBefore(url);
-      else setCmpAfter(url);
-    } catch {
-      // onPasteImage surfaces upload failures via toast.
-    } finally {
-      setCmpUploading(null);
-    }
-  }, []);
-
-  const handleSubmitCompare = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    const view = viewRef.current;
-    if (!view) return;
-    const before = cmpBefore.trim();
-    const after = cmpAfter.trim();
-    if (!before || !after) return;
-    const bLabel = cmpBeforeLabel.trim();
-    const aLabel = cmpAfterLabel.trim();
-    const lines = ["```juxtapose"];
-    lines.push(`before: ${before}${bLabel ? ` "${bLabel}"` : ""}`);
-    lines.push(`after: ${after}${aLabel ? ` "${aLabel}"` : ""}`);
-    if (cmpOrientation === "vertical") lines.push("orientation: vertical");
-    if (cmpHandle === "bar") lines.push("handle: bar");
-    if (cmpColorMode === "accent") lines.push("accent: theme");
-    else if (cmpColorMode === "custom") lines.push(`accent: ${cmpCustomColor.trim()}`);
-    lines.push("```");
-    const block = lines.join("\n");
-
-    // Keep the fence on its own lines: prepend a newline unless we're already at
-    // a line start, and always follow with one.
-    const { from, to } = compareRangeRef.current;
-    const atLineStart = from === 0 || view.state.doc.sliceString(from - 1, from) === "\n";
-    const insert = `${atLineStart ? "" : "\n"}${block}\n`;
-    view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + insert.length },
-    });
-    setCompareOpen(false);
-    view.focus();
-  }, [cmpBefore, cmpAfter, cmpBeforeLabel, cmpAfterLabel, cmpOrientation, cmpHandle, cmpColorMode, cmpCustomColor]);
+  // ── Dialogs ────────────────────────────────────────────────────────────────
+  // Each dialog captures the selection as a tracked range when it opens (C2):
+  // edits made while it is open - local typing or remote collab ops - remap
+  // the range, so submit splices at the range's CURRENT position.
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
-  const [linkText, setLinkText] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
-  const linkRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
+  const [linkInitialText, setLinkInitialText] = useState("");
+  const linkRangeIdRef = useRef<number | null>(null);
 
   const handleOpenLinkDialog = useCallback(() => {
     const view = viewRef.current;
     if (!view) return;
     const sel = view.state.selection.main;
-    const selected = view.state.sliceDoc(sel.from, sel.to);
-    linkRangeRef.current = { from: sel.from, to: sel.to };
-    setLinkText(selected);
-    setLinkUrl("");
+    setLinkInitialText(view.state.sliceDoc(sel.from, sel.to));
+    linkRangeIdRef.current = beginTrackedRange(view);
     setLinkDialogOpen(true);
   }, []);
-  openLinkDialogRef.current = handleOpenLinkDialog;
 
-  const handleSubmitLink = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
+  // O2: ref used by the Ctrl+K keymap; assigned in an effect, not during render.
+  useEffect(() => {
+    openLinkDialogRef.current = handleOpenLinkDialog;
+  }, [handleOpenLinkDialog]);
+
+  const closeLinkDialog = useCallback(() => {
+    const view = viewRef.current;
+    const id = linkRangeIdRef.current;
+    linkRangeIdRef.current = null;
+    if (view && id != null) view.dispatch({ effects: clearTrackedRange.of(id) });
+    setLinkDialogOpen(false);
+  }, []);
+
+  const handleSubmitLink = useCallback(({ text, url }: { text: string; url: string }) => {
     const view = viewRef.current;
     if (!view) return;
-    const url = linkUrl.trim();
-    if (!url) return;
-    const text = linkText.trim() || url;
-    const insert = `[${text}](${url})`;
-    const { from, to } = linkRangeRef.current;
+    const id = linkRangeIdRef.current;
+    linkRangeIdRef.current = null;
+    const { from, to } = resolveTrackedRange(view, id);
+    const insert = `[${text || url}](${url})`;
     view.dispatch({
       changes: { from, to, insert },
       selection: { anchor: from + insert.length },
+      effects: id != null ? clearTrackedRange.of(id) : [],
     });
     setLinkDialogOpen(false);
     view.focus();
-  }, [linkText, linkUrl]);
+  }, []);
+
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [imageInitialAlt, setImageInitialAlt] = useState("");
+  const imageRangeIdRef = useRef<number | null>(null);
+
+  const handleOpenImageDialog = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    setImageInitialAlt(view.state.sliceDoc(sel.from, sel.to));
+    imageRangeIdRef.current = beginTrackedRange(view);
+    setImageDialogOpen(true);
+  }, []);
+
+  const closeImageDialog = useCallback(() => {
+    const view = viewRef.current;
+    const id = imageRangeIdRef.current;
+    imageRangeIdRef.current = null;
+    if (view && id != null) view.dispatch({ effects: clearTrackedRange.of(id) });
+    setImageDialogOpen(false);
+  }, []);
+
+  const handleSubmitImage = useCallback(({ alt, url }: { alt: string; url: string }) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const id = imageRangeIdRef.current;
+    imageRangeIdRef.current = null;
+    const { from, to } = resolveTrackedRange(view, id);
+    const insert = `![${alt}](${url})`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      effects: id != null ? clearTrackedRange.of(id) : [],
+    });
+    setImageDialogOpen(false);
+    view.focus();
+  }, []);
+
+  // ── Image comparison slider (juxtapose fenced block) ──────────────────────
+  const [compareOpen, setCompareOpen] = useState(false);
+  const compareRangeIdRef = useRef<number | null>(null);
+
+  const handleOpenCompareDialog = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    compareRangeIdRef.current = beginTrackedRange(view);
+    setCompareOpen(true);
+  }, []);
+
+  const closeCompareDialog = useCallback(() => {
+    const view = viewRef.current;
+    const id = compareRangeIdRef.current;
+    compareRangeIdRef.current = null;
+    if (view && id != null) view.dispatch({ effects: clearTrackedRange.of(id) });
+    setCompareOpen(false);
+  }, []);
+
+  const handleSubmitCompare = useCallback((block: string) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const id = compareRangeIdRef.current;
+    compareRangeIdRef.current = null;
+    const { from, to } = resolveTrackedRange(view, id);
+    // Keep the fence on its own lines: prepend a newline unless we're already at
+    // a line start, and always follow with one.
+    const atLineStart = from === 0 || view.state.doc.sliceString(from - 1, from) === "\n";
+    const insert = `${atLineStart ? "" : "\n"}${block}\n`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      effects: id != null ? clearTrackedRange.of(id) : [],
+    });
+    setCompareOpen(false);
+    view.focus();
+  }, []);
 
   // Reading mode flows inline (height: auto, no scroll). Editing/raw mode
   // fills its positioned parent (absolute inset-0) via an outer flex wrapper
@@ -869,23 +765,23 @@ export function WysiwygEditor({
             <ContextMenuItem disabled={!hasSelection} onSelect={handleCut}>
               <Scissors />
               Cut
-              <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+              <ContextMenuShortcut>{modShortcut("X")}</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem disabled={!hasSelection} onSelect={handleCopy}>
               <Copy />
               Copy
-              <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+              <ContextMenuShortcut>{modShortcut("C")}</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem onSelect={handlePaste}>
               <ClipboardPaste />
               Paste
-              <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+              <ContextMenuShortcut>{modShortcut("V")}</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={handleOpenLinkDialog}>
               <LinkIcon />
               Create link…
-              <ContextMenuShortcut>Ctrl+K</ContextMenuShortcut>
+              <ContextMenuShortcut>{modShortcut("K")}</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuSub>
               <ContextMenuSubTrigger
@@ -899,17 +795,17 @@ export function WysiwygEditor({
                 <ContextMenuItem onSelect={() => handleFormat("**")}>
                   <Bold />
                   Bold
-                  <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+                  <ContextMenuShortcut>{modShortcut("B")}</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => handleFormat("*")}>
                   <Italic />
                   Italic
-                  <ContextMenuShortcut>Ctrl+I</ContextMenuShortcut>
+                  <ContextMenuShortcut>{modShortcut("I")}</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => handleFormat("__")}>
                   <Underline />
                   Underline
-                  <ContextMenuShortcut>Ctrl+U</ContextMenuShortcut>
+                  <ContextMenuShortcut>{modShortcut("U")}</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => handleFormat("~~")}>
                   <Strikethrough />
@@ -941,212 +837,24 @@ export function WysiwygEditor({
         </ContextMenu>
       </div>
     </div>
-    <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Create link</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmitLink} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="link-text">Text</Label>
-            <Input
-              id="link-text"
-              placeholder="Link text"
-              value={linkText}
-              onChange={e => setLinkText(e.target.value)}
-              autoFocus={linkText.length === 0}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="link-url">URL</Label>
-            <Input
-              id="link-url"
-              type="url"
-              placeholder="https://example.com"
-              value={linkUrl}
-              onChange={e => setLinkUrl(e.target.value)}
-              autoFocus={linkText.length > 0}
-              required
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!linkUrl.trim()}>Insert</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-    <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Insert image</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmitImage} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="image-alt">Alt text</Label>
-            <Input
-              id="image-alt"
-              placeholder="Image description"
-              value={imageAlt}
-              onChange={e => setImageAlt(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="image-url">URL</Label>
-            <Input
-              id="image-url"
-              type="url"
-              placeholder="https://example.com/image.png"
-              value={imageUrl}
-              onChange={e => setImageUrl(e.target.value)}
-              autoFocus
-              required
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setImageDialogOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!imageUrl.trim()}>Insert</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-    <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Insert image comparison</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmitCompare} className="flex flex-col gap-4">
-          {(["before", "after"] as const).map((which) => {
-            const url = which === "before" ? cmpBefore : cmpAfter;
-            const setUrl = which === "before" ? setCmpBefore : setCmpAfter;
-            const label = which === "before" ? cmpBeforeLabel : cmpAfterLabel;
-            const setLabel = which === "before" ? setCmpBeforeLabel : setCmpAfterLabel;
-            const fileRef = which === "before" ? cmpBeforeFileRef : cmpAfterFileRef;
-            const uploading = cmpUploading === which;
-            return (
-              <div key={which} className="flex flex-col gap-2 rounded-md border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium capitalize">{which} image</span>
-                  {url && <Check className="h-4 w-4 text-green-600" aria-label="Image set" />}
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    aria-label={`${which} image URL`}
-                    placeholder="Image URL"
-                    value={url}
-                    onChange={e => setUrl(e.target.value)}
-                  />
-                  {onPasteImage && (
-                    <>
-                      <input
-                        ref={fileRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (file) handleCompareUpload(which, file);
-                          e.target.value = "";
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="shrink-0 gap-1.5"
-                        disabled={uploading}
-                        onClick={() => fileRef.current?.click()}
-                      >
-                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                        Upload
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <Input
-                  aria-label={`${which} label`}
-                  placeholder="Label (optional)"
-                  value={label}
-                  onChange={e => setLabel(e.target.value)}
-                />
-              </div>
-            );
-          })}
-          <div className="flex flex-col gap-1.5">
-            <Label>Orientation</Label>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant={cmpOrientation === "horizontal" ? "default" : "outline"}
-                className="flex-1"
-                onClick={() => setCmpOrientation("horizontal")}
-              >
-                Horizontal
-              </Button>
-              <Button
-                type="button"
-                variant={cmpOrientation === "vertical" ? "default" : "outline"}
-                className="flex-1"
-                onClick={() => setCmpOrientation("vertical")}
-              >
-                Vertical
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Handle style</Label>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant={cmpHandle === "arrows" ? "default" : "outline"}
-                className="flex-1"
-                onClick={() => setCmpHandle("arrows")}
-              >
-                Circle + arrows
-              </Button>
-              <Button
-                type="button"
-                variant={cmpHandle === "bar" ? "default" : "outline"}
-                className="flex-1"
-                onClick={() => setCmpHandle("bar")}
-              >
-                Slim grip bar
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Handle colour</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={cmpColorMode === "default" ? "default" : "outline"}
-                onClick={() => setCmpColorMode("default")}
-              >
-                Default
-              </Button>
-              <Button
-                type="button"
-                variant={cmpColorMode === "accent" ? "default" : "outline"}
-                onClick={() => setCmpColorMode("accent")}
-              >
-                Theme accent
-              </Button>
-              <Button
-                type="button"
-                variant={cmpColorMode === "custom" ? "default" : "outline"}
-                onClick={() => setCmpColorMode("custom")}
-              >
-                Custom
-              </Button>
-              {cmpColorMode === "custom" && <ColorPicker value={cmpCustomColor} onChange={setCmpCustomColor} />}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setCompareOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!cmpBefore.trim() || !cmpAfter.trim() || cmpUploading !== null}>Insert</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <LinkDialog
+      open={linkDialogOpen}
+      initialText={linkInitialText}
+      onClose={closeLinkDialog}
+      onSubmit={handleSubmitLink}
+    />
+    <ImageDialog
+      open={imageDialogOpen}
+      initialAlt={imageInitialAlt}
+      onClose={closeImageDialog}
+      onSubmit={handleSubmitImage}
+    />
+    <CompareDialog
+      open={compareOpen}
+      onClose={closeCompareDialog}
+      onSubmit={handleSubmitCompare}
+      onUploadImage={onPasteImage}
+    />
     </>
   );
 }

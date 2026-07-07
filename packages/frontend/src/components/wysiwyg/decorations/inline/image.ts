@@ -7,6 +7,8 @@ import { looksLikeAudio, parseAudioSize } from "@/lib/audioUrl";
 
 const IMG_RE = /^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/;
 
+// Returns false (don't descend) when the image rendered as a widget - inline
+// decorations built under a replace are invisible dead work.
 export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   const fullSrc = state.doc.sliceString(node.from, node.to);
   const m = fullSrc.match(IMG_RE);
@@ -17,8 +19,11 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   // Peek at any trailing {…} attribute block - both complete and unfinished.
   // We consume the whole block (including unrecognized or partially-typed
   // attrs) so the source-mode reveal covers it; otherwise the rendered image
-  // and the trailing `{thing}` text would show side-by-side.
-  const lookahead = state.doc.sliceString(node.to, Math.min(node.to + 200, state.doc.length));
+  // and the trailing `{thing}` text would show side-by-side. The lookahead
+  // runs to the END OF LINE (attr blocks can't span lines) - a fixed-width
+  // slice could cut an attr block mid-way and leave the remnant rendered
+  // beside the image.
+  const lookahead = state.doc.sliceString(node.to, state.doc.lineAt(node.to).to);
   let attrs: Record<string, string> = {};
   let consumeTo = node.to;
   const completeMatch = lookahead.match(ATTR_BLOCK_RE);
@@ -49,7 +54,11 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   const revealFrom = inline ? node.from : line.from;
   const revealTo = inline ? consumeTo : line.to;
   const cursorOn = reveal && cursorTouches(sel, revealFrom, revealTo);
-  if (cursorOn) return;
+  if (cursorOn) {
+    // Same reveal styling treatment links/wikilinks get on their source.
+    decos.push(Decoration.mark({ class: "cm-image-source" }).range(node.from, consumeTo));
+    return;
+  }
 
   if (looksLikeAudio(url, alt)) {
     // Inline placement forces the compact variant - the full player needs a
@@ -69,7 +78,7 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
         }).range(line.from, line.to),
       );
     }
-    return;
+    return false;
   }
 
   if (inline) {
@@ -86,4 +95,5 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
       }).range(line.from, line.to),
     );
   }
+  return false;
 };

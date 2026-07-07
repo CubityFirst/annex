@@ -16,6 +16,25 @@ export class TaskCheckboxWidget extends WidgetType {
     input.checked = this.checked;
     input.disabled = !editable;
 
+    // Accessible name from the task's own text. The widget is created before
+    // it's attached (posAtDOM needs a connected node), so resolve on a
+    // microtask - CM inserts the tile synchronously within this update - and
+    // refresh on focus so the label tracks later edits to the task text.
+    input.setAttribute("aria-label", "Task");
+    const applyLabel = () => {
+      if (!input.isConnected) return;
+      try {
+        const pos = view.posAtDOM(input);
+        const line = view.state.doc.lineAt(pos);
+        const src = view.state.doc.sliceString(line.from, line.to);
+        const m = src.match(/\[[ xX]\]\s*(.*)$/);
+        const text = m?.[1]?.trim();
+        if (text) input.setAttribute("aria-label", text);
+      } catch { /* keep the generic label */ }
+    };
+    queueMicrotask(applyLabel);
+    input.addEventListener("focus", applyLabel);
+
     if (editable) {
       input.addEventListener("mousedown", (e) => e.stopPropagation());
       input.addEventListener("change", (e) => {

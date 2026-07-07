@@ -1,5 +1,6 @@
 import { Decoration, WidgetType } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
+import { eachDirectLine, type MarkRange } from "../helpers";
 import { TaskCheckboxWidget } from "../../widgets/TaskCheckboxWidget";
 
 class BulletWidget extends WidgetType {
@@ -20,33 +21,30 @@ class BulletWidget extends WidgetType {
 
 export const visitListItem: Visitor = ({ node, state, sel, reveal, decos }) => {
   const parent = node.node;
-  let mark: { from: number; to: number } | null = null;
-  let cur = parent.firstChild;
-  while (cur) {
-    if (cur.name === "ListMark") {
+  let mark: MarkRange | null = null;
+  let taskMarker: MarkRange | null = null;
+  for (let cur = parent.firstChild; cur; cur = cur.nextSibling) {
+    if (cur.name === "ListMark" && !mark) {
       mark = { from: cur.from, to: cur.to };
-      break;
+    } else if (cur.name === "Task" && !taskMarker) {
+      // GFM's parser emits Task/TaskMarker for BOTH bullet and ordered items
+      // (`1. [x] done` is a task too) and only at a genuine item start - so
+      // the tree replaces the old hand-rolled regex, which both excluded
+      // ordered tasks and could match a `[x]` across a line break.
+      const tm = cur.getChild("TaskMarker");
+      if (tm) taskMarker = { from: tm.from, to: tm.to };
     }
-    cur = cur.nextSibling;
   }
   if (!mark) return;
 
-  const list = parent.parent;
-  const isOrdered = list?.name === "OrderedList";
+  const isOrdered = parent.parent?.name === "OrderedList";
 
-  // Detect GFM task list pattern: "- [x]" / "- [ ]" / "* [X]" etc.
-  let task: { boxFrom: number; boxTo: number; checked: boolean; hideTo: number } | null = null;
-  if (!isOrdered) {
-    const after = state.doc.sliceString(mark.to, Math.min(mark.to + 6, state.doc.length));
-    const taskMatch = after.match(/^(\s+)(\[[ xX]\])/);
-    if (taskMatch) {
-      const boxFrom = mark.to + taskMatch[1]!.length;
-      const boxTo = boxFrom + 3;
-      const checked = taskMatch[2]!.toLowerCase() === "[x]";
-      const trailing = state.doc.sliceString(boxTo, boxTo + 1);
-      const hideTo = trailing === " " ? boxTo + 1 : boxTo;
-      task = { boxFrom, boxTo, checked, hideTo };
-    }
+  let task: { checked: boolean; hideTo: number } | null = null;
+  if (taskMarker) {
+    const checked = state.doc.sliceString(taskMarker.from, taskMarker.to).toLowerCase() === "[x]";
+    const trailing = state.doc.sliceString(taskMarker.to, taskMarker.to + 1);
+    const hideTo = trailing === " " || trailing === "\t" ? taskMarker.to + 1 : taskMarker.to;
+    task = { checked, hideTo };
   }
 
   const lineClass = task
@@ -55,18 +53,18 @@ export const visitListItem: Visitor = ({ node, state, sel, reveal, decos }) => {
       ? "cm-list-ordered-item"
       : "cm-list-bullet-item";
 
-  const startLineNum = state.doc.lineAt(node.from).number;
-  const endLineNum = state.doc.lineAt(Math.min(node.to, state.doc.length)).number;
-  for (let n = startLineNum; n <= endLineNum; n++) {
-    const lineN = state.doc.line(n);
-    decos.push(Decoration.line({ class: lineClass }).range(lineN.from));
-  }
+  // Stamp only the lines this item directly owns - lines of a nested list are
+  // stamped by their own ListItem visitor (stops stacked, contradictory
+  // classes like task-item + bullet-item on the same line).
+  eachDirectLine(state, parent, ["BulletList", "OrderedList"], (line) => {
+    decos.push(Decoration.line({ class: lineClass }).range(line.from));
+  });
 
   const cursorInItem = reveal && cursorTouches(sel, node.from, node.to);
   if (cursorInItem) return;
 
   if (task) {
-    // Replace "- [x] " (or "[ ]") with the checkbox widget
+    // Replace "- [x] " / "1. [x] " with the checkbox widget
     decos.push(
       Decoration.replace({
         widget: new TaskCheckboxWidget(task.checked),
@@ -78,7 +76,7 @@ export const visitListItem: Visitor = ({ node, state, sel, reveal, decos }) => {
     );
   } else {
     const after = state.doc.sliceString(mark.to, mark.to + 1);
-    const hideTo = after === " " ? mark.to + 1 : mark.to;
+    const hideTo = after === " " || after === "\t" ? mark.to + 1 : mark.to;
     decos.push(
       Decoration.replace({ widget: new BulletWidget() }).range(mark.from, hideTo),
     );

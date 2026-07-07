@@ -128,11 +128,26 @@ function useStopBubble<T extends HTMLElement>(events: readonly string[] = POINTE
   return ref;
 }
 
+// Stop playback when the element unmounts (e.g. a wysiwyg widget being
+// revealed/destroyed). Without this the detached <audio> keeps playing with
+// no visible controls - the visualizer's MediaElementAudioSourceNode WeakMap
+// pins the element alive.
+function usePauseOnUnmount(audioRef: React.RefObject<HTMLAudioElement | null>) {
+  useEffect(() => {
+    // Capture the element now: React nulls host refs during the commit's
+    // mutation phase, BEFORE passive-effect cleanups run on unmount, so
+    // reading audioRef.current inside the cleanup would always see null.
+    const audio = audioRef.current;
+    return () => { audio?.pause(); };
+  }, [audioRef]);
+}
+
 function AudioFull({ src, alt, style, onError, className }: { src: string; alt?: string; style?: React.CSSProperties; onError?: () => void; className?: string }) {
   // Native <audio controls> dispatches click events out of its shadow DOM -
   // those need stopping too, otherwise CM's click handler interprets them as
   // "click on the widget area" and reveals.
   const audioRef = useStopBubble<HTMLAudioElement>(POINTER_AND_CLICK);
+  usePauseOnUnmount(audioRef);
   return (
     <div className={cn("cm-wysiwyg-audio cm-wysiwyg-audio--full rounded-lg border border-border bg-muted/30 p-4", className)} style={style}>
       <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
@@ -143,6 +158,7 @@ function AudioFull({ src, alt, style, onError, className }: { src: string; alt?:
 
 function AudioSmall({ src, alt, onError, className }: { src: string; alt?: string; onError?: () => void; className?: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  usePauseOnUnmount(audioRef);
   const playButtonRef = useStopBubble<HTMLButtonElement>();
   const volumeButtonRef = useStopBubble<HTMLButtonElement>();
   const trackRef = useRef<HTMLDivElement>(null);

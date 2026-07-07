@@ -21,7 +21,7 @@ export function parseWikilink(raw: string): ParsedWikilink | null {
 
 // SPA-style navigation that doesn't rely on React Router context (which is
 // unavailable inside a CM6 widget's separate React root).
-function navigateSpa(href: string) {
+export function navigateSpa(href: string) {
   window.history.pushState(null, "", href);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }

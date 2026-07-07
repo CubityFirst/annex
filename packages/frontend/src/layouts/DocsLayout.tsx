@@ -379,6 +379,9 @@ export function DocsLayout() {
   const openSearch = useCallback(() => setSearchOpen(true), []);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // The editor's Mod-k keymap (link dialog) calls preventDefault but the
+      // event still bubbles to window - don't double-fire the search palette.
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         openSearch();

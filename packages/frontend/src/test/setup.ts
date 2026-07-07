@@ -13,12 +13,14 @@ const canvasContextMock = {
 };
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(canvasContextMock) as typeof HTMLCanvasElement.prototype.getContext;
 
-// Mock ResizeObserver since jsdom doesn't implement it
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+// Mock ResizeObserver since jsdom doesn't implement it. Must be a real class:
+// vi.fn().mockImplementation(...) is not constructible under vitest 4, so
+// CodeMirror's `new ResizeObserver(...)` throws in EditorView-based tests.
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
 
 // Provide a functional localStorage backed by a Map
 const store = new Map<string, string>();

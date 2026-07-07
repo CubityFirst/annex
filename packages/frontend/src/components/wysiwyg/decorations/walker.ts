@@ -1,7 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { EditorState } from "@codemirror/state";
-import type { DecoRange } from "./types";
+import { createBuildPass, type DecoRange } from "./types";
 import { rendererCtxFacet } from "../context/RendererContext";
 import { visitHeading } from "./block/heading";
 import { visitStrong, visitEmphasis, visitStrike } from "./inline/emphasis";
@@ -11,8 +11,9 @@ import { visitBlockquote } from "./block/blockquote";
 import { visitCodeFence } from "./block/codeFence";
 import { visitTable } from "./block/table";
 import { visitListItem } from "./block/list";
-import { visitLink } from "./inline/link";
+import { visitLink, visitUrl, visitAutolink } from "./inline/link";
 import { visitImage } from "./inline/image";
+import { visitEscape } from "./inline/escape";
 import { visitWikilink } from "./inline/wikilink";
 import { visitComment } from "./inline/comment";
 import { frontmatterPass } from "./block/frontmatter";
@@ -34,18 +35,23 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
   const reveal = ctx.revealOnCursor !== false;
   const sel = state.selection.main;
   const decos: DecoRange[] = [];
+  const pass = createBuildPass();
 
   const fmRange = frontmatterPass(state, sel, reveal, ctx, decos);
 
   syntaxTree(state).iterate({
     enter: (node) => {
-      // Skip any node fully inside the frontmatter range - the frontmatter
+      // Skip any node STARTING inside the frontmatter range - the frontmatter
       // pass owns that region and Lezer would otherwise see the `---` lines
-      // as HorizontalRule nodes.
-      if (fmRange && node.from >= fmRange.from && node.to <= fmRange.to) {
+      // as HorizontalRule nodes. Checking only the start (not `node.to <=
+      // fmRange.to`) also catches malformed nodes that begin inside the YAML
+      // but extend past it (e.g. an unclosed fence): letting those through
+      // would stack a second block replace partially overlapping the
+      // frontmatter's own, which CM renders unpredictably.
+      if (fmRange && node.from >= fmRange.from && node.from < fmRange.to) {
         return false;
       }
-      const args = { node, state, sel, reveal, ctx, decos };
+      const args = { node, state, sel, reveal, ctx, decos, pass };
       switch (node.name) {
         case "ATXHeading1":
         case "ATXHeading2":
@@ -71,10 +77,21 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
           visitCodeFence(args);
           return false;
         case "Table":
-          visitTable(args);
-          return; // descend so emphasis/links inside cells still apply
+          // Descends only when the cursor is inside (raw lines) - a rendered
+          // TableWidget replaces the whole block, so building inline
+          // decorations underneath it is dead work.
+          return visitTable(args);
         case "Image":
-          visitImage(args);
+          // Same: descend only while revealed as raw source.
+          return visitImage(args);
+        case "URL":
+          // Bare GFM autolinks (`https://…` / `www.…` in plain text).
+          return visitUrl(args);
+        case "Autolink":
+          // Angle-bracketed autolinks (`<https://…>`).
+          return visitAutolink(args);
+        case "Escape":
+          visitEscape(args);
           return;
         case "Wikilink":
           visitWikilink(args);
@@ -83,8 +100,7 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
           visitComment(args);
           return false;
         case "Link":
-          visitLink(args);
-          return false;
+          return visitLink(args);
         case "HorizontalRule":
           visitHr(args);
           return;

@@ -1,5 +1,5 @@
 import { createElement, type ReactElement } from "react";
-import { WidgetType, type EditorView } from "@codemirror/view";
+import { WidgetType } from "@codemirror/view";
 import { ReactWidget } from "./ReactWidget";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 
@@ -13,10 +13,8 @@ export class MermaidWidget extends ReactWidget {
     super();
   }
 
-  toDOM(view: EditorView): HTMLElement {
-    const el = super.toDOM(view);
-    el.classList.add("cm-codefence-widget-root");
-    return el;
+  protected rootClass(): string {
+    return "cm-codefence-widget-root";
   }
 
   protected render(): ReactElement {
@@ -25,6 +23,12 @@ export class MermaidWidget extends ReactWidget {
 
   protected revealOnClick(): boolean {
     return true;
+  }
+
+  // Diagram size is unknowable pre-render; a mid-size guess still beats CM's
+  // default single-line assumption for reading-mode scroll stability.
+  get estimatedHeight(): number {
+    return 220;
   }
 
   eq(other: WidgetType): boolean {

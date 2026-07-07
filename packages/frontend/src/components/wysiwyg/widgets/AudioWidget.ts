@@ -3,6 +3,7 @@ import { WidgetType } from "@codemirror/view";
 import { ReactWidget } from "./ReactWidget";
 import { AudioEmbed } from "@/components/AudioEmbed";
 import { useRendererCtx } from "../context/RendererContext";
+import { parseInlineStyle } from "@/lib/imageAttrs";
 import type { AudioSize } from "@/lib/audioUrl";
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
 
 function AudioInner({ src, alt, size, style }: Props) {
   const ctx = useRendererCtx();
-  const styleObj = style ? parseStyle(style) : undefined;
+  const styleObj = style ? parseInlineStyle(style) : undefined;
   return createElement(AudioEmbed, {
     src,
     alt,
@@ -24,20 +25,6 @@ function AudioInner({ src, alt, size, style }: Props) {
     isPublic: ctx.isPublic,
     style: styleObj,
   });
-}
-
-function parseStyle(s: string): React.CSSProperties {
-  const out: React.CSSProperties = {};
-  for (const decl of s.split(";")) {
-    const [k, v] = decl.split(":").map(p => p.trim());
-    if (!k || !v) continue;
-    if (k === "width") out.width = v;
-    else if (k === "height") out.height = v;
-    else if (k === "display") out.display = v;
-    else if (k === "margin-left") out.marginLeft = v;
-    else if (k === "margin-right") out.marginRight = v;
-  }
-  return out;
 }
 
 export class AudioWidget extends ReactWidget {
@@ -56,6 +43,12 @@ export class AudioWidget extends ReactWidget {
     // button and the native <audio controls> - call stopPropagation on
     // pointerdown so transport keeps working without revealing.
     return true;
+  }
+
+  // Full player: h-20 visualizer + native controls + p-4 padding. The small
+  // inline pill is roughly line-height and doesn't need an estimate.
+  get estimatedHeight(): number {
+    return this.props.size === "full" ? 152 : -1;
   }
 
   eq(other: WidgetType): boolean {

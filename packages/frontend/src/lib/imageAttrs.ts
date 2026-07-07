@@ -37,6 +37,24 @@ export function parseImageAttrs(block: string): Record<string, string> {
   return attrs;
 }
 
+// Converts the inline-style string produced by styleFromAttrs back into a
+// React style object. Only the declarations styleFromAttrs can emit are
+// honored - this is NOT a general CSS parser (shared by the wysiwyg image /
+// audio / table-cell-image widgets).
+export function parseInlineStyle(s: string): import("react").CSSProperties {
+  const out: import("react").CSSProperties = {};
+  for (const decl of s.split(";")) {
+    const [k, v] = decl.split(":").map(p => p.trim());
+    if (!k || !v) continue;
+    if (k === "width") out.width = v;
+    else if (k === "height") out.height = v;
+    else if (k === "display") out.display = v;
+    else if (k === "margin-left") out.marginLeft = v;
+    else if (k === "margin-right") out.marginRight = v;
+  }
+  return out;
+}
+
 export function styleFromAttrs(attrs: Record<string, string>): string | undefined {
   const { width, height, align } = attrs;
   const parts: string[] = [];

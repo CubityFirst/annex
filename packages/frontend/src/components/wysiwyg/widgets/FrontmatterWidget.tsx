@@ -15,7 +15,8 @@ interface Entry {
 // Generic top-level YAML key/value extractor - shows whatever the user wrote
 // rather than restricting to the strict app-metadata keys handled by
 // lib/frontmatter.ts (which is intentionally narrow for app behavior).
-function parseEntries(source: string): Entry[] {
+// Exported for tests.
+export function parseEntries(source: string): Entry[] {
   const entries: Entry[] = [];
   const lines = source.split(/\r?\n/);
 
@@ -75,9 +76,12 @@ function FrontmatterInner({ source }: Props) {
       : createElement(
           "dl",
           { className: "cm-frontmatter-card__list" },
-          ...entries.flatMap((e) => [
-            createElement("dt", { key: `k-${e.key}`, className: "cm-frontmatter-card__key" }, e.key),
-            createElement("dd", { key: `v-${e.key}`, className: "cm-frontmatter-card__val" }, e.val || createElement("span", { className: "cm-frontmatter-card__empty-val" }, "-")),
+          // Index-keyed: YAML allows duplicate keys, and duplicate React keys
+          // drop entries. The list is regenerated wholesale per render, so
+          // positional keys are exact.
+          ...entries.flatMap((e, i) => [
+            createElement("dt", { key: `k-${i}`, className: "cm-frontmatter-card__key" }, e.key),
+            createElement("dd", { key: `v-${i}`, className: "cm-frontmatter-card__val" }, e.val || createElement("span", { className: "cm-frontmatter-card__empty-val" }, "-")),
           ]),
         ),
   );
@@ -96,6 +100,11 @@ export class FrontmatterWidget extends ReactWidget {
 
   protected revealOnClick(): boolean {
     return true;
+  }
+
+  // Header row + one grid row per top-level YAML line + card padding.
+  get estimatedHeight(): number {
+    return 46 + this.source.split("\n").length * 22;
   }
 
   eq(other: WidgetType): boolean {

@@ -28,7 +28,12 @@ export const decorationField = StateField.define<DecorationSet>({
     // with no interaction required. A transaction that doesn't touch the tree
     // returns the same tree object, so this adds no rebuilds in the common case.
     const treeChanged = syntaxTree(tr.startState) !== syntaxTree(tr.state);
-    if (!tr.docChanged && !tr.selection && !ctxChanged && !foldToggled && !treeChanged) {
+    // Selection changes only matter when reveal-on-cursor is active (editing
+    // mode). With reveal off (reading mode) decorations are selection-
+    // independent, so drag-selecting must not trigger O(doc) rebuilds.
+    const revealOff = tr.state.facet(rendererCtxFacet).revealOnCursor === false;
+    const selectionMatters = tr.selection !== undefined && !revealOff;
+    if (!tr.docChanged && !selectionMatters && !ctxChanged && !foldToggled && !treeChanged) {
       return decorations.map(tr.changes);
     }
     return buildDecorations(tr.state);

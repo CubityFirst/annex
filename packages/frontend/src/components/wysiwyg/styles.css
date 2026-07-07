@@ -104,7 +104,7 @@
   background: transparent;
   border: 0;
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
@@ -115,8 +115,8 @@
 .cm-wysiwyg--reading .cm-h-anchor:hover,
 .cm-wysiwyg--reading .cm-h-anchor:focus-visible {
   opacity: 1;
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--muted));
+  color: var(--foreground);
+  background-color: var(--muted);
   outline: none;
 }
 
@@ -136,13 +136,13 @@
 }
 .cm-wysiwyg .cm-content .cm-inline-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  background-color: hsl(var(--muted));
+  background-color: var(--muted);
   padding: 0.1em 0.3em;
   border-radius: 4px;
   font-size: 0.92em;
 }
 .cm-wysiwyg .cm-content .cm-comment {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   opacity: 0.65;
   font-style: italic;
 }
@@ -158,7 +158,7 @@
 
 /* HR */
 .cm-wysiwyg .cm-content .cm-line.cm-hr-source {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   opacity: 0.6;
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-hr {
@@ -172,11 +172,14 @@
 .cm-wysiwyg .cm-content .cm-wysiwyg-hr hr {
   margin: 0;
   border: 0;
-  border-top: 1px solid #3a3a3a;
+  /* Deliberately more prominent than var(--border) (which is a faint hairline
+     tone) - a strong foreground mix reproduces the previously hardcoded grey
+     hexes while tracking the theme's actual foreground. */
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 77%, transparent);
   height: 0;
 }
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-hr hr {
-  border-top-color: #b0b0b0;
+  border-top-color: color-mix(in oklab, var(--foreground) 69%, transparent);
 }
 
 /* Code fence - keep every code line the SAME height as surrounding prose so
@@ -185,9 +188,20 @@
    lines variable-height and drifting click coords). */
 .cm-wysiwyg .cm-content .cm-line.cm-code-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  background-color: hsl(var(--muted) / 0.4);
+  background-color: color-mix(in oklab, var(--muted) 40%, transparent);
   padding-left: 0.75em;
   padding-right: 0.75em;
+}
+/* First/last raw fence line: round the tinted block's corners. Corner radius
+   only - vertical padding here would make these lines a different height from
+   their neighbours and drift click coords (see the comment above). */
+.cm-wysiwyg .cm-content .cm-line.cm-code-line--first {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+.cm-wysiwyg .cm-content .cm-line.cm-code-line--last {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
 /* CodeFenceWidget DOM (Shiki-rendered block when cursor is outside the fence).
@@ -222,16 +236,6 @@
   word-break: break-word;
   overflow-wrap: anywhere;
 }
-.cm-wysiwyg .cm-content .cm-code-fence-marker {
-  color: hsl(var(--muted-foreground));
-  opacity: 0.5;
-}
-.cm-wysiwyg .cm-content .cm-code-fence-info {
-  color: hsl(var(--muted-foreground));
-  font-style: italic;
-  opacity: 0.7;
-}
-
 /* Tables - when the cursor is inside, raw lines render monospace for column
    alignment. Same height as surrounding prose (no font-size change) so click
    coords stay in sync with the heightmap. */
@@ -310,7 +314,8 @@
 /* Wikilink + standard link - inherit foreground color (white in dark mode),
    underline only. */
 .cm-wysiwyg .cm-content .cm-wikilink-source,
-.cm-wysiwyg .cm-content .cm-link-source {
+.cm-wysiwyg .cm-content .cm-link-source,
+.cm-wysiwyg .cm-content .cm-image-source {
   color: inherit;
   text-decoration: underline;
   text-decoration-color: currentColor;
@@ -339,11 +344,11 @@
 .cm-wysiwyg .cm-content .cm-list-bullet-marker {
   display: inline-block;
   margin-right: 0.4em;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-weight: 600;
 }
 .cm-wysiwyg .cm-content .cm-list-ordered-marker {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-weight: 600;
 }
 /* Custom-styled task checkbox - appearance:none drops the platform UI so we
@@ -357,7 +362,9 @@
   margin: 0 0.5em 0 0;
   padding: 0;
   vertical-align: -2px;
-  border: 1.5px solid hsl(0 0% 55% / 0.7);
+  /* Theme-token colors so the box is visible in BOTH light and dark mode
+     (the old hardcoded white-on-white checked state vanished on light). */
+  border: 1.5px solid color-mix(in oklab, var(--foreground) 45%, transparent);
   border-radius: 3px;
   background-color: transparent;
   cursor: pointer;
@@ -365,11 +372,14 @@
   transition: border-color 0.1s, background-color 0.1s;
 }
 .cm-wysiwyg .cm-content .cm-task-checkbox:hover:not(:disabled):not(:checked) {
-  border-color: hsl(0 0% 75% / 0.9);
+  border-color: color-mix(in oklab, var(--foreground) 75%, transparent);
 }
 .cm-wysiwyg .cm-content .cm-task-checkbox:checked {
-  background-color: white;
-  border-color: white;
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+.cm-wysiwyg .cm-content .cm-task-checkbox:checked:hover:not(:disabled) {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent);
 }
 .cm-wysiwyg .cm-content .cm-task-checkbox:checked::after {
   content: "";
@@ -378,7 +388,7 @@
   left: 3.5px;
   width: 4px;
   height: 9px;
-  border: solid hsl(0 0% 15%);
+  border: solid var(--primary-foreground);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -390,9 +400,9 @@
 .cm-wysiwyg .cm-content .cm-frontmatter-card {
   margin: 0.25em 0 0.5em;
   padding: 0.6em 0.8em;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background-color: hsl(var(--muted) / 0.3);
+  background-color: color-mix(in oklab, var(--muted) 30%, transparent);
   font-size: 0.875em;
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__header {
@@ -400,7 +410,7 @@
   align-items: center;
   gap: 0.4em;
   font-weight: 600;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   margin-bottom: 0.4em;
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__icon {
@@ -414,7 +424,7 @@
   margin: 0;
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__key {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__val {
   margin: 0;
@@ -423,7 +433,7 @@
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__empty {
   margin: 0;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
@@ -484,17 +494,52 @@
   border-bottom-right-radius: 6px;
 }
 
+/* Callout tone palette - single source of truth for the ten tone hues.
+   Light-first values are darkened so header text / border hit readable
+   contrast on a white page (the old dark-tuned hues, e.g. yellow at 60%
+   lightness, were ~1.6:1 on white); the .dark overrides restore the original
+   bright dark-mode hues. WysiwygToolbar's TONE_COLOR references these same
+   variables so the callout-menu icons can never drift from the rendered
+   callouts. Declared on :root (not .cm-wysiwyg) because the toolbar dropdown
+   renders in a portal outside the editor subtree. The soft background tints
+   stay literal per-rule below: at 10% alpha the same mid-lightness hue works
+   as a wash on both light and dark surfaces. */
+:root {
+  --callout-tone-zinc: hsl(220 9% 40%);
+  --callout-tone-cyan: hsl(190 90% 27%);
+  --callout-tone-blue: hsl(217 85% 44%);
+  --callout-tone-teal: hsl(174 75% 26%);
+  --callout-tone-green: hsl(142 72% 27%);
+  --callout-tone-yellow: hsl(45 95% 28%);
+  --callout-tone-amber: hsl(38 92% 30%);
+  --callout-tone-orange: hsl(25 95% 35%);
+  --callout-tone-red: hsl(0 74% 44%);
+  --callout-tone-purple: hsl(270 65% 50%);
+}
+.dark {
+  --callout-tone-zinc: hsl(220 9% 60%);
+  --callout-tone-cyan: hsl(190 90% 60%);
+  --callout-tone-blue: hsl(217 91% 65%);
+  --callout-tone-teal: hsl(174 70% 55%);
+  --callout-tone-green: hsl(142 71% 55%);
+  --callout-tone-yellow: hsl(48 96% 60%);
+  --callout-tone-amber: hsl(38 92% 60%);
+  --callout-tone-orange: hsl(25 95% 60%);
+  --callout-tone-red: hsl(0 84% 65%);
+  --callout-tone-purple: hsl(270 75% 65%);
+}
+
 /* Callout tones */
-.cm-wysiwyg .cm-content .cm-callout-tone-zinc { background-color: hsl(220 9% 46% / 0.1); border-left-color: hsl(220 9% 60%); color: hsl(220 9% 60%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-cyan { background-color: hsl(190 90% 50% / 0.1); border-left-color: hsl(190 90% 60%); color: hsl(190 90% 60%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-blue { background-color: hsl(217 91% 60% / 0.1); border-left-color: hsl(217 91% 65%); color: hsl(217 91% 65%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-teal { background-color: hsl(174 70% 45% / 0.1); border-left-color: hsl(174 70% 55%); color: hsl(174 70% 55%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-green { background-color: hsl(142 71% 45% / 0.1); border-left-color: hsl(142 71% 55%); color: hsl(142 71% 55%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-yellow { background-color: hsl(48 96% 53% / 0.1); border-left-color: hsl(48 96% 60%); color: hsl(48 96% 60%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-amber { background-color: hsl(38 92% 50% / 0.1); border-left-color: hsl(38 92% 60%); color: hsl(38 92% 60%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-orange { background-color: hsl(25 95% 53% / 0.1); border-left-color: hsl(25 95% 60%); color: hsl(25 95% 60%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-red { background-color: hsl(0 84% 60% / 0.1); border-left-color: hsl(0 84% 65%); color: hsl(0 84% 65%); }
-.cm-wysiwyg .cm-content .cm-callout-tone-purple { background-color: hsl(270 75% 60% / 0.1); border-left-color: hsl(270 75% 65%); color: hsl(270 75% 65%); }
+.cm-wysiwyg .cm-content .cm-callout-tone-zinc { background-color: hsl(220 9% 46% / 0.1); border-left-color: var(--callout-tone-zinc); color: var(--callout-tone-zinc); }
+.cm-wysiwyg .cm-content .cm-callout-tone-cyan { background-color: hsl(190 90% 50% / 0.1); border-left-color: var(--callout-tone-cyan); color: var(--callout-tone-cyan); }
+.cm-wysiwyg .cm-content .cm-callout-tone-blue { background-color: hsl(217 91% 60% / 0.1); border-left-color: var(--callout-tone-blue); color: var(--callout-tone-blue); }
+.cm-wysiwyg .cm-content .cm-callout-tone-teal { background-color: hsl(174 70% 45% / 0.1); border-left-color: var(--callout-tone-teal); color: var(--callout-tone-teal); }
+.cm-wysiwyg .cm-content .cm-callout-tone-green { background-color: hsl(142 71% 45% / 0.1); border-left-color: var(--callout-tone-green); color: var(--callout-tone-green); }
+.cm-wysiwyg .cm-content .cm-callout-tone-yellow { background-color: hsl(48 96% 53% / 0.1); border-left-color: var(--callout-tone-yellow); color: var(--callout-tone-yellow); }
+.cm-wysiwyg .cm-content .cm-callout-tone-amber { background-color: hsl(38 92% 50% / 0.1); border-left-color: var(--callout-tone-amber); color: var(--callout-tone-amber); }
+.cm-wysiwyg .cm-content .cm-callout-tone-orange { background-color: hsl(25 95% 53% / 0.1); border-left-color: var(--callout-tone-orange); color: var(--callout-tone-orange); }
+.cm-wysiwyg .cm-content .cm-callout-tone-red { background-color: hsl(0 84% 60% / 0.1); border-left-color: var(--callout-tone-red); color: var(--callout-tone-red); }
+.cm-wysiwyg .cm-content .cm-callout-tone-purple { background-color: hsl(270 75% 60% / 0.1); border-left-color: var(--callout-tone-purple); color: var(--callout-tone-purple); }
 
 /* The body lines should NOT inherit the accent text color (the header keeps it). */
 .cm-wysiwyg .cm-content .cm-line.cm-callout-body {

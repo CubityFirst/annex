@@ -37,6 +37,51 @@ const fixClickAtTrailingHidden = EditorView.domEventHandlers({
   },
 });
 
+// U3: mouse clicks are snapped above, but keyboard motion (arrows, Home/End,
+// PageUp/Down) could still land the caret strictly INSIDE a hidden marker
+// chain, so typed text silently went inside the formatting markers. Nudge the
+// caret out in the direction of travel: forward motion exits past the chain's
+// end, backward motion exits at its start. We look at `startState`'s
+// decorations on purpose - reveal-on-cursor rebuilds decorations only AFTER
+// this transaction lands, so the markers around the destination are still in
+// their pre-move (hidden) state, which is exactly what the user saw when they
+// pressed the key. Markers already revealed near the old cursor are simply not
+// atomic-hidden, and the caret may walk through them normally.
+const snapKeyboardSelectionOutOfHiddenMarkers = EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection || tr.docChanged) return tr;
+  if (!tr.isUserEvent("select") || tr.isUserEvent("select.pointer")) return tr;
+  const sel = tr.newSelection.main;
+  if (!sel.empty) return tr;
+  const decos = tr.startState.field(decorationField, false);
+  if (!decos) return tr;
+  const head = sel.head;
+  const prevHead = tr.startState.selection.main.head;
+  if (head === prevHead) return tr;
+
+  const line = tr.startState.doc.lineAt(head);
+  const hidden: { from: number; to: number }[] = [];
+  decos.between(line.from, line.to, (from, to, deco) => {
+    if ((deco.spec as { atomicHide?: boolean }).atomicHide) hidden.push({ from, to });
+  });
+  const inside = hidden.find((r) => r.from < head && head < r.to);
+  if (!inside) return tr;
+
+  const forward = head > prevHead;
+  let pos = forward ? inside.to : inside.from;
+  // Walk through directly adjacent hidden ranges (e.g. `***x***`'s stacked
+  // marks) so the caret never rests between two invisible spans.
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const r of hidden) {
+      if (forward ? r.from <= pos && r.to > pos : r.to >= pos && r.from < pos) {
+        pos = forward ? r.to : r.from;
+        moved = true;
+      }
+    }
+  }
+  return [tr, { selection: { anchor: pos } }];
+});
+
 // In reading mode the editor flows inside the page (cm-scroller is height:auto,
 // overflow:visible) and the surrounding ScrollArea owns scrolling. That setup
 // breaks CodeMirror's viewport: without a real scroll container CM only renders
@@ -102,9 +147,12 @@ export function modeExtension(mode: WysiwygMode): Extension {
         enforceFullHeightInReadingMode,
       ];
     case "editing":
-      return [calloutFoldField, decorationField, fixClickAtTrailingHidden];
+      return [calloutFoldField, decorationField, fixClickAtTrailingHidden, snapKeyboardSelectionOutOfHiddenMarkers];
     case "raw":
-      return [];
+      // calloutFoldField stays installed (it's pure state with no decorations)
+      // so fold choices survive an editing -> raw -> editing round-trip (T-L6):
+      // compartment reconfiguration preserves fields present in both configs.
+      return [calloutFoldField];
   }
 }
 

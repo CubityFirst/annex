@@ -1,4 +1,5 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
+import { rendererCtxFacet } from "../context/RendererContext";
 import { getHighlighter, highlighterReady } from "@/lib/shiki";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -77,11 +78,19 @@ export class CodeFenceWidget extends WidgetType {
     }
 
     // Reveal-on-click: move the cursor inside the block's range so the
-    // editing-mode visitor swaps in the raw markdown. Read-only/no-op in reading
-    // mode. Mirrors ReactWidget's revealOnClick handler exactly.
+    // editing-mode visitor swaps in the raw markdown. Mirrors ReactWidget's
+    // revealOnClick handler exactly.
     root.addEventListener("pointerdown", (event) => {
       const pe = event as PointerEvent;
-      if (pe.button !== 0 && pe.button !== undefined) return;
+      if (pe.button !== 0) return;
+      // The copy button owns its pointer events. Revealing here would swap
+      // the widget for raw lines synchronously and destroy the button before
+      // its `click` fires - the clipboard write would never happen.
+      const target = pe.target as HTMLElement | null;
+      if (target && target.closest("button")) return;
+      // Reading mode has nothing to reveal; bail so native text selection
+      // inside the rendered code block keeps working.
+      if (view.state.facet(rendererCtxFacet).revealOnCursor === false) return;
       const pos = view.posAtDOM(root);
       event.preventDefault();
       view.dispatch({ selection: { anchor: pos } });
@@ -137,7 +146,17 @@ export class CodeFenceWidget extends WidgetType {
   ignoreEvent(event: Event): boolean {
     // Let CM process mousedown/click so cursor placement (reveal) fires; ignore
     // everything else. Matches ReactWidget for a revealOnClick block widget.
+    // Events on the copy button are always ignored - if CM handled the
+    // mousedown it would move the cursor, reveal the raw fence, and destroy
+    // the button before its click lands.
+    if (event.target instanceof HTMLElement && event.target.closest("button")) return true;
     return !(event.type === "mousedown" || event.type === "click");
+  }
+
+  // Line count * prose-matched line height + p-4 padding, so reading-mode
+  // scrolling doesn't jump as fences materialize.
+  get estimatedHeight(): number {
+    return this.code.split("\n").length * 21 + 32;
   }
 
   destroy(): void {

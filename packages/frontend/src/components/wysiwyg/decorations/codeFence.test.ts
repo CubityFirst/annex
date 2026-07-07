@@ -86,3 +86,46 @@ describe("visitCodeFence - ```file embed", () => {
     expect(widgets.some((w) => w instanceof FileEmbedWidget)).toBe(false);
   });
 });
+
+describe("visitCodeFence - fences inside blockquotes/callouts (D1)", () => {
+  it("a multi-line fence in a callout keeps ALL lines", () => {
+    // Quoted fences emit one CodeText node PER LINE; the visitor used to
+    // overwrite the range per node and keep only the last line.
+    const widgets = widgetsFor("> [!tip] t\n> ```js\n> line1\n> line2\n> ```");
+    const fence = widgets.find((w) => w instanceof CodeFenceWidget) as CodeFenceWidget;
+    expect(fence).toBeDefined();
+    expect(fence.eq(new CodeFenceWidget("js", "line1\nline2"))).toBe(true);
+  });
+
+  it("blank lines inside a quoted fence are preserved", () => {
+    const widgets = widgetsFor("> ```js\n> a\n>\n> b\n> ```");
+    const fence = widgets.find((w) => w instanceof CodeFenceWidget) as CodeFenceWidget;
+    expect(fence.eq(new CodeFenceWidget("js", "a\n\nb"))).toBe(true);
+  });
+
+  it("plain (unquoted) multi-line fences are unchanged", () => {
+    const widgets = widgetsFor("```js\na\nb\n```");
+    const fence = widgets.find((w) => w instanceof CodeFenceWidget) as CodeFenceWidget;
+    expect(fence.eq(new CodeFenceWidget("js", "a\nb"))).toBe(true);
+  });
+});
+
+describe("visitCodeFence - info-string parsing (D13)", () => {
+  it("only the first word of the info string is the language", () => {
+    const widgets = widgetsFor("```js title=file.js\nconst x = 1\n```");
+    const fence = widgets.find((w) => w instanceof CodeFenceWidget) as CodeFenceWidget;
+    expect(fence).toBeDefined();
+    expect(fence.eq(new CodeFenceWidget("js", "const x = 1"))).toBe(true);
+  });
+
+  it("the language is lowercased", () => {
+    const widgets = widgetsFor("```JS\ncode\n```");
+    const fence = widgets.find((w) => w instanceof CodeFenceWidget) as CodeFenceWidget;
+    expect(fence.eq(new CodeFenceWidget("js", "code"))).toBe(true);
+  });
+
+  it("special fences still match with trailing meta", () => {
+    const widgets = widgetsFor("```mermaid extra=1\ngraph TD; A-->B;\n```");
+    expect(widgets.some((w) => w instanceof MermaidWidget)).toBe(true);
+  });
+});

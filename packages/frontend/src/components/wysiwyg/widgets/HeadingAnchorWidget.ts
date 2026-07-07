@@ -15,7 +15,9 @@ function HeadingAnchorInner({ slug }: { slug: string }) {
       onClick: (e: ReactMouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        const url = `${window.location.origin}${window.location.pathname}#${slug}`;
+        // Keep the query string - dropping it loses state like the dev
+        // `?__site=` override, producing a link that opens the wrong site.
+        const url = `${window.location.origin}${window.location.pathname}${window.location.search}#${slug}`;
         const ok = (): void => { toast({ title: "Link copied." }); };
         const fail = (): void => { toast({ title: "Couldn't copy link.", variant: "destructive" }); };
         if (navigator.clipboard?.writeText) {

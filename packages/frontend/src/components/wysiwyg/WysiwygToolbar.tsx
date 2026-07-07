@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   Bold,
@@ -38,18 +38,32 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CALLOUT_CONFIG } from "./widgets/CalloutIconWidget";
 
+// Tone hues live in ONE place: the `--callout-tone-*` custom properties
+// declared (light + .dark) in styles.css. Referencing them here keeps the
+// callout-menu icons in sync with the rendered callout colors.
 const TONE_COLOR: Record<string, string> = {
-  zinc:   "hsl(220 9% 60%)",
-  cyan:   "hsl(190 90% 60%)",
-  blue:   "hsl(217 91% 65%)",
-  teal:   "hsl(174 70% 55%)",
-  green:  "hsl(142 71% 55%)",
-  yellow: "hsl(48 96% 60%)",
-  amber:  "hsl(38 92% 60%)",
-  orange: "hsl(25 95% 60%)",
-  red:    "hsl(0 84% 65%)",
-  purple: "hsl(270 75% 65%)",
+  zinc:   "var(--callout-tone-zinc)",
+  cyan:   "var(--callout-tone-cyan)",
+  blue:   "var(--callout-tone-blue)",
+  teal:   "var(--callout-tone-teal)",
+  green:  "var(--callout-tone-green)",
+  yellow: "var(--callout-tone-yellow)",
+  amber:  "var(--callout-tone-amber)",
+  orange: "var(--callout-tone-orange)",
+  red:    "var(--callout-tone-red)",
+  purple: "var(--callout-tone-purple)",
 };
+
+// Same UA sniff the rest of the app uses for shortcut labels (DocsLayout,
+// PublicDocPage). Guarded so non-browser test environments don't throw.
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+
+/** "Ctrl+B" on Windows/Linux, "⌘B" on macOS. Exported for context-menu shortcut labels. */
+export function modShortcut(key: string): string {
+  return IS_MAC ? `⌘${key}` : `Ctrl+${key}`;
+}
+/** Redo is Cmd+Shift+Z on macOS, Ctrl+Y elsewhere. */
+export const REDO_SHORTCUT = IS_MAC ? "⇧⌘Z" : "Ctrl+Y";
 
 export interface ActiveFormats {
   headingLevel: 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -106,15 +120,22 @@ function ToolbarSeparator() {
   return <Separator orientation="vertical" className="h-4 mx-0.5" />;
 }
 
+// Buttons run their action on `click`, NOT on mousedown, so keyboard
+// activation (Enter/Space fire a synthetic click) works too. The mousedown
+// handler only calls preventDefault - that keeps focus (and the selection)
+// in the editor when the button is used with the mouse, and since the action
+// no longer lives on mousedown there is no double-fire to guard against.
+const keepEditorFocus = (e: React.MouseEvent) => e.preventDefault();
+
 function ToolToggle({
   title,
   pressed,
-  onMouseDown,
+  onAction,
   children,
 }: {
   title: string;
   pressed?: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
+  onAction: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -123,7 +144,8 @@ function ToolToggle({
         <Toggle
           size="sm"
           pressed={pressed}
-          onMouseDown={onMouseDown}
+          onMouseDown={keepEditorFocus}
+          onClick={onAction}
           aria-label={title}
           className="shrink-0"
         >
@@ -142,11 +164,11 @@ function ToolToggle({
 // hear a misleading "toggle, not pressed" announcement.
 function ToolButton({
   title,
-  onMouseDown,
+  onAction,
   children,
 }: {
   title: string;
-  onMouseDown: (e: React.MouseEvent) => void;
+  onAction: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -156,7 +178,8 @@ function ToolButton({
           type="button"
           variant="ghost"
           className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-8 sm:px-1.5 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
-          onMouseDown={onMouseDown}
+          onMouseDown={keepEditorFocus}
+          onClick={onAction}
           aria-label={title}
         >
           {children}
@@ -171,6 +194,26 @@ function ToolButton({
 
 function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => void }) {
   const [hovered, setHovered] = useState({ rows: 0, cols: 0 });
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // Arrow-key navigation between size cells (each cell is a real <button>, so
+  // Enter/Space activate it via its click handler).
+  const handleGridKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const delta =
+      e.key === "ArrowRight" ? 1 :
+      e.key === "ArrowLeft" ? -1 :
+      e.key === "ArrowDown" ? TABLE_COLS :
+      e.key === "ArrowUp" ? -TABLE_COLS : 0;
+    if (delta === 0) return;
+    const cells = Array.from(gridRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const i = cells.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    const next = i + delta;
+    if (next < 0 || next >= cells.length) return;
+    e.preventDefault();
+    cells[next]!.focus();
+  }, []);
+
   return (
     <div className="p-2">
       <p className="text-xs text-center text-muted-foreground mb-1.5 h-4">
@@ -179,9 +222,11 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
           : "Insert table"}
       </p>
       <div
+        ref={gridRef}
         className="grid gap-1"
         style={{ gridTemplateColumns: `repeat(${TABLE_COLS}, 1.75rem)` }}
         onMouseLeave={() => setHovered({ rows: 0, cols: 0 })}
+        onKeyDown={handleGridKeyDown}
       >
         {Array.from({ length: TABLE_ROWS * TABLE_COLS }, (_, i) => {
           const r = Math.floor(i / TABLE_COLS) + 1;
@@ -198,7 +243,7 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
               )}
               onMouseEnter={() => setHovered({ rows: r, cols: c })}
               onFocus={() => setHovered({ rows: r, cols: c })}
-              onMouseDown={(e) => { e.preventDefault(); onInsert(r, c); }}
+              onClick={() => onInsert(r, c)}
             />
           );
         })}
@@ -226,21 +271,68 @@ export function WysiwygToolbar({
 }: WysiwygToolbarProps) {
   const currentDisplay = HEADING_OPTIONS[active.headingLevel]?.display ?? "¶";
   const [tableOpen, setTableOpen] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  // ── Roving tabindex (WAI-ARIA toolbar pattern) ────────────────────────────
+  // Exactly one toolbar item is in the tab order at a time: Tab enters/leaves
+  // the toolbar as a whole, ArrowLeft/ArrowRight (plus Home/End) move within
+  // it. Portaled popover/menu content is excluded by the DOM-containment
+  // checks below (React portals bubble synthetic events through this
+  // component tree even though the nodes live outside toolbarRef).
+  const toolbarItems = useCallback((): HTMLElement[] => {
+    return Array.from(
+      toolbarRef.current?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? [],
+    );
+  }, []);
+
+  useEffect(() => {
+    toolbarItems().forEach((el, i) => { el.tabIndex = i === 0 ? 0 : -1; });
+  }, [toolbarItems]);
+
+  const handleToolbarFocus = useCallback((e: React.FocusEvent) => {
+    const target = (e.target as HTMLElement).closest("button");
+    if (!target || !toolbarRef.current?.contains(target)) return;
+    for (const el of toolbarItems()) el.tabIndex = el === target ? 0 : -1;
+  }, [toolbarItems]);
+
+  const handleToolbarKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+    const items = toolbarItems();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (current < 0) return; // focus is in portaled content (or elsewhere)
+    e.preventDefault();
+    const next =
+      e.key === "Home" ? 0 :
+      e.key === "End" ? items.length - 1 :
+      e.key === "ArrowRight" ? (current + 1) % items.length :
+      (current - 1 + items.length) % items.length;
+    items[current]!.tabIndex = -1;
+    items[next]!.tabIndex = 0;
+    items[next]!.focus();
+  }, [toolbarItems]);
+
+  // Radix menus/popovers refocus their trigger when they close, which yanks
+  // the caret out of the editor right after every pick. The action handlers
+  // already call view.focus(), so suppress the trigger refocus. (T-M6)
+  const keepCaret = (e: Event) => e.preventDefault();
 
   return (
     <TooltipProvider delayDuration={600}>
       <div
+        ref={toolbarRef}
         role="toolbar"
         aria-label="Formatting"
         aria-orientation="horizontal"
         className="flex items-center gap-1 px-2 h-11 sm:h-9 sm:gap-0.5 border-b border-border shrink-0 overflow-x-auto"
+        onFocusCapture={handleToolbarFocus}
+        onKeyDown={handleToolbarKeyDown}
       >
 
         {/* Undo / Redo */}
-        <ToolButton title="Undo (Ctrl+Z)" onMouseDown={(e) => { e.preventDefault(); onUndo(); }}>
+        <ToolButton title={`Undo (${modShortcut("Z")})`} onAction={onUndo}>
           <Undo2 />
         </ToolButton>
-        <ToolButton title="Redo (Ctrl+Y)" onMouseDown={(e) => { e.preventDefault(); onRedo(); }}>
+        <ToolButton title={`Redo (${REDO_SHORTCUT})`} onAction={onRedo}>
           <Redo2 />
         </ToolButton>
 
@@ -263,7 +355,7 @@ export function WysiwygToolbar({
               <ChevronDown aria-hidden="true" className="h-3 w-3 opacity-50" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-36">
+          <DropdownMenuContent align="start" className="w-36" onCloseAutoFocus={keepCaret}>
             {HEADING_OPTIONS.map(({ label }, i) => (
               <DropdownMenuItem
                 key={i}
@@ -280,30 +372,30 @@ export function WysiwygToolbar({
 
         {/* Inline formatting */}
         <ToolToggle
-          title="Bold (Ctrl+B)"
+          title={`Bold (${modShortcut("B")})`}
           pressed={active.bold}
-          onMouseDown={(e) => { e.preventDefault(); onFormat("**"); }}
+          onAction={() => onFormat("**")}
         >
           <Bold />
         </ToolToggle>
         <ToolToggle
-          title="Italic (Ctrl+I)"
+          title={`Italic (${modShortcut("I")})`}
           pressed={active.italic}
-          onMouseDown={(e) => { e.preventDefault(); onFormat("*"); }}
+          onAction={() => onFormat("*")}
         >
           <Italic />
         </ToolToggle>
         <ToolToggle
-          title="Underline (Ctrl+U)"
+          title={`Underline (${modShortcut("U")})`}
           pressed={active.underline}
-          onMouseDown={(e) => { e.preventDefault(); onFormat("__"); }}
+          onAction={() => onFormat("__")}
         >
           <Underline />
         </ToolToggle>
         <ToolToggle
           title="Strikethrough"
           pressed={active.strike}
-          onMouseDown={(e) => { e.preventDefault(); onFormat("~~"); }}
+          onAction={() => onFormat("~~")}
         >
           <Strikethrough />
         </ToolToggle>
@@ -311,30 +403,30 @@ export function WysiwygToolbar({
         <ToolbarSeparator />
 
         {/* Link */}
-        <ToolButton title="Insert link (Ctrl+K)" onMouseDown={(e) => { e.preventDefault(); onLink(); }}>
+        <ToolButton title={`Insert link (${modShortcut("K")})`} onAction={onLink}>
           <LinkIcon />
         </ToolButton>
 
         {/* Image */}
-        <ToolButton title="Insert image" onMouseDown={(e) => { e.preventDefault(); onImage(); }}>
+        <ToolButton title="Insert image" onAction={onImage}>
           <Image />
         </ToolButton>
 
         {/* Image comparison slider */}
-        <ToolButton title="Insert image comparison" onMouseDown={(e) => { e.preventDefault(); onCompare(); }}>
+        <ToolButton title="Insert image comparison" onAction={onCompare}>
           <Columns2 />
         </ToolButton>
 
         <ToolbarSeparator />
 
         {/* Lists */}
-        <ToolButton title="Bullet list" onMouseDown={(e) => { e.preventDefault(); onList("bullet"); }}>
+        <ToolButton title="Bullet list" onAction={() => onList("bullet")}>
           <List />
         </ToolButton>
-        <ToolButton title="Numbered list" onMouseDown={(e) => { e.preventDefault(); onList("numbered"); }}>
+        <ToolButton title="Numbered list" onAction={() => onList("numbered")}>
           <ListOrdered />
         </ToolButton>
-        <ToolButton title="Task list" onMouseDown={(e) => { e.preventDefault(); onList("task"); }}>
+        <ToolButton title="Task list" onAction={() => onList("task")}>
           <ListChecks />
         </ToolButton>
 
@@ -344,18 +436,18 @@ export function WysiwygToolbar({
         <ToolToggle
           title="Blockquote"
           pressed={active.blockquote}
-          onMouseDown={(e) => { e.preventDefault(); onBlockquote(); }}
+          onAction={onBlockquote}
         >
           <Quote />
         </ToolToggle>
         <ToolToggle
           title="Code fence"
           pressed={active.codeFence}
-          onMouseDown={(e) => { e.preventDefault(); onCodeFence(); }}
+          onAction={onCodeFence}
         >
           <Code />
         </ToolToggle>
-        <ToolButton title="Horizontal rule" onMouseDown={(e) => { e.preventDefault(); onHr(); }}>
+        <ToolButton title="Horizontal rule" onAction={onHr}>
           <Minus />
         </ToolButton>
 
@@ -379,7 +471,7 @@ export function WysiwygToolbar({
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Insert table</TooltipContent>
           </Tooltip>
-          <PopoverContent align="start" className="w-auto p-0">
+          <PopoverContent align="start" className="w-auto p-0" onCloseAutoFocus={keepCaret}>
             <TablePicker
               onInsert={(rows, cols) => {
                 setTableOpen(false);
@@ -406,7 +498,7 @@ export function WysiwygToolbar({
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Insert callout</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="start" className="w-40">
+          <DropdownMenuContent align="start" className="w-40" onCloseAutoFocus={keepCaret}>
             {Object.entries(CALLOUT_CONFIG).map(([type, cfg]) => (
               <DropdownMenuItem
                 key={type}
@@ -427,7 +519,7 @@ export function WysiwygToolbar({
         <ToolbarSeparator />
 
         {/* Find */}
-        <ToolButton title="Find & replace (Ctrl+F)" onMouseDown={(e) => { e.preventDefault(); onFind(); }}>
+        <ToolButton title={`Find & replace (${modShortcut("F")})`} onAction={onFind}>
           <Search />
         </ToolButton>
 
