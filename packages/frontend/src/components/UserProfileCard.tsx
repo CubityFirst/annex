@@ -131,6 +131,10 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
+  // Whether the current-user id has actually been resolved. isSelf defaults
+  // to false while /me is still in flight, which must hide self-only chrome
+  // but must NOT show other-user-only chrome (the report footer) yet.
+  const [selfKnown, setSelfKnown] = useState<boolean>(currentUserIdCache !== null);
   // Single source of truth for which badge tooltip is open, so that moving
   // the cursor from one badge to another forces the previous tooltip closed
   // even if Radix hasn't fired its own mouseleave yet.
@@ -168,7 +172,11 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getCurrentUserId().then(id => { if (!cancelled) setIsSelf(id === userId); });
+    getCurrentUserId().then(id => {
+      if (cancelled) return;
+      setIsSelf(id === userId);
+      setSelfKnown(id !== null);
+    });
     return () => { cancelled = true; };
   }, [open, userId]);
 
@@ -470,9 +478,10 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
           );
         })() : null}
 
-        {/* Report footer - other users' cards only, once the profile has
-            loaded (so a slow /me resolve can't flash it on your own card). */}
-        {profile && !isSelf && (
+        {/* Report footer - other users' cards only. selfKnown gates on the
+            /me resolve so the footer can never flash on your own card while
+            the identity check is still in flight. */}
+        {profile && selfKnown && !isSelf && (
           <>
             <Separator />
             <div className="flex justify-end px-3 py-2">
