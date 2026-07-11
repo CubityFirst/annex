@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Globe, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Flag, Globe, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,7 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { CursorPaginationFooter } from "@/components/CursorPaginationFooter";
+import { ProjectReportsPanel } from "@/components/reports/SiteReportsList";
 import { DetailField } from "@/components/DetailField";
 import { expandableRowProps } from "@/components/ExpandableRow";
 import { SearchInput } from "@/components/SearchInput";
@@ -625,6 +626,27 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
                       {saving ? "Applying..." : "Apply"}
                     </Button>
                   </SheetFooter>
+                </SheetContent>
+              </Sheet>
+
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Flag className="h-3.5 w-3.5" />
+                    Reports
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="max-w-2xl">
+                  <SheetHeader>
+                    <SheetTitle>Reports</SheetTitle>
+                    <SheetDescription>
+                      Abuse reports filed against {project.name} from its published site.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <SheetBody>
+                    {/* Mounted when the sheet opens, so the panel fetches on open. */}
+                    <ProjectReportsPanel projectId={project.id} />
+                  </SheetBody>
                 </SheetContent>
               </Sheet>
 

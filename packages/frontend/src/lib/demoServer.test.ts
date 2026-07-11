@@ -340,6 +340,30 @@ describe("demo server published site", () => {
     expect(gone.status).toBe(404);
   });
 
+  it("refuses the Report User POST with a human-readable demo error", async () => {
+    const res = await window.fetch("/api/users/someone-else/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "demo report" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Reporting is disabled in the demo.");
+  });
+
+  it("refuses the Report Site POST with a human-readable demo error", async () => {
+    await patch("/projects/demo-site", { publishedAt: "2026-07-01T00:00:00.000Z" });
+    const res = await window.fetch("/api/public/projects/demo-site/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "demo report" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Reporting is disabled in the demo.");
+    await patch("/projects/demo-site", { publishedAt: null });
+  });
+
   it("gates the public graph on publishedGraphEnabled", async () => {
     await patch("/projects/demo-site", { publishedAt: "2026-07-01T00:00:00.000Z", graphEnabled: true, publishedGraphEnabled: false });
     expect((await api("/public/projects/demo-site/graph")).status).toBe(404);

@@ -24,7 +24,8 @@ import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List } from "lucide-react";
+import { BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List } from "lucide-react";
+import { ReportSiteDialog } from "@/components/ReportSiteDialog";
 
 // Heavy chunk - only loaded when a published drawing is opened.
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
@@ -396,6 +397,7 @@ export function PublicDocPage() {
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
   const [hasToken, setHasToken] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [reportOpen, setReportOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [graphExpanded, setGraphExpanded] = useState(false);
@@ -871,6 +873,17 @@ export function PublicDocPage() {
               })()}
             </nav>
           </ScrollArea>
+          <div className="border-t border-border px-3 py-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setReportOpen(true)}
+            >
+              <Flag className="h-3.5 w-3.5" />
+              Report Site
+            </Button>
+          </div>
         </aside>
         <button
           onClick={() => setSidebarOpen(v => !v)}
@@ -879,6 +892,13 @@ export function PublicDocPage() {
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
+        <ReportSiteDialog
+          projectIdOrSlug={data.project.vanity_slug ?? data.project.id}
+          siteName={data.project.name}
+          docId={data.doc?.id ?? null}
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+        />
         </div>
       )}
 

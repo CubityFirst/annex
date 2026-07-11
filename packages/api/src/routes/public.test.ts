@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
-import { enrichFilesWithStreamUrls, handlePublic } from "./public";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../auth", () => ({ authenticate: vi.fn() }));
+
+import { enrichFilesWithStreamUrls, handlePublic, handlePublicReport, MAX_REPORT_NOTE_LENGTH } from "./public";
+import { authenticate } from "../auth";
 import type { Env } from "../index";
 
 const PRESIGN_ENV = {
@@ -140,5 +144,163 @@ describe("GET /public/files/:id (metadata for the file-embed widget)", () => {
     expect(prepare.mock.calls[0][0]).toContain("p.id = ? OR p.vanity_slug = ?");
     const bind = prepare.mock.results[0].value.bind as ReturnType<typeof vi.fn>;
     expect(bind.mock.calls[0]).toEqual(["f1", "p1", "p1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /public/projects/:idOrSlug/report
+// ---------------------------------------------------------------------------
+
+interface PreparedCall {
+  sql: string;
+  binds: unknown[];
+}
+
+// Queue-based D1 mock: the report handler runs a project .first() lookup then
+// an INSERT .run(); each prepared statement records its SQL + binds.
+function makeReportEnv(opts: {
+  project?: { id: string } | null;
+  limiterSuccess?: boolean;
+  hasLimiter?: boolean;
+}) {
+  const calls: PreparedCall[] = [];
+  // Handler order: project lookup, then (only when a docId was sent) the
+  // doc-belongs-to-project check. Tests push the doc row when they need it.
+  const firstQueue: unknown[] = [opts.project ?? null];
+  function makeStmt(sql: string) {
+    const call: PreparedCall = { sql, binds: [] };
+    const stmt = {
+      bind: (...args: unknown[]) => {
+        call.binds = args;
+        return stmt;
+      },
+      first: async () => {
+        calls.push(call);
+        return firstQueue.shift() ?? null;
+      },
+      run: async () => {
+        calls.push(call);
+        return { meta: { changes: 1 } };
+      },
+    };
+    return stmt;
+  }
+  const limit = vi.fn().mockResolvedValue({ success: opts.limiterSuccess ?? true });
+  const env = {
+    DB: { prepare: vi.fn((sql: string) => makeStmt(sql)) },
+    ...(opts.hasLimiter === false ? {} : { RATE_LIMITER_REPORT: { limit } }),
+  } as unknown as Env;
+  return { env, calls, limit, firstQueue };
+}
+
+function reportRequest(body: unknown, headers: Record<string, string> = {}) {
+  const url = new URL("http://localhost/public/projects/p1/report");
+  const request = new Request(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  return { request, url };
+}
+
+describe("POST /public/projects/:idOrSlug/report", () => {
+  beforeEach(() => {
+    vi.mocked(authenticate).mockReset();
+    vi.mocked(authenticate).mockResolvedValue(null);
+  });
+
+  it("files an anonymous report against a published site", async () => {
+    const { env, calls } = makeReportEnv({ project: { id: "proj-1" } });
+    const { request, url } = reportRequest({ note: "  This site hosts spam.  " }, { "CF-Connecting-IP": "203.0.113.9" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ ok: true, data: { submitted: true } });
+
+    // Published-only lookup, by id or vanity slug.
+    expect(calls[0].sql).toContain("published_at IS NOT NULL");
+    expect(calls[0].binds).toEqual(["p1", "p1"]);
+    // Insert: trimmed note, no user attribution, edge IP captured, no page.
+    expect(calls[1].sql).toContain("INSERT INTO site_reports");
+    const [, projectId, userId, ip, docId, note] = calls[1].binds;
+    expect(projectId).toBe("proj-1");
+    expect(userId).toBeNull();
+    expect(ip).toBe("203.0.113.9");
+    expect(docId).toBeNull();
+    expect(note).toBe("This site hosts spam.");
+    // No Authorization header -> authenticate is never consulted.
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it("stores the page the reporter was on after verifying it belongs to the site", async () => {
+    const { env, calls, firstQueue } = makeReportEnv({ project: { id: "proj-1" } });
+    firstQueue.push({ id: "doc-7" });
+    const { request, url } = reportRequest({ note: "this page is spam", docId: "doc-7" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    // Doc verified against the project the report targets.
+    expect(calls[1].sql).toContain("FROM docs WHERE id = ? AND project_id = ?");
+    expect(calls[1].binds).toEqual(["doc-7", "proj-1"]);
+    expect(calls[2].binds[4]).toBe("doc-7");
+  });
+
+  it("files with a NULL page when the docId doesn't belong to the site", async () => {
+    const { env, calls, firstQueue } = makeReportEnv({ project: { id: "proj-1" } });
+    firstQueue.push(null); // doc lookup misses
+    const { request, url } = reportRequest({ note: "report", docId: "doc-of-another-site" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    expect(calls[2].binds[4]).toBeNull();
+  });
+
+  it("attributes the report when the caller presents a valid session token", async () => {
+    vi.mocked(authenticate).mockResolvedValue({ userId: "user-9", email: "u@example.com" } as never);
+    const { env, calls } = makeReportEnv({ project: { id: "proj-1" } });
+    const { request, url } = reportRequest({ note: "bad content" }, { Authorization: "Bearer tok" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    expect(calls[1].binds[2]).toBe("user-9");
+  });
+
+  it("still files anonymously when the token is invalid (auth must not block reporting)", async () => {
+    vi.mocked(authenticate).mockResolvedValue(new Response(null, { status: 403 }));
+    const { env, calls } = makeReportEnv({ project: { id: "proj-1" } });
+    const { request, url } = reportRequest({ note: "bad content" }, { Authorization: "Bearer expired" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    expect(calls[1].binds[2]).toBeNull();
+  });
+
+  it("400s on a missing, empty, or oversized note", async () => {
+    for (const body of [{}, { note: "   " }, { note: "x".repeat(MAX_REPORT_NOTE_LENGTH + 1) }]) {
+      const { env } = makeReportEnv({ project: { id: "proj-1" } });
+      const { request, url } = reportRequest(body);
+      const res = await handlePublicReport(request, env, url);
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("404s when the site does not exist or is not published", async () => {
+    const { env, calls } = makeReportEnv({ project: null });
+    const { request, url } = reportRequest({ note: "report" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(404);
+    // Nothing inserted.
+    expect(calls.some(c => c.sql.includes("INSERT"))).toBe(false);
+  });
+
+  it("429s when the per-IP limiter trips, before touching the DB", async () => {
+    const { env, calls, limit } = makeReportEnv({ project: { id: "proj-1" }, limiterSuccess: false });
+    const { request, url } = reportRequest({ note: "report" }, { "CF-Connecting-IP": "203.0.113.9" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({ key: "report:203.0.113.9" });
+    expect(calls.length).toBe(0);
+  });
+
+  it("fails open when the limiter binding is absent (local dev)", async () => {
+    const { env } = makeReportEnv({ project: { id: "proj-1" }, hasLimiter: false });
+    const { request, url } = reportRequest({ note: "report" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
   });
 });

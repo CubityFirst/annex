@@ -14,7 +14,8 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical, Globe, Eye } from "lucide-react";
+import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, Flag, FlaskConical, Globe, Eye } from "lucide-react";
+import { ReportUserDialog } from "@/components/ReportUserDialog";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
@@ -134,6 +135,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   // the cursor from one badge to another forces the previous tooltip closed
   // even if Radix hasn't fired its own mouseleave yet.
   const [openBadge, setOpenBadge] = useState<"developer" | "beta" | "ink" | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const badgeTooltipProps = (id: "developer" | "beta" | "ink") => ({
     open: openBadge === id,
     onOpenChange: (o: boolean) => {
@@ -467,6 +469,30 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
             </Tabs>
           );
         })() : null}
+
+        {/* Report footer - other users' cards only, once the profile has
+            loaded (so a slow /me resolve can't flash it on your own card). */}
+        {profile && !isSelf && (
+          <>
+            <Separator />
+            <div className="flex justify-end px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setReportOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Flag className="size-3.5" />
+                Report user
+              </button>
+            </div>
+            <ReportUserDialog
+              userId={userId}
+              userName={displayName}
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+            />
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

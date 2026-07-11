@@ -334,6 +334,90 @@ export async function getProjectDetails(id: string): Promise<AdminProjectDetails
   return readData<AdminProjectDetails>(res, "Failed to load project details");
 }
 
+export type ReportStatus = "open" | "acknowledged" | "resolved" | "dismissed";
+
+export interface AdminSiteReport {
+  id: string;
+  project_id: string;
+  project_name: string | null;
+  reporter_user_id: string | null;
+  reporter_ip: string | null;
+  // The page the reporter was viewing (null if none was sent or the doc was
+  // since deleted); doc_title resolved via LEFT JOIN.
+  doc_id: string | null;
+  doc_title: string | null;
+  note: string;
+  status: ReportStatus;
+  created_at: string;
+  status_changed_at: string | null;
+  status_changed_by: string | null;
+  // Resolved from the auth DB when the report was filed by a signed-in user;
+  // null for anonymous reports and deleted accounts.
+  reporter: { email: string | null; name: string | null } | null;
+}
+
+// A report filed against a user from the profile card. Reporter is always a
+// signed-in account (the endpoint requires auth); reported/reporter identities
+// are resolved from the auth DB, null for deleted accounts.
+export interface AdminUserReport {
+  id: string;
+  reported_user_id: string;
+  reporter_user_id: string;
+  reporter_ip: string | null;
+  note: string;
+  status: ReportStatus;
+  created_at: string;
+  status_changed_at: string | null;
+  status_changed_by: string | null;
+  reported: { email: string | null; name: string | null } | null;
+  reporter: { email: string | null; name: string | null } | null;
+}
+
+export interface ReportListResult<T> {
+  reports: T[];
+  // Opaque cursor for the next (older) page, or null when none remain.
+  nextCursor: string | null;
+}
+
+// status: "current" (open + acknowledged - the triage queue), "all", or one
+// concrete status. projectId narrows to a single site.
+export async function listSiteReports(
+  params: { status?: string; projectId?: string; cursor?: string },
+  signal?: AbortSignal,
+): Promise<ReportListResult<AdminSiteReport>> {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.projectId) qs.set("projectId", params.projectId);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  const res = await authFetch(`/api/reports/sites?${qs.toString()}`, { signal });
+  return readData<ReportListResult<AdminSiteReport>>(res, "Failed to list reports");
+}
+
+export async function listUserReports(
+  params: { status?: string; userId?: string; cursor?: string },
+  signal?: AbortSignal,
+): Promise<ReportListResult<AdminUserReport>> {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.userId) qs.set("userId", params.userId);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  const res = await authFetch(`/api/reports/users?${qs.toString()}`, { signal });
+  return readData<ReportListResult<AdminUserReport>>(res, "Failed to list reports");
+}
+
+export async function updateReportStatus(
+  kind: "site" | "user",
+  id: string,
+  status: ReportStatus,
+): Promise<void> {
+  const res = await authFetch(`/api/reports/${kind}s/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  await readOk(res, "Failed to update report");
+}
+
 // Fetch a site logo (square|wide) for the admin sheet with the bearer token,
 // returned as a Blob the caller renders via an object URL. Returns null when
 // the site has no logo of that variant (404) or the request otherwise fails -

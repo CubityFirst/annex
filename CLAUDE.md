@@ -19,7 +19,7 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 ### Database Schemas
 
-- **API DB** (`cubedocs-main`): projects, docs (+ `doc_ai_summaries` satellite), doc_revisions, folders, files, members - see `packages/api/migrations/`. Bound as `DB` on the API worker.
+- **API DB** (`cubedocs-main`): projects, docs (+ `doc_ai_summaries` satellite), doc_revisions, folders, files, members, site_reports + user_reports (abuse reports: public "Report Site" button → `POST /public/projects/:id/report`, profile-card "Report user" → authenticated `POST /users/:id/report`; both triaged via the admin worker's `/api/reports/{sites,users}` routes + the admin "Reports" page's Sites/Users tabs) - see `packages/api/migrations/`. Bound as `DB` on the API worker.
 - **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials, plus the 1:1 satellites `user_billing` (Stripe + plan state) and `user_preferences` (fonts, Ink cosmetics, timezone, bio, badges) - see `packages/auth/migrations/`. Bound as `DB` on the auth worker (read+write), as `AUTH_DB` on the API worker (read-only by convention), and as `AUTH_DB` on the admin worker (read+write for moderation/badges/billing-grants/audit - see the verification-boundary note above). **A schema change to any column these direct readers/writers touch requires redeploying auth + api + admin (in that order).**
 
 #### Satellite tables and the resolver

@@ -4,7 +4,8 @@ import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
 import { handleFolders } from "./routes/folders";
 import { handleMembers } from "./routes/members";
-import { handlePublic } from "./routes/public";
+import { handlePublic, handlePublicReport } from "./routes/public";
+import { handleUserReport } from "./routes/reports";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
@@ -51,6 +52,9 @@ export interface Env {
   RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   // Per-API-key limiter for the public /v1 surface (keyed by `apikey:<id>`).
   RATE_LIMITER_API?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  // Per-IP limiter for the public site "Report Site" endpoint. Optional so
+  // local dev / unit tests without the binding fail open.
+  RATE_LIMITER_REPORT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   FLAGS?: { getBooleanValue(flag: string, defaultValue: boolean, ctx?: Record<string, string>): Promise<boolean> };
 }
 
@@ -596,6 +600,15 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
+      // POST /users/:userId/report - authenticated abuse report from the
+      // profile card (routes/reports.ts).
+      const userReportMatch = url.pathname.match(/^\/users\/([^/]+)\/report$/);
+      if (userReportMatch && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        return addCorsHeaders(await handleUserReport(request, env, session, decodeURIComponent(userReportMatch[1])));
+      }
+
       // GET /users/:userId - authenticated, returns user profile + shared projects
       const userProfileMatch = url.pathname.match(/^\/users\/([^/]+)$/);
       if (userProfileMatch && request.method === "GET") {
@@ -689,6 +702,10 @@ export default {
         response = await handlePublicGraph(env, url);
       } else if (url.pathname === "/public/search") {
         response = await handlePublicSearch(request, env, url);
+      } else if (request.method === "POST" && /^\/public\/projects\/[^/]+\/report$/.test(url.pathname)) {
+        // The rest of /public is GET-only (handlePublic rejects non-GET);
+        // report filing is its own POST handler with its own rate limiter.
+        response = await handlePublicReport(request, env, url);
       } else if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
       } else if (url.pathname.startsWith("/invites/")) {

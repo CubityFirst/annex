@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { KeyRound, ScrollText, Users, Boxes } from "lucide-react";
+import { Flag, KeyRound, ScrollText, Users, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ADMIN_AUTH_INVALIDATED_EVENT, clearToken, getToken } from "@/lib/auth";
 import { buildDocsAdminLoginUrl } from "@/lib/handoff";
@@ -11,6 +11,7 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { AuditPage } from "./pages/AuditPage";
 import { OAuthClientsPage } from "./pages/OAuthClientsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 
 function AdminLayout({
   session,
@@ -51,6 +52,16 @@ function AdminLayout({
             </Link>
           </Button>
           <Button
+            variant={location.pathname === "/reports" ? "secondary" : "ghost"}
+            size="sm"
+            asChild
+          >
+            <Link to="/reports">
+              <Flag className="h-4 w-4" />
+              Reports
+            </Link>
+          </Button>
+          <Button
             variant={location.pathname === "/audit" ? "secondary" : "ghost"}
             size="sm"
             asChild
@@ -86,6 +97,7 @@ function AdminLayout({
         <Routes>
           <Route path="/" element={<UsersPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/oauth-clients" element={<OAuthClientsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -5,6 +5,7 @@ import { usersRouter } from "./routes/users";
 import { projectsRouter } from "./routes/projects";
 import { auditRouter } from "./routes/audit";
 import { oauthRouter } from "./routes/oauth";
+import { reportsRouter } from "./routes/reports";
 
 export interface Env {
   DB: D1Database;
@@ -161,11 +162,14 @@ app.use("/api/audit", enforceAdmin);
 app.use("/api/audit/*", enforceAdmin);
 app.use("/api/oauth-clients", enforceAdmin);
 app.use("/api/oauth-clients/*", enforceAdmin);
+app.use("/api/reports", enforceAdmin);
+app.use("/api/reports/*", enforceAdmin);
 
 app.route("/api/users", usersRouter);
 app.route("/api/projects", projectsRouter);
 app.route("/api/audit", auditRouter);
 app.route("/api/oauth-clients", oauthRouter);
+app.route("/api/reports", reportsRouter);
 
 // Unknown API paths must NOT fall through to the SPA shell: a JSON caller
 // hitting a typo'd/removed endpoint should get a JSON 404, not 200 + HTML.

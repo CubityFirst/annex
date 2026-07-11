@@ -1,7 +1,69 @@
 import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile, isInlineSafeMime, contentDispositionValue, fileContentEtag } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "../lib/r2Presign";
+import { authenticate } from "../auth";
 import type { Env } from "../index";
+
+export const MAX_REPORT_NOTE_LENGTH = 2000;
+
+// POST /public/projects/:idOrSlug/report - file an abuse report against a
+// published site from the public reading view. Anonymous by design (the
+// reader may have no account), but when the caller presents a valid session
+// token the report is attributed to their user id. IP-rate-limited so the
+// button can't be scripted into a flood.
+export async function handlePublicReport(
+  request: Request,
+  env: Env,
+  url: URL,
+): Promise<Response> {
+  // CF-Connecting-IP wins when present (edge-set, unspoofable); X-Client-IP is
+  // the repo's convention for hops that drop it (frontend worker /api proxy).
+  const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
+  if (env.RATE_LIMITER_REPORT) {
+    const { success } = await env.RATE_LIMITER_REPORT.limit({ key: `report:${ip ?? "unknown"}` });
+    if (!success) return errorResponse(Errors.RATE_LIMITED);
+  }
+
+  let body: { note?: unknown; docId?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse(Errors.BAD_REQUEST);
+  }
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  if (!note || note.length > MAX_REPORT_NOTE_LENGTH) return errorResponse(Errors.BAD_REQUEST);
+
+  const idOrSlug = decodeURIComponent(url.pathname.split("/")[3] ?? "");
+  const project = await env.DB.prepare(
+    "SELECT id FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+  ).bind(idOrSlug, idOrSlug).first<{ id: string }>();
+  if (!project) return errorResponse(Errors.NOT_FOUND);
+
+  // The page the reporter was on, so a reviewer can jump straight to it.
+  // Verified against this project (a bogus/foreign docId files as NULL rather
+  // than failing the report - the note is the payload, the page is a hint).
+  let docId: string | null = null;
+  if (typeof body.docId === "string" && body.docId) {
+    const doc = await env.DB.prepare("SELECT id FROM docs WHERE id = ? AND project_id = ?")
+      .bind(body.docId, project.id).first<{ id: string }>();
+    docId = doc?.id ?? null;
+  }
+
+  // Best-effort attribution: a bad/expired/disabled-account token must not
+  // block the report (the public site never requires auth) - it just files
+  // as anonymous.
+  let reporterUserId: string | null = null;
+  if (request.headers.get("Authorization")) {
+    const session = await authenticate(request, env);
+    if (session !== null && !(session instanceof Response)) reporterUserId = session.userId;
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO site_reports (id, project_id, reporter_user_id, reporter_ip, doc_id, note) VALUES (?, ?, ?, ?, ?, ?)",
+  ).bind(crypto.randomUUID(), project.id, reporterUserId, ip, docId, note).run();
+
+  return okResponse({ submitted: true }, 201);
+}
 
 interface PublicProject {
   id: string;

@@ -712,6 +712,9 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   if (seg[0] === "me" && seg[1] === "sessions" && seg[2] === "logout" && method === "POST") return ok();
   if (seg[0] === "avatar") return blocked("Avatar changes are disabled in the demo.");
   if (seg[0] === "billing") return blocked("Billing is disabled in the demo.");
+  if (seg[0] === "users" && seg[2] === "report" && method === "POST") {
+    return blocked("Reporting is disabled in the demo.");
+  }
   if (seg[0] === "users" && seg.length === 2 && method === "GET") {
     return ok({
       userId: seg[1],
@@ -1081,6 +1084,10 @@ function publicFiles(s: Store) {
 }
 
 function routePublic(s: Store, method: string, url: URL, seg: string[]): Response {
+  // The published-site "Report Site" button (the only public POST).
+  if (method === "POST" && seg[0] === "projects" && seg[2] === "report") {
+    return blocked("Reporting is disabled in the demo.");
+  }
   if (method !== "GET") return notFound();
   const sitePublished = s.publishedAt !== null;
 

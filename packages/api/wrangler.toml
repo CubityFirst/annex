@@ -82,6 +82,14 @@ name = "RATE_LIMITER_API"
 namespace_id = "2002"
 simple = { limit = 120, period = 60 }
 
+# Per-IP limiter for the public "Report Site" endpoint (routes/public.ts
+# handlePublicReport). Reports are rare, deliberate actions - a human files
+# one or two; anything faster is a script.
+[[ratelimits]]
+name = "RATE_LIMITER_REPORT"
+namespace_id = "2003"
+simple = { limit = 3, period = 60 }
+
 # Cloudflare Flagship feature flags. Shared app with the auth worker. Flags in use:
 #   api              (default on)  - killswitch for the whole /v1 public API surface (v1.ts).
 #   custom-theming   (default off) - per-user gate for custom themes (index.ts).
