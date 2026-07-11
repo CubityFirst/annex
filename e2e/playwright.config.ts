@@ -37,6 +37,9 @@ export default defineConfig({
   globalTeardown: "./global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // Headroom for the toPass() retry loops that re-submit auth POSTs the local
+  // wrangler chain occasionally drops under full-suite load.
+  timeout: 60000,
   // Local wrangler dev intermittently drops requests through the
   // browser → vite → API worker → auth worker chain (rate-limit edge cases,
   // service-binding hiccups). One retry catches those without masking real

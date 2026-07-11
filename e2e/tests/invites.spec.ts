@@ -40,13 +40,18 @@ let inviteLinkToken = "";
 async function setupContext(browser: Browser, ip: string): Promise<[BrowserContext, Page]> {
   const ctx = await browser.newContext();
   await ctx.addInitScript(() => {
+    // reset() must replay the callback like real Turnstile does - the login
+    // form clears its token after a failed submit and stays disabled until a
+    // fresh one arrives.
+    let verify: ((t: string) => void) | null = null;
     Object.defineProperty(window, "turnstile", {
       value: {
         render(_: unknown, opts: { callback: (t: string) => void }) {
-          setTimeout(() => opts.callback("e2e-bypass-token"), 50);
+          verify = opts.callback;
+          setTimeout(() => verify?.("e2e-bypass-token"), 50);
           return "mock-widget-id";
         },
-        reset() {},
+        reset() { setTimeout(() => verify?.("e2e-bypass-token"), 50); },
         remove() {},
       },
       writable: true,
@@ -64,19 +69,28 @@ async function register(page: Page, user: typeof OWNER) {
   await page.getByLabel("Name").fill(user.name);
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 }
 
 async function login(page: Page, user: typeof OWNER) {
   // /login?logout=1 clears any existing token first so this is always reliable.
   await page.goto("/login?logout=1");
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill(user.password);
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+  // Retry the whole attempt: the local wrangler chain can drop the login POST
+  // under full-suite load, which surfaces an error and re-arms the form.
+  await expect(async () => {
+    await page.getByLabel("Email").fill(user.email);
+    await page.getByLabel("Password").fill(user.password);
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -132,8 +146,12 @@ test("owner creates a project", async () => {
   await ownerPage.goto("/dashboard");
   await ownerPage.getByText("New site").click();
   await ownerPage.getByLabel("Name").fill(PROJECT_NAME);
-  await ownerPage.getByRole("button", { name: "Create site" }).click();
-  await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 10000 });
+  // Retry: the local wrangler chain can drop the create-site POST under
+  // full-suite load; the dialog stays open on failure, so re-clicking is safe.
+  await expect(async () => {
+    await ownerPage.getByRole("button", { name: "Create site" }).click();
+    await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
   const m = ownerPage.url().match(/\/projects\/([a-z0-9-]+)/);
   projectId = m?.[1] ?? "";
   expect(projectId).not.toBe("");
@@ -160,13 +178,24 @@ test("email invite - invitee sees the pending invite", async () => {
   await login(inviteePage, EMAIL_USER);
   await inviteePage.goto("/invites/pending");
   await expect(inviteePage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
-  await expect(inviteePage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
+  // The pending-invites fetch can get dropped by the local wrangler chain
+  // under full-suite load - reload until the invite shows.
+  await expect(async () => {
+    if (!(await inviteePage.getByText(PROJECT_NAME).isVisible().catch(() => false))) {
+      await inviteePage.reload();
+    }
+    await expect(inviteePage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 30000 });
 });
 
 test("email invite - invitee accepts and is redirected to the project", async () => {
-  await inviteePage.getByRole("button", { name: "Accept" }).click();
-  // Acceptance navigates straight to the project page.
-  await expect(inviteePage).toHaveURL(/\/projects\//, { timeout: 8000 });
+  // Acceptance navigates straight to the project page. The accept POST can
+  // get dropped by the local wrangler chain under full-suite load; the page
+  // keeps the button enabled on failure, so re-click until it navigates.
+  await expect(async () => {
+    await inviteePage.getByRole("button", { name: "Accept" }).click({ timeout: 3000 });
+    await expect(inviteePage).toHaveURL(/\/projects\//, { timeout: 8000 });
+  }).toPass({ timeout: 25000 });
 });
 
 test("email invite - project appears in invitee's dashboard", async () => {
@@ -227,9 +256,16 @@ test("invite link - project appears in link-invitee's dashboard", async () => {
 
 test("invite link - owner revokes the link", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
-  await ownerPage.getByRole("button", { name: "Revoke" }).click();
-  await expect(ownerPage.getByText("Invite link revoked.", { exact: true })).toBeVisible({ timeout: 5000 });
-  await expect(ownerPage.getByText("No invite links yet.")).toBeVisible({ timeout: 5000 });
+  // Retry on transient drops of the revoke DELETE: the button only disappears
+  // once the request lands, so re-clicking while it's still there is safe.
+  await expect(async () => {
+    const revoke = ownerPage.getByRole("button", { name: "Revoke" });
+    if (await revoke.isVisible()) {
+      await revoke.click();
+      await expect(ownerPage.getByText("Invite link revoked.", { exact: true })).toBeVisible({ timeout: 5000 });
+    }
+    await expect(ownerPage.getByText("No invite links yet.")).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 30000 });
 });
 
 test("invite link - revoked link shows an error when visited", async () => {

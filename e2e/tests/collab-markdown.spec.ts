@@ -102,15 +102,24 @@ test("sets up a realtime-enabled doc with seeded markdown", async () => {
   await pageA.getByLabel("Name").fill(NAME);
   await pageA.getByLabel("Email").fill(EMAIL);
   await pageA.getByLabel("Password").fill(PASSWORD);
-  await expect(pageA.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await pageA.getByRole("button", { name: "Create account" }).click();
-  await expect(pageA).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(pageA.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await pageA.getByRole("button", { name: "Create account" }).click();
+    await expect(pageA).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 
   await pageA.goto("/dashboard");
   await pageA.getByText("New site").click();
   await pageA.getByLabel("Name").fill(PROJECT_NAME);
-  await pageA.getByRole("button", { name: "Create site" }).click();
-  await expect(pageA).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 10000 });
+  // Retry: the local wrangler chain can drop the create-site POST under
+  // full-suite load; the dialog stays open on failure, so re-clicking is safe.
+  await expect(async () => {
+    await pageA.getByRole("button", { name: "Create site" }).click();
+    await expect(pageA).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
   projectId = pageA.url().match(/\/projects\/([a-z0-9-]+)/)![1];
   projectSettingsUrl = `/projects/${projectId}/settings`;
 

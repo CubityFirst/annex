@@ -125,8 +125,13 @@ export function use2FA({
       });
     }
 
-    // No MFA set up - proceed directly
-    await action({});
+    // No MFA set up - proceed directly. There is no dialog to render the
+    // action's error string in, so surface it as a toast instead of
+    // swallowing it.
+    const err = await action({});
+    if (err !== undefined) {
+      toast({ title: err, variant: "destructive" });
+    }
   }
 
   function closeDialog() {

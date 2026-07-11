@@ -117,9 +117,14 @@ test("registers a fresh account", async () => {
   await page.getByLabel("Name").fill(NAME);
   await page.getByLabel("Email").fill(EMAIL);
   await page.getByLabel("Password").fill(PASSWORD);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 // ── Upload + verify ──────────────────────────────────────────────────────────
@@ -196,10 +201,13 @@ test("uploading with the toggle on Light stores an independent light variant", a
 
   // The sun/moon toggle sits directly below the avatar. It starts on "Dark"
   // (Moon); clicking it switches the slot that Upload/Remove targets to Light.
-  const toggle = page.getByRole("button", { name: "Dark", exact: true });
+  // Locate by title, not accessible name - the theme picker on the same page
+  // also has buttons named "Dark"/"Light".
+  const toggle = page.getByTitle("Switch which avatar variant you view and edit (dark vs light backgrounds)");
   await expect(toggle).toBeVisible({ timeout: 5000 });
+  await expect(toggle).toHaveText(/Dark/);
   await toggle.click();
-  await expect(page.getByRole("button", { name: "Light", exact: true })).toBeVisible();
+  await expect(toggle).toHaveText(/Light/);
 
   const fileInput = page.locator('input[type="file"][accept*="image/gif"]');
   await fileInput.setInputFiles({

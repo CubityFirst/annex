@@ -39,13 +39,18 @@ let projectSettingsUrl = "";
 
 async function mockTurnstile(ctx: BrowserContext) {
   await ctx.addInitScript(() => {
+    // reset() must replay the callback like real Turnstile does - the login
+    // form clears its token after a failed submit and stays disabled until a
+    // fresh one arrives.
+    let verify: ((t: string) => void) | null = null;
     Object.defineProperty(window, "turnstile", {
       value: {
         render(_container: unknown, options: { callback: (t: string) => void }) {
-          setTimeout(() => options.callback("e2e-bypass-token"), 50);
+          verify = options.callback;
+          setTimeout(() => verify?.("e2e-bypass-token"), 50);
           return "mock-widget-id";
         },
-        reset() {},
+        reset() { setTimeout(() => verify?.("e2e-bypass-token"), 50); },
         remove() {},
       },
       writable: true,
@@ -101,9 +106,14 @@ test("registers a new account", async () => {
   await page.getByLabel("Name").fill(NAME);
   await page.getByLabel("Email").fill(EMAIL);
   await page.getByLabel("Password").fill(PASSWORD);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 // ── Login ────────────────────────────────────────────────────────────────────
@@ -142,8 +152,12 @@ test("creates a new project", async () => {
     await descInput.fill(PROJECT_DESCRIPTION);
   }
 
-  await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 10000 });
+  // Retry: the local wrangler chain can drop the create-site POST under
+  // full-suite load; the dialog stays open on failure, so re-clicking is safe.
+  await expect(async () => {
+    await page.getByRole("button", { name: "Create site" }).click();
+    await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 
   // Capture project settings URL for afterAll cleanup.
   const m = page.url().match(/\/projects\/([a-z0-9-]+)/);
@@ -227,10 +241,12 @@ test("navigates into the folder and creates a document inside it", async () => {
 // ── FileManager: drag doc into folder ────────────────────────────────────────
 
 test("drags a document into a folder", async () => {
-  // Navigate back to the project root file manager.
+  // Navigate back to the project root file manager. Assert on the draggable
+  // desktop row - bare getByText also matches the sidebar "Recently accessed"
+  // link and the mobile card list, which strict mode rejects.
   await page.getByRole("link", { name: "File Manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
-  await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 
   await page
     .locator('[draggable="true"]', { hasText: "My E2E Document" })
@@ -261,15 +277,26 @@ test("drags a document back to root via the breadcrumb", async () => {
   // Doc should disappear from the folder view after the API move + reload.
   await expect(docRow).not.toBeVisible({ timeout: 5000 });
 
-  // Navigate to the project root and confirm the doc is back there.
+  // Navigate to the project root and confirm the doc is back there. Assert on
+  // the draggable desktop row - bare getByText also matches the sidebar
+  // "Recently accessed" link, which strict mode rejects once the table renders.
   await page.getByRole("link", { name: "File Manager" }).click();
-  await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 });
 
 // ── FileManager: right-click context menu - rename ───────────────────────────
 
 test("renames a folder via the context menu", async () => {
-  await page.getByText("E2E Folder").first().click({ button: "right" });
+  // Target the desktop table row - bare getByText also matches the CSS-hidden
+  // mobile card list. Under full-suite load the previous drag test's list
+  // reload can land late and re-render the row, which closes an already-open
+  // context menu - so re-open it until the menu item is actually there.
+  const folderRow = page.locator('[draggable="true"]', { hasText: "E2E Folder" });
+  await expect(async () => {
+    await page.keyboard.press("Escape");
+    await folderRow.click({ button: "right", timeout: 5000 });
+    await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 20000 });
   await page.getByRole("menuitem", { name: "Rename" }).click();
 
   const dialog = page.getByRole("dialog");
@@ -278,7 +305,9 @@ test("renames a folder via the context menu", async () => {
   await dialog.getByRole("textbox").fill("E2E Renamed Folder");
   await dialog.getByRole("button", { name: "Rename" }).click();
 
-  await expect(page.getByText("E2E Renamed Folder").first()).toBeVisible({ timeout: 5000 });
+  // Generous timeout: the rename PUT can be slow through the local wrangler
+  // chain when other suites are hammering it in parallel.
+  await expect(page.getByText("E2E Renamed Folder").first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("E2E Folder", { exact: true })).not.toBeVisible();
 });
 

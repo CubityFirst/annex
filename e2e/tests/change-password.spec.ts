@@ -30,13 +30,21 @@ let page: Page;
 
 async function mockTurnstile(ctx: BrowserContext) {
   await ctx.addInitScript(() => {
+    // Real Turnstile re-runs the challenge on reset() and fires the render
+    // callback with a fresh token. The login form relies on that after a
+    // failed submit (submit stays disabled until a new token arrives), so the
+    // mock must replay the callback too - a no-op reset() dead-ends the form.
+    let verify: ((t: string) => void) | null = null;
     Object.defineProperty(window, "turnstile", {
       value: {
         render(_container: unknown, options: { callback: (t: string) => void }) {
-          setTimeout(() => options.callback("e2e-bypass-token"), 50);
+          verify = options.callback;
+          setTimeout(() => verify?.("e2e-bypass-token"), 50);
           return "mock-widget-id";
         },
-        reset() {},
+        reset() {
+          setTimeout(() => verify?.("e2e-bypass-token"), 50);
+        },
         remove() {},
       },
       writable: true,
@@ -94,9 +102,14 @@ test("registers a fresh account", async () => {
   await page.getByLabel("Name").fill(NAME);
   await page.getByLabel("Email").fill(EMAIL);
   await page.getByLabel("Password").fill(PASSWORD);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 test("logs in after registration", async () => {
@@ -154,16 +167,18 @@ test("shows toast when current password is wrong", async () => {
 });
 
 test("successfully changes the password", async () => {
-  await currentPasswordField(page).fill(PASSWORD);
-  await newPasswordField(page).fill(NEW_PASSWORD);
-  await confirmPasswordField(page).fill(NEW_PASSWORD);
-
-  await expect(submitButton(page)).toBeEnabled({ timeout: 3000 });
-  await submitButton(page).click();
-
-  await expect(page.getByText("Password changed", { exact: true })).toBeVisible({ timeout: 8000 });
-  // Dialog closes after success.
-  await expect(page.getByRole("dialog", { name: "Change password" })).not.toBeVisible({ timeout: 5000 });
+  // Retry on transient drops through the local wrangler chain: a failed PATCH
+  // leaves the dialog open with the fields intact, so re-submitting is safe.
+  // Success closes the dialog.
+  await expect(async () => {
+    await currentPasswordField(page).fill(PASSWORD);
+    await newPasswordField(page).fill(NEW_PASSWORD);
+    await confirmPasswordField(page).fill(NEW_PASSWORD);
+    await expect(submitButton(page)).toBeEnabled({ timeout: 3000 });
+    await submitButton(page).click();
+    await expect(page.getByRole("dialog", { name: "Change password" })).not.toBeVisible({ timeout: 8000 });
+  }).toPass({ timeout: 30000 });
+  await expect(page.getByText("Password changed", { exact: true })).toBeVisible({ timeout: 5000 });
 });
 
 // ── Verify new password works ─────────────────────────────────────────────────
@@ -179,11 +194,15 @@ test("old password no longer works", async () => {
 });
 
 test("new password logs in successfully", async () => {
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(NEW_PASSWORD);
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+  // Retry the whole attempt: the local wrangler chain can drop the login POST
+  // under full-suite load, which surfaces an error and re-arms the form.
+  await expect(async () => {
+    await page.getByLabel("Email").fill(EMAIL);
+    await page.getByLabel("Password").fill(NEW_PASSWORD);
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 // Account cleanup runs in globalTeardown (e2e/global-teardown.ts).

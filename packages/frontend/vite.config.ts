@@ -58,6 +58,22 @@ export default defineConfig(({ mode }) => {
           target: "http://localhost:8787",
           rewrite: path => path.replace(/^\/api/, ""),
           ws: true,
+          // A proxied WebSocket (collab) whose client vanishes mid-write
+          // raises ECONNABORTED on the raw socket; unhandled, that error
+          // cascade fail-fasts the whole dev server on Windows (exit
+          // 0xC0000409). Swallow the error and drop the socket instead.
+          configure(proxy) {
+            const drop = (sock: unknown) => {
+              try { (sock as { destroy?: () => void })?.destroy?.(); } catch { /* already gone */ }
+            };
+            proxy.on("error", (_err, _req, res) => drop(res));
+            proxy.on("proxyReqWs", (_proxyReq, _req, socket) => {
+              socket.on("error", () => drop(socket));
+            });
+            proxy.on("open", (proxySocket) => {
+              proxySocket.on("error", () => drop(proxySocket));
+            });
+          },
         },
       },
     },

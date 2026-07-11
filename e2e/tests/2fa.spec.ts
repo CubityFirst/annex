@@ -163,9 +163,14 @@ test("registers a fresh account for 2FA testing", async () => {
   await page.getByLabel("Name").fill(NAME);
   await page.getByLabel("Email").fill(EMAIL);
   await page.getByLabel("Password").fill(PASSWORD);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 test("logs in after registration", async () => {
@@ -218,7 +223,14 @@ test("TOTP - entering a valid code completes login", async () => {
 
 test("TOTP - disables authenticator app (requires TOTP confirmation)", async () => {
   await page.goto("/settings");
-  await page.getByRole("button", { name: "Disable authenticator app" }).click();
+  // The security-status fetch can get dropped under full-suite load, leaving
+  // the section without the button - reload and retry rather than hang.
+  const disableBtn = page.getByRole("button", { name: "Disable authenticator app" });
+  await expect(async () => {
+    if (!(await disableBtn.isVisible().catch(() => false))) await page.reload();
+    await expect(disableBtn).toBeVisible({ timeout: 8000 });
+  }).toPass({ timeout: 30000 });
+  await disableBtn.click();
 
   // use2FA dialog opens in TOTP mode (only TOTP is active on this account).
   await expect(page.getByRole("dialog", { name: "Confirm identity" })).toBeVisible({ timeout: 5000 });

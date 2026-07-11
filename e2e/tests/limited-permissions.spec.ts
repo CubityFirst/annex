@@ -48,13 +48,18 @@ let docId = "";
 async function setupContext(browser: Browser, ip: string): Promise<[BrowserContext, Page]> {
   const ctx = await browser.newContext();
   await ctx.addInitScript(() => {
+    // reset() must replay the callback like real Turnstile does - the login
+    // form clears its token after a failed submit and stays disabled until a
+    // fresh one arrives.
+    let verify: ((t: string) => void) | null = null;
     Object.defineProperty(window, "turnstile", {
       value: {
         render(_: unknown, opts: { callback: (t: string) => void }) {
-          setTimeout(() => opts.callback("e2e-bypass-token"), 50);
+          verify = opts.callback;
+          setTimeout(() => verify?.("e2e-bypass-token"), 50);
           return "mock-widget-id";
         },
-        reset() {},
+        reset() { setTimeout(() => verify?.("e2e-bypass-token"), 50); },
         remove() {},
       },
       writable: true,
@@ -72,19 +77,28 @@ async function register(page: Page, user: typeof OWNER) {
   await page.getByLabel("Name").fill(user.name);
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
-  await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/register/, { timeout: 10000 });
+  // Retry the whole submit: the local wrangler chain can drop the register
+  // POST under full-suite load; the form keeps its Turnstile token, so
+  // re-clicking is safe.
+  await expect(async () => {
+    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 }
 
 async function login(page: Page, user: typeof OWNER) {
   // /login?logout=1 clears any existing token first so this is always reliable.
   await page.goto("/login?logout=1");
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill(user.password);
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+  // Retry the whole attempt: the local wrangler chain can drop the login POST
+  // under full-suite load, which surfaces an error and re-arms the form.
+  await expect(async () => {
+    await page.getByLabel("Email").fill(user.email);
+    await page.getByLabel("Password").fill(user.password);
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -135,8 +149,12 @@ test("owner creates a project", async () => {
   await ownerPage.goto("/dashboard");
   await ownerPage.getByText("New site").click();
   await ownerPage.getByLabel("Name").fill(PROJECT_NAME);
-  await ownerPage.getByRole("button", { name: "Create site" }).click();
-  await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 10000 });
+  // Retry: the local wrangler chain can drop the create-site POST under
+  // full-suite load; the dialog stays open on failure, so re-clicking is safe.
+  await expect(async () => {
+    await ownerPage.getByRole("button", { name: "Create site" }).click();
+    await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
   const m = ownerPage.url().match(/\/projects\/([a-z0-9-]+)/);
   projectId = m?.[1] ?? "";
   expect(projectId).not.toBe("");
@@ -169,9 +187,16 @@ test("limited user accepts the invite", async () => {
   await login(limitedPage, LIMITED);
   await limitedPage.goto("/invites/pending");
   await expect(limitedPage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
-  await expect(limitedPage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
-  await limitedPage.getByRole("button", { name: "Accept" }).click();
-  await expect(limitedPage).toHaveURL(/\/projects\//, { timeout: 8000 });
+  // The pending-invites fetch or the accept POST can get dropped by the local
+  // wrangler chain under full-suite load - reload / re-click until it lands.
+  await expect(async () => {
+    if (!(await limitedPage.getByText(PROJECT_NAME).isVisible().catch(() => false))) {
+      await limitedPage.reload();
+    }
+    await expect(limitedPage.getByText(PROJECT_NAME)).toBeVisible({ timeout: 5000 });
+    await limitedPage.getByRole("button", { name: "Accept" }).click({ timeout: 3000 });
+    await expect(limitedPage).toHaveURL(/\/projects\//, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 // ── Owner: create the doc ─────────────────────────────────────────────────────

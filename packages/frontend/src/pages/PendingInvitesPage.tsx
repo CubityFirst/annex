@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { BookOpen, Building2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -37,17 +38,23 @@ export function PendingInvitesPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
+    // Cancel on unmount so a duplicate StrictMode-mount fetch that loses the
+    // race (or fails) can't replace an already-loaded list with the error panel.
+    let cancelled = false;
     fetch("/api/pending-invites", { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then((json: { ok: boolean; data?: PendingInvite[] }) => {
+        if (cancelled) return;
         if (json.ok && json.data) setInvites(json.data);
         else setLoadError("Could not load your pending invites. Please try again.");
       })
-      .catch(() => setLoadError("Could not load your pending invites. Please try again."));
+      .catch(() => { if (!cancelled) setLoadError("Could not load your pending invites. Please try again."); });
+    return () => { cancelled = true; };
   }, []);
 
   async function handleAccept(invite: PendingInvite) {
@@ -64,7 +71,11 @@ export function PendingInvitesPage() {
         setStatusMessage(`Accepted invite to ${(invite.type === "org" ? invite.organizationName : invite.projectName) ?? "this invite"}.`);
         setInvites(prev => prev.filter(i => i.id !== invite.id));
         navigate(invite.type === "org" ? `/orgs/${invite.organizationId}` : `/projects/${invite.projectId}`);
+      } else {
+        toast({ title: "Could not accept the invite.", description: "Please try again.", variant: "destructive" });
       }
+    } catch {
+      toast({ title: "Could not accept the invite.", description: "Please try again.", variant: "destructive" });
     } finally {
       setActing(null);
     }
@@ -83,7 +94,11 @@ export function PendingInvitesPage() {
       if (res.ok) {
         setStatusMessage(`Declined invite to ${(invite.type === "org" ? invite.organizationName : invite.projectName) ?? "this invite"}.`);
         setInvites(prev => prev.filter(i => i.id !== invite.id));
+      } else {
+        toast({ title: "Could not decline the invite.", description: "Please try again.", variant: "destructive" });
       }
+    } catch {
+      toast({ title: "Could not decline the invite.", description: "Please try again.", variant: "destructive" });
     } finally {
       setActing(null);
     }

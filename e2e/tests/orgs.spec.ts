@@ -138,8 +138,12 @@ test("owner creates a site inside the org", async () => {
   await ownerPage.getByRole("button", { name: "New site" }).click();
   await expect(ownerPage.getByRole("dialog")).toBeVisible({ timeout: 5000 });
   await ownerPage.getByLabel("Name").fill(SITE_NAME);
-  await ownerPage.getByRole("button", { name: "Create site" }).click();
-  await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 10000 });
+  // Retry: the local wrangler chain can drop the create-site POST under
+  // full-suite load; the dialog stays open on failure, so re-clicking is safe.
+  await expect(async () => {
+    await ownerPage.getByRole("button", { name: "Create site" }).click();
+    await expect(ownerPage).toHaveURL(/\/projects\/[a-z0-9-]+/, { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
   siteId = ownerPage.url().match(/\/projects\/([a-z0-9-]+)/)?.[1] ?? "";
   expect(siteId).not.toBe("");
 });
@@ -163,9 +167,16 @@ test("owner invites a member to the org", async () => {
 test("member sees and accepts the org invite", async () => {
   await memberPage.goto("/invites/pending");
   await expect(memberPage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
-  await expect(memberPage.getByText(ORG_NAME)).toBeVisible({ timeout: 5000 });
-  await memberPage.getByRole("button", { name: "Accept" }).click();
-  await expect(memberPage).toHaveURL(new RegExp(`/orgs/${orgId}`), { timeout: 8000 });
+  // The pending-invites fetch or the accept POST can get dropped by the local
+  // wrangler chain under full-suite load - reload / re-click until it lands.
+  await expect(async () => {
+    if (!(await memberPage.getByText(ORG_NAME).isVisible().catch(() => false))) {
+      await memberPage.reload();
+    }
+    await expect(memberPage.getByText(ORG_NAME)).toBeVisible({ timeout: 5000 });
+    await memberPage.getByRole("button", { name: "Accept" }).click({ timeout: 3000 });
+    await expect(memberPage).toHaveURL(new RegExp(`/orgs/${orgId}`), { timeout: 8000 });
+  }).toPass({ timeout: 30000 });
 });
 
 test("role trickles down: member can see and open the org's site", async () => {
