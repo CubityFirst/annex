@@ -70,8 +70,12 @@ export default defineConfig(({ mode }) => {
             proxy.on("proxyReqWs", (_proxyReq, _req, socket) => {
               socket.on("error", () => drop(socket));
             });
-            proxy.on("open", (proxySocket) => {
-              proxySocket.on("error", () => drop(proxySocket));
+            // Vite's bundled http-proxy types don't declare the "open" event's
+            // socket arg, so take it via rest args to satisfy the () => void
+            // overload without losing the runtime socket.
+            proxy.on("open", (...args: unknown[]) => {
+              const proxySocket = args[0] as { on?: (ev: string, cb: () => void) => void } | undefined;
+              proxySocket?.on?.("error", () => drop(proxySocket));
             });
           },
         },
