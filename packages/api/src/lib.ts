@@ -30,6 +30,9 @@ export interface Folder {
 
 export interface Doc {
   id: string;
+  // Custom public URL segment from the `slug:` frontmatter key (see
+  // docOps.syncDocSlug); null = reachable by id only.
+  slug?: string | null;
   title: string;
   content: string;
   projectId: string;

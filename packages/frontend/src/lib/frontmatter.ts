@@ -8,6 +8,7 @@ export interface Frontmatter {
   description?: string;
   image?: string;
   cover?: string;
+  slug?: string;
 }
 
 const FM_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/;
@@ -63,6 +64,9 @@ export function parseFrontmatter(content: string): Frontmatter {
     } else if (key === "cover") {
       const stripped = val.replace(/^['"]|['"]$/g, "");
       if (stripped) result.cover = stripped;
+    } else if (key === "slug") {
+      const stripped = val.replace(/^['"]|['"]$/g, "");
+      if (stripped) result.slug = stripped;
     }
   }
 

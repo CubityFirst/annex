@@ -184,10 +184,11 @@ async function resolveCustomHost(env: Env, host: string): Promise<ResolvedSite |
 }
 
 // Minimal sitemap for a custom-domain site: the root (home doc) plus every
-// doc's clean URL. The home doc is listed only as `/` so the same content
-// doesn't appear under two URLs. Pure so it can be unit-tested.
-export function buildSitemapXml(host: string, homeDocId: string | null, docIds: string[]): string {
-  const urls = ["/", ...docIds.filter(id => id !== homeDocId).map(id => `/${id}`)];
+// doc's clean URL (the doc's custom frontmatter slug when it has one, its id
+// otherwise). The home doc is listed only as `/` so the same content doesn't
+// appear under two URLs. Pure so it can be unit-tested.
+export function buildSitemapXml(host: string, homeDocId: string | null, docs: Array<{ id: string; slug?: string | null }>): string {
+  const urls = ["/", ...docs.filter(d => d.id !== homeDocId).map(d => `/${d.slug ?? d.id}`)];
   const entries = urls
     .map(path => `  <url><loc>${escapeHtml(`https://${host}${path}`)}</loc></url>`)
     .join("\n");
@@ -237,9 +238,9 @@ async function handleCustomHost(request: Request, env: Env, url: URL, host: stri
     if (cached) return cached;
     const res = await env.API.fetch(new Request(`https://api/public/projects/${site.projectId}`, { method: "GET" }));
     if (!res.ok) return null;
-    const json = await res.json<{ ok: boolean; data?: { home_doc_id: string | null; docs: Array<{ id: string }> } }>();
+    const json = await res.json<{ ok: boolean; data?: { home_doc_id: string | null; docs: Array<{ id: string; slug?: string | null }> } }>();
     if (!json.ok || !json.data) return null;
-    const response = new Response(buildSitemapXml(host, json.data.home_doc_id, json.data.docs.map(d => d.id)), {
+    const response = new Response(buildSitemapXml(host, json.data.home_doc_id, json.data.docs), {
       headers: { "Content-Type": "application/xml; charset=UTF-8", "Cache-Control": "public, max-age=3600" },
     });
     await cache.put(cacheKey, response.clone());

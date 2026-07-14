@@ -53,6 +53,7 @@ async function readJson<T>(request: Request): Promise<T | null> {
 
 interface DocRowForApi {
   id: string;
+  slug: string | null;
   title: string;
   folder_id: string | null;
   published_at: string | null;
@@ -64,6 +65,8 @@ interface DocRowForApi {
 function serializeDocSummary(r: DocRowForApi) {
   return {
     id: r.id,
+    // Read-only here: set via the `slug:` frontmatter key in the doc body.
+    slug: r.slug ?? null,
     title: r.title,
     folderId: r.folder_id,
     publishedAt: r.published_at,
@@ -127,7 +130,7 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
     if (request.method === "GET") {
       const lv = caller.role === "limited";
       const sql =
-        `SELECT d.id, d.title, d.folder_id, d.published_at, d.tags, d.created_at, d.updated_at
+        `SELECT d.id, d.slug, d.title, d.folder_id, d.published_at, d.tags, d.created_at, d.updated_at
          FROM docs d
          ${lv ? "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?" : ""}
          WHERE d.project_id = ?
@@ -154,9 +157,15 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
         content: typeof body.content === "string" ? body.content : "",
         folderId,
       });
+      // The stored slug is re-read rather than derived from the frontmatter:
+      // createDoc drops a requested slug that another doc in the site already
+      // holds, and the response must reflect what was actually stored.
+      const slugRow = await env.DB.prepare("SELECT slug FROM docs WHERE id = ?")
+        .bind(created.id).first<{ slug: string | null }>();
       return okResponse(
         serializeDocSummary({
           id: created.id,
+          slug: slugRow?.slug ?? null,
           title: created.title,
           folder_id: created.folderId,
           published_at: created.publishedAt,
@@ -220,8 +229,15 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
     }
 
     const { updated, savedContent } = await applyDocUpdate(env, doc, auth.userId, caller.name, patch);
+    // Re-read the stored slug when the body changed: a frontmatter slug taken
+    // by another doc is dropped by the sync, so deriving it from the patch
+    // content could report a slug the doc doesn't actually hold.
+    const slug = patch.content !== undefined
+      ? (await env.DB.prepare("SELECT slug FROM docs WHERE id = ?").bind(docId).first<{ slug: string | null }>())?.slug ?? null
+      : doc.slug ?? null;
     const summary = {
       id: updated.id,
+      slug,
       title: updated.title,
       folderId: updated.folder_id,
       publishedAt: updated.published_at,

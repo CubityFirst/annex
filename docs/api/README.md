@@ -125,10 +125,16 @@ curl https://docs.cubityfir.st/api/v1/docs \
 
 ```jsonc
 { "ok": true, "data": [
-  { "id": "…", "title": "Getting started", "folderId": null,
+  { "id": "…", "slug": "getting-started", "title": "Getting started", "folderId": null,
     "publishedAt": null, "tags": [], "createdAt": "…", "updatedAt": "…" }
 ] }
 ```
+
+`slug` is the doc's custom public-URL segment (`/s/<site>/<slug>` on the published
+site) and is read-only here: set it with a `slug:` key in the document body's
+frontmatter. Lowercase letters, digits and inner hyphens, unique within the site —
+a slug already held by another doc is ignored and the field stays unchanged
+(`null` when the doc has never claimed one).
 
 ### Get a document
 

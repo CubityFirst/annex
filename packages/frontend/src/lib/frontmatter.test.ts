@@ -129,6 +129,18 @@ describe("parseFrontmatter", () => {
     expect(parseFrontmatter("---\ncover: /api/files/a/content\nimage: /api/files/b/content\n---\n"))
       .toEqual({ cover: "/api/files/a/content", image: "/api/files/b/content" });
   });
+
+  it("parses unquoted slug", () => {
+    expect(parseFrontmatter("---\nslug: getting-started\n---\n")).toEqual({ slug: "getting-started" });
+  });
+
+  it("parses quoted slug, stripping quotes", () => {
+    expect(parseFrontmatter("---\nslug: \"getting-started\"\n---\n")).toEqual({ slug: "getting-started" });
+  });
+
+  it("ignores empty slug", () => {
+    expect(parseFrontmatter("---\nslug:\n---\n")).toEqual({});
+  });
 });
 
 describe("setFrontmatterKey", () => {

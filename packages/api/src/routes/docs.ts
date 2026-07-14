@@ -296,7 +296,7 @@ export async function handleDocs(
       myPermission = share?.permission ?? null;
     }
     const row = await env.DB.prepare(
-      `SELECT d.id, d.title, d.project_id, d.author_id, d.published_at,
+      `SELECT d.id, d.slug, d.title, d.project_id, d.author_id, d.published_at,
               d.show_heading, d.show_last_updated, d.folder_id,
               d.sidebar_position, d.tags, d.created_at, d.updated_at,
               s.summary AS ai_summary, s.version AS ai_summary_version

@@ -1072,7 +1072,7 @@ function publicProject(s: Store) {
 function publicDocs(s: Store) {
   return [...s.docs]
     .sort((a, b) => a.title.localeCompare(b.title))
-    .map(d => ({ id: d.id, title: d.title, folder_id: d.folder_id, sidebar_position: null, is_home: d.id === s.homeDocId ? 1 : 0 }));
+    .map(d => ({ id: d.id, slug: null, title: d.title, folder_id: d.folder_id, sidebar_position: null, is_home: d.id === s.homeDocId ? 1 : 0 }));
 }
 
 function publicFolders(s: Store) {
@@ -1111,6 +1111,9 @@ function routePublic(s: Store, method: string, url: URL, seg: string[]): Respons
     return ok({
       doc: {
         id: doc.id,
+        // The demo store never assigns custom doc slugs, so demo docs always
+        // link by id (mirrors a real site whose docs have no `slug:` key).
+        slug: null,
         title: doc.title,
         display_title: fm.title ?? null,
         hide_title: fm.hide_title ?? null,

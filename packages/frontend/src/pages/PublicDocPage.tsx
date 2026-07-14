@@ -55,6 +55,9 @@ function extractHeadings(content: string): Heading[] {
 
 interface NavDoc {
   id: string;
+  // Custom URL segment from the doc's `slug:` frontmatter key; null/absent =
+  // link by id.
+  slug?: string | null;
   title: string;
   display_title?: string | null;
   folder_id: string | null;
@@ -78,7 +81,7 @@ interface NavFile {
 }
 
 interface PublicData {
-  doc: { id: string; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
+  doc: { id: string; slug?: string | null; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
   project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null };
   docs: NavDoc[] | null;
@@ -433,16 +436,26 @@ export function PublicDocPage() {
 
   // Canonical in-site link builder. Path mode → /s/<slug>/<docId> (slug prefers
   // the vanity slug once loaded); host mode → /<docId> at the domain root.
+  // The doc segment prefers the doc's custom frontmatter slug when it has one.
   const linkSlug = data?.project.vanity_slug ?? data?.project.id ?? projectId ?? "";
+  const docSlugById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of data?.docs ?? []) if (d.slug) m.set(d.id, d.slug);
+    return m;
+  }, [data?.docs]);
   const href = useCallback(
-    (id: string, anchor?: string) => siteHref(route, linkSlug, id, anchor),
-    [route, linkSlug],
+    (id: string, anchor?: string) => siteHref(route, linkSlug, docSlugById.get(id) ?? id, anchor),
+    [route, linkSlug, docSlugById],
   );
+
+  // The URL's doc segment may be a custom slug, so identity comparisons (nav
+  // highlighting, prev/next, linked docs) must use the loaded doc's real id.
+  const currentDocId = data?.doc.id || docId;
 
   const wysiwygCtx = useMemo(() => ({
     projectId: data?.project.id,
     isPublic: true,
-    currentDocId: docId,
+    currentDocId,
     revealOnCursor: false,
     hideFrontmatter: true,
     docs: data?.docs ?? [],
@@ -466,7 +479,8 @@ export function PublicDocPage() {
             const slug = json.data.vanity_slug ?? projectId;
             const homeDoc = json.data.home_doc_id ? json.data.docs.find(d => d.id === json.data!.home_doc_id) : null;
             const target = homeDoc ?? json.data.docs[0];
-            navigate(hostMode ? `/${target.id}` : `/s/${slug}/${target.id}`, { replace: true });
+            const docSeg = target.slug ?? target.id;
+            navigate(hostMode ? `/${docSeg}` : `/s/${slug}/${docSeg}`, { replace: true });
           } else {
             setNotFound(true);
             setLoading(false);
@@ -544,15 +558,23 @@ export function PublicDocPage() {
       .finally(() => { setLoading(false); setFetching(false); });
   }, [projectId, docId, isGraph, navigate]);
 
-  // Redirect raw UUID to vanity slug once we know it. Path mode only - on a
-  // custom domain the project isn't in the URL, so there's nothing to canonicalize.
+  // Canonicalize raw UUIDs to slugs once we know them: the project segment to
+  // the vanity slug (path mode only - on a custom domain the project isn't in
+  // the URL) and the doc segment to the doc's custom frontmatter slug.
   useEffect(() => {
-    if (hostMode || !data || !docId) return;
-    const slug = data.project.vanity_slug;
-    if (slug && projectId !== slug) {
-      navigate(`/s/${slug}/${docId}`, { replace: true });
+    if (!data || !docId) return;
+    // URL used the doc's id but it has a slug → prefer the slug. Graph/file
+    // views load with doc.id = "" and are left alone.
+    const docSeg = data.doc.id === docId && data.doc.slug ? data.doc.slug : docId;
+    if (hostMode) {
+      if (docSeg !== docId) navigate(`/${docSeg}${location.hash}`, { replace: true });
+      return;
     }
-  }, [hostMode, data, projectId, docId, navigate]);
+    const slug = data.project.vanity_slug;
+    if ((slug && projectId !== slug) || docSeg !== docId) {
+      navigate(`/s/${slug ?? projectId}/${docSeg}${location.hash}`, { replace: true });
+    }
+  }, [hostMode, data, projectId, docId, navigate, location.hash]);
 
   // Shared scroll-to-heading helper used by both the URL-hash effect below and
   // the outline buttons. Drives CodeMirror's own `scrollIntoView` against the
@@ -1066,7 +1088,7 @@ export function PublicDocPage() {
                       ...(homeDoc ? [homeDoc] : []),
                       ...flattenDocs(data.folders ?? [], restDocs),
                     ];
-                    const idx = orderedDocs.findIndex(d => d.id === docId);
+                    const idx = orderedDocs.findIndex(d => d.id === currentDocId);
                     if (idx === -1) return null;
                     const prevDoc = idx > 0 ? orderedDocs[idx - 1] : null;
                     const nextDoc = idx < orderedDocs.length - 1 ? orderedDocs[idx + 1] : null;
@@ -1102,15 +1124,15 @@ export function PublicDocPage() {
 
               {/* Right rail: linked-docs preview + outline */}
               {(() => {
-                const showLinkedDocs = data.project.published_graph_enabled === 1 && !!docId && !!graphData;
+                const showLinkedDocs = data.project.published_graph_enabled === 1 && !!currentDocId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
                 return (
                   <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
                     <div className="sticky top-6">
-                      {showLinkedDocs && docId && graphData && (
+                      {showLinkedDocs && currentDocId && graphData && (
                         <LinkedDocsPanel
                           data={graphData}
-                          currentDocId={docId}
+                          currentDocId={currentDocId}
                           onExpand={() => setGraphExpanded(true)}
                           onNodeClick={id => navigate(href(id))}
                         />

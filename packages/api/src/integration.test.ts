@@ -403,3 +403,102 @@ describe.skipIf(!serversUp)("API - public doc access (published-site semantics)"
     }
   });
 });
+
+// ── Custom doc slugs (`slug:` frontmatter → /public/docs/:site/:slug) ────────
+
+describe.skipIf(!serversUp)("API - custom doc slugs", () => {
+  let token = "";
+  let projectId = "";
+  let docId = "";
+
+  const suiteHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({
+    "Content-Type": "application/json",
+    "CF-Connecting-IP": `172.17.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`,
+    ...extra,
+  });
+
+  beforeAll(async () => {
+    const flowEmail = `doc-slugs-${RUN_ID}@example.com`;
+    await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    token = (await loginRes.json<{ data: { token: string } }>()).data?.token ?? "";
+    expect(token, "login did not return a token (rate-limited?)").not.toBe("");
+
+    const projRes = await fetch(`${API_URL}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Doc Slugs Project" }),
+    });
+    expect(projRes.status).toBe(201);
+    projectId = (await projRes.json<{ data: { id: string } }>()).data.id;
+
+    await fetch(`${API_URL}/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ publishedAt: new Date().toISOString() }),
+    });
+
+    const docRes = await fetch(`${API_URL}/docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Guide", content: "---\nslug: Getting-Started\n---\n# Guide", projectId }),
+    });
+    expect(docRes.status).toBe(201);
+    docId = (await docRes.json<{ data: { id: string } }>()).data.id;
+  });
+
+  it("resolves the public doc by its normalized frontmatter slug (and still by id)", async () => {
+    const bySlug = await fetch(`${API_URL}/public/docs/${projectId}/getting-started`);
+    expect(bySlug.status).toBe(200);
+    const slugBody = await bySlug.json<{ data: { doc: { id: string; slug: string | null } } }>();
+    expect(slugBody.data.doc.id).toBe(docId);
+    expect(slugBody.data.doc.slug).toBe("getting-started");
+
+    const byId = await fetch(`${API_URL}/public/docs/${projectId}/${docId}`);
+    expect(byId.status).toBe(200);
+  });
+
+  it("keeps the slug with its first claimant when a second doc requests it", async () => {
+    const rivalRes = await fetch(`${API_URL}/docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Rival", content: "---\nslug: getting-started\n---\n# Rival", projectId }),
+    });
+    expect(rivalRes.status).toBe(201);
+
+    const res = await fetch(`${API_URL}/public/docs/${projectId}/getting-started`);
+    const body = await res.json<{ data: { doc: { id: string } } }>();
+    expect(body.data.doc.id).toBe(docId);
+  });
+
+  it("clears the slug when the frontmatter key is removed", async () => {
+    const putRes = await fetch(`${API_URL}/docs/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content: "# Guide, no slug" }),
+    });
+    expect(putRes.status).toBe(200);
+
+    const res = await fetch(`${API_URL}/public/docs/${projectId}/getting-started`);
+    expect(res.status).toBe(404);
+    const byId = await fetch(`${API_URL}/public/docs/${projectId}/${docId}`);
+    expect(byId.status).toBe(200);
+  });
+
+  afterAll(async () => {
+    if (projectId && token) {
+      await fetch(`${API_URL}/projects/${projectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  });
+});

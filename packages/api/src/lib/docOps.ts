@@ -15,6 +15,51 @@ import { upsertFtsRow, deleteFtsRow } from "./fts";
 // Callers are responsible for authorization and for validating that any target
 // folderId belongs to the doc's project BEFORE calling these.
 
+// ── Custom doc slugs ─────────────────────────────────────────────────────────
+//
+// A doc can claim a custom public URL segment via the `slug:` frontmatter key
+// (/s/<site>/<slug> instead of /s/<site>/<uuid>). The docs table is the
+// site-central registry: docs.slug, unique per project (partial index in
+// 0061). Synced on every path that persists content - createDoc,
+// applyDocUpdate, and snapshotDocRevision (which also covers the collab
+// checkpoint and revision restore).
+
+const DOC_SLUG_MAX_LENGTH = 100;
+// Doc ids are crypto.randomUUID(); rejecting UUID-shaped slugs means the
+// public (id = ? OR slug = ?) lookup can never match two different docs, so a
+// slug can't shadow another doc's canonical id URL.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Path segments the public frontend claims for itself ("/s/<site>/graph" is
+// the published graph view, and "/<slug>" must stay unambiguous in host mode).
+const RESERVED_DOC_SLUGS = new Set(["graph"]);
+
+// Returns the canonical form of a requested slug, or null when the value is
+// unusable (which callers treat as "no slug"). Lowercase alphanumerics and
+// hyphens, no leading/trailing hyphen.
+export function normalizeDocSlug(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const slug = raw.trim().toLowerCase();
+  if (slug.length === 0 || slug.length > DOC_SLUG_MAX_LENGTH) return null;
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) return null;
+  if (RESERVED_DOC_SLUGS.has(slug)) return null;
+  if (UUID_RE.test(slug)) return null;
+  return slug;
+}
+
+// Syncs the doc's stored slug from its frontmatter. A single conditional
+// UPDATE (not SELECT-then-UPDATE) so concurrent saves can't both claim the
+// same slug: when the wanted slug is already held by another doc in the site,
+// this doc's stored slug is left unchanged (first claimant wins; the doc keeps
+// its previous working URL). An absent/invalid frontmatter slug clears the
+// column unconditionally.
+export async function syncDocSlug(env: Env, projectId: string, docId: string, rawSlug: string | undefined): Promise<void> {
+  const slug = normalizeDocSlug(rawSlug);
+  await env.DB.prepare(
+    `UPDATE docs SET slug = ?2 WHERE id = ?1 AND (?2 IS NULL OR NOT EXISTS (
+       SELECT 1 FROM docs WHERE project_id = ?3 AND slug = ?2 AND id <> ?1))`,
+  ).bind(docId, slug, projectId).run();
+}
+
 export interface CreateDocInput {
   projectId: string;
   authorId: string;
@@ -47,6 +92,7 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<Create
   await env.DB.prepare(
     "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
   ).bind(id, input.title, input.projectId, input.authorId, input.folderId, sidebarPosition, tags, now, now).run();
+  await syncDocSlug(env, input.projectId, id, fm.slug);
   await upsertFtsRow(env.DB, id, input.projectId, input.title, content);
 
   // A new doc may be the target of references in other docs, so the whole
@@ -143,7 +189,14 @@ export async function snapshotDocRevision(env: Env, input: SnapshotDocRevisionIn
   // Drop any cached AI summary - its version is the doc's updated_at at cache
   // time, and that is about to advance.
   await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(input.docId).run();
-  await env.DB.prepare("UPDATE docs SET updated_at = ? WHERE id = ?").bind(now, input.docId).run();
+  // Sync the frontmatter-derived columns alongside the updated_at bump so
+  // every revision-writing path (explicit save, collab checkpoint, restore)
+  // keeps them consistent with the body it just persisted - the collab
+  // checkpoint in particular never goes through applyDocUpdate.
+  const fm = parseFrontmatter(input.content);
+  await env.DB.prepare("UPDATE docs SET sidebar_position = ?, tags = ?, updated_at = ? WHERE id = ?")
+    .bind(fm.sidebar_position ?? null, fm.tags ? JSON.stringify(fm.tags) : null, now, input.docId).run();
+  await syncDocSlug(env, input.projectId, input.docId, fm.slug);
   return revisionId;
 }
 
@@ -219,6 +272,13 @@ export async function applyDocUpdate(
   binds.push(now);
   binds.push(doc.id);
   await env.DB.prepare(`UPDATE docs SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+
+  // Content provided but unchanged → snapshotDocRevision didn't run, so the
+  // slug still needs syncing here (repairs docs whose column drifted, e.g.
+  // saves from before the slug column existed).
+  if (newFm !== undefined && savedContent === undefined) {
+    await syncDocSlug(env, doc.project_id, doc.id, newFm.slug);
+  }
 
   // Title or folder changes affect how *other* docs' wikilinks resolve, so the
   // project-wide index must be rebuilt.

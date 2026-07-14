@@ -80,6 +80,7 @@ interface PublicProject {
 
 interface PublicDoc {
   id: string;
+  slug: string | null;
   title: string;
   folder_id: string | null;
   published_at: string | null;
@@ -228,8 +229,8 @@ export async function handlePublic(
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
     const docs = await env.DB.prepare(
-      "SELECT id, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
-    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
+      "SELECT id, slug, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
+    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
 
     const folders = await env.DB.prepare(
       "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
@@ -243,10 +244,12 @@ export async function handlePublic(
     return okResponse({ ...project, docs: docs.results, folders: folders.results, files: enrichedFiles });
   }
 
-  // /public/docs/:projectId/:docId
+  // /public/docs/:projectId/:docIdOrSlug - the doc segment is either the doc's
+  // uuid or its custom frontmatter slug (UUID-shaped slugs are rejected at
+  // write time, so the OR lookup below can never match two different docs).
   if (parts[0] === "docs" && parts[1] && parts[2]) {
     const projectIdOrSlug = parts[1];
-    const docId = parts[2];
+    const docId = decodeURIComponent(parts[2]);
 
     const project = await env.DB.prepare(
       `SELECT p.id, p.name, p.published_at, p.vanity_slug, p.home_doc_id, p.graph_enabled, p.published_graph_enabled, p.logo_square_updated_at, p.logo_wide_updated_at,
@@ -258,8 +261,8 @@ export async function handlePublic(
     const projectId = project.id;
 
     const doc = await env.DB.prepare(
-      "SELECT id, title, published_at, show_last_updated, show_heading, updated_at FROM docs WHERE id = ? AND project_id = ?",
-    ).bind(docId, projectId).first<PublicDoc & { show_last_updated: number; show_heading: number; updated_at: string }>();
+      "SELECT id, slug, title, published_at, show_last_updated, show_heading, updated_at FROM docs WHERE (id = ? OR slug = ?) AND project_id = ?",
+    ).bind(docId, docId, projectId).first<PublicDoc & { show_last_updated: number; show_heading: number; updated_at: string }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
     const sitePublished = project.published_at !== null;
@@ -273,13 +276,13 @@ export async function handlePublic(
     const content = r2Object ? await r2Object.text() : "";
     const fm = parseFrontmatter(content);
 
-    let docs: Pick<PublicDoc, "id" | "title" | "folder_id">[] | null = null;
+    let docs: Pick<PublicDoc, "id" | "slug" | "title" | "folder_id">[] | null = null;
     let folders: PublicFolder[] | null = null;
     let files: PublicFile[] | null = null;
     if (sitePublished) {
       const docsResult = await env.DB.prepare(
-        "SELECT id, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
-      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
+        "SELECT id, slug, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
+      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
       docs = docsResult.results;
 
       const foldersResult = await env.DB.prepare(
@@ -294,7 +297,7 @@ export async function handlePublic(
     }
 
     return okResponse({
-      doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
+      doc: { id: doc.id, slug: doc.slug ?? null, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
       project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_square_updated_at: project.logo_square_updated_at ?? null, logo_wide_updated_at: project.logo_wide_updated_at ?? null, custom_domain: project.custom_domain ?? null },
       docs,

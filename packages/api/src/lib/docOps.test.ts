@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./docLinks", () => ({ indexDocLinks: vi.fn(), invalidateProjectGraphIndex: vi.fn() }));
 vi.mock("./fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsRow: vi.fn() }));
 
-import { applyDocUpdate, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, deleteDoc, pruneDocRevisions, type DocUpdateRow } from "./docOps";
+import { applyDocUpdate, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, deleteDoc, pruneDocRevisions, normalizeDocSlug, syncDocSlug, type DocUpdateRow } from "./docOps";
 import { indexDocLinks, invalidateProjectGraphIndex } from "./docLinks";
 import { upsertFtsRow, deleteFtsRow } from "./fts";
 
@@ -203,9 +203,74 @@ describe("snapshotDocRevision", () => {
     expect(aiIdx).toBeGreaterThanOrEqual(0);
     expect(bindCalls[aiIdx]).toEqual(["d1"]);
 
-    const bumpIdx = sql.findIndex(s => s.includes("UPDATE docs SET updated_at"));
+    const bumpIdx = sql.findIndex(s => s.includes("UPDATE docs SET sidebar_position"));
     expect(bumpIdx).toBeGreaterThanOrEqual(0);
-    expect(bindCalls[bumpIdx]).toEqual(["2026-07-01T12:00:00.000Z", "d1"]);
+    // Plain body → sidebar_position/tags sync to NULL alongside the updated_at bump.
+    expect(bindCalls[bumpIdx]).toEqual([null, null, "2026-07-01T12:00:00.000Z", "d1"]);
+  });
+
+  it("syncs the frontmatter-derived columns (sidebar_position, tags, slug) from the persisted body", async () => {
+    const { env, prepare, bindCalls } = makeEnv();
+
+    await snapshotDocRevision(env, {
+      projectId: "p1",
+      docId: "d1",
+      content: "---\nsidebar_position: 3\ntags: [lore]\nslug: My-Page\n---\nbody",
+      title: "T",
+      editorId: "u1",
+      editorName: "User One",
+      now: "2026-07-01T12:00:00.000Z",
+    });
+
+    const sql = preparedSql(prepare);
+    const colIdx = sql.findIndex(s => s.includes("UPDATE docs SET sidebar_position"));
+    expect(bindCalls[colIdx]).toEqual([3, JSON.stringify(["lore"]), "2026-07-01T12:00:00.000Z", "d1"]);
+    const slugIdx = sql.findIndex(s => s.includes("UPDATE docs SET slug"));
+    expect(slugIdx).toBeGreaterThanOrEqual(0);
+    expect(bindCalls[slugIdx]).toEqual(["d1", "my-page", "p1"]);
+  });
+});
+
+describe("normalizeDocSlug", () => {
+  it("lowercases and accepts alphanumerics with inner hyphens", () => {
+    expect(normalizeDocSlug("Getting-Started")).toBe("getting-started");
+    expect(normalizeDocSlug("  page2  ")).toBe("page2");
+    expect(normalizeDocSlug("a")).toBe("a");
+  });
+
+  it("rejects empty, overlong, and malformed values", () => {
+    expect(normalizeDocSlug(undefined)).toBeNull();
+    expect(normalizeDocSlug("")).toBeNull();
+    expect(normalizeDocSlug("a".repeat(101))).toBeNull();
+    expect(normalizeDocSlug("-leading")).toBeNull();
+    expect(normalizeDocSlug("trailing-")).toBeNull();
+    expect(normalizeDocSlug("has space")).toBeNull();
+    expect(normalizeDocSlug("uni/code")).toBeNull();
+    expect(normalizeDocSlug("under_score")).toBeNull();
+  });
+
+  it("rejects reserved segments and UUID-shaped slugs (which would shadow doc-id URLs)", () => {
+    expect(normalizeDocSlug("graph")).toBeNull();
+    expect(normalizeDocSlug("123e4567-e89b-42d3-a456-426614174000")).toBeNull();
+  });
+});
+
+describe("syncDocSlug", () => {
+  it("writes the normalized slug guarded against another doc already holding it", async () => {
+    const { env, prepare, bindCalls } = makeEnv();
+    await syncDocSlug(env, "p1", "d1", "My-Slug");
+    const sql = preparedSql(prepare)[0];
+    expect(sql).toContain("UPDATE docs SET slug");
+    expect(sql).toContain("NOT EXISTS");
+    expect(bindCalls[0]).toEqual(["d1", "my-slug", "p1"]);
+  });
+
+  it("clears the slug when the frontmatter value is absent or invalid", async () => {
+    const { env, bindCalls } = makeEnv();
+    await syncDocSlug(env, "p1", "d1", undefined);
+    await syncDocSlug(env, "p1", "d1", "not a valid slug!");
+    expect(bindCalls[0]).toEqual(["d1", null, "p1"]);
+    expect(bindCalls[1]).toEqual(["d1", null, "p1"]);
   });
 });
 
