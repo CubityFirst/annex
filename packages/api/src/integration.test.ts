@@ -458,12 +458,17 @@ describe.skipIf(!serversUp)("API - custom doc slugs", () => {
   it("resolves the public doc by its normalized frontmatter slug (and still by id)", async () => {
     const bySlug = await fetch(`${API_URL}/public/docs/${projectId}/getting-started`);
     expect(bySlug.status).toBe(200);
-    const slugBody = await bySlug.json<{ data: { doc: { id: string; slug: string | null } } }>();
+    const slugBody = await bySlug.json<{ data: { doc: { id: string; slug: string | null; content: string } } }>();
     expect(slugBody.data.doc.id).toBe(docId);
     expect(slugBody.data.doc.slug).toBe("getting-started");
+    // The body must come from the doc's uuid-keyed R2 object, not from a
+    // lookup by the URL segment (which is the slug here).
+    expect(slugBody.data.doc.content).toContain("# Guide");
 
     const byId = await fetch(`${API_URL}/public/docs/${projectId}/${docId}`);
     expect(byId.status).toBe(200);
+    const idBody = await byId.json<{ data: { doc: { content: string } } }>();
+    expect(idBody.data.doc.content).toContain("# Guide");
   });
 
   it("keeps the slug with its first claimant when a second doc requests it", async () => {

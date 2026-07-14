@@ -272,7 +272,9 @@ export async function handlePublic(
     // Only block when neither the site nor the doc is published.
     if (!sitePublished && !docPublished) return errorResponse(Errors.NOT_FOUND);
 
-    const r2Object = await env.ASSETS.get(`${projectId}/${docId}`);
+    // R2 bodies are keyed by the doc's uuid - never by the URL segment, which
+    // may be the custom slug the row was resolved from.
+    const r2Object = await env.ASSETS.get(`${projectId}/${doc.id}`);
     const content = r2Object ? await r2Object.text() : "";
     const fm = parseFrontmatter(content);
 
