@@ -1105,7 +1105,7 @@ export function PublicDocPage() {
                 const showLinkedDocs = data.project.published_graph_enabled === 1 && !!docId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
                 return (
-                  <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
+                  <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
                     <div className="sticky top-6">
                       {showLinkedDocs && docId && graphData && (
                         <LinkedDocsPanel

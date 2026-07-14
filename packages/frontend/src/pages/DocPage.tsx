@@ -1656,7 +1656,7 @@ export function DocPage() {
 
       {/* Outline */}
       {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
+        <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
           <div className="sticky top-6">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Outline
