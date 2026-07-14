@@ -7,7 +7,11 @@ const ScrollArea = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
 >(({ className, children, ...props }, ref) => (
   <ScrollAreaPrimitive.Root ref={ref} className={cn("relative overflow-hidden", className)} {...props}>
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    {/* max-h-[inherit]: a `max-h-*` utility passed to the Root only clips
+        (Root is overflow-hidden); the Viewport must carry the same cap or its
+        h-full resolves against an auto-height parent and grows to the full
+        content height - leaving nothing to scroll. */}
+    <ScrollAreaPrimitive.Viewport className="h-full w-full max-h-[inherit] rounded-[inherit]">
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

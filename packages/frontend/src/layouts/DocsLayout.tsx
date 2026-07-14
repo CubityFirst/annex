@@ -946,7 +946,7 @@ export function DocsLayout() {
             <div ref={setHeaderActionEl} className="ml-auto shrink-0 sticky right-0 flex items-center gap-2 bg-background pl-2" />
           </div>
         )}
-        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
           <Outlet context={outletContext} />
         </div>
       </main>

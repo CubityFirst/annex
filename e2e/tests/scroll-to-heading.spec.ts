@@ -12,6 +12,9 @@
  *      so the heading sits at the top.
  *   2. Clicking outline items in the right rail scrolls to the corresponding
  *      heading and updates the URL bar's hash.
+ * ...and the same two flows on the authenticated app view (DocPage), whose
+ * scroll container is DocsLayout's plain overflow div rather than a Radix
+ * ScrollArea viewport.
  *
  * The spec sets up a fresh account, project, and published doc with four
  * headings separated by enough filler that scroll positions are distinct,
@@ -37,6 +40,12 @@ let context: BrowserContext;
 let page: Page;
 let projectSettingsUrl = "";
 let publicDocUrl = "";
+let appDocUrl = "";
+
+// Scroll-container selectors per view. The public page scrolls a Radix
+// ScrollArea viewport; the app view scrolls DocsLayout's overflow div.
+const PUBLIC_SCROLLER = ".public-doc-scroller [data-radix-scroll-area-viewport]";
+const APP_SCROLLER = ".app-main-scroller";
 
 async function mockTurnstile(ctx: BrowserContext) {
   await ctx.addInitScript(() => {
@@ -64,13 +73,12 @@ async function injectFakeIp(ctx: BrowserContext) {
 }
 
 // Returns the distance (in px) between the named heading's top edge and the
-// public-doc viewport's top edge. Negative = heading is above the viewport;
+// scroll container's top edge. Negative = heading is above the viewport;
 // positive = below. Returns `null` if the heading text isn't currently in
 // the DOM (CM virtualised it out, etc.).
-async function headingOffsetFromTop(p: Page, headingText: string): Promise<number | null> {
-  return p.evaluate((text) => {
-    const scroller = document.querySelector(".public-doc-scroller");
-    const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+async function headingOffsetFromTop(p: Page, headingText: string, scrollerSelector: string): Promise<number | null> {
+  return p.evaluate(({ text, selector }) => {
+    const vp = document.querySelector(selector) as HTMLElement | null;
     if (!vp) return null;
     const vpTop = vp.getBoundingClientRect().top;
     const lines = Array.from(document.querySelectorAll(".cm-line")) as HTMLElement[];
@@ -80,16 +88,16 @@ async function headingOffsetFromTop(p: Page, headingText: string): Promise<numbe
       }
     }
     return null;
-  }, headingText);
+  }, { text: headingText, selector: scrollerSelector });
 }
 
 // Asserts the named heading is rendered AND lands close to the top of the
 // viewport. Polls until the *position* is right, not just until the heading
 // is in the DOM, so we tolerate the ResizeObserver re-anchor settling.
-async function expectTopVisibleHeading(p: Page, expected: string) {
+async function expectTopVisibleHeading(p: Page, expected: string, scrollerSelector = PUBLIC_SCROLLER) {
   await expect
     .poll(async () => {
-      const offset = await headingOffsetFromTop(p, expected);
+      const offset = await headingOffsetFromTop(p, expected, scrollerSelector);
       if (offset === null) return "not-rendered";
       if (offset < -10) return `above-viewport (offset=${offset.toFixed(1)})`;
       if (offset >= HEADING_NEAR_TOP_MAX_PX) return `too-low (offset=${offset.toFixed(1)})`;
@@ -218,6 +226,7 @@ test("sets up a published doc with multiple headings", async () => {
   await expect(page.getByRole("button", { name: "Unpublish" })).toBeVisible({ timeout: 10000 });
 
   publicDocUrl = `/s/${projectId}/${docId}`;
+  appDocUrl = `/projects/${projectId}/docs/${docId}`;
 });
 
 test("URL #hash scrolls deep heading to viewport top", async () => {
@@ -280,4 +289,112 @@ test("clicking outline after manually scrolling to the bottom still scrolls back
 
   await expect(page).toHaveURL(/#alpha-section$/, { timeout: 3000 });
   await expectTopVisibleHeading(page, "Alpha Section");
+});
+
+// ── Authenticated app view (DocPage) ────────────────────────────────────────
+// Same doc, same account, but rendered inside DocsLayout where the scroll
+// container is a plain overflow-y-auto div. Regression: outline clicks here
+// used getElementById + scrollIntoView, which silently no-oped for headings
+// CodeMirror had virtualised out of the DOM.
+
+test("app view: outline click scrolls to heading and updates URL hash", async () => {
+  await page.goto(appDocUrl);
+  await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
+
+  const outline = page.locator("aside", { hasText: "Outline" });
+  await outline.getByRole("button", { name: "Delta Section" }).click();
+
+  await expect(page).toHaveURL(/#delta-section$/, { timeout: 3000 });
+  await expectTopVisibleHeading(page, "Delta Section", APP_SCROLLER);
+});
+
+test("app view: consecutive outline clicks each scroll to their heading", async () => {
+  const outline = page.locator("aside", { hasText: "Outline" });
+
+  await outline.getByRole("button", { name: "Beta Section" }).click();
+  await expect(page).toHaveURL(/#beta-section$/, { timeout: 3000 });
+  await expectTopVisibleHeading(page, "Beta Section", APP_SCROLLER);
+
+  await outline.getByRole("button", { name: "Alpha Section" }).click();
+  await expect(page).toHaveURL(/#alpha-section$/, { timeout: 3000 });
+  await expectTopVisibleHeading(page, "Alpha Section", APP_SCROLLER);
+});
+
+test("app view: URL #hash scrolls deep heading on load", async () => {
+  await page.goto(`${appDocUrl}#gamma-section`);
+  await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
+  await expectTopVisibleHeading(page, "Gamma Section", APP_SCROLLER);
+});
+
+test("app view: outline click after scrolling to the bottom still scrolls back up", async () => {
+  await page.goto(appDocUrl);
+  await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
+
+  await page.evaluate((selector) => {
+    const vp = document.querySelector(selector) as HTMLElement | null;
+    if (vp) vp.scrollTop = vp.scrollHeight;
+  }, APP_SCROLLER);
+
+  const outline = page.locator("aside", { hasText: "Outline" });
+  await outline.getByRole("button", { name: "Alpha Section" }).click();
+
+  await expect(page).toHaveURL(/#alpha-section$/, { timeout: 3000 });
+  await expectTopVisibleHeading(page, "Alpha Section", APP_SCROLLER);
+});
+
+test("app view: a long outline scrolls independently of the document", async () => {
+  // Regression: `max-h` on the outline's ScrollArea root only clipped - the
+  // Radix viewport grew to the full content height, so a long outline's tail
+  // was unreachable and wheel input fell through to the document scroller.
+  //
+  // Swap the doc to one with 40 sections so the outline overflows a short
+  // window. Runs last: earlier tests depend on the 4-section content, and
+  // afterAll deletes the whole project regardless.
+  const docId = appDocUrl.split("/").pop()!;
+  const manyContent = Array.from({ length: 40 }, (_, i) =>
+    `## Section ${String(i + 1).padStart(2, "0")}\n\nLorem ipsum dolor sit amet.\n`,
+  ).join("\n");
+  const putResult = await page.evaluate(async ({ docId, content }) => {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/docs/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Scroll Test Doc", content }),
+    });
+    return { status: res.status, body: await res.text() };
+  }, { docId, content: manyContent });
+  if (putResult.status !== 200) {
+    throw new Error(`PUT /docs/${docId} failed (${putResult.status}): ${putResult.body}`);
+  }
+
+  // Shrink the window so the outline (~40 entries) exceeds its max-h cap;
+  // still 1440 wide so the xl-only outline rail renders.
+  await page.setViewportSize({ width: 1440, height: 600 });
+  try {
+    await page.goto(appDocUrl);
+    await expect(page.locator(".cm-content")).toBeVisible({ timeout: 10000 });
+    const outline = page.locator("aside", { hasText: "Outline" });
+    await expect(outline.getByRole("button", { name: "Section 40" })).toBeAttached({ timeout: 5000 });
+
+    // Scope to the outline rail's viewport - DocsLayout's sidebar is also an
+    // <aside> wrapping a ScrollArea, so a bare descendant query grabs the
+    // wrong one.
+    const state = await page.evaluate((mainSelector) => {
+      const label = Array.from(document.querySelectorAll("aside p"))
+        .find(p => p.textContent?.trim() === "Outline");
+      const vp = label?.closest("aside")?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+      const main = document.querySelector(mainSelector) as HTMLElement | null;
+      if (!vp || !main) return null;
+      const scrollable = vp.scrollHeight > vp.clientHeight;
+      vp.scrollTop = 200;
+      return { scrollable, outlineScrollTop: vp.scrollTop, mainScrollTop: main.scrollTop };
+    }, APP_SCROLLER);
+
+    expect(state).not.toBeNull();
+    expect(state!.scrollable).toBe(true);
+    expect(state!.outlineScrollTop).toBeGreaterThan(0);
+    expect(state!.mainScrollTop).toBe(0);
+  } finally {
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
 });

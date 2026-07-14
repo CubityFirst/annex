@@ -4,9 +4,9 @@ import { fileKind } from "@/lib/fileKind";
 import { formatBytes } from "@/lib/fileManager";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
-import { EditorView } from "@codemirror/view";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { toHeadingId, findHeadingLine } from "@/lib/headingSlug";
+import { toHeadingId } from "@/lib/headingSlug";
+import { useScrollToHeading } from "@/hooks/useScrollToHeading";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { DocCoverImage } from "@/components/DocCoverImage";
 import { GraphView, type GraphData } from "@/components/GraphView";
@@ -577,122 +577,9 @@ export function PublicDocPage() {
   }, [hostMode, data, projectId, docId, navigate, location.hash]);
 
   // Shared scroll-to-heading helper used by both the URL-hash effect below and
-  // the outline buttons. Drives CodeMirror's own `scrollIntoView` against the
-  // heading's *line position* (parsed from the markdown source). That's
-  // crucial because:
-  //   - CodeMirror virtualises its DOM - far-off-screen heading lines may not
-  //     exist as elements, so `getElementById` would fail.
-  //   - The Lezer markdown parser sometimes fails to tag a `## Heading` as an
-  //     ATXHeading after long paragraphs, so even when the line is rendered
-  //     it may lack the `id` attribute our decoration would normally set.
-  //   - CM walks up to find the actual scroll parent (the Radix viewport)
-  //     and writes scrollTop on it directly, so the scroll works whether the
-  //     user is at the top, at the bottom, or anywhere else in the doc.
-  //
-  // After the initial scroll we watch the content with a ResizeObserver for
-  // ~2.5s and re-scroll on layout shifts (images loading, etc.).
-  const scrollAttemptRef = useRef<{ cancel: () => void } | null>(null);
-  const docContent = data?.doc.content;
-  const scrollToHash = useCallback((hash: string) => {
-    scrollAttemptRef.current?.cancel();
-    if (!hash || !docContent) return;
-
-    const lineNum = findHeadingLine(docContent, hash);
-    if (lineNum < 0) return;
-
-    let cancelled = false;
-    let observer: ResizeObserver | null = null;
-    let stopTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function getView(): EditorView | null {
-      const cmEditor = document.querySelector(".cm-wysiwyg--reading .cm-editor") as HTMLElement | null;
-      return cmEditor ? EditorView.findFromDOM(cmEditor) : null;
-    }
-
-    // Compute the target scrollTop from CM's height map (`lineBlockAt`),
-    // which works whether or not the line is currently rendered as DOM, then
-    // write it directly on the Radix viewport. We deliberately avoid CM's own
-    // `scrollIntoView` effect - it competes with this manual write on the
-    // next measure cycle and leaves the scroll position slightly off.
-    function doScroll(): boolean {
-      const view = getView();
-      if (!view) return false;
-      if (lineNum > view.state.doc.lines) return false;
-      const pos = view.state.doc.line(lineNum).from;
-      const viewport = view.scrollDOM.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-      if (!viewport) {
-        view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
-        return true;
-      }
-      const lineBlock = view.lineBlockAt(pos);
-      const contentRect = view.contentDOM.getBoundingClientRect();
-      const vpRect = viewport.getBoundingClientRect();
-      const contentTopInScroll = contentRect.top - vpRect.top + viewport.scrollTop;
-      const target = contentTopInScroll + lineBlock.top;
-      const max = viewport.scrollHeight - viewport.clientHeight;
-      viewport.scrollTop = Math.max(0, Math.min(max, target));
-      return true;
-    }
-
-    let userScrollCleanup: (() => void) | null = null;
-    function cancelAttempt() {
-      cancelled = true;
-      observer?.disconnect();
-      observer = null;
-      if (stopTimer) clearTimeout(stopTimer);
-      userScrollCleanup?.();
-      userScrollCleanup = null;
-    }
-
-    function startWatching() {
-      const view = getView();
-      if (!view) return;
-      const viewport = view.scrollDOM.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-      const watchTarget = viewport?.firstElementChild ?? viewport ?? view.scrollDOM;
-      observer = new ResizeObserver(() => { doScroll(); });
-      observer.observe(watchTarget);
-      stopTimer = setTimeout(cancelAttempt, 2500);
-
-      // Treat any user-initiated scroll input as a cancel - once the user
-      // has reached for the wheel / touchpad / a key, our re-anchor should
-      // back off so we don't yank them away from where they wanted to be.
-      if (viewport) {
-        const cancelOnUser = () => cancelAttempt();
-        const onKey = (e: KeyboardEvent) => {
-          if (
-            e.key === "ArrowUp" || e.key === "ArrowDown" ||
-            e.key === "PageUp" || e.key === "PageDown" ||
-            e.key === "Home" || e.key === "End" || e.key === " "
-          ) cancelAttempt();
-        };
-        viewport.addEventListener("wheel", cancelOnUser, { passive: true });
-        viewport.addEventListener("touchstart", cancelOnUser, { passive: true });
-        viewport.addEventListener("touchmove", cancelOnUser, { passive: true });
-        window.addEventListener("keydown", onKey);
-        userScrollCleanup = () => {
-          viewport.removeEventListener("wheel", cancelOnUser);
-          viewport.removeEventListener("touchstart", cancelOnUser);
-          viewport.removeEventListener("touchmove", cancelOnUser);
-          window.removeEventListener("keydown", onKey);
-        };
-      }
-    }
-
-    let attempts = 0;
-    function tick() {
-      if (cancelled) return;
-      if (doScroll()) {
-        startWatching();
-        return;
-      }
-      if (++attempts < 120) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-
-    scrollAttemptRef.current = { cancel: cancelAttempt };
-  }, [docContent]);
-
-  useEffect(() => () => scrollAttemptRef.current?.cancel(), []);
+  // the outline buttons. See useScrollToHeading for why this resolves the
+  // heading's line position from the markdown source instead of the DOM.
+  const scrollToHash = useScrollToHeading(data?.doc.content);
 
   // Scroll to #heading anchor when one is present in the URL.
   useEffect(() => {
@@ -1142,7 +1029,8 @@ export function PublicDocPage() {
                           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             Outline
                           </p>
-                          <ScrollArea className="max-h-[calc(100vh-8rem)]">
+                          {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
+                          <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
                             <nav className="flex flex-col gap-0.5">
                               <button
                                 type="button"
@@ -1196,7 +1084,7 @@ export function PublicDocPage() {
             <SheetTitle className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Outline
             </SheetTitle>
-            <ScrollArea className="max-h-[calc(70vh-3rem)] px-2 pb-4">
+            <ScrollArea className="max-h-[calc(70vh-3rem)] pl-2 pr-3 pb-4">
               <nav className="flex flex-col gap-0.5">
                 <button
                   type="button"

@@ -10,6 +10,8 @@ import { remarkUnderline } from "@/lib/remark-underline";
 import { remarkWikilinks, wikilinkUrlTransform } from "@/lib/remark-wikilinks";
 import { makeDocLink } from "@/components/DocLink";
 import { parseFrontmatter, setFrontmatterKey } from "@/lib/frontmatter";
+import { toHeadingId } from "@/lib/headingSlug";
+import { useScrollToHeading } from "@/hooks/useScrollToHeading";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -59,10 +61,6 @@ function formatPastedFilename(blob: { type: string }): string {
   return `pasted-${stamp}.${ext}`;
 }
 
-function toId(text: string): string {
-  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
-}
-
 function childrenToText(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (typeof children === "number") return String(children);
@@ -73,7 +71,7 @@ function childrenToText(children: React.ReactNode): string {
 
 function makeHeading(Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
   return function HeadingWithId({ children, node: _node, ...props }: React.ComponentPropsWithoutRef<"h1"> & { node?: unknown }) {
-    const id = toId(childrenToText(children));
+    const id = toHeadingId(childrenToText(children));
     return <Tag id={id} {...props}>{children}</Tag>;
   };
 }
@@ -95,7 +93,7 @@ function extractHeadings(content: string): Heading[] {
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2].trim();
-      headings.push({ level: match[1].length, text, id: toId(text) });
+      headings.push({ level: match[1].length, text, id: toHeadingId(text) });
     }
   }
   return headings;
@@ -380,6 +378,30 @@ export function DocPage() {
   const assetsFolderPromiseRef = useRef<Map<string | null, Promise<string>>>(new Map());
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [coverBusy, setCoverBusy] = useState(false);
+
+  // Scroll-to-heading for the reading view's outline buttons and for URL
+  // `#heading` anchors (e.g. links copied via the heading anchor button).
+  // Resolves the heading's line in the markdown source and scrolls the
+  // layout's scroll container - `getElementById` can't work here because
+  // CodeMirror virtualises off-screen lines. Fed the *displayed* content so
+  // it stays correct while previewing a historical revision.
+  const scrollToHash = useScrollToHeading(viewingRevision ? viewingRevision.content : doc?.content);
+
+  // Scroll to the URL-hash anchor once the doc is rendered. Keyed by
+  // doc + hash so re-renders (saves, revision loads) don't re-yank the
+  // scroll position while the hash lingers in the URL.
+  const lastHashScrollRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!doc || loading || editing) return;
+    const raw = location.hash.slice(1);
+    if (!raw) { lastHashScrollRef.current = null; return; }
+    const key = `${docId ?? ""}#${raw}`;
+    if (lastHashScrollRef.current === key) return;
+    lastHashScrollRef.current = key;
+    let hash: string;
+    try { hash = decodeURIComponent(raw); } catch { hash = raw; }
+    scrollToHash(hash);
+  }, [doc, loading, editing, docId, location.hash, scrollToHash]);
 
   async function handlePasteImage(file: File): Promise<{ url: string; alt: string }> {
     if (!projectId) throw new Error("no project");
@@ -1661,12 +1683,19 @@ export function DocPage() {
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Outline
             </p>
-            <ScrollArea className="max-h-[calc(100vh-8rem)]">
+            {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
+            <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
               <nav className="flex flex-col gap-0.5">
                 {headings.map((h, i) => (
                   <button
                     key={i}
-                    onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
+                    onClick={() => {
+                      // Pre-set the guard so the hash effect doesn't double-fire;
+                      // scroll directly so re-clicking the same heading still jumps.
+                      lastHashScrollRef.current = `${docId ?? ""}#${h.id}`;
+                      navigate(`#${h.id}`, { replace: true });
+                      scrollToHash(h.id);
+                    }}
                     style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
                     className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
