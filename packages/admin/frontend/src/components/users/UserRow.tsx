@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { format } from "date-fns";
-import { CalendarDays, ChevronDown, ChevronRight, Download, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Download, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +52,7 @@ import {
   exportUserData,
   forceUserPasswordChange,
   getUserDetails,
+  resyncUserName,
   updateUserModeration,
 } from "@/lib/api";
 import { downloadBlob } from "@/lib/download";
@@ -80,6 +81,7 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
   const [pending, setPending] = useState(false);
   const [forcingPasswordChange, setForcingPasswordChange] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [resyncingName, setResyncingName] = useState(false);
   const [avatarCacheBust, setAvatarCacheBust] = useState(0);
   const [deletingAvatar, setDeletingAvatar] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -174,6 +176,24 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
       toast.error(e instanceof Error ? e.message : "Failed to export user data");
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleResyncName() {
+    setResyncingName(true);
+    try {
+      const updated = await resyncUserName(user.id);
+      const total = updated.project_members + updated.organization_members;
+      if (detailsOpen || details) void loadDetails(true, false);
+      toast.success(
+        total === 0
+          ? "Display name was already in sync everywhere"
+          : `Display name fixed on ${total} membership row${total === 1 ? "" : "s"}`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to resync display name");
+    } finally {
+      setResyncingName(false);
     }
   }
 
@@ -382,6 +402,11 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
                 <Button size="sm" variant="outline" disabled={exporting} onClick={handleExport}>
                   <Download className="h-3.5 w-3.5" />
                   Export data
+                </Button>
+
+                <Button size="sm" variant="outline" disabled={resyncingName} onClick={handleResyncName}>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Resync display name
                 </Button>
 
                 {user.force_password_change ? (

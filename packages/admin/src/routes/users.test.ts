@@ -241,6 +241,12 @@ describe("audit emission - every mutation writes exactly one row, none on 404 (A
       "/u-1/grant-ink",
       { method: "DELETE" },
     ],
+    [
+      "POST /:id/resync-name",
+      env => env.AUTH_DB.firstQueue.push({ name: "Real Name" }),
+      "/u-1/resync-name",
+      { method: "POST" },
+    ],
   ];
 
   it.each(MUTATIONS)("%s: success -> exactly one audit row", async (_label, seed, path, init) => {
@@ -259,6 +265,24 @@ describe("audit emission - every mutation writes exactly one row, none on 404 (A
     const res = await request(path, init);
     expect(res.status).toBe(404);
     expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /:id/resync-name", () => {
+  it("rewrites both membership tables from the canonical users.name", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.firstQueue.push({ name: "Real Name" });
+    const request = makeUsersApp(env);
+    const res = await request("/u-1/resync-name", { method: "POST" });
+    expect(res.status).toBe(200);
+    const batch = env.DB.batches[0];
+    expect(batch).toHaveLength(2);
+    expect(batch[0].sql).toContain("UPDATE project_members SET name = ?");
+    // The guard bind (name <> ?) keeps the reported changes count to rows
+    // that were actually wrong.
+    expect(batch[0].binds).toEqual(["Real Name", "u-1", "Real Name"]);
+    expect(batch[1].sql).toContain("UPDATE organization_members SET name = ?");
+    expect(batch[1].binds).toEqual(["Real Name", "u-1", "Real Name"]);
   });
 });
 

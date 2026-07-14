@@ -487,6 +487,37 @@ usersRouter.post("/:id/force-password-change", async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /api/users/:id/resync-name - re-copies the canonical users.name
+// (auth DB) over the denormalized name snapshots in the API DB
+// (project_members + organization_members). Normally PATCH /me keeps these
+// in sync when a user renames themselves; this repairs rows that captured a
+// wrong snapshot at insert time (e.g. the site-create owner row that fell
+// back to the email while the owner-name lookup was broken).
+usersRouter.post("/:id/resync-name", async (c) => {
+  const session = c.get("session");
+
+  const id = c.req.param("id");
+  const userRow = await c.env.AUTH_DB.prepare("SELECT name FROM users WHERE id = ?")
+    .bind(id).first<{ name: string }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
+  // `AND name <> ?` keeps the changes counts meaningful: they report rows
+  // that were actually wrong, not every membership the user has.
+  const [projectRes, orgRes] = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ? AND name <> ?")
+      .bind(userRow.name, id, userRow.name),
+    c.env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ? AND name <> ?")
+      .bind(userRow.name, id, userRow.name),
+  ]);
+  const updated = {
+    project_members: projectRes?.meta?.changes ?? 0,
+    organization_members: orgRes?.meta?.changes ?? 0,
+  };
+
+  await writeAdminAudit(c.env, session, "user.name.resync", "user", id, updated);
+  return c.json({ ok: true, data: updated });
+});
+
 // GET /api/users/:id
 usersRouter.get("/:id", async (c) => {
   const id = c.req.param("id");

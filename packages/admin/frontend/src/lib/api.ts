@@ -271,6 +271,13 @@ export async function updateUserBadges(id: string, badges: number): Promise<void
   await readOk(res, "Failed to update badges");
 }
 
+// Re-copies the user's canonical display name over the denormalized
+// project/org membership snapshots. Returns how many rows were wrong.
+export async function resyncUserName(id: string): Promise<{ project_members: number; organization_members: number }> {
+  const res = await authFetch(`/api/users/${id}/resync-name`, { method: "POST" });
+  return readData<{ project_members: number; organization_members: number }>(res, "Failed to resync display name");
+}
+
 export async function forceUserPasswordChange(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/force-password-change`, { method: "POST" });
   await readOk(res, "Failed to force password change");
