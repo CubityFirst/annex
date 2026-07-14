@@ -123,7 +123,7 @@ export async function handleProjects(
     const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ userId: user.userId }),
     });
     let ownerName = user.email;
     if (lookupRes.ok) {

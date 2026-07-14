@@ -173,6 +173,29 @@ describe("handleProjects GET list / POST create", () => {
     expect(json.data.name).toBe("New Site");
   });
 
+  // Member-insert bind order: (id, project_id, user_id, email, name, role, invited_by, created_at)
+  it("snapshots the owner's display name (not email) into project_members", async () => {
+    const { env, authFetch, bindCalls } = makeEnv();
+    const res = await call(env, "POST", "/projects", { name: "New Site" });
+    expect(res.status).toBe(201);
+    // The lookup must carry the caller's userId - an empty body 400s on the
+    // auth worker and silently falls back to the email (the regression this
+    // test pins).
+    const lookupInit = (authFetch.mock.calls[0] as unknown[])[1] as RequestInit | undefined;
+    expect(JSON.parse(String(lookupInit?.body))).toEqual({ userId: "user-1" });
+    const memberBind = bindCalls.find(args => args.includes("owner"));
+    expect(memberBind?.[4]).toBe("Owner Name");
+  });
+
+  it("falls back to the email when the owner-name lookup fails", async () => {
+    const { env, authFetch, bindCalls } = makeEnv();
+    authFetch.mockResolvedValueOnce(new Response("", { status: 500 }));
+    const res = await call(env, "POST", "/projects", { name: "New Site" });
+    expect(res.status).toBe(201);
+    const memberBind = bindCalls.find(args => args.includes("owner"));
+    expect(memberBind?.[4]).toBe("a@example.com");
+  });
+
   it("creates a project inside an org for an org admin", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ role: "admin" }); // org role
