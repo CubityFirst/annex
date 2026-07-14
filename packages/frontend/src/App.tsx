@@ -28,6 +28,7 @@ import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { AcknowledgementsPage } from "./pages/AcknowledgementsPage";
 import { TestAudioPage } from "./pages/TestAudioPage";
+import { AnimationsTestPage } from "./pages/tests/AnimationsTestPage";
 import { Toaster } from "@/components/ui/sonner";
 
 export function App() {
@@ -79,6 +80,7 @@ export function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/acknowledgements" element={<AcknowledgementsPage />} />
         <Route path="/test/audio" element={<TestAudioPage />} />
+        <Route path="/test/animations" element={<AnimationsTestPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
         <Route path="/s/:projectId" element={<PublicDocPage />} />
         <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />

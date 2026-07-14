@@ -1,0 +1,96 @@
+/* /tests/animations harness — renders the real landing page over a swappable
+   full-viewport background-animation layer. The landing's opaque page
+   background is made transparent so the layer (z-index 0) shows through;
+   all landing content stacks above it. */
+
+.anim-test {
+  position: relative;
+  min-height: 100vh;
+  background: #0e0e0e;
+}
+.anim-test .landing {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+/* Let the animation glow through the blurred nav a little more than prod. */
+.anim-test .l-nav {
+  background: rgba(14, 14, 14, 0.72);
+}
+
+/* ── Variant picker panel ── */
+.at-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1000;
+  width: 280px;
+  background: rgba(17, 17, 17, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 14px;
+  font-family: 'DM Mono', monospace;
+  color: #9a9590;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+.at-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.at-panel-title {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a8a8a;
+}
+.at-panel-toggle {
+  background: none;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  color: #8a8a8a;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.at-panel-toggle:hover { color: #ccc8c2; border-color: #3a3a3a; }
+.at-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.at-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #9a9590;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.at-item:hover { color: #e8e4de; background: #1a1a1a; }
+.at-item-active {
+  color: #e8e4de;
+  background: #1e1e1e;
+  border-color: #2e2e2e;
+}
+.at-desc {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #232323;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #777;
+}
