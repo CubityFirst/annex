@@ -132,6 +132,35 @@ export async function enrichFilesWithStreamUrls(env: Env, files: PublicFile[]): 
   );
 }
 
+// Whether any published doc in the project references the file as its header
+// image (frontmatter `cover:`) or share-preview image (`image:`). Both keys
+// hold a `/api/files/<id>/content` URL written by the doc editor. Solo
+// publishing is a deliberate per-doc act, so the published set of an
+// unpublished project stays small - the scan is bounded anyway, newest
+// publishes first, and reads only each doc's head from R2 (frontmatter is
+// anchored to the top of the content).
+const FM_SCAN_MAX_DOCS = 25;
+const FM_SCAN_HEAD_BYTES = 8192;
+
+export async function isFileReferencedByPublishedDocHeader(env: Env, projectId: string, fileId: string): Promise<boolean> {
+  const docs = await env.DB.prepare(
+    "SELECT id FROM docs WHERE project_id = ? AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT ?",
+  ).bind(projectId, FM_SCAN_MAX_DOCS).all<{ id: string }>();
+  const checks = await Promise.all(docs.results.map(async d => {
+    try {
+      const obj = await env.ASSETS.get(`${projectId}/${d.id}`, { range: { offset: 0, length: FM_SCAN_HEAD_BYTES } });
+      if (!obj) return false;
+      const fm = parseFrontmatter(await obj.text());
+      return [fm.cover, fm.image].some(v => v?.match(/\/files\/([^/?#]+)\/content/)?.[1] === fileId);
+    } catch {
+      // A single unreadable doc (e.g. empty object rejecting the range read)
+      // must not 500 the file request - it just can't vouch for the file.
+      return false;
+    }
+  }));
+  return checks.some(Boolean);
+}
+
 export async function handlePublic(
   request: Request,
   env: Env,
@@ -313,14 +342,22 @@ export async function handlePublic(
   // /public/files/:id/content - serve a file from a published project. Drawings
   // (mutable files) version their ETag with updated_at and serve no-cache so an
   // edit shows up on the published site; immutable media keep the long cache.
+  // On an UNPUBLISHED project the file is still served when a solo-published
+  // doc references it as its header image (frontmatter `cover:`) or
+  // share-preview image (`image:`) - those docs are publicly viewable and
+  // their pages embed this route, so the same reachability rule must apply
+  // (mirrors the site-logo gate above).
   if (parts[0] === "files" && parts[1] && parts[2] === "content") {
     const fileId = parts[1];
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.mime_type, f.name, f.size, f.updated_at, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.mime_type, f.name, f.size, f.updated_at, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; size: number; updated_at: string | null; published_at: string | null }>();
-    if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; size: number; updated_at: string | null; project_id: string; published_at: string | null }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    if (!meta.published_at && !(await isFileReferencedByPublishedDocHeader(env, meta.project_id, fileId))) {
+      return errorResponse(Errors.NOT_FOUND);
+    }
 
     const mutable = isMutableFile(meta.mime_type);
     return serveR2Object(env.ASSETS, `files/${fileId}`, {

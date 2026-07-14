@@ -215,6 +215,90 @@ describe("GET /public/projects/:idOrSlug/logo/:variant", () => {
   });
 });
 
+describe("GET /public/files/:id/content (header-image fallback for solo-published docs)", () => {
+  const PUBLISHED_META = { mime_type: "image/png", name: "banner.png", size: 5, updated_at: null, project_id: "proj-1", published_at: "2026-01-01" };
+  const UNPUBLISHED_META = { ...PUBLISHED_META, published_at: null };
+
+  // env for the content route: one meta .first(), one docs-list .all(), and an
+  // ASSETS.get that serves file bytes for `files/*` keys and doc content (with
+  // frontmatter) for `<projectId>/<docId>` keys.
+  function contentEnv(opts: { meta: unknown; docs?: { id: string }[]; docContents?: Record<string, string> }) {
+    const preparedSql: string[] = [];
+    const bindCalls: unknown[][] = [];
+    const first = vi.fn().mockResolvedValue(opts.meta);
+    const all = vi.fn().mockResolvedValue({ results: opts.docs ?? [] });
+    const bind = vi.fn((...args: unknown[]) => { bindCalls.push(args); return { first, all }; });
+    const prepare = vi.fn((sql: string) => { preparedSql.push(sql); return { bind }; });
+    const get = vi.fn(async (key: string) => {
+      if (key.startsWith("files/")) return { body: "bytes" };
+      const content = opts.docContents?.[key];
+      return content === undefined ? null : { text: async () => content };
+    });
+    return { env: { DB: { prepare }, ASSETS: { get } } as unknown as Env, preparedSql, bindCalls, get };
+  }
+
+  const contentUrl = new URL("http://localhost/public/files/f1/content?projectId=p1");
+
+  it("serves a published project's file without scanning docs", async () => {
+    const { env, preparedSql } = contentEnv({ meta: PUBLISHED_META });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(200);
+    expect(preparedSql).toHaveLength(1); // meta lookup only - no docs query
+  });
+
+  it("serves an unpublished project's file referenced by a published doc's cover", async () => {
+    const { env, preparedSql, bindCalls, get } = contentEnv({
+      meta: UNPUBLISHED_META,
+      docs: [{ id: "doc-1" }],
+      docContents: { "proj-1/doc-1": "---\ntitle: Changelog\ncover: /api/files/f1/content\n---\nbody" },
+    });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(200);
+    // The scan only trusts PUBLISHED docs of the file's own project.
+    expect(preparedSql[1].replace(/\s+/g, " ")).toContain("published_at IS NOT NULL");
+    expect(bindCalls[1][0]).toBe("proj-1");
+    // Doc heads are range-read, not fetched whole.
+    expect(get).toHaveBeenCalledWith("proj-1/doc-1", { range: { offset: 0, length: 8192 } });
+  });
+
+  it("accepts a share-preview `image:` reference too", async () => {
+    const { env } = contentEnv({
+      meta: UNPUBLISHED_META,
+      docs: [{ id: "doc-1" }],
+      docContents: { "proj-1/doc-1": "---\nimage: /api/files/f1/content\n---\nbody" },
+    });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(200);
+  });
+
+  it("404s when published docs reference only other files", async () => {
+    const { env } = contentEnv({
+      meta: UNPUBLISHED_META,
+      docs: [{ id: "doc-1" }],
+      docContents: { "proj-1/doc-1": "---\ncover: /api/files/OTHER/content\n---\nbody" },
+    });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(404);
+  });
+
+  it("404s when the project has no published docs, without touching R2", async () => {
+    const { env, get } = contentEnv({ meta: UNPUBLISHED_META, docs: [] });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(404);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("survives an unreadable doc object and still matches a later doc", async () => {
+    const { env } = contentEnv({
+      meta: UNPUBLISHED_META,
+      docs: [{ id: "doc-gone" }, { id: "doc-1" }], // doc-gone has no R2 object
+      docContents: { "proj-1/doc-1": "---\ncover: /api/files/f1/content\n---\nbody" },
+    });
+    const res = await handlePublic(new Request(contentUrl), env, contentUrl);
+    expect(res.status).toBe(200);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // POST /public/projects/:idOrSlug/report
 // ---------------------------------------------------------------------------
