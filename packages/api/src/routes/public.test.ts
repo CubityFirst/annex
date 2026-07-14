@@ -147,6 +147,74 @@ describe("GET /public/files/:id (metadata for the file-embed widget)", () => {
   });
 });
 
+describe("GET /public/projects/:idOrSlug/logo/:variant", () => {
+  const pngObject = { arrayBuffer: async () => new ArrayBuffer(4), httpMetadata: { contentType: "image/png" } };
+
+  // envReturning + an ASSETS binding whose get() resolves to `obj`.
+  function logoEnv(row: unknown, obj: unknown = pngObject) {
+    const env = envReturning(row) as Env & { ASSETS: { get: ReturnType<typeof vi.fn> } };
+    (env as { ASSETS?: unknown }).ASSETS = { get: vi.fn().mockResolvedValue(obj) };
+    return env;
+  }
+
+  function logoUrl(variant: string) {
+    return new URL(`http://localhost/public/projects/p1/logo/${variant}`);
+  }
+
+  it("serves the logo bytes with public caching", async () => {
+    const env = logoEnv({ id: "proj-1" });
+    const url = logoUrl("square");
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    // R2 key uses the resolved project id (slug lookups must not key by slug).
+    expect(env.ASSETS.get).toHaveBeenCalledWith("site-logos/proj-1-square");
+  });
+
+  it("404s an unknown variant before touching the DB", async () => {
+    const env = logoEnv({ id: "proj-1" });
+    const url = logoUrl("bogus");
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(404);
+    expect((env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare).not.toHaveBeenCalled();
+  });
+
+  it("404s when no publicly reachable project matches", async () => {
+    const env = logoEnv(null);
+    const url = logoUrl("square");
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(404);
+    expect(env.ASSETS.get).not.toHaveBeenCalled();
+  });
+
+  it("404s when the R2 object is missing", async () => {
+    const env = logoEnv({ id: "proj-1" }, null);
+    const url = logoUrl("square");
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(404);
+  });
+
+  it("gates on site publish OR a solo-published doc, never site publish alone", async () => {
+    // A solo-published doc exposes the standalone public doc page - whose header
+    // renders this logo - for an UNPUBLISHED site, so the gate must accept
+    // "unpublished site with at least one published doc". Pin the SQL shape: a
+    // regression back to a bare `published_at IS NOT NULL` broke exactly this
+    // (logo uploaded, one doc shared, site never published -> broken image).
+    const env = logoEnv({ id: "proj-1" });
+    const url = logoUrl("wide");
+    const res = await handlePublic(new Request(url), env, url);
+    expect(res.status).toBe(200);
+    const prepare = (env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
+    const sql = (prepare.mock.calls[0][0] as string).replace(/\s+/g, " ");
+    expect(sql).toContain("logo_wide_updated_at IS NOT NULL");
+    expect(sql).toContain("(published_at IS NOT NULL OR EXISTS (SELECT 1 FROM docs WHERE docs.project_id = projects.id AND docs.published_at IS NOT NULL))");
+    // The id-or-slug from the URL feeds both lookup placeholders.
+    const bind = prepare.mock.results[0].value.bind as ReturnType<typeof vi.fn>;
+    expect(bind.mock.calls[0]).toEqual(["p1", "p1"]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // POST /public/projects/:idOrSlug/report
 // ---------------------------------------------------------------------------

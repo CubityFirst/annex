@@ -161,15 +161,22 @@ export async function handlePublic(
     return res;
   }
 
-  // /public/projects/:id/logo/:variant - serve the site logo for a published project.
-  // variant ∈ {"square","wide"}.
+  // /public/projects/:id/logo/:variant - serve the site logo for a publicly
+  // reachable project. variant ∈ {"square","wide"}. "Publicly reachable" means
+  // the site itself is published OR it has at least one solo-published doc -
+  // the /public/docs endpoint serves those docs (and hands the client the logo
+  // timestamps), so the logo must resolve on the same condition or the
+  // standalone doc header renders a broken image.
   if (parts[0] === "projects" && parts[1] && parts[2] === "logo" && parts[3]) {
     const variant = parts[3];
     if (variant !== "square" && variant !== "wide") return errorResponse(Errors.NOT_FOUND);
     const projectIdOrSlug = parts[1];
     const column = variant === "square" ? "logo_square_updated_at" : "logo_wide_updated_at";
     const project = await env.DB.prepare(
-      `SELECT id FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL AND ${column} IS NOT NULL`,
+      `SELECT id FROM projects
+        WHERE (id = ? OR vanity_slug = ?) AND ${column} IS NOT NULL
+          AND (published_at IS NOT NULL
+               OR EXISTS (SELECT 1 FROM docs WHERE docs.project_id = projects.id AND docs.published_at IS NOT NULL))`,
     ).bind(projectIdOrSlug, projectIdOrSlug).first<{ id: string }>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
     const obj = await env.ASSETS.get(`site-logos/${project.id}-${variant}`);
