@@ -150,7 +150,10 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   const navigate = useNavigate();
   const location = useLocation();
   const showPublicView = forceViewAsPublic || !isSelf;
-  const displayName = name || profile?.name || "";
+  // The `name` prop is often a denormalized snapshot (project_members.name,
+  // presence payloads) that can be stale or an email; the fetched profile
+  // carries the canonical users.name, so it wins once loaded.
+  const displayName = profile?.name || name || "";
 
   useEffect(() => {
     if (!open || profile) return;
