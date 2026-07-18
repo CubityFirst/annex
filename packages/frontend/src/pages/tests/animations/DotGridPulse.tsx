@@ -3,10 +3,13 @@
 // the dots with additive Ink-gradient glow (gold -> pink -> blue across the
 // band), plus an occasional radial "ping" wave expanding from a random point.
 //
-// Contract: default-export a component that renders a full-viewport
-// background layer (position: fixed, inset: 0, z-index: 0,
-// pointer-events: none, aria-hidden). Respect prefers-reduced-motion
-// (render static or nothing) and clean up rAF/listeners on unmount.
+// Contract: default-export a component that renders a background layer
+// (position: fixed, inset: 0, z-index: 0, pointer-events: none,
+// aria-hidden). The harness may confine the layer to one landing section
+// via a clipped, transformed wrapper (which becomes the fixed-position
+// containing block), so measure the canvas element itself, not the window.
+// Respect prefers-reduced-motion (render static or nothing) and clean up
+// rAF/listeners on unmount.
 import { useEffect, useRef } from "react";
 
 // ---- Tuning knobs -----------------------------------------------------------
@@ -241,8 +244,8 @@ export default function DotGridPulseBackground() {
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      width = window.innerWidth;
-      height = window.innerHeight;
+      width = canvas.clientWidth || window.innerWidth;
+      height = canvas.clientHeight || window.innerHeight;
       canvas.width = Math.max(1, Math.round(width * dpr));
       canvas.height = Math.max(1, Math.round(height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

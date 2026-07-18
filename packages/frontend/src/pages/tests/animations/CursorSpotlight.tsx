@@ -4,10 +4,13 @@
 // near the light — revealed dots grow and warm up toward the centre. Lively
 // wandering drift when the pointer is absent or idle (e.g. touch devices).
 //
-// Contract: default-export a component that renders a full-viewport
-// background layer (position: fixed, inset: 0, z-index: 0,
-// pointer-events: none, aria-hidden). Respect prefers-reduced-motion
-// (render static or nothing) and clean up rAF/listeners on unmount.
+// Contract: default-export a component that renders a background layer
+// (position: fixed, inset: 0, z-index: 0, pointer-events: none,
+// aria-hidden). The harness may confine the layer to one landing section
+// via a clipped, transformed wrapper (which becomes the fixed-position
+// containing block), so measure the canvas element itself, not the window.
+// Respect prefers-reduced-motion (render static or nothing) and clean up
+// rAF/listeners on unmount.
 import { useEffect, useRef } from "react";
 
 // ---- Tuning knobs -----------------------------------------------------------
@@ -181,8 +184,8 @@ export default function CursorSpotlightBackground() {
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      width = window.innerWidth;
-      height = window.innerHeight;
+      width = canvas.clientWidth || window.innerWidth;
+      height = canvas.clientHeight || window.innerHeight;
       canvas.width = Math.max(1, Math.round(width * dpr));
       canvas.height = Math.max(1, Math.round(height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -197,8 +200,9 @@ export default function CursorSpotlightBackground() {
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      pointer.x = e.clientX;
-      pointer.y = e.clientY;
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - rect.left;
+      pointer.y = e.clientY - rect.top;
       pointer.seen = true;
       pointer.lastMove = performance.now();
     };

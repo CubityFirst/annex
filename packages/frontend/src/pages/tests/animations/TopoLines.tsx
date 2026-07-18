@@ -6,10 +6,13 @@
 // and an "elevation scan" — a sweeping threshold whose glowing pink contour
 // travels across the terrain.
 //
-// Contract: default-export a component that renders a full-viewport
-// background layer (position: fixed, inset: 0, z-index: 0,
-// pointer-events: none, aria-hidden). Respect prefers-reduced-motion
-// (render static or nothing) and clean up rAF/listeners on unmount.
+// Contract: default-export a component that renders a background layer
+// (position: fixed, inset: 0, z-index: 0, pointer-events: none,
+// aria-hidden). The harness may confine the layer to one landing section
+// via a clipped, transformed wrapper (which becomes the fixed-position
+// containing block), so measure the canvas element itself, not the window.
+// Respect prefers-reduced-motion (render static or nothing) and clean up
+// rAF/listeners on unmount.
 import { useEffect, useRef } from "react";
 
 // --- Tuning knobs -----------------------------------------------------------
@@ -264,8 +267,8 @@ export default function TopoLinesBackground() {
     };
 
     const resize = () => {
-      w = window.innerWidth;
-      h = window.innerHeight;
+      w = canvas.clientWidth || window.innerWidth;
+      h = canvas.clientHeight || window.innerHeight;
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));

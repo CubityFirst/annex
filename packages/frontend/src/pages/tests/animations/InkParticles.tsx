@@ -3,10 +3,13 @@
 // palette-tinted particles with pre-rendered glow sprites, occasional
 // bright "spark" flares, and cursor repulsion. Canvas-based.
 //
-// Contract: default-export a component that renders a full-viewport
-// background layer (position: fixed, inset: 0, z-index: 0,
-// pointer-events: none, aria-hidden). Respect prefers-reduced-motion
-// (render static or nothing) and clean up rAF/listeners on unmount.
+// Contract: default-export a component that renders a background layer
+// (position: fixed, inset: 0, z-index: 0, pointer-events: none,
+// aria-hidden). The harness may confine the layer to one landing section
+// via a clipped, transformed wrapper (which becomes the fixed-position
+// containing block), so measure the canvas element itself, not the window.
+// Respect prefers-reduced-motion (render static or nothing) and clean up
+// rAF/listeners on unmount.
 import { useEffect, useRef, useState } from "react";
 
 // ---- tuning knobs -----------------------------------------------------
@@ -227,8 +230,8 @@ export default function InkParticlesBackground() {
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth;
-      h = window.innerHeight;
+      w = canvas.clientWidth || window.innerWidth;
+      h = canvas.clientHeight || window.innerHeight;
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -242,8 +245,9 @@ export default function InkParticlesBackground() {
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      pointer.x = e.clientX;
-      pointer.y = e.clientY;
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - rect.left;
+      pointer.y = e.clientY - rect.top;
       pointer.active = true;
     };
     const onPointerLeave = () => {

@@ -1,12 +1,25 @@
-import { lazy, Suspense, useEffect, useState, type LazyExoticComponent, type ComponentType } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type LazyExoticComponent,
+  type ComponentType,
+} from "react";
 import { LandingPage } from "../LandingPage";
 import "./AnimationsTestPage.css";
 
 // /test/animations — dev-only playground for landing-page background
 // animations. Renders the REAL LandingPage (background made transparent via
-// AnimationsTestPage.css) above a swappable full-viewport animation layer.
-// The active variant is kept in the URL hash so a specific idea can be
-// linked/bookmarked, e.g. /test/animations#constellation
+// AnimationsTestPage.css) above a swappable animation layer. The layer can
+// cover the entire page or be confined to one landing section (hero / ink):
+// scoped areas render inside a clipped, transformed wrapper glued over the
+// live section, which becomes the containing block for the variants'
+// position:fixed layers. Variant + area are kept in the URL hash so a
+// specific idea can be linked/bookmarked, e.g. /test/animations#flow-field
+// or /test/animations#constellation@hero
 
 type Variant = {
   id: string;
@@ -96,33 +109,100 @@ const VARIANTS: Variant[] = [
   },
 ];
 
-function variantFromHash(): string {
-  const hash = window.location.hash.replace(/^#/, "");
-  return VARIANTS.some((v) => v.id === hash) ? hash : "off";
+type Scope = {
+  id: string;
+  name: string;
+  /** Landing-page section the layer is confined to; null = entire page. */
+  selector: string | null;
+};
+
+const SCOPES: Scope[] = [
+  { id: "page", name: "page", selector: null },
+  { id: "hero", name: "hero", selector: ".l-hero" },
+  { id: "ink", name: "ink", selector: ".l-ink" },
+];
+
+// Hash format: #<variant>[@<area>], e.g. #constellation@hero
+function parseHash(): { variant: string; scope: string } {
+  const [variant, scope] = window.location.hash.replace(/^#/, "").split("@");
+  return {
+    variant: VARIANTS.some((v) => v.id === variant) ? variant : "off",
+    scope: SCOPES.some((s) => s.id === scope) ? scope : "page",
+  };
+}
+
+function writeHash(variant: string, scope: string) {
+  const hash =
+    variant === "off" && scope === "page"
+      ? "#"
+      : scope === "page"
+        ? `#${variant}`
+        : `#${variant}@${scope}`;
+  history.replaceState(null, "", hash);
 }
 
 export function AnimationsTestPage() {
-  const [activeId, setActiveId] = useState(variantFromHash);
+  const [activeId, setActiveId] = useState(() => parseHash().variant);
+  const [scopeId, setScopeId] = useState(() => parseHash().scope);
   const [open, setOpen] = useState(true);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null);
 
   useEffect(() => {
-    const onHashChange = () => setActiveId(variantFromHash());
+    const onHashChange = () => {
+      const { variant, scope } = parseHash();
+      setActiveId(variant);
+      setScopeId(scope);
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  const scope = SCOPES.find((s) => s.id === scopeId) ?? SCOPES[0];
+
+  // Keep the scoped wrapper glued to its section (top/height relative to the
+  // page root). Observing the root too catches reflows above the section.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const section = scope.selector ? root?.querySelector(scope.selector) : null;
+    if (!root || !section) {
+      setBox(null);
+      return;
+    }
+    const measure = () => {
+      const rootTop = root.getBoundingClientRect().top;
+      const rect = section.getBoundingClientRect();
+      setBox({ top: rect.top - rootTop, height: rect.height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(section);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [scope]);
+
   const select = (id: string) => {
     setActiveId(id);
-    history.replaceState(null, "", id === "off" ? "#" : `#${id}`);
+    writeHash(id, scopeId);
+  };
+  const selectScope = (id: string) => {
+    setScopeId(id);
+    writeHash(activeId, id);
   };
 
   const active = VARIANTS.find((v) => v.id === activeId) ?? VARIANTS[0];
 
   return (
-    <div className="anim-test">
+    <div className="anim-test" ref={rootRef}>
       {active.Component && (
         <Suspense fallback={null}>
-          <active.Component key={active.id} />
+          {scope.selector === null ? (
+            <active.Component key={active.id} />
+          ) : box ? (
+            <div className="at-scope" style={{ top: box.top, height: box.height }}>
+              <active.Component key={`${active.id}@${scope.id}`} />
+            </div>
+          ) : null}
         </Suspense>
       )}
       <LandingPage />
@@ -135,6 +215,18 @@ export function AnimationsTestPage() {
         </div>
         {open && (
           <>
+            <div className="at-scopes">
+              <span className="at-scopes-label">area</span>
+              {SCOPES.map((s) => (
+                <button
+                  key={s.id}
+                  className={`at-scope-btn ${s.id === scopeId ? "at-scope-btn-active" : ""}`}
+                  onClick={() => selectScope(s.id)}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
             <div className="at-list">
               {VARIANTS.map((v) => (
                 <button
