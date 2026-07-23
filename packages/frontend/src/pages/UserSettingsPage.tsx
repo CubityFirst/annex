@@ -1326,31 +1326,11 @@ export function UserSettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
-                      {/* Inline action icons live inside the field, mirroring the
-                          InlineSaveControls affordance on the display-name input. */}
+                      {/* The edit icon lives inside the field (mirroring the
+                          InlineSaveControls affordance on the display-name input);
+                          resend + verification status sit outside to its right. */}
                       <div className="relative flex-1">
-                        <Input
-                          id="email"
-                          value={email}
-                          disabled
-                          className={emailVerified === false && emailVerificationEnabled ? "pr-14" : "pr-9"}
-                        />
-                        {emailVerified === false && emailVerificationEnabled && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={handleResendVerification}
-                                disabled={resendingVerification}
-                                aria-label="Resend verification email"
-                                className="absolute right-8 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-                              >
-                                {resendingVerification ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Resend verification email</TooltipContent>
-                          </Tooltip>
-                        )}
+                        <Input id="email" value={email} disabled className="pr-9" />
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -1365,6 +1345,22 @@ export function UserSettingsPage() {
                           <TooltipContent side="top">Change email address</TooltipContent>
                         </Tooltip>
                       </div>
+                      {emailVerified === false && emailVerificationEnabled && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={handleResendVerification}
+                              disabled={resendingVerification}
+                              aria-label="Resend verification email"
+                              className="inline-flex size-9 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                            >
+                              {resendingVerification ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Resend verification email</TooltipContent>
+                        </Tooltip>
+                      )}
                       {emailVerified === true && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
