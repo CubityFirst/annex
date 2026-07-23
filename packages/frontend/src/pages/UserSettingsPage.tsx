@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, RotateCw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -1326,7 +1326,45 @@ export function UserSettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
-                      <Input id="email" value={email} disabled className="flex-1" />
+                      {/* Inline action icons live inside the field, mirroring the
+                          InlineSaveControls affordance on the display-name input. */}
+                      <div className="relative flex-1">
+                        <Input
+                          id="email"
+                          value={email}
+                          disabled
+                          className={emailVerified === false && emailVerificationEnabled ? "pr-14" : "pr-9"}
+                        />
+                        {emailVerified === false && emailVerificationEnabled && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={handleResendVerification}
+                                disabled={resendingVerification}
+                                aria-label="Resend verification email"
+                                className="absolute right-8 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                              >
+                                {resendingVerification ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Resend verification email</TooltipContent>
+                          </Tooltip>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => setChangeEmailOpen(true)}
+                              aria-label="Change email address"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <SquarePen className="size-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Change email address</TooltipContent>
+                        </Tooltip>
+                      </div>
                       {emailVerified === true && emailVerificationEnabled && (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -1352,27 +1390,6 @@ export function UserSettingsPage() {
                         </Popover>
                       )}
                     </div>
-                    {emailVerified === false && emailVerificationEnabled && (
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="w-fit px-0 h-auto text-xs"
-                        onClick={handleResendVerification}
-                        disabled={resendingVerification}
-                      >
-                        {resendingVerification ? "Sending…" : "Resend verification email"}
-                      </Button>
-                    )}
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="w-fit px-0 h-auto text-xs"
-                      onClick={() => setChangeEmailOpen(true)}
-                    >
-                      Change email address
-                    </Button>
                     {pendingEmail && (
                       <div className="text-xs text-muted-foreground">
                         <p>
