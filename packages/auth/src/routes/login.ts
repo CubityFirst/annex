@@ -4,6 +4,7 @@ import { signJwt, verifyJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
 import { validateAndConsumeBackupCode, verifyAndConsumeTotp } from "../mfa";
 import { createSession, SESSION_TTL_MS } from "../sessions";
+import { isEmailVerificationEnabled } from "../verification";
 import type { Session } from "../lib";
 import type { Env } from "../index";
 
@@ -60,9 +61,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   // for verified users. Default off: when the flag (or its binding) is absent,
   // verification isn't enforced and login proceeds.
   if (!row.email_verified) {
-    const requireVerification = env.FLAGS
-      ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: row.id })
-      : false;
+    const requireVerification = await isEmailVerificationEnabled(env, row.id);
     if (requireVerification) {
       return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
     }

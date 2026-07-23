@@ -2,7 +2,7 @@ import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { hashPassword } from "../password";
 import { verifyTurnstile } from "../turnstile";
-import { createVerificationToken } from "../verification";
+import { createVerificationToken, isEmailVerificationEnabled } from "../verification";
 import { sendVerificationEmail } from "../email";
 import { signJwt } from "../jwt";
 import { createSession, SESSION_TTL_MS } from "../sessions";
@@ -52,9 +52,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   const id = crypto.randomUUID();
   const passwordHash = await hashPassword(body.password);
   const now = new Date().toISOString();
-  const requireVerification = env.FLAGS
-    ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: id })
-    : false;
+  const requireVerification = await isEmailVerificationEnabled(env, id);
 
   // email_verified starts at 0 unconditionally: even when the flag isn't
   // enforcing verification, the address genuinely hasn't been verified, and

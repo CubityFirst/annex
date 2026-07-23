@@ -53,12 +53,18 @@ allowed_sender_addresses = ["noreply@docs.cubityfir.st"]
 # Cloudflare Flagship feature flags. Shares the same app as the API worker so a
 # single source governs both. Flags in use:
 #   signup              (default on)  - when false, /register is refused (handleRegister).
-#   email-verification  (default off) - gates registration verification emails +
-#                                       blocks unverified logins (register.ts / login.ts).
+#   email-verification  (default off) - gates registration verification emails,
+#                                       blocks unverified logins, and selects the
+#                                       confirm-first email-change flow (register.ts /
+#                                       login.ts / change-email.ts).
 # NOTE: wrangler dev DOES serve this binding locally with the real flag state,
 # so a flag flipped in the Flagship dashboard affects local dev too (e.g. a
 # disabled `signup` flag blocks the e2e suites, which register accounts). The
 # per-call code defaults only apply when the binding itself is missing.
+# Exception: `email-verification` is never enforced on a localhost deployment -
+# isEmailVerificationEnabled (verification.ts) bypasses it so dashboard flips
+# can't break local login/e2e; set DEV_EMAIL_VERIFICATION=true in .dev.vars to
+# opt back in.
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"
