@@ -341,6 +341,9 @@ export function DocsLayout() {
   const [uiFont, setUiFont] = useState<FontChoice>(() => readFontPrefsCookie().uiFont);
   const [isAdmin, setIsAdmin] = useState(false);
   const [customThemingEnabled, setCustomThemingEnabled] = useState(false);
+  // True only when the email-verification Flagship flag is on for this user
+  // AND their email is unverified - drives the "verify your email" banner.
+  const [emailUnverified, setEmailUnverified] = useState(false);
   // Same cookie-seed-then-/api/me-override pattern as the fonts above.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemePrefsCookie().mode);
   const [themeCustomColor, setThemeCustomColor] = useState<string | null>(() => readThemePrefsCookie().customColor);
@@ -393,7 +396,7 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; emailVerified: boolean; emailVerificationEnabled: boolean; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
@@ -407,6 +410,7 @@ export function DocsLayout() {
           setUiFont(resolveFontChoice(result.data.uiFont, DEFAULT_UI_FONT));
           setIsAdmin(result.data.isAdmin ?? false);
           setCustomThemingEnabled(result.data.customThemingEnabled ?? false);
+          setEmailUnverified(result.data.emailVerificationEnabled === true && result.data.emailVerified === false);
           setThemeMode(resolveThemeMode(result.data.themeMode));
           setThemeCustomColor(result.data.themeCustomColor ?? null);
         }
@@ -667,6 +671,18 @@ export function DocsLayout() {
             className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
           >
             Exit demo
+          </button>
+        </div>
+      )}
+      {emailUnverified && location.pathname !== "/settings" && (
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+          <span>Your email address hasn't been verified.</span>
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+          >
+            Update or verify email
           </button>
         </div>
       )}
