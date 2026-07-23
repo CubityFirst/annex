@@ -241,7 +241,7 @@ export function UserSettingsPage() {
   const [favouriteNoteExpanded, setFavouriteNoteExpanded] = useState<Record<string, boolean>>({});
   const FAV_NOTE_MAX = 140;
 
-  const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
+  const { runWithTwoFA, twoFADialog, busy: twoFABusy, active: twoFAActive } = use2FA({
     totp: totpEnabled,
     webauthn: webauthnCredentials.length > 0,
   });
@@ -2528,8 +2528,12 @@ export function UserSettingsPage() {
             </AlertDialogContent>
           </AlertDialog>
 
-          <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
-              <DialogContent hideClose>
+          <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open && twoFAActive) return; if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
+              <DialogContent
+                hideClose
+                onInteractOutside={e => { if (twoFAActive) e.preventDefault(); }}
+                onFocusOutside={e => { if (twoFAActive) e.preventDefault(); }}
+              >
                 <DialogHeader>
                   <DialogTitle>Change password</DialogTitle>
                 </DialogHeader>
@@ -2614,8 +2618,12 @@ export function UserSettingsPage() {
               </DialogContent>
             </Dialog>
 
-      <Dialog open={changeEmailOpen} onOpenChange={open => { if (!open) resetEmailDialog(); setChangeEmailOpen(open); }}>
-        <DialogContent hideClose>
+      <Dialog open={changeEmailOpen} onOpenChange={open => { if (!open && twoFAActive) return; if (!open) resetEmailDialog(); setChangeEmailOpen(open); }}>
+        <DialogContent
+          hideClose
+          onInteractOutside={e => { if (twoFAActive) e.preventDefault(); }}
+          onFocusOutside={e => { if (twoFAActive) e.preventDefault(); }}
+        >
           <DialogHeader>
             <DialogTitle>Change email address</DialogTitle>
           </DialogHeader>

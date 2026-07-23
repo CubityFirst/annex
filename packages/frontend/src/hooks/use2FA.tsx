@@ -304,5 +304,11 @@ export function use2FA({
     </Dialog>
   );
 
-  return { runWithTwoFA, twoFADialog, busy };
+  // `active` lets a parent dialog know the 2FA dialog is stacked on top of it.
+  // The two are sibling Radix modals, so when this one opens and takes focus,
+  // the parent would otherwise treat that as an outside interaction, dismiss
+  // itself (resetting its form), and the resulting focus shuffle can knock
+  // this dialog down too. Parents guard onOpenChange / onInteractOutside /
+  // onFocusOutside with it.
+  return { runWithTwoFA, twoFADialog, busy, active: open };
 }

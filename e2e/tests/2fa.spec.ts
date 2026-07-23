@@ -221,6 +221,37 @@ test("TOTP - entering a valid code completes login", async () => {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 });
 
+test("TOTP - a parent settings dialog survives the stacked 2FA dialog", async () => {
+  // Regression: the change-email/change-password dialogs and the use2FA dialog
+  // are sibling Radix modals. Opening the 2FA dialog used to make the parent
+  // dismiss itself (resetting its fields), and the focus shuffle could knock
+  // the 2FA dialog down too. The parent must keep its state through the whole
+  // 2FA exchange.
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Change email address" }).click();
+  await page.getByLabel("New email address", { exact: true }).fill("stacked-dialogs@example.com");
+  await page.getByLabel("Current password", { exact: true }).fill("wrong-on-purpose");
+  await page.getByRole("button", { name: "Change email", exact: true }).click();
+
+  // 2FA dialog stacks on top (the parent is aria-hidden behind it, so it
+  // disappears from the accessibility tree - that's expected).
+  await expect(page.getByRole("dialog", { name: "Confirm identity" })).toBeVisible({ timeout: 5000 });
+
+  const code = await computeTOTP(totpSecret);
+  await fillOTP(page, code);
+  await page.getByRole("button", { name: "Confirm" }).click();
+
+  // The wrong password is rejected AFTER 2FA passes - the parent dialog must
+  // reappear with its fields intact so the user can just fix the password.
+  await expect(page.getByText("Current password is incorrect", { exact: true })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole("dialog", { name: "Change email address" })).toBeVisible();
+  await expect(page.getByLabel("New email address", { exact: true })).toHaveValue("stacked-dialogs@example.com");
+
+  // And it still closes cleanly on demand.
+  await page.getByRole("dialog", { name: "Change email address" }).getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog", { name: "Change email address" })).not.toBeVisible();
+});
+
 test("TOTP - disables authenticator app (requires TOTP confirmation)", async () => {
   await page.goto("/settings");
   // The security-status fetch can get dropped under full-suite load, leaving
