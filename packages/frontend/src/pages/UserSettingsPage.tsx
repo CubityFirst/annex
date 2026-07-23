@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, RotateCw } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, Mail } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -127,6 +127,9 @@ export function UserSettingsPage() {
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
+  // Seconds until the verification email can be re-sent again (0 = ready).
+  // Same 30s convention as CheckEmailPage's resend button.
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [saving, setSaving] = useState(false);
 
   // Change email state. `pendingEmail` is a confirm-first change awaiting the
@@ -362,8 +365,15 @@ export function UserSettingsPage() {
     }
   }
 
+  // Tick the resend cooldown down once a second while it's running.
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
   async function handleResendVerification() {
-    if (!email) return;
+    if (!email || resendCooldown > 0) return;
     setResendingVerification(true);
     try {
       const token = getToken();
@@ -373,6 +383,7 @@ export function UserSettingsPage() {
         body: JSON.stringify({ email }),
       });
       toast({ title: "Verification email sent" });
+      setResendCooldown(30);
     } catch {
       toast({ title: "Could not send verification email", variant: "destructive" });
     } finally {
@@ -1351,14 +1362,20 @@ export function UserSettingsPage() {
                             <button
                               type="button"
                               onClick={handleResendVerification}
-                              disabled={resendingVerification}
+                              disabled={resendingVerification || resendCooldown > 0}
                               aria-label="Resend verification email"
                               className="inline-flex size-9 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                             >
-                              {resendingVerification ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
+                              {resendingVerification
+                                ? <Loader2 className="size-4 animate-spin" />
+                                : resendCooldown > 0
+                                  ? <span className="text-[10px] font-medium tabular-nums">{resendCooldown}</span>
+                                  : <Mail className="size-4" />}
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent side="top">Resend verification email</TooltipContent>
+                          <TooltipContent side="top">
+                            {resendCooldown > 0 ? `Sent — resend in ${resendCooldown}s` : "Resend verification email"}
+                          </TooltipContent>
                         </Tooltip>
                       )}
                       {emailVerified === true && emailVerificationEnabled && (
