@@ -35,6 +35,12 @@ export function UserDetailsPanel({
             <DetailField label="Status" value={<StatusBadge status={details.profile.account_status} />} />
             <DetailField label="User ID" value={<span className="font-mono text-xs">{details.profile.id}</span>} />
             <DetailField label="Email" value={<span className="font-mono text-xs">{details.profile.email}</span>} />
+            <DetailField
+              label="Email Verified"
+              value={details.profile.email_verified
+                ? <Badge variant="default">Verified</Badge>
+                : <Badge variant="outline" className="text-amber-600">Unverified</Badge>}
+            />
             <DetailField label="Created" value={formatDateTime(details.profile.account_created_at)} />
             {details.profile.account_status === "suspended" && details.profile.account_suspended_until && (
               <DetailField

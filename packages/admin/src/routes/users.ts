@@ -26,6 +26,7 @@ interface UserRow {
   created_at: string;
   moderation: number;
   force_password_change: number;
+  email_verified: number;
   badges?: number | null;
   latest_moderation_action: ModerationAction | null;
   latest_moderation_reason: string | null;
@@ -71,6 +72,7 @@ interface UserDetails {
     account_status: CurrentStatus;
     account_suspended_until?: number;
     force_password_change: boolean;
+    email_verified: boolean;
     badges: number;
   };
   moderation: {
@@ -213,6 +215,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
         u.created_at,
         u.moderation,
         u.force_password_change,
+        u.email_verified,
         p.badges,
         ${latestModerationFields("u")}
       FROM users u
@@ -287,6 +290,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       account_status: currentStatus,
       ...(currentStatus === "suspended" ? { account_suspended_until: profile.moderation } : {}),
       force_password_change: Boolean(profile.force_password_change),
+      email_verified: Boolean(profile.email_verified),
       badges: profile.badges ?? 0,
     },
     moderation: {
@@ -362,6 +366,7 @@ usersRouter.get("/search", async (c) => {
         u.created_at,
         u.moderation,
         u.force_password_change,
+        u.email_verified,
         ${latestModerationFields("u")}
       FROM users u
       WHERE ${where.join(" AND ")}

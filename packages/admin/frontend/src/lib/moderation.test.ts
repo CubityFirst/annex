@@ -59,6 +59,7 @@ describe("latestModerationSummary vs datetime('now') strings (AF-C1)", () => {
     created_at: "2026-01-01T00:00:00.000Z",
     moderation: -1,
     force_password_change: 0,
+    email_verified: 1,
     latest_moderation_action: "disabled",
     latest_moderation_reason: "spam",
     latest_moderation_created_at: "2026-07-05 14:30:00",

@@ -7,6 +7,7 @@ export interface AdminUser {
   created_at: string;
   moderation: number;
   force_password_change: number;
+  email_verified: number;
   latest_moderation_action: "disabled" | "suspended" | "re_enabled" | null;
   latest_moderation_reason: string | null;
   latest_moderation_created_at: string | null;
@@ -21,6 +22,7 @@ export interface AdminUserDetails {
     account_status: "active" | "disabled" | "suspended";
     account_suspended_until?: number;
     force_password_change: boolean;
+    email_verified: boolean;
     badges: number;
   };
   moderation: {

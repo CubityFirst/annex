@@ -354,4 +354,14 @@ describe("GET /search - LIKE escaping", () => {
     expect(call?.sql).toContain("ESCAPE");
     expect(call?.binds[0]).toBe("%a\\_b\\%%");
   });
+
+  it("selects email_verified so the dashboard can render the indicator", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.allQueue.push([]);
+    const request = makeUsersApp(env);
+    const res = await request("/search?q=");
+    expect(res.status).toBe(200);
+    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM users"));
+    expect(call?.sql).toContain("u.email_verified");
+  });
 });

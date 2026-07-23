@@ -305,11 +305,16 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
           {formatDate(user.created_at)}
         </TableCell>
         <TableCell>
-          {moderationState.kind === "disabled"
-            ? <Badge variant="destructive">Disabled</Badge>
-            : moderationState.kind === "suspended"
-              ? <Badge variant="secondary">Suspended</Badge>
-              : <Badge variant="default">Active</Badge>}
+          <div className="flex flex-wrap items-center gap-1">
+            {moderationState.kind === "disabled"
+              ? <Badge variant="destructive">Disabled</Badge>
+              : moderationState.kind === "suspended"
+                ? <Badge variant="secondary">Suspended</Badge>
+                : <Badge variant="default">Active</Badge>}
+            {!user.email_verified && (
+              <Badge variant="outline" className="text-amber-600">Email unverified</Badge>
+            )}
+          </div>
         </TableCell>
       </TableRow>
       {expanded && (
