@@ -707,6 +707,13 @@ export function UserSettingsPage() {
           return undefined;
         }
         if (json.error === "invalid_totp") return "Invalid authenticator code.";
+        // Stale client MFA state (enrolled in another tab): the string routes
+        // to a toast via runWithTwoFA since no 2FA dialog is open.
+        if (json.error === "mfa_required") return "Two-factor authentication is required - reload the page and try again.";
+        if (json.error === "send_failed") {
+          toast({ title: "Couldn't send the confirmation email - try again", variant: "destructive" });
+          return undefined;
+        }
         if (res.status === 409) {
           toast({ title: "That email address is already in use", variant: "destructive" });
           return undefined;
@@ -748,6 +755,10 @@ export function UserSettingsPage() {
         // The pending change expired server-side - clear the stale UI.
         setPendingEmail(null);
         toast({ title: "This email change has expired - request it again", variant: "destructive" });
+      } else if (json.error === "too_soon" || json.error === "rate_limited") {
+        toast({ title: "Give it a few minutes before resending", variant: "destructive" });
+      } else if (json.error === "send_failed") {
+        toast({ title: "Couldn't send the email - try again in a few minutes", variant: "destructive" });
       } else {
         toast({ title: "Could not re-send confirmation email", variant: "destructive" });
       }

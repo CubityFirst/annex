@@ -1,5 +1,5 @@
 import { requireAuthenticatedSession } from "../auth-session";
-import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
+import { okResponse, errorResponse, Errors, normalizeEmail, isUniqueConstraintError } from "../lib";
 import { verifyPassword } from "../password";
 import { requireMFA } from "../mfa";
 import { createVerificationToken, isEmailVerificationEnabled } from "../verification";
@@ -29,6 +29,13 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
 
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
+
+  // Per-user throttle on top of the router's per-IP one: the pending address
+  // is caller-chosen with no ownership proof, so an IP-rotating attacker must
+  // not be able to fan unsolicited confirm emails at a victim address (and
+  // this also caps per-account password-guess attempts on this route).
+  const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: `change-email:${session.userId}` });
+  if (!success) return errorResponse(Errors.RATE_LIMITED);
 
   const email = normalizeEmail(body.newEmail);
   if (!email || !email.includes("@")) return errorResponse(Errors.BAD_REQUEST);
@@ -70,9 +77,11 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
       await env.DB.prepare(
         "UPDATE users SET email = ?, email_verified = 0, email_verified_at = NULL WHERE id = ?",
       ).bind(email, session.userId).run();
-    } catch {
-      // UNIQUE constraint race past the pre-check above.
-      return errorResponse(Errors.CONFLICT);
+    } catch (err) {
+      // UNIQUE constraint race past the pre-check above; anything else is a
+      // real failure and must not masquerade as "email taken."
+      if (isUniqueConstraintError(err)) return errorResponse(Errors.CONFLICT);
+      throw err;
     }
     await sendEmailChangedNotice(env, user.email, email);
     await syncStripeCustomerEmail(env, session.userId, email);
@@ -81,6 +90,12 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
 
   const token = await createVerificationToken(env, session.userId, email);
   const verifyUrl = `${env.APP_ORIGIN}/verify-email?token=${token}`;
-  await sendEmailChangeConfirmEmail(env, email, verifyUrl);
+  const sent = await sendEmailChangeConfirmEmail(env, email, verifyUrl);
+  if (!sent) {
+    // The confirm email IS the mechanism in this mode - a swallowed send
+    // failure would leave a phantom pending change the user waits on forever.
+    await env.DB.prepare("DELETE FROM email_verification_tokens WHERE id = ?").bind(token).run();
+    return Response.json({ ok: false, error: "send_failed" }, { status: 500 });
+  }
   return okResponse({ applied: false, pendingEmail: email });
 }

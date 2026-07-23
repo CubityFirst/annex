@@ -697,6 +697,9 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   if (seg[0] === "me" && seg.length === 1 && method === "DELETE") {
     return blocked("Account deletion is disabled in the demo.");
   }
+  if (seg[0] === "me" && seg[1] === "email") {
+    return blocked("Email changes are disabled in the demo.");
+  }
   if (seg[0] === "me" && seg[1] === "bio" && method === "PATCH") {
     const body = await readJsonBody(input, init);
     s.userBio = typeof body.bio === "string" && body.bio ? body.bio : null;

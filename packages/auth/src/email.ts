@@ -108,17 +108,14 @@ export async function sendEmailChangedNotice(
       text: [
         `The email address on your Annex account was changed to ${newEmail}.`,
         "",
-        "If you made this change, no action is needed.",
-        "",
-        "If this wasn't you, your account may be compromised - sign in and change your password immediately.",
+        "If something is wrong with this, contact cubity@cubityfir.st.",
       ].join("\n"),
       html: `<!DOCTYPE html>
 <html>
 <body style="font-family:sans-serif;max-width:480px;margin:40px auto;color:#111">
   <h2 style="margin-bottom:8px">Your account email was changed</h2>
   <p>The email address on your Annex account was changed to <strong>${escapeHtml(newEmail)}</strong>.</p>
-  <p>If you made this change, no action is needed.</p>
-  <p style="color:#666;font-size:14px">If this wasn't you, your account may be compromised - sign in and change your password immediately.</p>
+  <p style="color:#666;font-size:14px">If something is wrong with this, contact <a href="mailto:cubity@cubityfir.st">cubity@cubityfir.st</a>.</p>
 </body>
 </html>`,
     });

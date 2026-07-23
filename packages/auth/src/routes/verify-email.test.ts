@@ -37,10 +37,12 @@ function makeEnv(row: typeof userRow | null) {
 
 // Queue-based mock for the change-confirm path, where the SELECT and UPDATE
 // need distinct results (and the UPDATE may reject on a UNIQUE violation).
-function makeQueueEnv(opts: { userEmail: string | null; updateError?: Error }) {
+function makeQueueEnv(opts: { userEmail: string | null; moderation?: number; updateError?: Error }) {
   const bindCalls: unknown[][] = [];
   const sqls: string[] = [];
-  const first = vi.fn().mockResolvedValue(opts.userEmail !== null ? { email: opts.userEmail } : null);
+  const first = vi.fn().mockResolvedValue(
+    opts.userEmail !== null ? { email: opts.userEmail, moderation: opts.moderation ?? 0 } : null,
+  );
   const run = opts.updateError
     ? vi.fn().mockRejectedValue(opts.updateError)
     : vi.fn().mockResolvedValue({});
@@ -76,11 +78,22 @@ describe("handleVerifyEmail", () => {
 
   it("returns 400 for an invalid/expired token", async () => {
     vi.mocked(consumeVerificationToken).mockResolvedValue(null);
-    const { env } = makeEnv(userRow);
+    // The dead-token lookup finds no row (unknown or GC'd token).
+    const { env } = makeEnv(null);
     const res = await handleVerifyEmail(req({ token: "bad" }), env);
     expect(res.status).toBe(400);
     const json = (await res.json()) as { ok: boolean; error: string };
     expect(json.error).toBe("invalid_or_expired_token");
+  });
+
+  it("returns change_link_expired for a dead change token", async () => {
+    vi.mocked(consumeVerificationToken).mockResolvedValue(null);
+    // The dead-token lookup finds a consumed/expired row carrying a pending email.
+    const { env } = makeQueueEnv({ userEmail: "pending@example.com" });
+    const res = await handleVerifyEmail(req({ token: "stale-change" }), env);
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { ok: boolean; error: string };
+    expect(json.error).toBe("change_link_expired");
   });
 
   it("returns 404 when the user vanished after token consumption", async () => {
@@ -150,6 +163,41 @@ describe("handleVerifyEmail", () => {
       const { env } = makeQueueEnv({ userEmail: null });
       const res = await handleVerifyEmail(req({ token: "change" }), env);
       expect(res.status).toBe(404);
+    });
+
+    it("refuses to apply for a disabled account", async () => {
+      const { env, run } = makeQueueEnv({ userEmail: "old@example.com", moderation: -1 });
+      const res = await handleVerifyEmail(req({ token: "change" }), env);
+      expect(res.status).toBe(403);
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("account_disabled");
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("refuses to apply for a currently-suspended account", async () => {
+      const until = Math.floor(Date.now() / 1000) + 3600;
+      const { env, run } = makeQueueEnv({ userEmail: "old@example.com", moderation: until });
+      const res = await handleVerifyEmail(req({ token: "change" }), env);
+      expect(res.status).toBe(403);
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("account_suspended");
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("applies normally once a past suspension has lapsed", async () => {
+      const lapsed = Math.floor(Date.now() / 1000) - 3600;
+      const { env } = makeQueueEnv({ userEmail: "old@example.com", moderation: lapsed });
+      const res = await handleVerifyEmail(req({ token: "change" }), env);
+      expect(res.status).toBe(200);
+    });
+
+    it("rethrows a non-UNIQUE update failure instead of reporting email_taken", async () => {
+      const { env } = makeQueueEnv({
+        userEmail: "old@example.com",
+        updateError: new Error("D1_ERROR: network timeout"),
+      });
+      await expect(handleVerifyEmail(req({ token: "change" }), env)).rejects.toThrow("network timeout");
+      expect(sendEmailChangedNotice).not.toHaveBeenCalled();
     });
   });
 });

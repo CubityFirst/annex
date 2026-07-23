@@ -13,7 +13,7 @@ export function VerifyEmailPage() {
   const navigate = useNavigate();
   const token = new URLSearchParams(location.search).get("token");
 
-  const [state, setState] = useState<"loading" | "success" | "changed" | "failure" | "email_taken">(
+  const [state, setState] = useState<"loading" | "success" | "changed" | "failure" | "email_taken" | "change_expired">(
     token ? "loading" : "failure",
   );
   const [resendEmail, setResendEmail] = useState("");
@@ -42,6 +42,10 @@ export function VerifyEmailPage() {
         }
         if (!json.ok && json.error === "email_taken") {
           setState("email_taken");
+          return;
+        }
+        if (!json.ok && json.error === "change_link_expired") {
+          setState("change_expired");
           return;
         }
         setState(json.ok ? "success" : "failure");
@@ -106,6 +110,21 @@ export function VerifyEmailPage() {
               <Button className="w-full" onClick={() => navigate("/login", { replace: true })}>
                 Go to sign in
               </Button>
+            </>
+          )}
+
+          {state === "change_expired" && (
+            <>
+              <Alert variant="destructive">
+                <AlertDescription>
+                  This email-change link is no longer valid. Request the change again from your account settings.
+                </AlertDescription>
+              </Alert>
+              <p className="text-center text-sm text-muted-foreground">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline">
+                  Back to sign in
+                </a>
+              </p>
             </>
           )}
 

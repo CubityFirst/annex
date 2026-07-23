@@ -35,6 +35,7 @@ function makeEnv(opts: {
   taken?: boolean;
   flagOn?: boolean;
   updateError?: Error;
+  rateLimited?: boolean;
 }) {
   const firstResults: unknown[] = [opts.user ?? null, opts.taken ? { id: "other-user" } : null];
   const sqls: string[] = [];
@@ -54,14 +55,16 @@ function makeEnv(opts: {
       }),
     };
   });
+  const limit = vi.fn().mockResolvedValue({ success: !opts.rateLimited });
   const env = {
     DB: { prepare },
     APP_ORIGIN: "http://localhost:5173",
+    RATE_LIMITER_EMAIL_VERIFY: { limit },
   } as unknown as Parameters<typeof handleChangeEmail>[1];
   // Flag reads go through isEmailVerificationEnabled (mocked above) - the
   // helper itself is covered in verification.test.ts, incl. the dev bypass.
   vi.mocked(isEmailVerificationEnabled).mockResolvedValue(opts.flagOn ?? false);
-  return { env, prepare, sqls, bindCalls, run };
+  return { env, prepare, sqls, bindCalls, run, limit };
 }
 
 function makeRequest(body: Record<string, unknown>) {
@@ -150,6 +153,16 @@ describe("handleChangeEmail", () => {
     expect(json.error).toBe("mfa_required");
   });
 
+  it("throttles per-user via the email-verify limiter", async () => {
+    const { env, limit } = makeEnv({ user: userRow(), rateLimited: true });
+    const res = await handleChangeEmail(
+      makeRequest({ newEmail: "new@example.com", currentPassword: "current-password" }),
+      env,
+    );
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({ key: "change-email:user-1" });
+  });
+
   it("returns 409 when the address belongs to another account", async () => {
     const { env, run } = makeEnv({ user: userRow(), taken: true });
     const res = await handleChangeEmail(
@@ -202,6 +215,21 @@ describe("handleChangeEmail", () => {
       expect(res.status).toBe(409);
       expect(sendEmailChangedNotice).not.toHaveBeenCalled();
     });
+
+    it("rethrows a non-UNIQUE update failure instead of reporting 409", async () => {
+      const { env } = makeEnv({
+        user: userRow(),
+        flagOn: false,
+        updateError: new Error("D1_ERROR: network timeout"),
+      });
+      await expect(
+        handleChangeEmail(
+          makeRequest({ newEmail: "new@example.com", currentPassword: "current-password" }),
+          env,
+        ),
+      ).rejects.toThrow("network timeout");
+      expect(sendEmailChangedNotice).not.toHaveBeenCalled();
+    });
   });
 
   describe("flag ON (confirm-first)", () => {
@@ -229,6 +257,22 @@ describe("handleChangeEmail", () => {
       );
       expect(sendEmailChangedNotice).not.toHaveBeenCalled();
       expect(syncStripeCustomerEmail).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a failed confirm send and drops the orphaned token", async () => {
+      vi.mocked(sendEmailChangeConfirmEmail).mockResolvedValueOnce(false);
+      const { env, sqls, bindCalls } = makeEnv({ user: userRow(), flagOn: true });
+      const res = await handleChangeEmail(
+        makeRequest({ newEmail: "new@example.com", currentPassword: "current-password" }),
+        env,
+      );
+      expect(res.status).toBe(500);
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("send_failed");
+      // The just-created token is cleaned up so no phantom pending state remains.
+      const delByIdIdx = sqls.findIndex(s => s === "DELETE FROM email_verification_tokens WHERE id = ?");
+      expect(delByIdIdx).toBeGreaterThanOrEqual(0);
+      expect(bindCalls[delByIdIdx]).toEqual(["tok-123"]);
     });
   });
 });

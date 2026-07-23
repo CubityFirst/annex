@@ -17,7 +17,10 @@ import { sendEmailChangeConfirmEmail } from "../email";
 
 const mockSession = { userId: "user-1", email: "old@example.com", expiresAt: Date.now() + 3600_000 };
 
-function makeEnv(pendingEmail: string | null) {
+// A pending token old enough to clear the 5-minute resend floor.
+const OLD_ENOUGH = () => Date.now() - 10 * 60 * 1000;
+
+function makeEnv(pending: { email: string; created_at: number } | null, opts: { rateLimited?: boolean } = {}) {
   const sqls: string[] = [];
   const bindCalls: unknown[][] = [];
   const prepare = vi.fn((sql: string) => {
@@ -26,14 +29,19 @@ function makeEnv(pendingEmail: string | null) {
       bind: vi.fn((...args: unknown[]) => {
         bindCalls.push(args);
         return {
-          first: vi.fn().mockResolvedValue(pendingEmail ? { email: pendingEmail } : null),
+          first: vi.fn().mockResolvedValue(pending),
           run: vi.fn().mockResolvedValue({}),
         };
       }),
     };
   });
-  const env = { DB: { prepare }, APP_ORIGIN: "http://localhost:5173" } as unknown as Parameters<typeof handleChangeEmailResend>[1];
-  return { env, sqls, bindCalls };
+  const limit = vi.fn().mockResolvedValue({ success: !opts.rateLimited });
+  const env = {
+    DB: { prepare },
+    APP_ORIGIN: "http://localhost:5173",
+    RATE_LIMITER_EMAIL_VERIFY: { limit },
+  } as unknown as Parameters<typeof handleChangeEmailResend>[1];
+  return { env, sqls, bindCalls, limit };
 }
 
 function req() {
@@ -44,6 +52,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuthenticatedSession).mockResolvedValue(mockSession);
   vi.mocked(createVerificationToken).mockResolvedValue("tok-456");
+  vi.mocked(sendEmailChangeConfirmEmail).mockResolvedValue(true);
 });
 
 describe("handleChangeEmailResend", () => {
@@ -51,8 +60,16 @@ describe("handleChangeEmailResend", () => {
     vi.mocked(requireAuthenticatedSession).mockResolvedValue(
       Response.json({ ok: false, error: "Unauthorized" }, { status: 401 }),
     );
-    const res = await handleChangeEmailResend(req(), makeEnv("new@example.com").env);
+    const res = await handleChangeEmailResend(req(), makeEnv({ email: "new@example.com", created_at: OLD_ENOUGH() }).env);
     expect(res.status).toBe(401);
+  });
+
+  it("throttles per-user via the email-verify limiter", async () => {
+    const { env, limit } = makeEnv({ email: "new@example.com", created_at: OLD_ENOUGH() }, { rateLimited: true });
+    const res = await handleChangeEmailResend(req(), env);
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({ key: "change-email:user-1" });
+    expect(sendEmailChangeConfirmEmail).not.toHaveBeenCalled();
   });
 
   it("returns 400 no_pending_change when nothing is pending", async () => {
@@ -63,8 +80,17 @@ describe("handleChangeEmailResend", () => {
     expect(createVerificationToken).not.toHaveBeenCalled();
   });
 
+  it("refuses with 429 too_soon inside the 5-minute resend floor", async () => {
+    const { env } = makeEnv({ email: "new@example.com", created_at: Date.now() - 60_000 });
+    const res = await handleChangeEmailResend(req(), env);
+    expect(res.status).toBe(429);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("too_soon");
+    expect(sendEmailChangeConfirmEmail).not.toHaveBeenCalled();
+  });
+
   it("re-issues the token with a fresh TTL and resends the confirm email", async () => {
-    const { env, sqls, bindCalls } = makeEnv("new@example.com");
+    const { env, sqls, bindCalls } = makeEnv({ email: "new@example.com", created_at: OLD_ENOUGH() });
     const res = await handleChangeEmailResend(req(), env);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; data: { sent: boolean; pendingEmail: string } };
@@ -84,5 +110,14 @@ describe("handleChangeEmailResend", () => {
       "new@example.com",
       "http://localhost:5173/verify-email?token=tok-456",
     );
+  });
+
+  it("surfaces a failed send as 500 send_failed", async () => {
+    vi.mocked(sendEmailChangeConfirmEmail).mockResolvedValueOnce(false);
+    const { env } = makeEnv({ email: "new@example.com", created_at: OLD_ENOUGH() });
+    const res = await handleChangeEmailResend(req(), env);
+    expect(res.status).toBe(500);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("send_failed");
   });
 });

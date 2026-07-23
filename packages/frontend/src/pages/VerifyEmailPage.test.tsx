@@ -63,6 +63,13 @@ describe("VerifyEmailPage", () => {
     expect(screen.queryByText("DASHBOARD")).not.toBeInTheDocument();
   });
 
+  it("shows the expired-change state pointing back to settings, without the resend form", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: false, error: "change_link_expired" }));
+    renderAt("/verify-email?token=stale");
+    expect(await screen.findByText(/request the change again from your account settings/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+  });
+
   it("shows the email-taken state without the signup resend form", async () => {
     vi.stubGlobal("fetch", mockFetchOnce({ ok: false, error: "email_taken" }));
     renderAt("/verify-email?token=change");
