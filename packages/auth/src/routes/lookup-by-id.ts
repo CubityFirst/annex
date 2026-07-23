@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors } from "../lib";
+import { isEmailVerificationEnabled } from "../verification";
 import type { Env } from "../index";
 
 export async function handleLookupById(request: Request, env: Env): Promise<Response> {
@@ -15,8 +16,13 @@ export async function handleLookupById(request: Request, env: Env): Promise<Resp
 
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
-  const emailVerificationEnabled = env.FLAGS
-    ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: user.id })
-    : false;
-  return okResponse({ userId: user.id, email: user.email, name: user.name, emailVerified: user.email_verified === 1, emailVerificationEnabled, createdAt: user.created_at, timezone: user.timezone, badges: user.badges ?? 0, bio: user.bio });
+  const emailVerificationEnabled = await isEmailVerificationEnabled(env, user.id);
+
+  // In-flight email change (confirm-first flow): the newest unconsumed,
+  // unexpired change token's target address, or null.
+  const pending = await env.DB.prepare(
+    "SELECT email FROM email_verification_tokens WHERE user_id = ? AND email IS NOT NULL AND consumed_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
+  ).bind(user.id, Date.now()).first<{ email: string }>();
+
+  return okResponse({ userId: user.id, email: user.email, name: user.name, emailVerified: user.email_verified === 1, emailVerificationEnabled, pendingEmail: pending?.email ?? null, createdAt: user.created_at, timezone: user.timezone, badges: user.badges ?? 0, bio: user.bio });
 }

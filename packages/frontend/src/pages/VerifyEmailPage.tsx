@@ -13,7 +13,7 @@ export function VerifyEmailPage() {
   const navigate = useNavigate();
   const token = new URLSearchParams(location.search).get("token");
 
-  const [state, setState] = useState<"loading" | "success" | "failure">(
+  const [state, setState] = useState<"loading" | "success" | "changed" | "failure" | "email_taken">(
     token ? "loading" : "failure",
   );
   const [resendEmail, setResendEmail] = useState("");
@@ -27,11 +27,21 @@ export function VerifyEmailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     })
-      .then(res => res.json() as Promise<{ ok: boolean; data?: { verified: boolean; token?: string }; error?: string }>)
+      .then(res => res.json() as Promise<{ ok: boolean; data?: { verified: boolean; token?: string; emailChanged?: boolean }; error?: string }>)
       .then(json => {
+        // Change-confirm links deliberately never mint a session - the clicker
+        // proved mailbox access, not account ownership.
+        if (json.ok && json.data?.emailChanged) {
+          setState("changed");
+          return;
+        }
         if (json.ok && json.data?.token) {
           setToken(json.data.token);
           navigate("/dashboard", { replace: true });
+          return;
+        }
+        if (!json.ok && json.error === "email_taken") {
+          setState("email_taken");
           return;
         }
         setState(json.ok ? "success" : "failure");
@@ -83,6 +93,34 @@ export function VerifyEmailPage() {
               <Button className="w-full" onClick={() => navigate("/login", { replace: true })}>
                 Go to sign in
               </Button>
+            </>
+          )}
+
+          {state === "changed" && (
+            <>
+              <Alert>
+                <AlertDescription>
+                  Your email address has been updated. Use it the next time you sign in.
+                </AlertDescription>
+              </Alert>
+              <Button className="w-full" onClick={() => navigate("/login", { replace: true })}>
+                Go to sign in
+              </Button>
+            </>
+          )}
+
+          {state === "email_taken" && (
+            <>
+              <Alert variant="destructive">
+                <AlertDescription>
+                  That email address was claimed by another account before you confirmed. Request the change again from your account settings.
+                </AlertDescription>
+              </Alert>
+              <p className="text-center text-sm text-muted-foreground">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline">
+                  Back to sign in
+                </a>
+              </p>
             </>
           )}
 

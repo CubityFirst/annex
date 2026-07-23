@@ -98,13 +98,25 @@ export default {
         url.pathname === "/register" ||
         url.pathname === "/login" ||
         url.pathname === "/force-change-password" ||
-        url.pathname === "/verify-email" ||
         url.pathname === "/verify-email/resend" ||
         url.pathname === "/admin/handoff/start" ||
         url.pathname === "/oauth/authorize" ||
         url.pathname === "/dev/quick-login"
       ) {
         return env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request));
+      }
+
+      // /verify-email - public like the passthrough list above, but the
+      // response is inspected: a change-confirm token applies a new email
+      // inside the auth worker, and the denormalized member-row snapshots in
+      // THIS worker's DB must be synced at that exact apply event.
+      if (url.pathname === "/verify-email") {
+        const authRes = await env.AUTH.fetch("https://auth/verify-email", await proxyAuthInit(request));
+        const json = await authRes.clone().json<{ ok?: boolean; data?: { emailChanged?: boolean; userId?: string; email?: string } }>().catch(() => null);
+        if (json?.ok && json.data?.emailChanged && json.data.userId && json.data.email) {
+          await syncMemberEmails(env, json.data.userId, json.data.email);
+        }
+        return addCorsHeaders(authRes);
       }
 
       // TOTP management routes - authenticated, proxied to auth worker with userId injected
@@ -235,6 +247,56 @@ export default {
         return addCorsHeaders(authRes);
       }
 
+      // PATCH /me/email - change account email (password + MFA gated in the
+      // auth worker). When the change applies immediately (verification flag
+      // off), sync the denormalized member-row snapshots in this worker's DB.
+      if (url.pathname === "/me/email" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<Record<string, unknown>>();
+        const authHeader = request.headers.get("Authorization");
+        // /change-email is IP-rate-limited in the auth worker; the service
+        // binding drops CF-Connecting-IP, so re-forward the edge-observed IP
+        // as X-Client-IP or every user shares one "unknown" bucket.
+        const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
+        const authRes = await env.AUTH.fetch("https://auth/change-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authHeader ? { Authorization: authHeader } : {}),
+            ...(ip ? { "X-Client-IP": ip } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+        const json = await authRes.clone().json<{ ok?: boolean; data?: { applied?: boolean; email?: string } }>().catch(() => null);
+        if (json?.ok && json.data?.applied && json.data.email) {
+          await syncMemberEmails(env, session.userId, json.data.email);
+        }
+        return addCorsHeaders(authRes);
+      }
+
+      // POST /me/email/resend | /me/email/cancel - manage a pending
+      // confirm-first email change.
+      if ((url.pathname === "/me/email/resend" || url.pathname === "/me/email/cancel") && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authPath = url.pathname === "/me/email/resend" ? "/change-email/resend" : "/change-email/cancel";
+        // Resend is IP-rate-limited in the auth worker - forward the client IP
+        // (see the /me/email comment above).
+        const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
+        const authRes = await env.AUTH.fetch(`https://auth${authPath}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authHeader ? { Authorization: authHeader } : {}),
+            ...(ip ? { "X-Client-IP": ip } : {}),
+          },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
+      }
+
       // GET /me - returns authenticated user's name and email
       if (url.pathname === "/me" && request.method === "GET") {
         const session = await getSession(request, env);
@@ -251,7 +313,7 @@ export default {
             : Promise.resolve(true),
         ]);
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null; bio: string | null } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         return addCorsHeaders(Response.json({
           ok: true,
@@ -260,6 +322,7 @@ export default {
             email: data.data.email,
             emailVerified: data.data.emailVerified,
             emailVerificationEnabled: data.data.emailVerificationEnabled,
+            pendingEmail: data.data.pendingEmail ?? null,
             userId: session.userId,
             timezone: data.data.timezone,
             bio: data.data.bio,
@@ -863,6 +926,25 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
 // Shape: `fetch(url, init)` with a buffered body, NOT a forwarded Request
 // object - wrangler's cross-process dev registry 503s when handed the original
 // streamed request. These auth payloads are small JSON, so buffering is free.
+// Keep the denormalized member-row email snapshots in this worker's DB in sync
+// when the account email changes in the auth worker (same precedent as the
+// name sync in PATCH /me). Pending invites are keyed by user_id, so they keep
+// working either way - this only refreshes the displayed/stored address.
+// Best-effort: by the time this runs the change has already applied in the
+// auth DB, so a snapshot-sync failure must not turn the response into an
+// error (on /verify-email that would read as "invalid link" after a
+// successful change).
+async function syncMemberEmails(env: Env, userId: string, email: string): Promise<void> {
+  try {
+    await env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ?")
+      .bind(email, userId).run();
+    await env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ?")
+      .bind(email, userId).run();
+  } catch (err) {
+    console.error("syncMemberEmails failed", { userId, err });
+  }
+}
+
 async function proxyAuthInit(request: Request): Promise<RequestInit> {
   const headers = new Headers(request.headers);
   // Hop-by-hop headers must not survive re-dispatch. Host must match the

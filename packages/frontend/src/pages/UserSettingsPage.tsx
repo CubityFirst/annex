@@ -129,6 +129,16 @@ export function UserSettingsPage() {
   const [resendingVerification, setResendingVerification] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Change email state. `pendingEmail` is a confirm-first change awaiting the
+  // link sent to the new address (only set while the verification flag is on).
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [changeEmailOpen, setChangeEmailOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState("");
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailChangeResending, setEmailChangeResending] = useState(false);
+  const [emailChangeCancelling, setEmailChangeCancelling] = useState(false);
+
   const [timezone, setTimezone] = useState<string | null>(null);
   const [timezonePrivate, setTimezonePrivate] = useState(false);
   const [timezoneSaving, setTimezoneSaving] = useState(false);
@@ -237,7 +247,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -245,6 +255,7 @@ export function UserSettingsPage() {
           setEmail(json.data.email);
           setEmailVerified(json.data.emailVerified);
           setEmailVerificationEnabled(json.data.emailVerificationEnabled);
+          setPendingEmail(json.data.pendingEmail ?? null);
           setUserId(json.data.userId);
           setTimezone(json.data.timezone);
           setTimezonePrivate(json.data.timezone === null);
@@ -656,6 +667,117 @@ export function UserSettingsPage() {
         setPasswordSaving(false);
       }
     });
+  }
+
+  function resetEmailDialog() {
+    setNewEmail("");
+    setEmailCurrentPassword("");
+  }
+
+  async function handleChangeEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newEmail.trim() || !emailCurrentPassword) return;
+    await runWithTwoFA(async (verification) => {
+      setEmailSaving(true);
+      try {
+        const token = getToken();
+        const res = await fetch("/api/me/email", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            newEmail: newEmail.trim(),
+            currentPassword: emailCurrentPassword,
+            totpCode: verification.totpCode,
+            challengeId: verification.challengeId,
+            webauthnResponse: verification.webauthnResponse,
+          }),
+        });
+        const json = await res.json() as { ok: boolean; error?: string; data?: { applied: boolean; email?: string; pendingEmail?: string } };
+        if (json.ok && json.data) {
+          resetEmailDialog();
+          setChangeEmailOpen(false);
+          if (json.data.applied && json.data.email) {
+            setEmail(json.data.email);
+            setEmailVerified(false);
+            toast({ title: "Email address updated" });
+          } else if (json.data.pendingEmail) {
+            setPendingEmail(json.data.pendingEmail);
+            toast({ title: `Confirmation link sent to ${json.data.pendingEmail}` });
+          }
+          return undefined;
+        }
+        if (json.error === "invalid_totp") return "Invalid authenticator code.";
+        if (res.status === 409) {
+          toast({ title: "That email address is already in use", variant: "destructive" });
+          return undefined;
+        }
+        if (json.error === "same_email") {
+          toast({ title: "That's already your email address", variant: "destructive" });
+          return undefined;
+        }
+        if (res.status === 429) {
+          toast({ title: "Too many attempts - try again in a minute", variant: "destructive" });
+          return undefined;
+        }
+        if (res.status === 401) {
+          toast({ title: "Current password is incorrect", variant: "destructive" });
+          return undefined;
+        }
+        toast({ title: "Failed to change email address", variant: "destructive" });
+        return undefined;
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setEmailSaving(false);
+      }
+    });
+  }
+
+  async function handleResendEmailChange() {
+    setEmailChangeResending(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/email/resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; error?: string };
+      if (json.ok) {
+        toast({ title: "Confirmation email re-sent" });
+      } else if (json.error === "no_pending_change") {
+        // The pending change expired server-side - clear the stale UI.
+        setPendingEmail(null);
+        toast({ title: "This email change has expired - request it again", variant: "destructive" });
+      } else {
+        toast({ title: "Could not re-send confirmation email", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setEmailChangeResending(false);
+    }
+  }
+
+  async function handleCancelEmailChange() {
+    setEmailChangeCancelling(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/email/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setPendingEmail(null);
+        toast({ title: "Email change cancelled" });
+      } else {
+        toast({ title: "Could not cancel the email change", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setEmailChangeCancelling(false);
+    }
   }
 
   function handleCancelSetup() {
@@ -1230,6 +1352,44 @@ export function UserSettingsPage() {
                       >
                         {resendingVerification ? "Sending…" : "Resend verification email"}
                       </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="w-fit px-0 h-auto text-xs"
+                      onClick={() => setChangeEmailOpen(true)}
+                    >
+                      Change email address
+                    </Button>
+                    {pendingEmail && (
+                      <div className="text-xs text-muted-foreground">
+                        <p>
+                          Confirmation sent to <strong className="text-foreground">{pendingEmail}</strong> — check that inbox to finish the change.
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="w-fit px-0 h-auto text-xs"
+                            onClick={handleResendEmailChange}
+                            disabled={emailChangeResending}
+                          >
+                            {emailChangeResending ? "Sending…" : "Resend"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="w-fit px-0 h-auto text-xs text-destructive"
+                            onClick={handleCancelEmailChange}
+                            disabled={emailChangeCancelling}
+                          >
+                            {emailChangeCancelling ? "Cancelling…" : "Cancel"}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
 
@@ -2412,6 +2572,55 @@ export function UserSettingsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+      <Dialog open={changeEmailOpen} onOpenChange={open => { if (!open) resetEmailDialog(); setChangeEmailOpen(open); }}>
+        <DialogContent hideClose>
+          <DialogHeader>
+            <DialogTitle>Change email address</DialogTitle>
+          </DialogHeader>
+          <form id="change-email-form" onSubmit={handleChangeEmail} className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="new-email">New email address</Label>
+              <Input
+                id="new-email"
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+              {emailVerificationEnabled && (
+                <p className="text-xs text-muted-foreground">
+                  We'll send a confirmation link to the new address. Your email only changes once you click it.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email-current-password">Current password</Label>
+              <Input
+                id="email-current-password"
+                type="password"
+                value={emailCurrentPassword}
+                onChange={e => setEmailCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => { resetEmailDialog(); setChangeEmailOpen(false); }} className="mr-auto">
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="change-email-form"
+              disabled={emailSaving || !newEmail.trim() || !emailCurrentPassword}
+            >
+              {emailSaving ? "Saving…" : "Change email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmBackupCodesOpen} onOpenChange={setConfirmBackupCodesOpen}>
         <AlertDialogContent>

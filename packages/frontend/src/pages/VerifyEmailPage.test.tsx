@@ -54,6 +54,23 @@ describe("VerifyEmailPage", () => {
     expect(await screen.findByText(/invalid or has expired/i)).toBeInTheDocument();
   });
 
+  it("shows the email-updated state for a change-confirm link without logging in", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true, emailChanged: true, userId: "u1", email: "new@example.com" } }));
+    renderAt("/verify-email?token=change");
+    expect(await screen.findByText(/your email address has been updated/i)).toBeInTheDocument();
+    // No session is minted from a change-confirm link.
+    expect(window.localStorage.getItem("token")).toBeNull();
+    expect(screen.queryByText("DASHBOARD")).not.toBeInTheDocument();
+  });
+
+  it("shows the email-taken state without the signup resend form", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: false, error: "email_taken" }));
+    renderAt("/verify-email?token=change");
+    expect(await screen.findByText(/claimed by another account/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resend verification email/i })).not.toBeInTheDocument();
+  });
+
   it("resends a verification email from the failure state", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);

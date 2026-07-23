@@ -507,3 +507,108 @@ describe.skipIf(!serversUp)("API - custom doc slugs", () => {
     }
   });
 });
+
+// ── Change email (PATCH /me/email, flag-off immediate path) ─────────────────
+//
+// The `email-verification` flag defaults off in local dev, so the change
+// applies immediately with email_verified = 0. The confirm-first (flag-on)
+// path is covered by the auth worker's unit tests.
+
+describe.skipIf(!serversUp)("API - change email", () => {
+  let token = "";
+  let projectId = "";
+  const oldEmail = `change-email-${RUN_ID}@example.com`;
+  const newEmail = `change-email-${RUN_ID}-new@example.com`;
+
+  const suiteHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({
+    "Content-Type": "application/json",
+    "CF-Connecting-IP": `172.19.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`,
+    ...extra,
+  });
+
+  beforeAll(async () => {
+    await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: oldEmail, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: oldEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    token = (await loginRes.json<{ data: { token: string } }>()).data?.token ?? "";
+    expect(token, "login did not return a token (rate-limited?)").not.toBe("");
+
+    // A project gives this user a project_members row whose denormalized
+    // email snapshot must follow the change.
+    const projRes = await fetch(`${API_URL}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Change Email Project" }),
+    });
+    expect(projRes.status).toBe(201);
+    projectId = (await projRes.json<{ data: { id: string } }>()).data.id;
+  });
+
+  it("rejects a change with the wrong current password", async () => {
+    const res = await fetch(`${API_URL}/me/email`, {
+      method: "PATCH",
+      headers: suiteHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ newEmail, currentPassword: "wrong-password" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("applies the change, reflects it in /me, and syncs the member-row snapshot", async () => {
+    const res = await fetch(`${API_URL}/me/email`, {
+      method: "PATCH",
+      headers: suiteHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ newEmail, currentPassword: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { applied: boolean; email: string } }>();
+    expect(body.ok).toBe(true);
+    expect(body.data).toEqual({ applied: true, email: newEmail });
+
+    const meRes = await fetch(`${API_URL}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const me = await meRes.json<{ data: { email: string; emailVerified: boolean; pendingEmail: string | null } }>();
+    expect(me.data.email).toBe(newEmail);
+    expect(me.data.emailVerified).toBe(false);
+    expect(me.data.pendingEmail).toBeNull();
+
+    const membersRes = await fetch(`${API_URL}/projects/${projectId}/members`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const members = await membersRes.json<{ data: Array<{ email: string }> }>();
+    expect(members.data.some(m => m.email === newEmail)).toBe(true);
+    expect(members.data.some(m => m.email === oldEmail)).toBe(false);
+  });
+
+  it("logs in with the new email; the old one no longer works", async () => {
+    const okRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: newEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(okRes.status).toBe(200);
+
+    const staleRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: suiteHeaders(),
+      body: JSON.stringify({ email: oldEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(staleRes.status).toBe(401);
+  });
+
+  afterAll(async () => {
+    if (projectId && token) {
+      await fetch(`${API_URL}/projects/${projectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  });
+});

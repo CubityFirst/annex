@@ -15,6 +15,9 @@ import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
 import { handleTotpStatus } from "./routes/totp-status";
 import { handleChangePassword } from "./routes/change-password";
+import { handleChangeEmail } from "./routes/change-email";
+import { handleChangeEmailResend } from "./routes/change-email-resend";
+import { handleChangeEmailCancel } from "./routes/change-email-cancel";
 import { handleForceChangePassword } from "./routes/force-change-password";
 import { handleWebauthnRegisterStart } from "./routes/webauthn-register-start";
 import { handleWebauthnRegisterFinish } from "./routes/webauthn-register-finish";
@@ -75,9 +78,10 @@ export interface Env {
   };
   // Cloudflare Flagship feature flags (shares the API worker's app). Optional so
   // local dev / flag-service outages fall back to each call's default. Flags in
-  // use: `email-verification` (default off) gates registration verification + the
-  // unverified-login block (register.ts / login.ts); `signup` gates new account
-  // registration (handleRegister).
+  // use: `email-verification` (default off) gates registration verification, the
+  // unverified-login block (register.ts / login.ts), and the confirm-first email
+  // change flow (change-email.ts); `signup` gates new account registration
+  // (handleRegister).
   FLAGS?: { getBooleanValue(flag: string, defaultValue: boolean, ctx?: Record<string, string>): Promise<boolean> };
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -86,6 +90,10 @@ export interface Env {
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   DEV_QUICK_LOGIN?: string;
+  // Local-only opt-in (.dev.vars): re-enable email-verification enforcement on
+  // a localhost deployment, which isEmailVerificationEnabled otherwise
+  // bypasses regardless of the dashboard flag (see verification.ts).
+  DEV_EMAIL_VERIFICATION?: string;
   STRIPE_INK_PRICE_ID: string;
 }
 
@@ -153,6 +161,17 @@ export default {
         response = await handleTotpStatus(request, env);
       } else if (url.pathname === "/change-password" && request.method === "POST") {
         response = await handleChangePassword(request, env);
+      } else if (url.pathname === "/change-email" && request.method === "POST") {
+        // Same limiter as the other verification-email senders (3/60s).
+        const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
+        response = await handleChangeEmail(request, env);
+      } else if (url.pathname === "/change-email/resend" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
+        response = await handleChangeEmailResend(request, env);
+      } else if (url.pathname === "/change-email/cancel" && request.method === "POST") {
+        response = await handleChangeEmailCancel(request, env);
       } else if (url.pathname === "/force-change-password" && request.method === "POST") {
         response = await handleForceChangePassword(request, env);
       } else if (url.pathname === "/verify-email" && request.method === "POST") {
