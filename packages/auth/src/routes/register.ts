@@ -56,9 +56,13 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     ? await env.FLAGS.getBooleanValue("email-verification", false, { userId: id })
     : false;
 
+  // email_verified starts at 0 unconditionally: even when the flag isn't
+  // enforcing verification, the address genuinely hasn't been verified, and
+  // the column feeds truthful surfaces (OIDC email_verified claim, admin
+  // dashboard). Enforcement (login gate, verification email) stays flag-only.
   await env.DB.prepare(
-    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(id, email, body.name, passwordHash, now, requireVerification ? 0 : 1).run();
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 0)",
+  ).bind(id, email, body.name, passwordHash, now).run();
 
   if (requireVerification) {
     const verificationToken = await createVerificationToken(env, id);
