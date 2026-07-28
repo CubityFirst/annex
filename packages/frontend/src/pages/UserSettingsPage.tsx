@@ -186,6 +186,7 @@ export function UserSettingsPage() {
 
   // Delete account state
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteCurrentPassword, setDeleteCurrentPassword] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [ownedSitesOpen, setOwnedSitesOpen] = useState(false);
   const [ownedSites, setOwnedSites] = useState<Array<{ id: string; name: string }>>([]);
@@ -872,10 +873,14 @@ export function UserSettingsPage() {
     } catch {
       // fall through to confirmation if we can't check
     }
+    setDeleteCurrentPassword("");
     setDeleteAccountOpen(true);
   }
 
   async function handleDeleteAccount() {
+    const currentPassword = deleteCurrentPassword;
+    if (!currentPassword) return;
+
     setDeleteAccountOpen(false);
     await runWithTwoFA(async (verification) => {
       setDeletingAccount(true);
@@ -884,7 +889,7 @@ export function UserSettingsPage() {
         const res = await fetch("/api/me", {
           method: "DELETE",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(verification),
+          body: JSON.stringify({ ...verification, currentPassword }),
         });
         const json = await res.json() as { ok: boolean; error?: string };
         if (json.ok) {
@@ -894,6 +899,8 @@ export function UserSettingsPage() {
         }
         if (json.error === "invalid_totp") return "Invalid authenticator code.";
         if (json.error === "invalid_backup_code") return "Invalid backup code.";
+        if (json.error === "Unauthorized") return "Current password is incorrect.";
+        if (json.error === "rate_limited") return "Too many attempts. Please wait a minute and try again.";
         if (json.error === "owns_projects") return "Delete or transfer the sites you own before deleting your account.";
         if (json.error === "owns_organizations") return "Delete the organizations you own before deleting your account.";
         return "Failed to delete account. Please try again.";
@@ -901,6 +908,7 @@ export function UserSettingsPage() {
         return "Could not connect to the server.";
       } finally {
         setDeletingAccount(false);
+        setDeleteCurrentPassword("");
       }
     });
   }
@@ -2497,7 +2505,13 @@ export function UserSettingsPage() {
             </AlertDialogContent>
           </AlertDialog>
 
-          <AlertDialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
+          <AlertDialog
+            open={deleteAccountOpen}
+            onOpenChange={open => {
+              setDeleteAccountOpen(open);
+              if (!open) setDeleteCurrentPassword("");
+            }}
+          >
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete your account?</AlertDialogTitle>
@@ -2516,11 +2530,27 @@ export function UserSettingsPage() {
                 </div>
               )}
 
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="delete-account-current-password">Current password</Label>
+                <Input
+                  id="delete-account-current-password"
+                  type="password"
+                  value={deleteCurrentPassword}
+                  onChange={event => setDeleteCurrentPassword(event.target.value)}
+                  autoComplete="current-password"
+                  disabled={deletingAccount}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Required to confirm this irreversible action.
+                </p>
+              </div>
+
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={handleDeleteAccount}
+                  disabled={!deleteCurrentPassword || deletingAccount}
                 >
                   Yes, delete my account
                 </AlertDialogAction>

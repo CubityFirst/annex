@@ -373,6 +373,7 @@ test("deletes the account - 2FA confirmation required", async () => {
   // → runWithTwoFA fires because TOTP is active → "Confirm identity" dialog
   await page.getByRole("button", { name: /delete account/i }).click();
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
+  await page.getByLabel("Current password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
 
   // use2FA opens the TOTP confirmation dialog.
