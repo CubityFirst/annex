@@ -13,7 +13,9 @@ import { revokeAllSessions } from "../sessions";
 
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current" };
 
-const limit = vi.fn().mockResolvedValue({ success: true });
+// Always-denying limiter: the panic button must never consult it (see the
+// handler comment), so every passing test below doubles as proof it doesn't.
+const limit = vi.fn().mockResolvedValue({ success: false });
 const env = { DB: {}, RATE_LIMITER_AUTH: { limit } } as unknown as Parameters<typeof handleSessionsRevokeOthers>[1];
 
 function req() {
@@ -45,10 +47,10 @@ describe("handleSessionsRevokeOthers", () => {
     expect(revokeAllSessions).toHaveBeenCalledWith(env, "user-1", "sess-current");
   });
 
-  it("returns 429 without revoking when the user limit is exceeded", async () => {
-    limit.mockResolvedValueOnce({ success: false });
+  it("is never rate limited - a stolen session must not be able to block the panic button", async () => {
     const res = await handleSessionsRevokeOthers(req(), env);
-    expect(res.status).toBe(429);
-    expect(revokeAllSessions).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(revokeAllSessions).toHaveBeenCalledWith(env, "user-1", "sess-current");
+    expect(limit).not.toHaveBeenCalled();
   });
 });

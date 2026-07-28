@@ -11,7 +11,9 @@ vi.mock("../sessions", () => ({
 import { requireAuthenticatedSession } from "../auth-session";
 import { revokeSession } from "../sessions";
 
-const limit = vi.fn().mockResolvedValue({ success: true });
+// Always-denying limiter: logout must never consult it (see the handler
+// comment), so every passing test below doubles as proof it doesn't.
+const limit = vi.fn().mockResolvedValue({ success: false });
 const env = { DB: {}, RATE_LIMITER_AUTH: { limit } } as unknown as Parameters<typeof handleSessionsLogout>[1];
 
 function req() {
@@ -45,14 +47,13 @@ describe("handleSessionsLogout", () => {
     expect(revokeSession).toHaveBeenCalledWith(env, "sess-current", "user-1");
   });
 
-  it("returns 429 without revoking when the user limit is exceeded", async () => {
+  it("is never rate limited - the best-effort client swallow must not leave the session alive", async () => {
     vi.mocked(requireAuthenticatedSession).mockResolvedValue({
       userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current",
     });
-    limit.mockResolvedValueOnce({ success: false });
     const res = await handleSessionsLogout(req(), env);
-    expect(res.status).toBe(429);
-    expect(revokeSession).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(limit).not.toHaveBeenCalled();
   });
 
   it("is a no-op revoke when the session has no sid (still 200)", async () => {

@@ -56,6 +56,8 @@ describe("handleSessionsRevoke", () => {
     limit.mockResolvedValueOnce({ success: false });
     const res = await handleSessionsRevoke(req({ sessionId: "sess-x" }), env);
     expect(res.status).toBe(429);
+    // Own bucket - shared with no other route, so nothing else can starve it.
+    expect(limit).toHaveBeenCalledWith({ key: "sessions-revoke:user-1" });
     expect(revokeSession).not.toHaveBeenCalled();
   });
 

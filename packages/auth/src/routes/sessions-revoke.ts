@@ -10,7 +10,10 @@ export async function handleSessionsRevoke(request: Request, env: Env): Promise<
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
 
-  const limited = await rateLimitUser(env.RATE_LIMITER_AUTH, `sessions:${session.userId}`);
+  // Own bucket (not shared with any other route) so nothing can starve it; if
+  // it does run dry, /sessions/revoke-others stays available as the unthrottled
+  // escape hatch - see the comment there before rate-limiting that route.
+  const limited = await rateLimitUser(env.RATE_LIMITER_AUTH, `sessions-revoke:${session.userId}`);
   if (limited) return limited;
 
   const ok = await revokeSession(env, body.sessionId, session.userId);
