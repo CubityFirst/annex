@@ -19,12 +19,13 @@ const trustedClient = {
   allowed_scopes: "openid profile", trusted: 1, disabled: 0,
 };
 
-function makeEnv(client: typeof trustedClient | null) {
+function makeEnv(client: typeof trustedClient | null, rateLimitSuccess = true) {
   const first = vi.fn().mockResolvedValue(client);
   const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
   const bind = vi.fn().mockReturnValue({ first, run });
   const prepare = vi.fn().mockReturnValue({ bind });
-  return { env: { DB: { prepare } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first };
+  const limit = vi.fn().mockResolvedValue({ success: rateLimitSuccess });
+  return { env: { DB: { prepare }, RATE_LIMITER_OIDC: { limit } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first, limit };
 }
 
 const base = {
@@ -55,6 +56,14 @@ describe("handleOAuthAuthorize", () => {
     const { env } = makeEnv(trustedClient);
     const res = await handleOAuthAuthorize(req(base), env);
     expect(res.status).toBe(401);
+  });
+
+  it("returns 429 before reading or writing OAuth state when the user limit is exceeded", async () => {
+    const { env, prepare, limit } = makeEnv(trustedClient, false);
+    const res = await handleOAuthAuthorize(req(base), env);
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({ key: "oidc-authorize:user-1" });
+    expect(prepare).not.toHaveBeenCalled();
   });
 
   it("rejects a body missing client_id / redirect_uri", async () => {

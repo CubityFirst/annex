@@ -13,7 +13,8 @@ import { revokeAllSessions } from "../sessions";
 
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current" };
 
-const env = { DB: {} } as unknown as Parameters<typeof handleSessionsRevokeOthers>[1];
+const limit = vi.fn().mockResolvedValue({ success: true });
+const env = { DB: {}, RATE_LIMITER_AUTH: { limit } } as unknown as Parameters<typeof handleSessionsRevokeOthers>[1];
 
 function req() {
   return new Request("http://localhost/sessions/revoke-others", {
@@ -42,5 +43,12 @@ describe("handleSessionsRevokeOthers", () => {
     const res = await handleSessionsRevokeOthers(req(), env);
     expect(res.status).toBe(200);
     expect(revokeAllSessions).toHaveBeenCalledWith(env, "user-1", "sess-current");
+  });
+
+  it("returns 429 without revoking when the user limit is exceeded", async () => {
+    limit.mockResolvedValueOnce({ success: false });
+    const res = await handleSessionsRevokeOthers(req(), env);
+    expect(res.status).toBe(429);
+    expect(revokeAllSessions).not.toHaveBeenCalled();
   });
 });

@@ -15,7 +15,7 @@ import { verifyJwt } from "../jwt";
 import { revokeAllSessions } from "../sessions";
 import { hashPassword } from "../password";
 
-const userRow = { id: "user-1", email: "test@example.com", name: "Test", created_at: "2026-01-01", is_admin: 0 };
+const userRow = { id: "user-1", email: "test@example.com", name: "Test", created_at: "2026-01-01", is_admin: 0, moderation: 0 };
 
 function makeEnv(opts?: { user?: typeof userRow | null; changes?: number }) {
   const first = vi.fn().mockResolvedValue(opts?.user === undefined ? userRow : opts.user);
@@ -70,6 +70,14 @@ describe("handleForceChangePassword", () => {
     const { env } = makeEnv({ user: null });
     const res = await handleForceChangePassword(req({ changeToken: "t", newPassword: "Str0ng!Pass" }), env);
     expect(res.status).toBe(404);
+  });
+
+  it("rejects a disabled account before consuming the change token", async () => {
+    const { env, run } = makeEnv({ user: { ...userRow, moderation: -1 } });
+    const res = await handleForceChangePassword(req({ changeToken: "t", newPassword: "Str0ng!Pass" }), env);
+    expect(res.status).toBe(403);
+    expect((await res.json<{ error: string }>()).error).toBe("account_disabled");
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("returns 401 when the atomic consume changes 0 rows (token reused)", async () => {

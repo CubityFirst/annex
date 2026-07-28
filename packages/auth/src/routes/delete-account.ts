@@ -1,5 +1,6 @@
 import { requireAuthenticatedSession } from "../auth-session";
-import { okResponse } from "../lib";
+import { okResponse, errorResponse, Errors, rateLimitUser } from "../lib";
+import { verifyPassword } from "../password";
 import { requireMFA } from "../mfa";
 import { getStripe } from "../stripe-client";
 import type { Env } from "../index";
@@ -9,11 +10,29 @@ export async function handleDeleteAccount(request: Request, env: Env): Promise<R
   if (session instanceof Response) return session;
 
   const body = await request.json<{
+    currentPassword?: string;
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
     backupCode?: string;
   }>();
+
+  // Step-up re-auth for an irreversible, cascading delete. requireMFA below is a
+  // no-op for accounts without TOTP/WebAuthn, so without this gate a single
+  // stolen session could destroy an MFA-less account. Mirror change-password and
+  // demand the current password regardless of MFA state.
+  if (!body.currentPassword) return errorResponse(Errors.BAD_REQUEST);
+
+  const limited = await rateLimitUser(env.RATE_LIMITER_AUTH, `delete-account:${session.userId}`);
+  if (limited) return limited;
+
+  const user = await env.DB.prepare(
+    "SELECT password_hash FROM users WHERE id = ?",
+  ).bind(session.userId).first<{ password_hash: string }>();
+  if (!user) return errorResponse(Errors.NOT_FOUND);
+
+  const valid = await verifyPassword(body.currentPassword, user.password_hash);
+  if (!valid) return errorResponse(Errors.UNAUTHORIZED);
 
   const mfaError = await requireMFA(env, session.userId, {
     totpCode: body.totpCode,
