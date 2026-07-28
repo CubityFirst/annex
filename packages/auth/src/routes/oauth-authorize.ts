@@ -1,5 +1,5 @@
 import { requireAuthenticatedSession } from "../auth-session";
-import { errorResponse, Errors, okResponse } from "../lib";
+import { errorResponse, Errors, okResponse, rateLimitUser } from "../lib";
 import { OIDC_CODE_TTL_MS, parseRedirectUris, redirectUriAllowed, resolveScopes } from "../oidc";
 import type { Env } from "../index";
 
@@ -53,6 +53,12 @@ function buildRedirect(redirectUri: string, params: Record<string, string | unde
 export async function handleOAuthAuthorize(request: Request, env: Env): Promise<Response> {
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
+
+  // This is the only code-minting path and each approved call writes to
+  // oauth_codes. The public /oauth/token side is IP-capped; throttle the
+  // issuing side per-user too (proxy strips IP, so key on the session userId).
+  const limited = await rateLimitUser(env.RATE_LIMITER_OIDC, `oidc-authorize:${session.userId}`);
+  if (limited) return limited;
 
   const body = await request.json<AuthorizeBody>().catch(() => ({} as AuthorizeBody));
 

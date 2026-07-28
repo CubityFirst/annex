@@ -13,7 +13,7 @@ import { revokeAllSessions } from "../sessions";
 
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current" };
 
-const env = { DB: {} } as unknown as Parameters<typeof handleSessionsRevokeOthers>[1];
+const env = { DB: {}, RATE_LIMITER_AUTH: { limit: vi.fn().mockResolvedValue({ success: true }) } } as unknown as Parameters<typeof handleSessionsRevokeOthers>[1];
 
 function req() {
   return new Request("http://localhost/sessions/revoke-others", {

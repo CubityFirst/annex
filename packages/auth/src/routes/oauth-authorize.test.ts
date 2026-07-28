@@ -24,7 +24,7 @@ function makeEnv(client: typeof trustedClient | null) {
   const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
   const bind = vi.fn().mockReturnValue({ first, run });
   const prepare = vi.fn().mockReturnValue({ bind });
-  return { env: { DB: { prepare } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first };
+  return { env: { DB: { prepare }, RATE_LIMITER_OIDC: { limit: vi.fn().mockResolvedValue({ success: true }) } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first };
 }
 
 const base = {

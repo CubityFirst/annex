@@ -11,7 +11,7 @@ vi.mock("../sessions", () => ({
 import { requireAuthenticatedSession } from "../auth-session";
 import { revokeSession } from "../sessions";
 
-const env = { DB: {} } as unknown as Parameters<typeof handleSessionsLogout>[1];
+const env = { DB: {}, RATE_LIMITER_AUTH: { limit: vi.fn().mockResolvedValue({ success: true }) } } as unknown as Parameters<typeof handleSessionsLogout>[1];
 
 function req() {
   return new Request("http://localhost/sessions/logout", {

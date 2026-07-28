@@ -3,6 +3,7 @@ import { okResponse, errorResponse, Errors } from "../lib";
 import { hashPassword } from "../password";
 import { signJwt, verifyJwt } from "../jwt";
 import { createSession, revokeAllSessions, SESSION_TTL_MS } from "../sessions";
+import { checkModeration } from "./login";
 import type { Env } from "../index";
 
 export async function handleForceChangePassword(request: Request, env: Env): Promise<Response> {
@@ -25,9 +26,16 @@ export async function handleForceChangePassword(request: Request, env: Env): Pro
   }
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, created_at, is_admin FROM users WHERE id = ? AND force_password_change = 1",
-  ).bind(session.userId).first<{ id: string; email: string; name: string; created_at: string; is_admin: number }>();
+    "SELECT id, email, name, created_at, is_admin, moderation FROM users WHERE id = ? AND force_password_change = 1",
+  ).bind(session.userId).first<{ id: string; email: string; name: string; created_at: string; is_admin: number; moderation: number }>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
+
+  // Re-check moderation at consume time (mirrors admin-handoff-exchange). The
+  // change token was minted at login, before any later suspension/disable — a
+  // user moderated inside the 15-min window must not complete the reset and
+  // receive a fresh session.
+  const moderationError = checkModeration(user.moderation);
+  if (moderationError) return moderationError;
 
   // Single statement performs the consume: matches `change_token_id` to the
   // JWT's `cti` claim, writes the new hash, clears the flag, and clears the
