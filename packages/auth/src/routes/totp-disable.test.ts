@@ -14,11 +14,17 @@ import { requireMFA } from "../mfa";
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000 };
 
 function makeEnv(row: { totp_secret: string | null } | null) {
-  const run = vi.fn().mockResolvedValue({});
   const first = vi.fn().mockResolvedValue(row);
-  const bind = vi.fn().mockReturnValue({ run, first });
-  const prepare = vi.fn().mockReturnValue({ bind });
-  return { env: { DB: { prepare } } as unknown as Parameters<typeof handleTotpDisable>[1], prepare, bind, run };
+  const bind = vi.fn().mockReturnValue({ first });
+  const updateBind = vi.fn().mockReturnValue({});
+  const deleteBind = vi.fn().mockReturnValue({});
+  const prepare = vi.fn()
+    .mockReturnValueOnce({ bind })
+    .mockReturnValueOnce({ bind: updateBind })
+    .mockReturnValueOnce({ bind: deleteBind });
+  const batch = vi.fn().mockResolvedValue([]);
+  const env = { DB: { prepare, batch } } as unknown as Parameters<typeof handleTotpDisable>[1];
+  return { env, prepare, updateBind, deleteBind, batch };
 }
 
 function req(body: unknown) {
@@ -52,32 +58,32 @@ describe("handleTotpDisable", () => {
   });
 
   it("rejects when TOTP isn't enabled", async () => {
-    const { env, run } = makeEnv({ totp_secret: null });
+    const { env, batch } = makeEnv({ totp_secret: null });
     const res = await handleTotpDisable(req({ totpCode: "123456" }), env);
     expect(res.status).toBe(400);
-    expect(run).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it("propagates an MFA failure without clearing the secret", async () => {
     vi.mocked(requireMFA).mockResolvedValue(
       Response.json({ ok: false, error: "mfa_required" }, { status: 401 }) as never,
     );
-    const { env, run } = makeEnv({ totp_secret: "S" });
+    const { env, batch } = makeEnv({ totp_secret: "S" });
     const res = await handleTotpDisable(req({}), env);
     expect(res.status).toBe(401);
-    expect(run).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
   });
 
-  it("clears the secret + replay guard on valid MFA", async () => {
-    const { env, run, bind, prepare } = makeEnv({ totp_secret: "S" });
+  it("atomically clears the TOTP state and its recovery codes on valid MFA", async () => {
+    const { env, batch, updateBind, deleteBind, prepare } = makeEnv({ totp_secret: "S" });
     const res = await handleTotpDisable(req({ totpCode: "123456" }), env);
     expect(res.status).toBe(200);
-    expect(run).toHaveBeenCalledOnce();
-    expect(bind).toHaveBeenLastCalledWith("user-1");
-    // The UPDATE must clear BOTH the secret AND the replay guard - dropping the
-    // totp_last_used_step = NULL clear would let a future re-enrollment reject a
-    // code from the current time step.
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch.mock.calls[0][0]).toHaveLength(2);
+    expect(updateBind).toHaveBeenCalledWith("user-1");
+    expect(deleteBind).toHaveBeenCalledWith("user-1");
     expect(prepare).toHaveBeenCalledWith(expect.stringContaining("totp_secret = NULL"));
     expect(prepare).toHaveBeenCalledWith(expect.stringContaining("totp_last_used_step = NULL"));
+    expect(prepare).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM backup_codes"));
   });
 });

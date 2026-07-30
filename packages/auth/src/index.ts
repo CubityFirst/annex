@@ -49,6 +49,7 @@ import { handleSessionsLogout } from "./routes/sessions-logout";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripe-webhook";
 import { handleDevQuickLogin } from "./routes/dev-quick-login";
+import { deleteExpiredWebauthnChallenges } from "./webauthn";
 
 export interface Env {
   DB: D1Database;
@@ -296,9 +297,12 @@ export default {
   // as an audit cushion before removing them.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    await env.DB.prepare(
-      "DELETE FROM sessions WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
-    ).bind(cutoff, cutoff).run();
+    await Promise.all([
+      env.DB.prepare(
+        "DELETE FROM sessions WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
+      ).bind(cutoff, cutoff).run(),
+      deleteExpiredWebauthnChallenges(env),
+    ]);
   },
 };
 

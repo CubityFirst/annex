@@ -25,11 +25,15 @@ export async function handleTotpDisable(request: Request, env: Env): Promise<Res
   });
   if (mfaError) return mfaError;
 
-  // Clear the replay guard with the secret: a future re-enrollment must be
-  // able to accept a code from the current time step.
-  await env.DB.prepare("UPDATE users SET totp_secret = NULL, totp_last_used_step = NULL WHERE id = ?")
-    .bind(session.userId)
-    .run();
+  // Clear the replay guard and invalidate every recovery code from this TOTP
+  // enrollment. D1 batch executes atomically, so the old codes can never be
+  // resurrected by a disable/re-enable sequence.
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET totp_secret = NULL, totp_last_used_step = NULL WHERE id = ?")
+      .bind(session.userId),
+    env.DB.prepare("DELETE FROM backup_codes WHERE user_id = ?")
+      .bind(session.userId),
+  ]);
 
   return okResponse({});
 }

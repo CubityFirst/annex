@@ -123,10 +123,13 @@ export async function validateAndConsumeBackupCode(env: Env, userId: string, cod
 
   for (const row of rows.results) {
     if (row.code_hash === hash) {
-      await env.DB.prepare(
-        "UPDATE backup_codes SET used_at = datetime('now') WHERE id = ?",
-      ).bind(row.id).run();
-      return true;
+      const result = await env.DB.prepare(
+        "UPDATE backup_codes SET used_at = datetime('now') WHERE id = ? AND user_id = ? AND used_at IS NULL",
+      ).bind(row.id, userId).run();
+      // The matching row may have been consumed by a concurrent request after
+      // the SELECT above. Only the request whose conditional UPDATE changed the
+      // row gets to treat the one-time code as valid.
+      return (result.meta.changes ?? 0) === 1;
     }
   }
   return false;

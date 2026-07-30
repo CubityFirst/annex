@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { verifyAndConsumeTotp } from "./mfa";
+import { hashCode, validateAndConsumeBackupCode, verifyAndConsumeTotp } from "./mfa";
 import { base32Decode } from "./totp";
 import { toArrayBuffer } from "./crypto";
 import type { Env } from "./index";
@@ -61,5 +61,44 @@ describe("verifyAndConsumeTotp", () => {
     const { env, prepare } = makeEnv(1);
     expect(await verifyAndConsumeTotp(env, "user-1", SECRET, "abcdef")).toBe(false);
     expect(prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe("validateAndConsumeBackupCode", () => {
+  async function makeBackupCodeEnv(updateChanges: number) {
+    const code = "abcd-1234";
+    const codeHash = await hashCode(code.toUpperCase());
+    const all = vi.fn().mockResolvedValue({
+      results: [{ id: "backup-1", code_hash: codeHash }],
+    });
+    const selectBind = vi.fn().mockReturnValue({ all });
+    const run = vi.fn().mockResolvedValue({ meta: { changes: updateChanges } });
+    const updateBind = vi.fn().mockReturnValue({ run });
+    const prepare = vi.fn()
+      .mockReturnValueOnce({ bind: selectBind })
+      .mockReturnValueOnce({ bind: updateBind });
+    return {
+      code,
+      env: { DB: { prepare } } as unknown as Env,
+      prepare,
+      selectBind,
+      updateBind,
+    };
+  }
+
+  it("accepts only the request whose conditional consume updates the code", async () => {
+    const { code, env, prepare, selectBind, updateBind } = await makeBackupCodeEnv(1);
+
+    expect(await validateAndConsumeBackupCode(env, "user-1", code)).toBe(true);
+    expect(selectBind).toHaveBeenCalledWith("user-1");
+    expect(updateBind).toHaveBeenCalledWith("backup-1", "user-1");
+    expect(prepare).toHaveBeenLastCalledWith(expect.stringContaining("used_at IS NULL"));
+  });
+
+  it("rejects a matching code already consumed by a concurrent request", async () => {
+    const { code, env, prepare } = await makeBackupCodeEnv(0);
+
+    expect(await validateAndConsumeBackupCode(env, "user-1", code)).toBe(false);
+    expect(prepare).toHaveBeenCalledTimes(2);
   });
 });

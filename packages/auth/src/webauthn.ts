@@ -17,6 +17,17 @@ type AuthenticatorTransportFuture =
 import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
+export const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+export async function deleteExpiredWebauthnChallenges(
+  env: Env,
+  now = Date.now(),
+): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM webauthn_challenges WHERE created_at <= ?",
+  ).bind(now - WEBAUTHN_CHALLENGE_TTL_MS).run();
+}
+
 export function uint8ArrayToBase64url(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
@@ -93,6 +104,11 @@ function parseTransports(raw: string | null): AuthenticatorTransportFuture[] {
 }
 
 export async function createAuthenticationOptions(env: Env, userId: string) {
+  // This endpoint is intentionally usable before authentication and creates a
+  // database row even for an invented user id. Bound storage growth by
+  // removing abandoned ceremonies before inserting the next challenge.
+  await deleteExpiredWebauthnChallenges(env);
+
   const credentials = await env.DB.prepare(
     "SELECT id, transports FROM webauthn_credentials WHERE user_id = ?",
   ).bind(userId).all<{ id: string; transports: string | null }>();
@@ -122,12 +138,13 @@ export async function consumeChallenge(
   type: string,
 ): Promise<string | null> {
   const row = await env.DB.prepare(
-    "SELECT challenge, created_at FROM webauthn_challenges WHERE id = ? AND user_id = ? AND type = ?",
+    `DELETE FROM webauthn_challenges
+     WHERE id = ? AND user_id = ? AND type = ?
+     RETURNING challenge, created_at`,
   ).bind(challengeId, userId, type).first<{ challenge: string; created_at: number }>();
 
   if (!row) return null;
-  await env.DB.prepare("DELETE FROM webauthn_challenges WHERE id = ?").bind(challengeId).run();
-  if (Date.now() - row.created_at > 5 * 60 * 1000) return null;
+  if (Date.now() - row.created_at > WEBAUTHN_CHALLENGE_TTL_MS) return null;
 
   return row.challenge;
 }
