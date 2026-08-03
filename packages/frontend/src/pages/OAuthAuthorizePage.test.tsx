@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { OAuthAuthorizePage } from "./OAuthAuthorizePage";
+import { consumePendingOAuthNext, storePendingOAuthNext } from "@/lib/pendingOAuth";
 
 const VALID_QUERY =
   "?client_id=app1&redirect_uri=https%3A%2F%2Fapp.example%2Fcb&code_challenge=abc&code_challenge_method=S256&scope=openid+email&state=xyz";
@@ -44,6 +45,11 @@ describe("OAuthAuthorizePage", () => {
   it("bounces to login when there is no session token", () => {
     renderAt(`/oauth/authorize${VALID_QUERY}`);
     expect(assignMock).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+  });
+
+  it("stashes the authorize URL before bouncing so a signup detour can resume", () => {
+    renderAt(`/oauth/authorize${VALID_QUERY}`);
+    expect(consumePendingOAuthNext()).toBe(`/oauth/authorize${VALID_QUERY}`);
   });
 
   it("renders the consent screen with the client name and scopes", async () => {
@@ -99,6 +105,22 @@ describe("OAuthAuthorizePage", () => {
       "/api/oauth/authorize",
       expect.objectContaining({ body: expect.stringContaining('"approved":true') }),
     );
+  });
+
+  it("clears a leftover stash when the flow completes with a redirect", async () => {
+    window.localStorage.setItem("token", "jwt");
+    storePendingOAuthNext(`/oauth/authorize${VALID_QUERY}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ ok: true, data: { redirectTo: "https://app.example/cb?code=zzz" } }),
+      }),
+    );
+    renderAt(`/oauth/authorize${VALID_QUERY}`);
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith("https://app.example/cb?code=zzz"));
+    expect(consumePendingOAuthNext()).toBeNull();
   });
 
   it("denies consent and follows the returned redirect", async () => {

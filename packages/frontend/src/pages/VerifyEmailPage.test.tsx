@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { VerifyEmailPage } from "./VerifyEmailPage";
+import { consumePendingOAuthNext, storePendingOAuthNext } from "@/lib/pendingOAuth";
 
 function renderAt(path: string) {
   return render(
@@ -11,6 +12,7 @@ function renderAt(path: string) {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/dashboard" element={<div>DASHBOARD</div>} />
         <Route path="/login" element={<div>LOGIN</div>} />
+        <Route path="/oauth/authorize" element={<div>OAUTH_AUTHORIZE</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -40,6 +42,15 @@ describe("VerifyEmailPage", () => {
     await waitFor(() => expect(screen.getByText("DASHBOARD")).toBeInTheDocument());
     // the returned JWT was persisted
     expect(window.localStorage.getItem("token")).toBe("jwt-123");
+  });
+
+  it("resumes a stashed OAuth authorize flow after signup verification", async () => {
+    storePendingOAuthNext("/oauth/authorize?client_id=app1&redirect_uri=https%3A%2F%2Fapp.example%2Fcb&code_challenge=abc");
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true, token: "jwt-123" } }));
+    renderAt("/verify-email?token=good");
+    await waitFor(() => expect(screen.getByText("OAUTH_AUTHORIZE")).toBeInTheDocument());
+    // the stash is single-use - it was consumed by the redirect
+    expect(consumePendingOAuthNext()).toBeNull();
   });
 
   it("shows the success state when verified without an auto-login token", async () => {

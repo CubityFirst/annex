@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
+import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto dark:invert" />;
 
@@ -63,7 +64,8 @@ export function RegisterPage() {
           navigate("/check-email", { replace: true, state: { email: json.data.email } });
         } else if (json.data.token) {
           setToken(json.data.token);
-          navigate("/dashboard", { replace: true });
+          // Resume a "Sign in with Annex" flow interrupted by signup.
+          navigate(consumePendingOAuthNext() ?? "/dashboard", { replace: true });
         } else {
           navigate("/login", { replace: true });
         }

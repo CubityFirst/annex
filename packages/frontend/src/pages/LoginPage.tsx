@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile, type TurnstileHandle } from "@/components/Turnstile";
 import { clearToken, getToken, setToken } from "@/lib/auth";
+import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
 type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker" | "force_password_change" | "email_unverified";
 
@@ -65,11 +66,17 @@ export function LoginPage() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   // Prefer the ?next= param set by apiFetch when it forced a sign-out; fall
-  // back to React Router state (set by direct navigations to /login); finally
-  // default to /dashboard.
+  // back to React Router state (set by direct navigations to /login); then a
+  // stashed OAuth authorize URL (survives the signup detour, where ?next= is
+  // lost); finally default to /dashboard.
   const nextParam = safeNextPath(searchParams.get("next"));
   const fromState = (location.state as { from?: string } | null)?.from;
-  const from = nextParam ?? fromState ?? "/dashboard";
+  const resolveDestination = useCallback(() => {
+    // Consume the stash even when ?next= already covers it, so an abandoned
+    // OAuth attempt can't redirect a later unrelated sign-in.
+    const pendingOAuth = consumePendingOAuthNext();
+    return nextParam ?? fromState ?? pendingOAuth ?? "/dashboard";
+  }, [nextParam, fromState]);
   const adminReturnTo = normalizeAdminReturnTo(searchParams.get("returnTo"));
   const logoutRequested = searchParams.get("logout") === "1";
   const reasonParam = searchParams.get("reason");
@@ -144,8 +151,8 @@ export function LoginPage() {
       if (redirected) return;
     }
 
-    navigate(from, { replace: true });
-  }, [adminReturnTo, from, navigate, startAdminHandoff]);
+    navigate(resolveDestination(), { replace: true });
+  }, [adminReturnTo, resolveDestination, navigate, startAdminHandoff]);
 
   useEffect(() => {
     if (logoutRequested && !logoutHandledRef.current) {
@@ -163,9 +170,9 @@ export function LoginPage() {
     if (adminReturnTo) {
       void startAdminHandoff(token);
     } else {
-      navigate(from, { replace: true });
+      navigate(resolveDestination(), { replace: true });
     }
-  }, [adminReturnTo, from, logoutRequested, navigate, startAdminHandoff]);
+  }, [adminReturnTo, resolveDestination, logoutRequested, navigate, startAdminHandoff]);
 
   // Each step that mounts a Turnstile widget needs a fresh token. The previous step's
   // token (if any) was already consumed server-side, so clear it to force a re-solve
@@ -255,7 +262,7 @@ export function LoginPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, from, navigate]);
+  }, [email, navigate]);
 
   async function handleResendVerification() {
     if (!email || resendState === "sending") return;

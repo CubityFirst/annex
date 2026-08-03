@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { setToken } from "@/lib/auth";
+import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
 export function VerifyEmailPage() {
   const location = useLocation();
@@ -37,7 +38,9 @@ export function VerifyEmailPage() {
         }
         if (json.ok && json.data?.token) {
           setToken(json.data.token);
-          navigate("/dashboard", { replace: true });
+          // Resume a "Sign in with Annex" flow interrupted by signup: the
+          // authorize page stashed its URL before bouncing to login.
+          navigate(consumePendingOAuthNext() ?? "/dashboard", { replace: true });
           return;
         }
         if (!json.ok && json.error === "email_taken") {

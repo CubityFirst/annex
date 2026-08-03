@@ -4,6 +4,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { clearToken, getToken } from "@/lib/auth";
+import { clearPendingOAuthNext, storePendingOAuthNext } from "@/lib/pendingOAuth";
 
 // Browser-facing OIDC authorization endpoint (the `authorization_endpoint` in
 // discovery). A connected service's OIDC library redirects the browser here
@@ -87,11 +88,13 @@ export function OAuthAuthorizePage() {
           body: JSON.stringify({ ...params, ...decision }),
         });
 
-        // Token missing/expired → re-authenticate, then return here.
+        // Token missing/expired → re-authenticate, then return here. The
+        // stash covers the detour through signup, where ?next= gets lost.
         if (res.status === 401) {
           clearToken();
-          const next = encodeURIComponent(location.pathname + location.search);
-          window.location.assign(`/login?next=${next}`);
+          const next = location.pathname + location.search;
+          storePendingOAuthNext(next);
+          window.location.assign(`/login?next=${encodeURIComponent(next)}`);
           return;
         }
 
@@ -114,6 +117,8 @@ export function OAuthAuthorizePage() {
         }
 
         if (json.data?.redirectTo) {
+          // Flow completed - a leftover stash must not redirect a later sign-in.
+          clearPendingOAuthNext();
           window.location.assign(json.data.redirectTo);
           return;
         }
@@ -149,9 +154,12 @@ export function OAuthAuthorizePage() {
     }
 
     // No Annex session yet → bounce through login and come straight back.
+    // The stash survives the signup detour (register → verify-email), where
+    // the ?next= query is lost.
     if (!getToken()) {
-      const next = encodeURIComponent(location.pathname + location.search);
-      window.location.assign(`/login?next=${next}`);
+      const next = location.pathname + location.search;
+      storePendingOAuthNext(next);
+      window.location.assign(`/login?next=${encodeURIComponent(next)}`);
       return;
     }
 
