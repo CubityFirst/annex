@@ -169,6 +169,7 @@ export function UserSettingsPage() {
   const [pendingUri, setPendingUri] = useState<string | null>(null);
   const [setupCode, setSetupCode] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
+  const [securityEnrollmentPassword, setSecurityEnrollmentPassword] = useState("");
 
   // WebAuthn state
   const [webauthnCredentials, setWebauthnCredentials] = useState<WebAuthnCredential[]>([]);
@@ -468,7 +469,7 @@ export function UserSettingsPage() {
 
   async function handleSetupVerify(e: React.FormEvent) {
     e.preventDefault();
-    if (!pendingSecret || !setupCode) return;
+    if (!pendingSecret || !setupCode || (!twoFactorProtected && !securityEnrollmentPassword)) return;
     await runWithTwoFA(async (verification) => {
       setSetupLoading(true);
       try {
@@ -482,6 +483,8 @@ export function UserSettingsPage() {
             totpCode: verification.totpCode,
             challengeId: verification.challengeId,
             webauthnResponse: verification.webauthnResponse,
+            backupCode: verification.backupCode,
+            currentPassword: securityEnrollmentPassword,
           }),
         });
         const json = await res.json() as { ok: boolean; error?: string };
@@ -491,6 +494,7 @@ export function UserSettingsPage() {
           setPendingSecret(null);
           setPendingUri(null);
           setSetupCode("");
+          setSecurityEnrollmentPassword("");
           toast({ title: "Two-factor authentication enabled" });
           return undefined;
         }
@@ -529,12 +533,12 @@ export function UserSettingsPage() {
   }
 
   async function handleDisableTOTP() {
-    await runWithTwoFA(async ({ totpCode, challengeId, webauthnResponse }) => {
+    await runWithTwoFA(async (verification) => {
       const token = getToken();
       const res = await fetch("/api/me/totp/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ totpCode, challengeId, webauthnResponse }),
+        body: JSON.stringify(verification),
       });
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
@@ -548,6 +552,7 @@ export function UserSettingsPage() {
 
   async function handleRegisterKey(e: React.FormEvent) {
     e.preventDefault();
+    if (!twoFactorProtected && !securityEnrollmentPassword) return;
     await runWithTwoFA(async (verification) => {
       setRegisterLoading(true);
       try {
@@ -584,6 +589,8 @@ export function UserSettingsPage() {
             totpCode: verification.totpCode,
             challengeId2fa: verification.challengeId,
             webauthnResponse: verification.webauthnResponse,
+            backupCode: verification.backupCode,
+            currentPassword: securityEnrollmentPassword,
           }),
         });
         const finishJson = await finishRes.json() as { ok: boolean; error?: string };
@@ -601,6 +608,7 @@ export function UserSettingsPage() {
           if (listJson.ok && listJson.data) setWebauthnCredentials(listJson.data.credentials);
           setAddingKey(false);
           setNewKeyName("");
+          setSecurityEnrollmentPassword("");
           toast({ title: "Security key added" });
         } else {
           return finishJson.error ?? "Failed to register security key.";
@@ -657,6 +665,7 @@ export function UserSettingsPage() {
             totpCode: verification.totpCode,
             challengeId: verification.challengeId,
             webauthnResponse: verification.webauthnResponse,
+            backupCode: verification.backupCode,
           }),
         });
         const json = await res.json() as { ok: boolean; error?: string };
@@ -702,6 +711,7 @@ export function UserSettingsPage() {
             totpCode: verification.totpCode,
             challengeId: verification.challengeId,
             webauthnResponse: verification.webauthnResponse,
+            backupCode: verification.backupCode,
           }),
         });
         const json = await res.json() as { ok: boolean; error?: string; data?: { applied: boolean; email?: string; pendingEmail?: string } };
@@ -808,6 +818,7 @@ export function UserSettingsPage() {
     setPendingSecret(null);
     setPendingUri(null);
     setSetupCode("");
+    setSecurityEnrollmentPassword("");
   }
 
   async function handleRevokeSession(id: string) {
@@ -2243,8 +2254,22 @@ export function UserSettingsPage() {
                       </InputOTPGroup>
                     </InputOTP>
                   </div>
+                  {!twoFactorProtected && (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="totp-enrollment-password">Current password</Label>
+                      <Input
+                        id="totp-enrollment-password"
+                        type="password"
+                        value={securityEnrollmentPassword}
+                        onChange={e => setSecurityEnrollmentPassword(e.target.value)}
+                        autoComplete="current-password"
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Button type="submit" disabled={setupLoading || setupCode.length !== 6}>
+                    <Button type="submit" disabled={setupLoading || setupCode.length !== 6 || (!twoFactorProtected && !securityEnrollmentPassword)}>
                       {setupLoading ? "Verifying…" : "Enable 2FA"}
                     </Button>
                     <Button type="button" variant="outline" onClick={handleCancelSetup}>
@@ -2330,14 +2355,28 @@ export function UserSettingsPage() {
                           autoFocus
                         />
                       </div>
+                      {!twoFactorProtected && (
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="key-enrollment-password">Current password</Label>
+                          <Input
+                            id="key-enrollment-password"
+                            type="password"
+                            value={securityEnrollmentPassword}
+                            onChange={e => setSecurityEnrollmentPassword(e.target.value)}
+                            autoComplete="current-password"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
+                        </div>
+                      )}
                       <div className="flex gap-2">
-                        <Button type="submit" disabled={registerLoading}>
+                        <Button type="submit" disabled={registerLoading || (!twoFactorProtected && !securityEnrollmentPassword)}>
                           {registerLoading ? "Follow the browser prompt…" : "Register key"}
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => { setAddingKey(false); setNewKeyName(""); }}
+                          onClick={() => { setAddingKey(false); setNewKeyName(""); setSecurityEnrollmentPassword(""); }}
                           disabled={registerLoading}
                         >
                           Cancel

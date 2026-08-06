@@ -8,12 +8,12 @@ vi.mock("../totp", () => ({
   verifyTOTP: vi.fn(),
 }));
 vi.mock("../mfa", () => ({
-  requireMFA: vi.fn(),
+  requireEnrollmentStepUp: vi.fn(),
 }));
 
 import { requireAuthenticatedSession } from "../auth-session";
 import { verifyTOTP } from "../totp";
-import { requireMFA } from "../mfa";
+import { requireEnrollmentStepUp } from "../mfa";
 
 const mockSession = { userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000 };
 
@@ -36,7 +36,7 @@ function req(body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuthenticatedSession).mockResolvedValue(mockSession);
-  vi.mocked(requireMFA).mockResolvedValue(null as never);
+  vi.mocked(requireEnrollmentStepUp).mockResolvedValue(null as never);
   vi.mocked(verifyTOTP).mockResolvedValue(true);
 });
 
@@ -65,7 +65,7 @@ describe("handleTotpEnable", () => {
   });
 
   it("propagates an MFA challenge failure", async () => {
-    vi.mocked(requireMFA).mockResolvedValue(
+    vi.mocked(requireEnrollmentStepUp).mockResolvedValue(
       Response.json({ ok: false, error: "mfa_required" }, { status: 401 }) as never,
     );
     const { env, run } = makeEnv({ totp_secret: null });
@@ -88,5 +88,20 @@ describe("handleTotpEnable", () => {
     expect(res.status).toBe(200);
     expect(run).toHaveBeenCalledOnce();
     expect(bind).toHaveBeenLastCalledWith("NEWSECRET", "user-1");
+  });
+
+  it("passes current password and recovery-code step-up to first-factor enrollment", async () => {
+    const { env } = makeEnv({ totp_secret: null });
+    await handleTotpEnable(req({
+      secret: "NEWSECRET",
+      code: "123456",
+      currentPassword: "current-password",
+      backupCode: "ABCD-1234",
+    }), env);
+
+    expect(requireEnrollmentStepUp).toHaveBeenCalledWith(env, "user-1", expect.objectContaining({
+      currentPassword: "current-password",
+      backupCode: "ABCD-1234",
+    }));
   });
 });

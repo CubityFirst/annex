@@ -5,7 +5,7 @@ import {
   verifyRegistrationResponse,
   uint8ArrayToBase64url,
 } from "../webauthn";
-import { requireMFA } from "../mfa";
+import { requireEnrollmentStepUp } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleWebauthnRegisterFinish(request: Request, env: Env): Promise<Response> {
@@ -16,16 +16,20 @@ export async function handleWebauthnRegisterFinish(request: Request, env: Env): 
     totpCode?: string;
     challengeId2fa?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
+    currentPassword?: string;
   }>();
   if (!body.challengeId || !body.response) return errorResponse(Errors.BAD_REQUEST);
 
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
 
-  const mfaError = await requireMFA(env, session.userId, {
+  const mfaError = await requireEnrollmentStepUp(env, session.userId, {
     totpCode: body.totpCode,
     challengeId: body.challengeId2fa,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
+    currentPassword: body.currentPassword,
   });
   if (mfaError) return mfaError;
 

@@ -1,6 +1,7 @@
 import { verifyWebauthnAssertion } from "./webauthn";
 import { matchTotpStep, verifyTOTP } from "./totp";
 import { errorResponse, Errors } from "./lib";
+import { verifyPassword } from "./password";
 import type { Env } from "./index";
 
 export type MFAVerification = {
@@ -9,6 +10,48 @@ export type MFAVerification = {
   webauthnResponse?: unknown;
   backupCode?: string;
 };
+
+export type EnrollmentVerification = MFAVerification & {
+  currentPassword?: string;
+};
+
+/**
+ * Protects enrollment of a new authenticator.
+ *
+ * Existing MFA is the preferred step-up. If the account has no factor yet,
+ * require the current password instead: possession of a bearer session alone
+ * must never be enough to add a passkey and turn a transient session theft
+ * into permanent passwordless access.
+ */
+export async function requireEnrollmentStepUp(
+  env: Env,
+  userId: string,
+  verification: EnrollmentVerification,
+): Promise<Response | null> {
+  const user = await env.DB.prepare(
+    "SELECT password_hash, totp_secret FROM users WHERE id = ?",
+  ).bind(userId).first<{ password_hash: string; totp_secret: string | null }>();
+  if (!user) return errorResponse(Errors.UNAUTHORIZED);
+
+  const existingKey = await env.DB.prepare(
+    "SELECT id FROM webauthn_credentials WHERE user_id = ? LIMIT 1",
+  ).bind(userId).first<{ id: string }>();
+
+  if (user.totp_secret || existingKey) {
+    return requireMFA(env, userId, verification);
+  }
+
+  if (!verification.currentPassword) {
+    return Response.json({ ok: false, error: "password_required" }, { status: 401 });
+  }
+
+  const { success } = await env.RATE_LIMITER_AUTH.limit({ key: `enroll-factor:${userId}` });
+  if (!success) return errorResponse(Errors.RATE_LIMITED);
+
+  const valid = await verifyPassword(verification.currentPassword, user.password_hash);
+  if (!valid) return errorResponse(Errors.UNAUTHORIZED);
+  return null;
+}
 
 /**
  * Enforces MFA for a given user.

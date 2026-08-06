@@ -1,7 +1,7 @@
 import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyTOTP } from "../totp";
-import { requireMFA } from "../mfa";
+import { requireEnrollmentStepUp } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleTotpEnable(request: Request, env: Env): Promise<Response> {
@@ -11,6 +11,8 @@ export async function handleTotpEnable(request: Request, env: Env): Promise<Resp
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
+    currentPassword?: string;
   }>();
   if (!body.secret || !body.code) return errorResponse(Errors.BAD_REQUEST);
 
@@ -26,10 +28,12 @@ export async function handleTotpEnable(request: Request, env: Env): Promise<Resp
     return Response.json({ ok: false, error: "totp_already_enabled" }, { status: 400 });
   }
 
-  const mfaError = await requireMFA(env, session.userId, {
+  const mfaError = await requireEnrollmentStepUp(env, session.userId, {
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
+    currentPassword: body.currentPassword,
   });
   if (mfaError) return mfaError;
 

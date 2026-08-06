@@ -8,6 +8,7 @@ export async function handleTotpDisable(request: Request, env: Env): Promise<Res
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
   }>();
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
@@ -22,6 +23,7 @@ export async function handleTotpDisable(request: Request, env: Env): Promise<Res
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
   });
   if (mfaError) return mfaError;
 

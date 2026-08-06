@@ -13,6 +13,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
   }>();
 
   if (!body.currentPassword || !body.newPassword) {
@@ -44,6 +45,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
   });
   if (mfaError) return mfaError;
 

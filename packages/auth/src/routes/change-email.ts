@@ -21,6 +21,7 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
   }>();
 
   if (!body.newEmail || typeof body.newEmail !== "string" || !body.currentPassword) {
@@ -56,6 +57,7 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
   });
   if (mfaError) return mfaError;
 

@@ -9,6 +9,7 @@ export async function handleWebauthnCredentialsDelete(request: Request, env: Env
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
+    backupCode?: string;
   }>();
   if (!body.credentialId) return errorResponse(Errors.BAD_REQUEST);
 
@@ -19,6 +20,7 @@ export async function handleWebauthnCredentialsDelete(request: Request, env: Env
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
+    backupCode: body.backupCode,
   });
   if (mfaError) return mfaError;
 
