@@ -140,6 +140,10 @@ async function handlePreAuthContinuation(
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
 
+  if (!row.email_verified && await isEmailVerificationEnabled(env, row.id)) {
+    return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
+  }
+
   // TOTP was disabled between issuing the token and redeeming it - a weird
   // state; refuse rather than issue a session with the 2FA step skipped.
   if (!row.totp_secret) return errorResponse(Errors.UNAUTHORIZED);

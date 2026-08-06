@@ -3,6 +3,7 @@ import { verifyWebauthnAssertion } from "../webauthn";
 import { signJwt } from "../jwt";
 import { checkModeration } from "./login";
 import { createSession, SESSION_TTL_MS } from "../sessions";
+import { isEmailVerificationEnabled } from "../verification";
 import type { Env } from "../index";
 
 export async function handleWebauthnAuthFinish(request: Request, env: Env): Promise<Response> {
@@ -18,14 +19,21 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
   }
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, created_at, moderation, force_password_change, is_admin FROM users WHERE id = ? AND email = ?",
+    "SELECT id, email, name, created_at, moderation, force_password_change, is_admin, email_verified FROM users WHERE id = ? AND email = ?",
   )
     .bind(body.userId, normalizeEmail(body.email))
-    .first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number; is_admin: number }>();
+    .first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number; is_admin: number; email_verified: number }>();
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
 
   const moderationResponse = checkModeration(user.moderation);
   if (moderationResponse) return moderationResponse;
+
+  // Password and passkey login must enforce the same account gates. Check this
+  // before consuming the one-time assertion challenge so the user can verify
+  // their email and retry the ceremony normally.
+  if (!user.email_verified && await isEmailVerificationEnabled(env, user.id)) {
+    return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
+  }
 
   const assertionError = await verifyWebauthnAssertion(env, body.userId, body.challengeId, body.response, "webauthn-auth-finish");
   if (assertionError) return assertionError;
