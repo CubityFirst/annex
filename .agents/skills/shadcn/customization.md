@@ -19,7 +19,7 @@ Components reference semantic CSS variable tokens. Change the variables to chang
 
 1. CSS variables defined in `:root` (light) and `.dark` (dark mode).
 2. Tailwind maps them to utilities: `bg-primary`, `text-muted-foreground`, etc.
-3. Components use these utilities - changing a variable changes all components that reference it.
+3. Components use these utilities — changing a variable changes all components that reference it.
 
 ---
 
@@ -65,14 +65,19 @@ import { ThemeProvider } from "next-themes"
 
 ```bash
 # Apply a preset code from ui.shadcn.com.
-npx shadcn@latest init --preset a2r6bw --force
+npx shadcn@latest apply --preset a2r6bw
 
-# Switch to a named preset.
-npx shadcn@latest init --preset radix-nova --force
-npx shadcn@latest init --reinstall  # update existing components to match
+# Positional shorthand also works.
+npx shadcn@latest apply a2r6bw
+
+# Switch to a named preset and overwrite existing components.
+npx shadcn@latest apply --preset nova
+
+# Preserve existing components instead.
+npx shadcn@latest init --preset nova --force --no-reinstall
 
 # Use a custom theme URL.
-npx shadcn@latest init --preset "https://ui.shadcn.com/init?base=radix&style=nova&theme=blue&..." --force
+npx shadcn@latest apply --preset "https://ui.shadcn.com/init?base=radix&style=nova&theme=blue&..."
 ```
 
 Or edit CSS variables directly in `globals.css`.
@@ -142,13 +147,15 @@ Prefer these approaches in order:
 ### 1. Built-in variants
 
 ```tsx
-<Button variant="outline" size="sm">Click</Button>
+<Button variant="outline" size="sm">
+  Click
+</Button>
 ```
 
 ### 2. Tailwind classes via `className`
 
 ```tsx
-<Card className="max-w-md mx-auto">...</Card>
+<Card className="mx-auto max-w-md">...</Card>
 ```
 
 ### 3. Add a new variant
