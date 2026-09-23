@@ -108,7 +108,7 @@ pins `alg`; disabled clients + suspended users are refused at authorize, token, 
 Tests exist - run them before reporting work as done when changes are testable.
 
 - **Vitest unit tests** live next to source as `*.test.ts(x)` in each package. Run per-package with `pnpm --filter <api|auth|frontend> test`, or all packages + e2e with `pnpm test` from the root. Coverage is heaviest in `packages/auth` (login, password, jwt, totp, plan, billing, stripe-webhook) and `packages/frontend/src/lib` (remark plugins, dice, frontmatter, userColor).
-- **Playwright e2e tests** live in `e2e/tests/` (`2fa`, `app`, `change-password`, `invites`, `limited-permissions`). Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
+- **Playwright e2e tests** live in `e2e/tests/` (one `*.spec.ts` per feature area - list the directory to see current coverage). Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
 - When adding behavior with existing test coverage in the same area, extend the corresponding suite rather than leaving it untested.
 
 ## Commits
