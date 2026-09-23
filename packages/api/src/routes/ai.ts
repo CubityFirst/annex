@@ -86,7 +86,7 @@ export async function handleAi(
         "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-5.4-nano",
+        model: "gpt-6-luna",
         messages: [
           {
             role: "system",
@@ -98,6 +98,10 @@ export async function handleAi(
             content: `Title: ${doc.title}\n\n${content.slice(0, 8000)}`,
           },
         ],
+        // gpt-6-luna is a reasoning model (default effort "medium") and reasoning
+        // tokens count against max_completion_tokens - with effort on, a 200-token
+        // cap can be spent entirely on reasoning and return an empty summary.
+        reasoning_effort: "none",
         max_completion_tokens: 200,
       }),
     });
