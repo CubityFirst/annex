@@ -1,211 +1,220 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import {
+  ArrowRight,
+  Check,
+  Code2,
+  FileDown,
+  Hash,
   History,
-  Layers,
-  Paintbrush,
-  Users,
+  Network,
   Search,
-  Globe,
+  Sparkles,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
 import { InkSparkle } from "@/components/InkSparkle";
 import { SiteFooter } from "@/components/SiteFooter";
+import shotRead from "@/assets/landing/write.webp";
+import shotEdit from "@/assets/landing/editor.webp";
+import shotFiles from "@/assets/landing/files.webp";
+import shotDraw from "@/assets/landing/draw.webp";
+import shotPublish from "@/assets/landing/publish.webp";
 import "./LandingPage.css";
 
-const WORDS = ["research", "campaigns", "ideas", "knowledge", "writing"];
+const HELP_URL = "https://docs.cubityfir.st/s/help/";
 
-function useTypewriter(
-  words: string[],
-  { typingSpeed = 75, deletingSpeed = 42, pause = 1700 } = {}
-) {
-  const reducedMotion =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const [displayed, setDisplayed] = useState(reducedMotion ? words[0] : "");
-  const [wordIdx, setWordIdx] = useState(0);
-  const [phase, setPhase] = useState<"typing" | "deleting">("typing");
-  const t = useRef<ReturnType<typeof setTimeout> | null>(null);
+// Hero product viewer. Screenshots are untouched captures of the /demo
+// sandbox (demo banner hidden) - regenerate them from the demo, not by hand.
+const SHOTS = [
+  { key: "read", label: "Read", src: shotRead, path: "demo-site/coffee-brewing-guide", caption: "A calm reading view with an outline, tables, checklists and inline dice." },
+  { key: "write", label: "Write", src: shotEdit, path: "demo-site/editor-tour", caption: "Markdown underneath, rendered as you type - callouts, code, wikilinks and more." },
+  { key: "organise", label: "Organise", src: shotFiles, path: "demo-site/files", caption: "Docs, uploads and drawings side by side, in folders that make sense to you." },
+  { key: "draw", label: "Draw", src: shotDraw, path: "demo-site/roadmap.excalidraw", caption: "A built-in Excalidraw canvas for diagrams, maps and whiteboard thinking." },
+  { key: "publish", label: "Publish", src: shotPublish, path: "s/demo-site", caption: "Turn any site into a public, searchable website in one click." },
+] as const;
 
-  useEffect(() => {
-    if (reducedMotion) return;
-    const word = words[wordIdx];
-    if (phase === "typing") {
-      if (displayed.length < word.length) {
-        t.current = setTimeout(
-          () => setDisplayed(word.slice(0, displayed.length + 1)),
-          typingSpeed
-        );
-      } else {
-        t.current = setTimeout(() => setPhase("deleting"), pause);
-      }
-    } else {
-      if (displayed.length > 0) {
-        t.current = setTimeout(
-          () => setDisplayed(displayed.slice(0, -1)),
-          deletingSpeed
-        );
-      } else {
-        setWordIdx((i) => (i + 1) % words.length);
-        setPhase("typing");
-      }
-    }
-    return () => { if (t.current) clearTimeout(t.current); };
-  }, [displayed, phase, wordIdx, words, typingSpeed, deletingSpeed, pause, reducedMotion]);
+function ProductViewer() {
+  const [active, setActive] = useState(0);
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  return displayed;
-}
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const jump = e.key === "Home" ? 0 : e.key === "End" ? SHOTS.length - 1 : null;
+    if (!delta && jump === null) return;
+    e.preventDefault();
+    const next = jump ?? (active + delta + SHOTS.length) % SHOTS.length;
+    setActive(next);
+    tabs.current[next]?.focus();
+  };
 
-type TabKey = "api-reference.md" | "authentication.md" | "getting-started.md" | "dnd-campaign.md";
-
-const TABS: Record<TabKey, {
-  h: string;
-  p: string;
-  code: { c: string; t: string }[];
-  lines: number[];
-  badges: string[];
-}> = {
-  "api-reference.md": {
-    h: "API Reference",
-    p: "Programmatically create, read, update and delete docs in your Annex site using the REST API.",
-    code: [
-      { c: "#555", t: "BASE_URL = https://<your-site>/api/v1" },
-      { c: "#444", t: "Content-Type: application/json" },
-    ],
-    lines: [88, 72, 80, 65],
-    badges: ["REST", "v1", "docs"],
-  },
-  "authentication.md": {
-    h: "Authentication",
-    p: "All requests use a scoped API key in the Authorization header. Create keys in Site Settings → Developer → API Keys.",
-    code: [
-      { c: "#555", t: "GET /api/v1/docs" },
-      { c: "#4a4a4a", t: "Authorization: Bearer annx_<YOUR_KEY>" },
-      { c: "#3a3a3a", t: '→  { "docs": [ ... ] }' },
-    ],
-    lines: [82, 68, 74],
-    badges: ["scoped", "api-keys", "annx_"],
-  },
-  "getting-started.md": {
-    h: "Getting Started",
-    p: "Create your first workspace, invite collaborators, and publish your first doc in under five minutes.",
-    code: [
-      { c: "#555", t: "1. Create workspace" },
-      { c: "#444", t: "2. Add your first page" },
-    ],
-    lines: [92, 78, 65, 74],
-    badges: ["quickstart", "setup"],
-  },
-  "dnd-campaign.md": {
-    h: "The Curse of Thornwall Keep",
-    p: "Session 4 - the party arrives at Ironhaven and discovers the cult's true motives...",
-    code: [
-      { c: "#555", t: "Location: Ironhaven, Dusk Quarter" },
-      { c: "#444", t: "Party level: 6  ·  Players: 4" },
-    ],
-    lines: [88, 70, 60, 80],
-    badges: ["combat", "session-4", "lore"],
-  },
-};
-
-const TAB_ORDER: TabKey[] = [
-  "api-reference.md",
-  "authentication.md",
-  "getting-started.md",
-  "dnd-campaign.md",
-];
-
-function EditorMockup() {
-  const [active, setActive] = useState<TabKey>("api-reference.md");
-  const tab = TABS[active];
   return (
-    <div className="l-editor">
-      <div className="l-editor-titlebar">
-        <div className="l-editor-dots">
-          <div className="l-editor-dot" />
-          <div className="l-editor-dot" />
-          <div className="l-editor-dot" />
-        </div>
-        <div className="l-editor-tabs" role="tablist" aria-label="Example documents">
-          {TAB_ORDER.map((k) => (
-            <button
-              key={k}
-              role="tab"
-              id={`l-editor-tab-${k}`}
-              aria-selected={active === k}
-              aria-controls="l-editor-tabpanel"
-              onClick={() => setActive(k)}
-              className={`l-editor-tab ${active === k ? "l-editor-tab-active" : "l-editor-tab-inactive"}`}
-            >
-              {k}
-            </button>
-          ))}
-        </div>
+    <div className="l-viewer">
+      <div className="l-viewer-tabs" role="tablist" aria-label="Product tour" onKeyDown={onKeyDown}>
+        {SHOTS.map((s, i) => (
+          <button
+            key={s.key}
+            ref={(el) => { tabs.current[i] = el; }}
+            role="tab"
+            id={`l-viewer-tab-${s.key}`}
+            aria-selected={active === i}
+            aria-controls="l-viewer-panel"
+            tabIndex={active === i ? 0 : -1}
+            className="l-viewer-tab"
+            onClick={() => setActive(i)}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
       <div
-        className="l-editor-body"
+        className="l-viewer-frame"
         role="tabpanel"
-        id="l-editor-tabpanel"
-        aria-labelledby={`l-editor-tab-${active}`}
+        id="l-viewer-panel"
+        aria-labelledby={`l-viewer-tab-${SHOTS[active].key}`}
       >
-        <div className="l-editor-h">{tab.h}</div>
-        <div className="l-editor-p">{tab.p}</div>
-        {tab.lines.slice(0, 2).map((w, i) => (
-          <div key={i} className="l-editor-line" style={{ width: `${w}%` }} />
-        ))}
-        <div className="l-editor-code">
-          {tab.code.map((l, i) => (
-            <span key={i} style={{ color: l.c }}>{l.t}</span>
-          ))}
+        <div className="l-viewer-chrome" aria-hidden="true">
+          <span className="l-viewer-dots"><i /><i /><i /></span>
+          <span className="l-viewer-url">docs.cubityfir.st/{SHOTS[active].path}</span>
         </div>
-        {tab.lines.slice(2).map((w, i) => (
-          <div key={i} className="l-editor-line" style={{ width: `${w}%` }} />
-        ))}
-        <div>
-          {tab.badges.map((b) => (
-            <span key={b} className="l-editor-badge">{b}</span>
+        <div className="l-viewer-stage">
+          {SHOTS.map((s, i) => (
+            <img
+              key={s.key}
+              src={s.src}
+              alt={i === active ? `Annex - ${s.caption}` : ""}
+              aria-hidden={i !== active}
+              width={1920}
+              height={1200}
+              decoding="async"
+              loading={i === 0 ? "eager" : "lazy"}
+              fetchPriority={i === 0 ? "high" : "low"}
+              className={i === active ? "is-active" : undefined}
+            />
           ))}
         </div>
       </div>
+      <p className="l-viewer-caption" aria-live="polite">{SHOTS[active].caption}</p>
     </div>
   );
 }
 
-const FEATURES: {
-  Icon: LucideIcon;
-  title: string;
-  desc: string;
-  soon?: boolean;
-  link?: string;
+const USES: { title: string; items: string }[] = [
+  { title: "Technical docs", items: "API references, runbooks, specs, changelogs" },
+  { title: "Tabletop campaigns", items: "Session notes, lore, maps, inline dice rolls" },
+  { title: "Personal knowledge", items: "Notes, research, recipes, reading lists" },
+  { title: "Team wikis", items: "Handbooks and how-tos with shared roles" },
+];
+
+const SHOWCASE: {
+  id?: string;
+  eyebrow: string;
+  title: [string, string];
+  body: string;
+  points: string[];
+  src: string;
+  alt: string;
 }[] = [
-  { Icon: History, title: "Version History", desc: "Every edit is recorded. Roll back, branch off, compare - nothing is ever lost." },
-  { Icon: Layers, title: "Flexible Structure", desc: "Nested pages, tags, cross-links. Build any hierarchy that fits your content." },
   {
-    Icon: Paintbrush,
-    title: "Rich Media",
-    desc: "Embed images, tables, code blocks, and callouts in any doc.",
-    link: "https://docs.cubityfir.st/s/help/a0ea410e-95ff-455b-a495-cdf00ea5a890",
+    eyebrow: "Write",
+    title: ["Markdown underneath.", "Nothing in the way."],
+    body: "Annex renders your markdown as you type, so you get a clean page without giving up plain text. Flip to raw mode any time.",
+    points: [
+      "Callouts, tables, code blocks and task lists",
+      "Wikilinks, tags and a live outline for long docs",
+      "Inline dice rolls like 2d6+1d4, right in the text",
+    ],
+    src: shotEdit,
+    alt: "The Annex editor showing formatting, callouts and a code block",
   },
-  { Icon: Users, title: "Live Collaboration", desc: "Work together in real time. See who's in the doc and watch edits land as they type." },
-  { Icon: Search, title: "Fast Search", desc: "Full-text search across every page, heading, and tag in your workspace." },
-  { Icon: Globe, title: "Publish Anywhere", desc: "Share a private link or publish a styled public site in one click." },
+  {
+    eyebrow: "Organise",
+    title: ["Your files live", "next to your words."],
+    body: "Upload images, audio, video, PDFs and text, then preview them inline. Sketch on a built-in Excalidraw canvas without leaving the site.",
+    points: [
+      "Folders for docs, uploads and drawings together",
+      "Uploads up to 50 MB with in-browser previews",
+      "Drawings save alongside everything else",
+    ],
+    src: shotDraw,
+    alt: "An Excalidraw drawing open inside Annex",
+  },
+  {
+    id: "publishing",
+    eyebrow: "Publish",
+    title: ["Publish it", "when you're ready."],
+    body: "Any site can become a public website with navigation, search and link previews. Keep it private until it is ready, then switch it on.",
+    points: [
+      "One switch to publish a whole site",
+      "Friendly doc URLs from a slug: in the frontmatter",
+      "Your own domain for published sites (early access)",
+    ],
+    src: shotPublish,
+    alt: "A published Annex site in its public reading view",
+  },
+];
+
+const EXTRAS: { Icon: LucideIcon; title: string; desc: string; early?: boolean }[] = [
+  { Icon: History, title: "Version history", desc: "Every save is kept. See what changed and restore an old version in a click." },
+  { Icon: Search, title: "Fast search", desc: "Ctrl+K searches titles and full text across every doc in a site." },
+  { Icon: Hash, title: "Tags & graph", desc: "Tag pages, then see how everything links together on the graph." },
+  { Icon: Network, title: "Organizations", desc: "Group sites under an org and roles trickle down to every one of them." },
+  { Icon: Code2, title: "REST API", desc: "Scoped API keys for creating, updating and moving docs from your own tools." },
+  { Icon: FileDown, title: "Plain-markdown export", desc: "Download a whole site as a zip of .md files and attachments." },
+  { Icon: Users, title: "Live collaboration", desc: "Edit together in real time and see who else is in the doc.", early: true },
+  { Icon: Sparkles, title: "AI summaries", desc: "Optional AI-written summaries at the top of your docs.", early: true },
+];
+
+const FREE_PERKS = [
+  "Unlimited sites and docs",
+  "Files, drawings and version history",
+  "Public publishing and search",
+  "Organizations, roles and the REST API",
+];
+
+const INK_PERKS = [
+  "Animated avatar ring in four styles",
+  "Custom collab cursor colour",
+  "A rainbow sparkle by your name",
+  "Sparkles when your dice roll a crit",
+];
+
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: "Is Annex really free?",
+    a: "Yes. Every feature is available on a free account. Annex Ink is an optional $5/month supporter tier that only adds cosmetic touches.",
+  },
+  {
+    q: "Can I get my data out?",
+    a: "Docs are stored as markdown. Site owners can export an entire site as a zip of .md files and attachments whenever they like.",
+  },
+  {
+    q: "What does \"early access\" mean?",
+    a: "Live collaboration, AI summaries and custom domains are being rolled out gradually and are switched on per site while they mature.",
+  },
+  {
+    q: "Can I try it before signing up?",
+    a: "The demo is a fully working copy of Annex that runs in your browser. Nothing you do there is saved, so feel free to break things.",
+  },
 ];
 
 export function LandingPage() {
-  const word = useTypewriter(WORDS);
   const isLoggedIn = !!getToken();
+  const primary = isLoggedIn
+    ? { to: "/dashboard", label: "Open your Annex" }
+    : { to: "/register", label: "Create your Annex" };
 
   return (
     <div className="landing">
       {/* NAV */}
-      <nav className="l-nav">
+      <nav className="l-nav" aria-label="Main">
         <div className="l-nav-inner">
-          <AnnexLogo height={21} />
+          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
           <div className="l-nav-links">
             <a className="l-nav-link" href="#features">features</a>
+            <a className="l-nav-link" href="#publishing">publishing</a>
             <a className="l-nav-link" href="#pricing">pricing</a>
             {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
             {isLoggedIn
@@ -215,136 +224,168 @@ export function LandingPage() {
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="l-hero">
-        <div className="l-hero-inner">
-          <div className="l-hero-copy">
+      <main>
+        {/* HERO */}
+        <section className="l-hero">
+          <div className="site-wrap l-hero-inner">
             <div className="l-hero-pre">an annex for your mind</div>
-            <h1 className="l-hero-headline">A place to keep</h1>
-            <div className="l-hero-headline-b">
-              your&nbsp;<span>{word}</span><span className="l-tw-cursor">&nbsp;</span>
-            </div>
+            <h1 className="l-hero-headline">
+              A place to keep <b>anything.</b>
+            </h1>
             <p className="l-hero-sub">
-              Annex is a flexible docs workspace - write, link and version anything
-              from technical specs to tabletop campaigns, then publish it to the web
-              in a click.
+              Annex is a calm, flexible docs workspace. Write in markdown, keep
+              your files and drawings alongside, and publish any of it to the web
+              when you're ready.
             </p>
             <div className="l-hero-ctas">
-              <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
-              <Link className="l-btn-ghost" to="/demo">
-                See a demo
+              <Link className="l-btn-primary" to={primary.to}>
+                {primary.label} <ArrowRight size={18} aria-hidden="true" />
               </Link>
+              <Link className="l-btn-secondary" to="/demo">See a demo</Link>
             </div>
+            <p className="l-hero-note">Free to use · no card required</p>
           </div>
-          <EditorMockup />
-        </div>
-      </section>
+          <div className="site-wrap">
+            <ProductViewer />
+          </div>
+        </section>
 
-      {/* FEATURES */}
-      <hr className="l-section-divider" />
-      <section id="features" className="l-features">
-        <div className="site-wrap">
-          <h2 className="l-features-label">Everything your docs should do</h2>
-          <div className="l-features-grid">
-            {FEATURES.map((f) => {
-              const inner = (
-                <>
-                  <div className="l-feature-icon">
-                    <f.Icon size={21} />
+        {/* USES */}
+        <section className="l-uses" aria-labelledby="l-uses-label">
+          <div className="site-wrap">
+            <h2 id="l-uses-label" className="l-label">From specs to tabletop campaigns</h2>
+            <ul className="l-uses-grid">
+              {USES.map((u) => (
+                <li key={u.title} className="l-use">
+                  <div className="l-use-title">{u.title}</div>
+                  <div className="l-use-items">{u.items}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* SHOWCASE */}
+        <section id="features" className="l-showcase" aria-label="Features">
+          {SHOWCASE.map((s, i) => (
+            <div
+              key={s.eyebrow}
+              id={s.id}
+              className={`site-wrap l-show ${i % 2 ? "l-show-flip" : ""}`}
+            >
+              <div className="l-show-copy">
+                <div className="l-show-eyebrow">{s.eyebrow}</div>
+                <h2 className="l-show-title">
+                  {s.title[0]}<br /><b>{s.title[1]}</b>
+                </h2>
+                <p className="l-show-body">{s.body}</p>
+                <ul className="l-checks">
+                  {s.points.map((p) => (
+                    <li key={p}><Check size={16} aria-hidden="true" />{p}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="l-show-media">
+                <img src={s.src} alt={s.alt} width={1920} height={1200} loading="lazy" decoding="async" />
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {/* EXTRAS */}
+        <section className="l-extras" aria-labelledby="l-extras-label">
+          <div className="site-wrap">
+            <h2 id="l-extras-label" className="l-label">And everything else a docs site should do</h2>
+            <ul className="l-extras-grid">
+              {EXTRAS.map((f) => (
+                <li key={f.title} className="l-extra">
+                  <div className="l-extra-head">
+                    <div className="l-extra-icon"><f.Icon size={18} aria-hidden="true" /></div>
+                    {f.early && <span className="l-tag">early access</span>}
                   </div>
-                  <h3 className="l-feature-title">
-                    {f.title}
-                    {f.soon && <span className="l-feature-soon">soon</span>}
-                  </h3>
-                  <div className="l-feature-desc">{f.desc}</div>
-                </>
-              );
-              return f.link ? (
-                <a key={f.title} className="l-feature-card" href={f.link}>
-                  {inner}
-                </a>
-              ) : (
-                <div key={f.title} className="l-feature-card">
-                  {inner}
-                </div>
-              );
-            })}
+                  <h3 className="l-extra-title">{f.title}</h3>
+                  <p className="l-extra-desc">{f.desc}</p>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* INK PRICING */}
-      <hr className="l-section-divider" />
-      <section id="pricing" className="l-ink">
-        <div className="site-wrap">
-          <h2 className="l-features-label">Annex Ink</h2>
-          <div className="l-ink-grid">
-            <div className="l-ink-copy">
-              <h3 className="l-ink-headline">
-                A small supporter tier.
-                <br />
-                <span>Cosmetic&nbsp;only.</span>
-              </h3>
-              <p className="l-ink-sub">
-                There's no paywall, no upsell, no missing buttons. Annex Ink is a
-                way to chip in if the project's useful to you - in return, your
-                account gets some quietly fancy decoration.
-              </p>
-              <div className="l-ink-price">
-                <span className="l-ink-price-amount">$5</span>
-                <span className="l-ink-price-unit">/month</span>
+        {/* PRICING */}
+        <section id="pricing" className="l-pricing" aria-labelledby="l-pricing-title">
+          <div className="site-wrap">
+            <h2 className="l-label">Pricing</h2>
+            <h3 id="l-pricing-title" className="l-pricing-headline">
+              Free. <span>Ink is optional.</span>
+            </h3>
+            <p className="l-pricing-sub">
+              There's no paywall and no missing buttons. If Annex is useful to you,
+              Ink is a way to chip in, and your account gets some quietly fancy
+              decoration in return.
+            </p>
+            <div className="l-plans">
+              <div className="l-plan">
+                <div className="l-plan-name">Annex</div>
+                <div className="l-plan-price"><span>$0</span> / month</div>
+                <p className="l-plan-desc">The whole product, for everyone.</p>
+                <ul className="l-checks">
+                  {FREE_PERKS.map((p) => (
+                    <li key={p}><Check size={16} aria-hidden="true" />{p}</li>
+                  ))}
+                </ul>
+                <Link className="l-btn-secondary l-plan-cta" to={primary.to}>{primary.label}</Link>
               </div>
-              <Link className="l-btn-primary" to={isLoggedIn ? "/settings#billing" : "/register"}>
-                {isLoggedIn ? "Become a supporter" : "Get started →"}
+              <div className="l-plan l-plan-ink">
+                <div className="l-plan-name">
+                  <InkSparkle className="l-ink-sparkle" /> Annex Ink
+                </div>
+                <div className="l-plan-price"><span>$5</span> / month</div>
+                <p className="l-plan-desc">Everything in Annex, plus cosmetic perks.</p>
+                <ul className="l-checks">
+                  {INK_PERKS.map((p) => (
+                    <li key={p}><Check size={16} aria-hidden="true" />{p}</li>
+                  ))}
+                </ul>
+                <Link className="l-btn-primary l-plan-cta" to={isLoggedIn ? "/settings#billing" : "/register"}>
+                  Become a supporter
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="l-faq" aria-labelledby="l-faq-label">
+          <div className="site-wrap l-faq-inner">
+            <h2 id="l-faq-label" className="l-label">Questions</h2>
+            {FAQ.map((f) => (
+              <details key={f.q} className="l-faq-item">
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+            <p className="l-faq-more">
+              More in the <a href={HELP_URL} target="_blank" rel="noopener noreferrer">help docs</a>.
+            </p>
+          </div>
+        </section>
+
+        {/* CTA BAND */}
+        <section className="l-cta-band">
+          <div className="site-wrap">
+            <h2 className="l-cta-band-headline">
+              Ready to build your <b>Annex?</b>
+            </h2>
+            <div className="l-hero-ctas l-cta-band-ctas">
+              <Link className="l-btn-primary" to={primary.to}>
+                {primary.label} <ArrowRight size={18} aria-hidden="true" />
               </Link>
-            </div>
-
-            <div className="l-ink-card">
-              <div className="l-ink-card-head">
-                <span className="l-ink-card-icon"><InkSparkle className="l-ink-sparkle" /></span>
-                <div>
-                  <div className="l-ink-card-title">What you get</div>
-                  <div className="l-ink-card-sub">Cosmetic perks only - no extra features locked behind it.</div>
-                </div>
-              </div>
-              <ul className="l-ink-perks">
-                <li>
-                  <div className="l-ink-perk-title">Animated avatar ring</div>
-                  <div className="l-ink-perk-desc">Pick from four styles: shimmer, aurora, ember, or mono.</div>
-                </li>
-                <li>
-                  <div className="l-ink-perk-title">Custom collab cursor colour</div>
-                  <div className="l-ink-perk-desc">Override the default and stand out in shared documents.</div>
-                </li>
-                <li>
-                  <div className="l-ink-perk-title">Rainbow sparkle by your name</div>
-                  <div className="l-ink-perk-desc">A small animated mark next to your profile, everywhere it shows.</div>
-                </li>
-                <li>
-                  <div className="l-ink-perk-title">Sparkles on dice crits</div>
-                  <div className="l-ink-perk-desc">A small burst of sparkles whenever an inline dice roll lands a critical success.</div>
-                </li>
-                <li>
-                  <div className="l-ink-perk-title">Support Annex</div>
-                  <div className="l-ink-perk-desc">Keeps the workers running and the project moving. Cancel anytime.</div>
-                </li>
-              </ul>
+              <Link className="l-btn-secondary" to="/demo">Try the demo</Link>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* CTA BAND */}
-      <section className="l-cta-band">
-        <div className="site-wrap">
-          <h2 className="l-cta-band-headline">
-            Ready to build your <b>Annex?</b>
-          </h2>
-          <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
-        </div>
-      </section>
-
-      {/* FOOTER */}
       <SiteFooter />
     </div>
   );
