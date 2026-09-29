@@ -26,7 +26,7 @@ export function TermsPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Terms of Service</h1>
-            <p className="l-legal-meta">Effective date: May 10, 2026</p>
+            <p className="l-legal-meta">Effective date: September 29, 2026</p>
 
             <div className="l-legal-body">
               <h2>1. Acceptance</h2>
@@ -62,7 +62,22 @@ export function TermsPage() {
                 without prior notice.
               </p>
 
-              <h2>4. Your Content</h2>
+              <h2>4. Fair Use</h2>
+              <p>
+                Annex is intended for normal documentation and collaboration use. Storage, file
+                uploads, bandwidth, AI features, API requests, published sites, and other resources
+                are subject to reasonable limits, which we may set or change at our discretion to
+                keep the service reliable and fair for everyone.
+              </p>
+              <p>
+                If your usage significantly exceeds what is typical for your plan, or places an
+                unreasonable load on our infrastructure, we may throttle, limit, or suspend the
+                affected features or your account. Where practical, we will contact you first and
+                give you an opportunity to reduce your usage. This applies to free and paid
+                accounts alike.
+              </p>
+
+              <h2>5. Your Content</h2>
               <p>
                 You retain ownership of all content you create in Annex. By using the service, you
                 grant us a limited, non-exclusive license to store, process, and display your
@@ -73,7 +88,7 @@ export function TermsPage() {
                 moderate private workspaces. Public sites you publish are your responsibility.
               </p>
 
-              <h2>5. Service Availability</h2>
+              <h2>6. Service Availability</h2>
               <p>
                 We strive for high availability but do not guarantee uninterrupted access. The
                 service is provided "as is" without warranty of any kind. We may modify, suspend,
@@ -81,7 +96,7 @@ export function TermsPage() {
                 possible.
               </p>
 
-              <h2>6. Payments, Subscriptions, and Refunds</h2>
+              <h2>7. Payments, Subscriptions, and Refunds</h2>
               <p>
                 Paid plans (such as Annex Ink) are billed in advance on a recurring basis at the
                 price shown when you subscribe. By starting a subscription you authorise us, through
@@ -113,14 +128,15 @@ export function TermsPage() {
                 provided at our discretion and may be revoked at any time without refund or notice.
               </p>
 
-              <h2>7. Termination</h2>
+              <h2>8. Termination</h2>
               <p>
                 You may stop using Annex and delete your account at any time. We may suspend or
-                terminate your account for violations of these terms. Upon termination, your right
+                terminate your account for violations of these terms, including the Acceptable Use
+                and Fair Use provisions above. Upon termination, your right
                 to use the service ceases immediately.
               </p>
 
-              <h2>8. Limitation of Liability</h2>
+              <h2>9. Limitation of Liability</h2>
               <p>
                 To the fullest extent permitted by law, Annex and its operators are not liable for
                 any indirect, incidental, special, or consequential damages arising from your use
@@ -128,13 +144,13 @@ export function TermsPage() {
                 paid us in the three months preceding the claim.
               </p>
 
-              <h2>9. Governing Law</h2>
+              <h2>10. Governing Law</h2>
               <p>
                 These terms are governed by the laws of the jurisdiction in which the operator is
                 established, without regard to conflict-of-law principles.
               </p>
 
-              <h2>10. Contact</h2>
+              <h2>11. Contact</h2>
               <p>
                 Questions about these terms? Email us at{" "}
                 <a href="mailto:cubity@cubityfir.st?subject=Annex%20Terms">cubity@cubityfir.st</a>.

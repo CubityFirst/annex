@@ -25,6 +25,7 @@ describe("TermsPage", () => {
     renderPage();
     expect(screen.getByRole("heading", { level: 1, name: /terms of service/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /acceptable use/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /fair use/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /payments, subscriptions, and refunds/i })).toBeInTheDocument();
   });
 
