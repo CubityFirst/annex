@@ -1,3 +1,10 @@
+import {
+  buildDocCard,
+  buildInviteCard,
+  componentEmbedScript,
+  type ComponentEmbedPayload,
+} from "./componentEmbed";
+
 export interface Env {
   API: Fetcher;
   AUTH: Fetcher;
@@ -74,6 +81,14 @@ export function isAppHost(host: string): boolean {
   return false;
 }
 
+// index.html ships Annex's own description/OpenGraph tags (for the landing page
+// and app) between `default-meta` comment markers. Unfurlers generally take the
+// FIRST og:* tag they see, so those defaults must be removed before injecting a
+// published doc's meta, or every share link would preview as the Annex homepage.
+export function stripDefaultMeta(html: string): string {
+  return html.replace(/[ \t]*<!-- default-meta[\s\S]*?<!-- \/default-meta -->\r?\n?/, "");
+}
+
 // Fetch the base index.html and inject <title> + OpenGraph/description meta so
 // link-unfurlers (Slack, Discord, Twitter, iMessage) show a contextual preview
 // instead of the static default, plus an optional canonical URL so search
@@ -82,12 +97,18 @@ export function isAppHost(host: string): boolean {
 async function renderIndexWithMeta(
   env: Env,
   request: Request,
-  meta: { pageTitle: string; description: string | null; ogImage: string | null; canonicalUrl?: string | null },
+  meta: {
+    pageTitle: string; description: string | null; ogImage: string | null; canonicalUrl?: string | null;
+    // Discord component-embed card; an invalid one is dropped (plain OG preview).
+    componentEmbed?: ComponentEmbedPayload | null;
+  },
 ): Promise<Response | null> {
   const indexRes = await env.ASSETS.fetch(new Request(new URL("/", request.url).toString(), request));
   if (!indexRes.ok) return null;
-  let html = await indexRes.text();
-  html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(meta.pageTitle)}</title>`);
+  let html = stripDefaultMeta(await indexRes.text());
+  // Function replacers: user text (titles, the embed JSON) may contain `$&` /
+  // `$'`, which a string replacement would expand as a pattern.
+  html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${escapeHtml(meta.pageTitle)}</title>`);
   const ogTags = [
     `<meta property="og:title" content="${escapeHtml(meta.pageTitle)}" />`,
     meta.description ? `<meta property="og:description" content="${escapeHtml(meta.description)}" />` : "",
@@ -95,8 +116,9 @@ async function renderIndexWithMeta(
     meta.ogImage ? `<meta property="og:image" content="${escapeHtml(meta.ogImage)}" />` : "",
     meta.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(meta.canonicalUrl)}" />` : "",
     meta.canonicalUrl ? `<meta property="og:url" content="${escapeHtml(meta.canonicalUrl)}" />` : "",
+    componentEmbedScript(meta.componentEmbed ?? null) ?? "",
   ].filter(Boolean).join("\n");
-  html = html.replace(/<\/head>/, `${ogTags}\n</head>`);
+  html = html.replace(/<\/head>/, () => `${ogTags}\n</head>`);
   return new Response(html, {
     status: 200,
     headers: {
@@ -198,8 +220,38 @@ export function buildSitemapXml(host: string, homeDocId: string | null, docs: Ar
 // The public doc payload bits the meta injectors need (shared by the /s/ share
 // path and the custom-host path).
 interface PublicDocMeta {
-  doc: { title: string; display_title: string | null; description: string | null; image: string | null; content: string };
-  project: { id: string; name: string; vanity_slug: string | null; custom_domain: string | null };
+  doc: {
+    title: string; display_title: string | null; description: string | null; image: string | null; content: string;
+    updatedAt: string | null; showLastUpdated: boolean;
+  };
+  project: {
+    id: string; name: string; vanity_slug: string | null; custom_domain: string | null;
+    logo_square_updated_at: string | null;
+  };
+}
+
+// Discord component-embed card for a published doc. `docUrl` is the canonical
+// address and `siteUrl` the site root on the same host the link was shared from.
+// Thumbnail: the doc's frontmatter image, else the site's square logo (logo
+// uploads are limited to jpeg/png/webp/gif, all formats Discord accepts).
+export function docComponentEmbed(
+  data: PublicDocMeta,
+  opts: { origin: string; docUrl: string; siteUrl: string; ogImage: string | null },
+): ComponentEmbedPayload {
+  const { doc, project } = data;
+  const logo = project.logo_square_updated_at
+    ? `${opts.origin}/api/public/projects/${encodeURIComponent(project.vanity_slug ?? project.id)}/logo/square?v=${encodeURIComponent(project.logo_square_updated_at)}`
+    : null;
+  return buildDocCard({
+    title: doc.display_title ?? doc.title,
+    description: doc.description ?? (extractFirstParagraph(doc.content) || null),
+    url: opts.docUrl,
+    siteName: project.name,
+    siteUrl: opts.siteUrl,
+    imageUrl: opts.ogImage ?? logo,
+    updatedAt: doc.showLastUpdated ? doc.updatedAt : null,
+    poweredByAnnex: !project.custom_domain,
+  });
 }
 
 async function fetchPublicDocMeta(env: Env, projectIdOrSlug: string, docId: string): Promise<PublicDocMeta | null> {
@@ -262,11 +314,14 @@ async function handleCustomHost(request: Request, env: Env, url: URL, host: stri
     const data = await fetchPublicDocMeta(env, site.projectId, docId);
     if (!data) return null; // not a doc (maybe a file id) → SPA decides
     const docTitle = data.doc.display_title ?? data.doc.title;
+    const ogImage = data.doc.image ? resolveImageUrl(data.doc.image, url, data.project.id) : null;
+    const canonicalUrl = url.pathname === "/" ? `https://${host}/` : `https://${host}/${docId}`;
     const response = await renderIndexWithMeta(env, request, {
       pageTitle: `${docTitle} - ${data.project.name}`,
       description: data.doc.description ?? extractFirstParagraph(data.doc.content),
-      ogImage: data.doc.image ? resolveImageUrl(data.doc.image, url, data.project.id) : null,
-      canonicalUrl: url.pathname === "/" ? `https://${host}/` : `https://${host}/${docId}`,
+      ogImage,
+      canonicalUrl,
+      componentEmbed: docComponentEmbed(data, { origin: `https://${host}`, docUrl: canonicalUrl, siteUrl: `https://${host}/`, ogImage }),
     });
     if (!response) return null;
     await cache.put(cacheKey, response.clone());
@@ -337,7 +392,16 @@ export default {
               ? `https://${project.custom_domain}/${docId}`
               : `${url.origin}/s/${project.vanity_slug ?? project.id}/${docId}`;
 
-            const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage, canonicalUrl });
+            // The card's links stay on the host the link was shared from
+            // (og:url/canonical still point at the custom domain when set).
+            const siteBase = `${url.origin}/s/${project.vanity_slug ?? project.id}`;
+            const componentEmbed = docComponentEmbed(data, {
+              origin: url.origin,
+              docUrl: `${siteBase}/${docId}`,
+              siteUrl: siteBase,
+              ogImage,
+            });
+            const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage, canonicalUrl, componentEmbed });
             if (response) {
               await cache.put(cacheKey, response.clone());
               return response;
@@ -369,7 +433,8 @@ export default {
             }>();
             if (json.ok && json.data) {
               const { pageTitle, description } = buildInviteMeta(json.data);
-              const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage: null });
+              const componentEmbed = buildInviteCard({ pageTitle, description, inviteUrl: `${url.origin}${url.pathname}`, origin: url.origin });
+              const response = await renderIndexWithMeta(env, request, { pageTitle, description, ogImage: null, componentEmbed });
               if (response) {
                 await cache.put(cacheKey, response.clone());
                 return response;

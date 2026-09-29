@@ -1,8 +1,26 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
+import { buildLandingCard, componentEmbedScript, validateComponentEmbed } from "./worker/componentEmbed";
+
+// Bake the site-wide Discord component-embed card (see worker/componentEmbed.ts)
+// into index.html's default-meta block. Discord never runs JS, so the tag has to
+// be in the served HTML; the worker strips it along with the other defaults
+// when it injects a published doc's own card. An invalid card fails the build
+// rather than shipping a payload Discord would silently ignore.
+function discordComponentEmbed(origin: string): Plugin {
+  return {
+    name: "annex:discord-component-embed",
+    transformIndexHtml(html) {
+      const card = buildLandingCard(origin);
+      const script = componentEmbedScript(card);
+      if (!script) throw new Error(`Invalid landing component embed: ${validateComponentEmbed(card).join("; ")}`);
+      return html.replace("<!-- discord:component-embed -->", () => script);
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
@@ -11,6 +29,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      discordComponentEmbed("https://docs.cubityfir.st"),
       VitePWA({
         registerType: "prompt",
         injectRegister: null,
@@ -36,6 +55,8 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // Link-unfurl card for crawlers only - no reason to precache it.
+          globIgnores: ["og-image.png"],
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/api\//],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
