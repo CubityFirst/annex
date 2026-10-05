@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -36,9 +36,43 @@ const SHOTS = [
   { key: "publish", label: "Publish", src: shotPublish, path: "s/demo-site", caption: "Turn any site into a public, searchable website in one click." },
 ] as const;
 
+// Auto-advance cadence. The active tab's progress bar is a CSS animation of
+// this length and its animationend drives the advance, so hover/focus/offscreen
+// pausing (animation-play-state) pauses the timer too.
+const AUTOPLAY_MS = 6000;
+
 function ProductViewer() {
   const [active, setActive] = useState(0);
+  // Cycles until the visitor picks a tab themselves; never under reduced motion.
+  const [autoplay, setAutoplay] = useState(
+    () => !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+  const [inView, setInView] = useState(true);
+  const viewer = useRef<HTMLDivElement>(null);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  useEffect(() => {
+    const el = viewer.current;
+    if (!el || !autoplay || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.35 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [autoplay]);
+
+  // On narrow screens the tab row scrolls sideways - keep an auto-advanced tab
+  // visible without scrollIntoView, which would also yank the page vertically.
+  useEffect(() => {
+    const tab = tabs.current[active];
+    const row = tab?.parentElement;
+    if (!autoplay || !tab || !row || row.scrollWidth <= row.clientWidth) return;
+    const offset = tab.getBoundingClientRect().left - row.getBoundingClientRect().left;
+    row.scrollTo({ left: row.scrollLeft + offset - (row.clientWidth - tab.offsetWidth) / 2, behavior: "smooth" });
+  }, [active, autoplay]);
+
+  const select = (i: number) => {
+    setAutoplay(false);
+    setActive(i);
+  };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
@@ -46,12 +80,16 @@ function ProductViewer() {
     if (!delta && jump === null) return;
     e.preventDefault();
     const next = jump ?? (active + delta + SHOTS.length) % SHOTS.length;
-    setActive(next);
+    select(next);
     tabs.current[next]?.focus();
   };
 
   return (
-    <div className="l-viewer">
+    <div
+      ref={viewer}
+      className={`l-viewer${inView ? "" : " is-offscreen"}`}
+      style={{ "--l-autoplay": `${AUTOPLAY_MS}ms` } as CSSProperties}
+    >
       <div className="l-viewer-tabs" role="tablist" aria-label="Product tour" onKeyDown={onKeyDown}>
         {SHOTS.map((s, i) => (
           <button
@@ -63,9 +101,17 @@ function ProductViewer() {
             aria-controls="l-viewer-panel"
             tabIndex={active === i ? 0 : -1}
             className="l-viewer-tab"
-            onClick={() => setActive(i)}
+            onClick={() => select(i)}
           >
             {s.label}
+            {autoplay && active === i && (
+              <span
+                key={active}
+                className="l-viewer-progress"
+                aria-hidden="true"
+                onAnimationEnd={() => setActive((a) => (a + 1) % SHOTS.length)}
+              />
+            )}
           </button>
         ))}
       </div>
@@ -96,7 +142,7 @@ function ProductViewer() {
           ))}
         </div>
       </div>
-      <p className="l-viewer-caption" aria-live="polite">{SHOTS[active].caption}</p>
+      <p className="l-viewer-caption" aria-live={autoplay ? "off" : "polite"}>{SHOTS[active].caption}</p>
     </div>
   );
 }

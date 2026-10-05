@@ -196,6 +196,8 @@
   flex-wrap: wrap;
 }
 .l-viewer-tab {
+  position: relative;
+  overflow: hidden;
   font: 400 14px 'DM Mono', monospace;
   letter-spacing: 0.04em;
   color: var(--text3);
@@ -212,6 +214,26 @@
   color: var(--text);
   background: var(--bg3);
   border-color: var(--border2);
+}
+/* Autoplay timer: fills under the active tab; its animationend advances. */
+.l-viewer-progress {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 5px;
+  height: 1px;
+  background: var(--text3);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: l-viewer-progress var(--l-autoplay, 6s) linear forwards;
+}
+.l-viewer:focus-within .l-viewer-progress,
+.l-viewer.is-offscreen .l-viewer-progress { animation-play-state: paused; }
+@media (hover: hover) {
+  .l-viewer:hover .l-viewer-progress { animation-play-state: paused; }
+}
+@keyframes l-viewer-progress {
+  to { transform: scaleX(1); }
 }
 .l-viewer-frame {
   border: 1px solid var(--border2);
