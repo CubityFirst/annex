@@ -66,10 +66,16 @@ function makeRequest(body: string, sig = "valid-sig") {
   });
 }
 
-function mockConstructEvent(event: unknown) {
+// subscriptions.retrieve returns the live subscription; by default it matches
+// the event payload, `liveSub` overrides it (e.g. a stale event).
+function mockConstructEvent(event: unknown, liveSub?: unknown) {
+  const evObj = (event as { data?: { object?: unknown } } | null)?.data?.object;
   vi.mocked(getStripe).mockReturnValue({
     webhooks: {
       constructEventAsync: vi.fn().mockResolvedValue(event),
+    },
+    subscriptions: {
+      retrieve: vi.fn().mockResolvedValue(liveSub ?? evObj),
     },
   } as unknown as ReturnType<typeof getStripe>);
 }
@@ -229,6 +235,24 @@ describe("handleStripeWebhook - customer.subscription.created/updated", () => {
     expect(db._statements[1]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 
+  it("a stale 'active' event whose live subscription is canceled does NOT re-grant Ink", async () => {
+    // subscription.deleted was processed first; this created/updated arrives late.
+    mockConstructEvent(event, { ...event.data.object, status: "canceled" });
+    const db = makeDB();
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
+    expect(res.status).toBe(200);
+    expect(db._statements.some(s => s.includes("INSERT INTO user_billing"))).toBe(false);
+    expect(db._statements[1]).toContain("personal_plan = NULL");
+    expect(db._bindCalls[1]).toEqual(["user-1", "sub_1"]);
+  });
+
+  it("persists the live status, not the event snapshot", async () => {
+    mockConstructEvent(event, { ...event.data.object, status: "past_due" });
+    const db = makeDB();
+    await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
+    expect(db._bindCalls[1][4]).toBe("past_due");
+  });
+
   // Price-binding guard: when STRIPE_INK_PRICE_ID is configured, only a
   // subscription on that price may grant Ink.
   function makeEnvWithInkPrice(db: MockDB, priceId: string) {
@@ -274,7 +298,10 @@ describe("handleStripeWebhook - customer.subscription.deleted", () => {
 
     expect(db._statements[1]).toContain("personal_plan = NULL");
     expect(db._statements[1]).toContain("'canceled'");
-    expect(db._bindCalls[1]).toEqual(["user-1"]);
+    // Guarded on the subscription on record, so a late deletion of an old
+    // subscription can't cancel a newer one.
+    expect(db._statements[1]).toContain("(stripe_subscription_id IS NULL OR stripe_subscription_id = ?)");
+    expect(db._bindCalls[1]).toEqual(["user-1", "sub_1"]);
   });
 });
 

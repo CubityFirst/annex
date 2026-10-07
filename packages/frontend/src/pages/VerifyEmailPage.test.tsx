@@ -36,21 +36,21 @@ describe("VerifyEmailPage", () => {
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
   });
 
-  it("verifies and redirects to the dashboard when a session token comes back", async () => {
-    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true, token: "jwt-123" } }));
+  it("never signs the user in - verification sends them to sign in", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true } }));
     renderAt("/verify-email?token=good");
-    await waitFor(() => expect(screen.getByText("DASHBOARD")).toBeInTheDocument());
-    // the returned JWT was persisted
-    expect(window.localStorage.getItem("token")).toBe("jwt-123");
+    expect(await screen.findByText(/your email has been verified/i)).toBeInTheDocument();
+    expect(window.localStorage.getItem("token")).toBeNull();
   });
 
-  it("resumes a stashed OAuth authorize flow after signup verification", async () => {
-    storePendingOAuthNext("/oauth/authorize?client_id=app1&redirect_uri=https%3A%2F%2Fapp.example%2Fcb&code_challenge=abc");
-    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true, token: "jwt-123" } }));
+  it("leaves a stashed OAuth authorize flow for LoginPage to resume", async () => {
+    const next = "/oauth/authorize?client_id=app1&redirect_uri=https%3A%2F%2Fapp.example%2Fcb&code_challenge=abc";
+    storePendingOAuthNext(next);
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true } }));
     renderAt("/verify-email?token=good");
-    await waitFor(() => expect(screen.getByText("OAUTH_AUTHORIZE")).toBeInTheDocument());
-    // the stash is single-use - it was consumed by the redirect
-    expect(consumePendingOAuthNext()).toBeNull();
+    expect(await screen.findByText(/your email has been verified/i)).toBeInTheDocument();
+    // Not consumed here - the post-verification sign-in picks it up.
+    expect(consumePendingOAuthNext()).toBe(next);
   });
 
   it("shows the success state when verified without an auto-login token", async () => {

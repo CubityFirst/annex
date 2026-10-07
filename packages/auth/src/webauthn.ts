@@ -195,9 +195,17 @@ export async function verifyWebauthnAssertion(
     return errorResponse(Errors.UNAUTHORIZED);
   }
 
-  await env.DB.prepare("UPDATE webauthn_credentials SET counter = ? WHERE id = ?")
-    .bind(verification.authenticationInfo.newCounter, storedCred.id)
-    .run();
+  // Advance the signature counter atomically. Two concurrent assertions from
+  // a cloned authenticator can both verify against the same stored counter;
+  // only one may win the conditional UPDATE. Authenticators that don't keep a
+  // counter (synced passkeys) always report 0 - nothing to advance or race.
+  const newCounter = verification.authenticationInfo.newCounter;
+  if (newCounter > 0) {
+    const res = await env.DB.prepare("UPDATE webauthn_credentials SET counter = ? WHERE id = ? AND counter < ?")
+      .bind(newCounter, storedCred.id, newCounter)
+      .run();
+    if ((res.meta?.changes ?? 0) !== 1) return errorResponse(Errors.UNAUTHORIZED);
+  }
 
   return null;
 }

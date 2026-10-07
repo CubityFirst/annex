@@ -1,7 +1,5 @@
 import { okResponse, errorResponse, Errors, isUniqueConstraintError } from "../lib";
 import { consumeVerificationToken } from "../verification";
-import { signJwt } from "../jwt";
-import { createSession, SESSION_TTL_MS } from "../sessions";
 import { sendEmailChangedNotice } from "../email";
 import { syncStripeCustomerEmail } from "../stripe-client";
 import type { Env } from "../index";
@@ -63,26 +61,20 @@ export async function handleVerifyEmail(request: Request, env: Env): Promise<Res
     return okResponse({ verified: true, emailChanged: true, userId, email: pendingEmail });
   }
 
+  // Signup-verify token. Like the change-confirm branch this deliberately does
+  // NOT mint a session: /verify-email/resend hands a fresh link to anyone who
+  // asks for an unverified address, so a session here would turn bare mailbox
+  // access into a login that skips the password and any TOTP/WebAuthn factor.
+  // The user signs in normally afterwards (the frontend shows "Go to sign in").
+  const verified = await env.DB.prepare(
+    "UPDATE users SET email_verified = 1, email_verified_at = ? WHERE id = ? RETURNING id",
+  ).bind(new Date().toISOString(), userId).first<{ id: string }>();
+  if (!verified) return errorResponse(Errors.NOT_FOUND);
+
+  // Retire any other outstanding signup links for this account.
   await env.DB.prepare(
-    "UPDATE users SET email_verified = 1, email_verified_at = ? WHERE id = ?",
-  ).bind(new Date().toISOString(), userId).run();
+    "DELETE FROM email_verification_tokens WHERE user_id = ? AND email IS NULL",
+  ).bind(userId).run();
 
-  const row = await env.DB.prepare(
-    "SELECT id, email, name, created_at FROM users WHERE id = ?",
-  ).bind(userId).first<{ id: string; email: string; name: string; created_at: string }>();
-
-  if (!row) return errorResponse(Errors.NOT_FOUND);
-
-  const expiresAt = Date.now() + SESSION_TTL_MS;
-  const sid = await createSession(env, row.id, request, expiresAt);
-  const token = await signJwt(
-    { userId: row.id, email: row.email, expiresAt, isAdmin: false, sid },
-    env.JWT_SECRET,
-  );
-
-  return okResponse({
-    verified: true,
-    token,
-    user: { id: row.id, email: row.email, name: row.name, createdAt: row.created_at },
-  });
+  return okResponse({ verified: true });
 }

@@ -203,7 +203,8 @@ export async function verifyRs256(token: string, privateJwk: PrivateJwk): Promis
   } catch {
     return null;
   }
-  if (typeof payload.exp === "number" && payload.exp * 1000 <= Date.now()) return null;
+  // Fail closed: every token we mint carries exp, so one without it is not ours.
+  if (typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now()) return null;
   return payload;
 }
 

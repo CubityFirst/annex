@@ -157,6 +157,11 @@ describe("RS256 sign/verify", () => {
     const tampered = `${token.slice(0, -3)}aaa`;
     expect(await verifyRs256(tampered, priv)).toBeNull();
   });
+  it("rejects a token with no exp (fail closed)", async () => {
+    const priv = await generatePrivateJwk();
+    const token = await signRs256({ sub: "u1" }, priv);
+    expect(await verifyRs256(token, priv)).toBeNull();
+  });
   it("rejects an expired token", async () => {
     const priv = await generatePrivateJwk();
     const token = await signRs256({ sub: "u1", exp: Math.floor(Date.now() / 1000) - 5 }, priv);

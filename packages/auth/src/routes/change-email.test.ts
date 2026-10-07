@@ -185,10 +185,11 @@ describe("handleChangeEmail", () => {
       const json = (await res.json()) as { ok: boolean; data: { applied: boolean; email: string } };
       expect(json.data).toEqual({ applied: true, email: "new@example.com" });
 
-      // Prior pending change tokens are always invalidated first.
+      // Every outstanding token (pending changes AND unconsumed signup links)
+      // is invalidated first, so a stale signup link cannot verify the new address.
       const delIdx = sqls.findIndex(s => s.includes("DELETE FROM email_verification_tokens"));
       expect(delIdx).toBeGreaterThanOrEqual(0);
-      expect(sqls[delIdx]).toContain("email IS NOT NULL");
+      expect(sqls[delIdx]).toBe("DELETE FROM email_verification_tokens WHERE user_id = ?");
       expect(bindCalls[delIdx]).toEqual(["user-1"]);
 
       const updIdx = sqls.findIndex(s => s.startsWith("UPDATE users SET email = ?"));

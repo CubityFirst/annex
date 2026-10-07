@@ -132,7 +132,18 @@ async function handleCheckoutCompleted(env: Env, sessionObj: Stripe.Checkout.Ses
 // status, and period end. We resolve the user by metadata.userId
 // (stamped during Checkout) so this works even if it arrives before
 // checkout.session.completed.
-async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Promise<void> {
+async function handleSubscriptionUpsert(env: Env, eventSub: Stripe.Subscription): Promise<void> {
+  // Stripe doesn't guarantee delivery order, and a failed delivery is retried
+  // later - so a stale created/updated (status active) can land AFTER
+  // subscription.deleted and would re-grant Ink forever. Persist the live
+  // subscription state, never the event snapshot. A retrieve failure throws,
+  // which 500s and lets Stripe redeliver.
+  const sub = await getStripe(env.STRIPE_SECRET_KEY).subscriptions.retrieve(eventSub.id);
+  if (sub.status === "canceled" || sub.status === "incomplete_expired") {
+    await handleSubscriptionDeleted(env, sub);
+    return;
+  }
+
   const userId = sub.metadata?.userId;
   if (!userId) {
     console.warn("subscription event missing metadata.userId", sub.id);
@@ -203,6 +214,8 @@ async function handleSubscriptionDeleted(env: Env, sub: Stripe.Subscription): Pr
   const userId = sub.metadata?.userId;
   if (!userId) return;
 
+  // Only clear the plan when this is the subscription on record (or none is):
+  // a late deletion of an OLD subscription must not cancel a newer one.
   await env.DB.prepare(
     `UPDATE user_billing
      SET personal_plan = NULL,
@@ -210,8 +223,8 @@ async function handleSubscriptionDeleted(env: Env, sub: Stripe.Subscription): Pr
          personal_period_end = NULL,
          personal_plan_cancel_at = NULL,
          stripe_subscription_id = NULL
-     WHERE user_id = ?`,
-  ).bind(userId).run();
+     WHERE user_id = ? AND (stripe_subscription_id IS NULL OR stripe_subscription_id = ?)`,
+  ).bind(userId, sub.id).run();
 }
 
 // invoice.payment_failed: flip status to past_due. The plan resolver

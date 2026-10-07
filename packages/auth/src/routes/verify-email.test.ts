@@ -102,21 +102,22 @@ describe("handleVerifyEmail", () => {
     expect(res.status).toBe(404);
   });
 
-  it("marks the email verified, mints a session, and returns the token + user", async () => {
-    const { env, run } = makeEnv(userRow);
+  it("marks the email verified and retires other signup links, but does NOT mint a session", async () => {
+    const { env, run, prepare } = makeEnv(userRow);
     const res = await handleVerifyEmail(req({ token: "good" }), env);
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { ok: boolean; data: { verified: boolean; token: string; user: { id: string } } };
+    const json = (await res.json()) as { ok: boolean; data: { verified: boolean; token?: string; user?: unknown } };
     expect(json.data.verified).toBe(true);
-    expect(json.data.token).toBe("signed.jwt.token");
-    expect(json.data.user.id).toBe("user-1");
-    // UPDATE users SET email_verified = 1 ... was issued
+    // Resend hands a link to anyone who names an unverified address, so a
+    // session here would let bare mailbox access skip password + MFA.
+    expect(json.data.token).toBeUndefined();
+    expect(json.data.user).toBeUndefined();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(signJwt).not.toHaveBeenCalled();
+    const sqls = prepare.mock.calls.map(c => c[0] as string);
+    expect(sqls.some(q => q.includes("UPDATE users SET email_verified = 1"))).toBe(true);
+    expect(sqls.some(q => q.includes("DELETE FROM email_verification_tokens WHERE user_id = ? AND email IS NULL"))).toBe(true);
     expect(run).toHaveBeenCalled();
-    expect(createSession).toHaveBeenCalled();
-    expect(signJwt).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "user-1", sid: "sess-new", isAdmin: false }),
-      "secret",
-    );
   });
 
   describe("change-confirm tokens (token carries a pending email)", () => {

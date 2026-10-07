@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { setToken } from "@/lib/auth";
-import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
 export function VerifyEmailPage() {
   const location = useLocation();
@@ -28,19 +26,14 @@ export function VerifyEmailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     })
-      .then(res => res.json() as Promise<{ ok: boolean; data?: { verified: boolean; token?: string; emailChanged?: boolean }; error?: string }>)
+      .then(res => res.json() as Promise<{ ok: boolean; data?: { verified: boolean; emailChanged?: boolean }; error?: string }>)
       .then(json => {
-        // Change-confirm links deliberately never mint a session - the clicker
-        // proved mailbox access, not account ownership.
+        // Verification links never mint a session - the clicker proved mailbox
+        // access, not account ownership - so success always sends the user to
+        // sign in. A "Sign in with Annex" flow interrupted by signup stays
+        // stashed and LoginPage resumes it after that sign-in.
         if (json.ok && json.data?.emailChanged) {
           setState("changed");
-          return;
-        }
-        if (json.ok && json.data?.token) {
-          setToken(json.data.token);
-          // Resume a "Sign in with Annex" flow interrupted by signup: the
-          // authorize page stashed its URL before bouncing to login.
-          navigate(consumePendingOAuthNext() ?? "/dashboard", { replace: true });
           return;
         }
         if (!json.ok && json.error === "email_taken") {

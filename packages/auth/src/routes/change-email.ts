@@ -66,10 +66,13 @@ export async function handleChangeEmail(request: Request, env: Env): Promise<Res
   ).bind(email).first<{ id: string }>();
   if (taken) return errorResponse(Errors.CONFLICT);
 
-  // Invalidate any earlier pending change so a stale confirm link can't apply
-  // an old address later (matters especially across flag flips).
+  // Invalidate every outstanding link: an earlier pending change so a stale
+  // confirm link can't apply an old address later (matters especially across
+  // flag flips), AND unconsumed signup-verify links - those mark whatever
+  // users.email is at click time as verified, so one minted for the old
+  // address would otherwise "verify" the new, never-proven one.
   await env.DB.prepare(
-    "DELETE FROM email_verification_tokens WHERE user_id = ? AND email IS NOT NULL",
+    "DELETE FROM email_verification_tokens WHERE user_id = ?",
   ).bind(session.userId).run();
 
   const requireVerification = await isEmailVerificationEnabled(env, session.userId);
