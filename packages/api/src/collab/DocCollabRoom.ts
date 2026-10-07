@@ -53,6 +53,10 @@ interface WsAttachment {
   userId: string;
   userName: string;
   clientId: number | null;
+  // Auth session row behind the upgrade token; re-checked by revalidateAccess
+  // so revoking the session / suspending the account drops the socket.
+  // Optional: sockets accepted before this field existed have none.
+  sid?: string | null;
 }
 
 // Validates that every client state embedded in an awareness update claims the
@@ -245,7 +249,8 @@ export class DocCollabRoom implements DurableObject {
 
   private async handleWebSocket(request: Request): Promise<Response> {
     const userId = request.headers.get("X-User-Id") ?? "";
-    const userName = request.headers.get("X-User-Name") ?? "";
+    const userName = safeDecode(request.headers.get("X-User-Name") ?? "");
+    const sid = request.headers.get("X-Session-Id") || null;
     const projectId = request.headers.get("X-Project-Id") ?? "";
     const docId = request.headers.get("X-Doc-Id") ?? "";
     if (projectId) this.projectId = projectId;
@@ -265,7 +270,7 @@ export class DocCollabRoom implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ userId, userName, clientId: null } satisfies WsAttachment);
+    server.serializeAttachment({ userId, userName, clientId: null, sid } satisfies WsAttachment);
 
     // If the room is frozen on load (persisted state already exceeds the cap), close the
     // socket immediately. Sending sync step1 first would just be wasted bytes, and waiting
@@ -324,11 +329,33 @@ export class DocCollabRoom implements DurableObject {
     // gets closed. A transient resolver/DB error fails OPEN for that user: we
     // don't tear down a live session over a blip (reconnect re-checks at upgrade).
     const uids = new Set<string>();
+    const sids = new Set<string>();
     for (const ws of sockets) {
-      const uid = (ws.deserializeAttachment() as WsAttachment | null)?.userId;
-      if (uid) uids.add(uid);
+      const att = ws.deserializeAttachment() as WsAttachment | null;
+      if (att?.userId) uids.add(att.userId);
+      if (att?.sid) sids.add(att.sid);
     }
     if (uids.size === 0) return revoked;
+
+    // The socket was authenticated once, at upgrade. Re-check the session row
+    // and account state too, so "revoke other sessions", a password change,
+    // session expiry, or an admin disable/suspend closes it - membership alone
+    // wouldn't. Same fail-open rule on a lookup error.
+    const sessionOkById = new Map<string, boolean>();
+    const authDb = this.env.AUTH_DB;
+    if (authDb) {
+      await Promise.all([...sids].map(async (sid) => {
+        try {
+          const row = await authDb.prepare(
+            `SELECT s.expires_at, s.revoked_at, u.moderation, u.force_password_change
+             FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`,
+          ).bind(sid).first<{ expires_at: number; revoked_at: number | null; moderation: number; force_password_change: number }>();
+          sessionOkById.set(sid, sessionStillValid(row, now));
+        } catch {
+          sessionOkById.set(sid, true);
+        }
+      }));
+    }
     const allowedById = new Map<string, boolean>();
     await Promise.all([...uids].map(async (uid) => {
       try {
@@ -348,8 +375,11 @@ export class DocCollabRoom implements DurableObject {
       const att = ws.deserializeAttachment() as WsAttachment | null;
       const uid = att?.userId;
       if (!att || !uid) continue;
-      if (allowedById.get(uid) === false) {
-        revoked.add(uid);
+      const sessionDead = att.sid ? sessionOkById.get(att.sid) === false : false;
+      if (allowedById.get(uid) === false || sessionDead) {
+        // Membership loss revokes the user everywhere in the room; a dead
+        // session only revokes that session's sockets.
+        revoked.add(sessionDead && allowedById.get(uid) !== false ? `sid:${att.sid}` : uid);
         if (this.awareness && att.clientId != null) {
           try { awarenessProtocol.removeAwarenessStates(this.awareness, [att.clientId], ws); } catch { /* */ }
         }
@@ -383,6 +413,7 @@ export class DocCollabRoom implements DurableObject {
       if (revoked.size > 0) {
         const self = ws.deserializeAttachment() as WsAttachment | null;
         if (self?.userId && revoked.has(self.userId)) return;
+        if (self?.sid && revoked.has(`sid:${self.sid}`)) return;
       }
 
       const data = typeof message === "string"
@@ -625,4 +656,25 @@ export class DocCollabRoom implements DurableObject {
       await this.env.ASSETS.put(docKey, text);
     }
   }
+}
+
+// X-User-Name arrives URI-encoded (see index.ts) so non-Latin-1 names survive
+// the Headers API; tolerate a raw value from an older worker during deploys.
+function safeDecode(v: string): string {
+  try { return decodeURIComponent(v); } catch { return v; }
+}
+
+// Mirrors loadCurrentSession's session/account gates (revoked, expired,
+// force-password-change, disabled, suspended). A missing row = invalid.
+export function sessionStillValid(
+  row: { expires_at: number; revoked_at: number | null; moderation: number; force_password_change: number } | null,
+  now: number,
+): boolean {
+  if (!row) return false;
+  if (row.revoked_at !== null) return false;
+  if (row.expires_at <= now) return false;
+  if (row.force_password_change) return false;
+  if (row.moderation === -1) return false;
+  if (row.moderation > 0 && Math.floor(now / 1000) < row.moderation) return false;
+  return true;
 }

@@ -67,7 +67,11 @@ export async function handleInviteLinks(
     }
 
     const maxUses = body.maxUses != null && body.maxUses > 0 ? body.maxUses : null;
-    const expiresAt = body.expiresAt ?? null;
+    // An unparseable date would compare as "never expires" at accept time.
+    if (body.expiresAt != null && (typeof body.expiresAt !== "string" || Number.isNaN(Date.parse(body.expiresAt)))) {
+      return errorResponse(Errors.BAD_REQUEST);
+    }
+    const expiresAt = body.expiresAt != null ? new Date(body.expiresAt).toISOString() : null;
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -180,12 +184,9 @@ export async function handleInvitePublic(
       // explicitly provisioned for this user; a link must NOT silently raise
       // (or change) it, otherwise a more-permissive link would undo a
       // deliberate lower-privilege invite. The link only flips `accepted`.
-      await env.DB.batch([
-        env.DB.prepare("UPDATE project_members SET accepted = 1 WHERE id = ?")
-          .bind(existing.id),
-        env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
-          .bind(token),
-      ]);
+      if (!(await claimLinkUse(env, token))) return linkExhausted();
+      await env.DB.prepare("UPDATE project_members SET accepted = 1 WHERE id = ?")
+        .bind(existing.id).run();
       return okResponse({ projectId: link.project_id, role: existing.role }, 201);
     }
 
@@ -199,18 +200,37 @@ export async function handleInvitePublic(
     const lookupData = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
     if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
 
+    if (!(await claimLinkUse(env, token))) return linkExhausted();
     const memberId = crypto.randomUUID();
     const now = new Date().toISOString();
-    await env.DB.batch([
-      env.DB.prepare(
+    try {
+      await env.DB.prepare(
         "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-      ).bind(memberId, link.project_id, session.userId, lookupData.data.email, lookupData.data.name, link.role, link.created_by, now),
-      env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
-        .bind(token),
-    ]);
+      ).bind(memberId, link.project_id, session.userId, lookupData.data.email, lookupData.data.name, link.role, link.created_by, now).run();
+    } catch (err) {
+      // e.g. UNIQUE(project_id, user_id) when the same user accepts from two
+      // tabs at once - give back the use we claimed so it isn't wasted.
+      await env.DB.prepare("UPDATE project_invite_links SET use_count = use_count - 1 WHERE id = ? AND use_count > 0")
+        .bind(token).run();
+      throw err;
+    }
 
     return okResponse({ projectId: link.project_id, role: link.role }, 201);
   }
 
   return errorResponse(Errors.NOT_FOUND);
+}
+
+// Atomically take one use of the link. The max_uses check above is only a
+// fast path: parallel accepts can all pass it, so the increment itself must
+// be conditional or a capped link could admit more members than allowed.
+async function claimLinkUse(env: Env, linkId: string): Promise<boolean> {
+  const res = await env.DB.prepare(
+    "UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ? AND is_active = 1 AND (max_uses IS NULL OR use_count < max_uses)",
+  ).bind(linkId).run();
+  return (res.meta?.changes ?? 0) === 1;
+}
+
+function linkExhausted(): Response {
+  return Response.json({ ok: false, error: "This invite link has reached its maximum uses.", status: 410 }, { status: 410 });
 }

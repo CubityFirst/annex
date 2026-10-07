@@ -150,6 +150,7 @@ app.get("/api/avatar/:userId", async (c) => {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=300",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 });

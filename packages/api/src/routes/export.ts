@@ -1,5 +1,5 @@
 import { Zip, ZipPassThrough } from "fflate";
-import { errorResponse, Errors, ROLE_RANK, type Role, type Session } from "../lib";
+import { errorResponse, Errors, ROLE_RANK, contentDispositionValue, type Role, type Session } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 
@@ -138,7 +138,7 @@ export async function handleProjectExport(
     status: 200,
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${zipName}.zip"`,
+      "Content-Disposition": contentDispositionValue("attachment", `${zipName}.zip`),
     },
   });
 }

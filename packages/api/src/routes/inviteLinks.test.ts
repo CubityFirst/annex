@@ -15,9 +15,12 @@ function makeEnv(opts?: { lookupOk?: boolean }) {
   const runs: unknown[] = [];
   const first = vi.fn(() => Promise.resolve(firsts.shift() ?? null));
   const all = vi.fn(() => Promise.resolve(alls.shift() ?? { results: [] }));
-  const run = vi.fn(() => Promise.resolve(runs.shift() ?? { meta: { changes: 1 } }));
+  const run = vi.fn(() => {
+    const r = runs.shift();
+    return r instanceof Error ? Promise.reject(r) : Promise.resolve(r ?? { meta: { changes: 1 } });
+  });
   const bind = vi.fn(() => ({ first, all, run }));
-  const prepare = vi.fn(() => ({ bind }));
+  const prepare = vi.fn((_sql: string) => ({ bind }));
   const batch = vi.fn(() => Promise.resolve([]));
   const authFetch = vi.fn(async () => {
     if (opts?.lookupOk === false) return new Response("", { status: 500 });
@@ -30,8 +33,10 @@ function makeEnv(opts?: { lookupOk?: boolean }) {
     } as unknown as Parameters<typeof handleInviteLinks>[1],
     run,
     batch,
+    prepare,
     authFetch,
     queueFirst: (v: unknown) => firsts.push(v),
+    queueRun: (v: unknown) => runs.push(v),
     queueAll: (v: unknown) => alls.push(v),
   };
 }
@@ -124,6 +129,13 @@ describe("handleInviteLinks GET/POST/DELETE", () => {
     const { env } = makeEnv();
     const res = await call(env, "POST", "/projects/p1/invite-links", { role: "admin" });
     expect(res.status).toBe(403);
+  });
+
+  it("400s on an unparseable expiresAt (would otherwise never expire)", async () => {
+    const { env, run } = makeEnv();
+    const res = await call(env, "POST", "/projects/p1/invite-links", { role: "editor", expiresAt: "not-a-date" });
+    expect(res.status).toBe(400);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("creates a link (201)", async () => {
@@ -240,26 +252,48 @@ describe("handleInvitePublic POST accept", () => {
   });
 
   it("accepts a pending email invite via the link (keeps its role)", async () => {
-    const { env, queueFirst, batch } = makeEnv();
+    const { env, queueFirst, prepare } = makeEnv();
     queueFirst(validLink());
     queueFirst({ id: "m1", role: "viewer", accepted: 0 });
     const res = await callPublic(env, "POST", "/invites/tok/accept");
     expect(res.status).toBe(201);
-    expect(batch).toHaveBeenCalled();
+    const sqls = prepare.mock.calls.map(c => c[0]);
+    expect(sqls.some(q => q.includes("use_count < max_uses"))).toBe(true);
+    expect(sqls.some(q => q.includes("UPDATE project_members SET accepted = 1"))).toBe(true);
     const json = (await res.json()) as { data: { role: string } };
     expect(json.data.role).toBe("viewer");
   });
 
   it("creates a new membership after a successful lookup", async () => {
-    const { env, queueFirst, batch, authFetch } = makeEnv();
+    const { env, queueFirst, prepare, authFetch } = makeEnv();
     queueFirst(validLink());
     queueFirst(null); // not yet a member
     const res = await callPublic(env, "POST", "/invites/tok/accept");
     expect(res.status).toBe(201);
     expect(authFetch).toHaveBeenCalled();
-    expect(batch).toHaveBeenCalled();
+    expect(prepare.mock.calls.some(c => c[0].includes("INSERT INTO project_members"))).toBe(true);
     const json = (await res.json()) as { data: { role: string } };
     expect(json.data.role).toBe("editor");
+  });
+
+  it("410s without adding a member when a concurrent accept took the last use", async () => {
+    const { env, queueFirst, queueRun, prepare } = makeEnv();
+    queueFirst(validLink());
+    queueFirst(null);
+    queueRun({ meta: { changes: 0 } }); // conditional use_count claim loses the race
+    const res = await callPublic(env, "POST", "/invites/tok/accept");
+    expect(res.status).toBe(410);
+    expect(prepare.mock.calls.some(c => c[0].includes("INSERT INTO project_members"))).toBe(false);
+  });
+
+  it("refunds the claimed use when the member insert fails (same user, two tabs)", async () => {
+    const { env, queueFirst, queueRun, prepare } = makeEnv();
+    queueFirst(validLink());
+    queueFirst(null);
+    queueRun({ meta: { changes: 1 } });                 // claim succeeds
+    queueRun(new Error("UNIQUE constraint failed"));    // insert loses to the other tab
+    await expect(callPublic(env, "POST", "/invites/tok/accept")).rejects.toThrow(/UNIQUE/);
+    expect(prepare.mock.calls.some(c => c[0].includes("use_count = use_count - 1"))).toBe(true);
   });
 
   it("500s when the auth-worker lookup fails", async () => {

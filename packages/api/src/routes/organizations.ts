@@ -244,6 +244,10 @@ async function handleOrgMembers(
     const body = await request.json<{ email?: string; role?: Role }>().catch(() => ({} as { email?: string; role?: Role }));
     if (!body.email || !body.role) return errorResponse(Errors.BAD_REQUEST);
     if (!ASSIGNABLE_ORG_ROLES.includes(body.role)) return errorResponse(Errors.BAD_REQUEST);
+    // Admins cannot grant admin or above (mirrors the PATCH guard).
+    if (callerRole === "admin" && ROLE_RANK[body.role] >= ROLE_RANK["admin"]) {
+      return errorResponse(Errors.FORBIDDEN);
+    }
 
     // Per-user rate limit on the email->user lookup (shared with site invites).
     const { success } = await env.RATE_LIMITER_INVITE_LOOKUP.limit({ key: user.userId });

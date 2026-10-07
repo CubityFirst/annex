@@ -39,7 +39,9 @@ that auth-table schema changes carry. The owner is just a stored user id.
 2. **Keys are ceilings, not grants.** Every `/v1` request re-checks the owner's
    **live** `project_members` role (accepted only). A `readwrite` key still needs
    the owner to be editor+; a `can_invite` key still needs admin+. Removing the
-   owner from the site **instantly neuters all their keys**.
+   owner from the site **instantly neuters all their keys**. `authenticateApiKey`
+   also reads the owner's `users` row via `AUTH_DB`: a deleted, disabled,
+   suspended, or force-password-change account's keys 401, same as its JWTs.
 3. **Token discrimination.** Keys are prefixed `annx_`; JWTs are 3 dot-separated
    segments and never carry the prefix. `isApiKeyToken()` separates them.
 4. **Hashing.** Store only `SHA-256(secret)` (fast hash is correct for
@@ -49,7 +51,9 @@ that auth-table schema changes carry. The owner is just a stored user id.
    leaks nothing about key state.
 6. **Invite hardening.** `apiKeyInviteRoleAllowed` / `apiKeyRemoveAllowed`
    (pure, unit-tested) require admin+, forbid assigning/exceeding `owner`, forbid
-   admins removing admins - stricter than the interactive members route.
+   admins granting `admin` and admins removing admins - the same rules as the
+   interactive members/org routes. Removing a member (any path) also deletes
+   their `doc_shares` rows (`removeMember` in `routes/members.ts`).
 7. **Invite-capable keys need admin+ to even create.** The UI hides the "Manage
    members" toggle from non-admins, AND `routes/apiKeys.ts` rejects
    `canInvite: true` (403) when the creator's role is below admin - so the raw

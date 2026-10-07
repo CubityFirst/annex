@@ -119,6 +119,12 @@ export async function handleMembers(
     const body = await request.json<{ email: string; role: Role }>();
     if (!body.email || !body.role) return errorResponse(Errors.BAD_REQUEST);
     if (!VALID_ROLES.includes(body.role) || body.role === "owner") return errorResponse(Errors.BAD_REQUEST);
+    // Admins cannot grant admin or above - same rule as PATCH and invite links,
+    // otherwise an admin could mint a second admin account that only the owner
+    // can remove.
+    if (callerRole === "admin" && ROLE_RANK[body.role] >= ROLE_RANK["admin"]) {
+      return errorResponse(Errors.FORBIDDEN);
+    }
 
     // Per-user rate limit on the email→user lookup. The auth worker enforces
     // a coarser IP-keyed limit; this one stops any single account from
@@ -211,8 +217,7 @@ export async function handleMembers(
     if (isSelf) {
       // Allow any member to leave, except the owner
       if (callerRole === "owner") return errorResponse(Errors.FORBIDDEN);
-      await env.DB.prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
-        .bind(projectId, targetUserId).run();
+      await removeMember(env, projectId, targetUserId);
       return okResponse({ deleted: true });
     }
 
@@ -228,11 +233,21 @@ export async function handleMembers(
       return errorResponse(Errors.FORBIDDEN);
     }
 
-    await env.DB.prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
-      .bind(projectId, targetUserId).run();
+    await removeMember(env, projectId, targetUserId);
 
     return okResponse({ deleted: true });
   }
 
   return errorResponse(Errors.NOT_FOUND);
+}
+
+// Removing a member must also drop their per-doc shares: doc_shares only
+// cascades from docs, so a leftover edit share would keep granting edit access
+// to someone who still reaches the site another way (org viewer, re-invite as
+// limited/viewer) - and stay invisible in the shares UI, which joins members.
+export async function removeMember(env: Env, projectId: string, userId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM doc_shares WHERE project_id = ? AND user_id = ?").bind(projectId, userId),
+    env.DB.prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?").bind(projectId, userId),
+  ]);
 }

@@ -308,6 +308,21 @@ describe("handleFiles POST /files (upload)", () => {
     expect(res.status).toBe(403);
   });
 
+  it("400s when folderId is not a folder of this project (no write)", async () => {
+    vi.mocked(folderInProject).mockResolvedValueOnce(false);
+    const { env, put } = makeEnv();
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array(8)], "a.png", { type: "image/png" }));
+    form.set("projectId", "p1");
+    form.set("folderId", "other-site-folder");
+    const res = await uploadReq(env, form);
+    expect(res.status).toBe(400);
+    expect(put).not.toHaveBeenCalled();
+    // Any folder type is fine (pasted doc images use a docs-type folder) -
+    // only the project binding is enforced.
+    expect(folderInProject).toHaveBeenCalledWith(env.DB, "other-site-folder", "p1");
+  });
+
   it("uploads a file (201) for an editor", async () => {
     const { env, put, run } = makeEnv();
     const form = new FormData();

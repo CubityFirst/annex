@@ -22,6 +22,8 @@ Browser ↔ WebSocket `/api/docs/:id/collab?token=<jwt>` ↔ API Worker (auth + 
 
 Token passed as `?token=` (browsers can't set headers on WS); API worker re-wraps it as `Authorization: Bearer` and calls `authenticate()`, which verifies inline against `AUTH_DB` (see CLAUDE.md "Verification boundary").
 
+The API worker hands identity to the DO via `X-User-Id` / `X-User-Name` (URI-encoded) / `X-Project-Id` / `X-Doc-Id` / `X-Session-Id`, always set with `Headers.set` so a client can't smuggle its own copies (a record spread of `request.headers` would *append* them). Sockets are authorized once at upgrade, so `DocCollabRoom.revalidateAccess` (throttled to `AUTH_RECHECK_MS`, driven by traffic) re-checks both effective role (editor+) and the socket's auth session (`sessionStillValid`: revoked / expired / force-password-change / disabled / suspended) and closes failures with 1008. Lookup errors fail open.
+
 ## DO room key
 
 `${projectId}:${docId}` - one room per document.

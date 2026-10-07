@@ -82,11 +82,11 @@ describe("apiKeyInviteRoleAllowed (no escalation, never owner)", () => {
     expect(apiKeyInviteRoleAllowed("limited", "viewer")).toBe(false);
   });
 
-  it("admins can assign roles up to their own, never owner", () => {
+  it("admins can assign roles below admin, never admin or owner", () => {
     expect(apiKeyInviteRoleAllowed("admin", "limited")).toBe(true);
     expect(apiKeyInviteRoleAllowed("admin", "viewer")).toBe(true);
     expect(apiKeyInviteRoleAllowed("admin", "editor")).toBe(true);
-    expect(apiKeyInviteRoleAllowed("admin", "admin")).toBe(true);
+    expect(apiKeyInviteRoleAllowed("admin", "admin")).toBe(false);
     expect(apiKeyInviteRoleAllowed("admin", "owner")).toBe(false);
   });
 
@@ -129,12 +129,16 @@ interface StubRow {
   revoked_at: string | null;
 }
 
-function makeEnv(row: StubRow | null) {
+type OwnerRow = { moderation: number; force_password_change: number };
+
+function makeEnv(row: StubRow | null, owner: OwnerRow | null = { moderation: 0, force_password_change: 0 }) {
   const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
   const first = vi.fn().mockResolvedValue(row);
   const bind = vi.fn().mockReturnValue({ first, run });
   const prepare = vi.fn().mockReturnValue({ bind });
-  return { env: { DB: { prepare } } as unknown as Env, prepare, bind, first, run };
+  const ownerFirst = vi.fn().mockResolvedValue(owner);
+  const authPrepare = vi.fn().mockReturnValue({ bind: vi.fn().mockReturnValue({ first: ownerFirst }) });
+  return { env: { DB: { prepare }, AUTH_DB: { prepare: authPrepare } } as unknown as Env, prepare, bind, first, run };
 }
 
 function validRow(over: Partial<StubRow> = {}): StubRow {
@@ -171,6 +175,24 @@ describe("authenticateApiKey", () => {
   it("returns null for an expired key", async () => {
     const { env } = makeEnv(validRow({ expires_at: new Date(Date.now() - 1000).toISOString() }));
     expect(await authenticateApiKey("annx_expired", env)).toBeNull();
+  });
+
+  it("returns null when the owner's account is gone, disabled, suspended, or force-reset", async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    for (const owner of [
+      null,
+      { moderation: -1, force_password_change: 0 },
+      { moderation: future, force_password_change: 0 },
+      { moderation: 0, force_password_change: 1 },
+    ]) {
+      const { env } = makeEnv(validRow(), owner);
+      expect(await authenticateApiKey("annx_owner_blocked", env)).toBeNull();
+    }
+  });
+
+  it("accepts a key whose owner's suspension has elapsed", async () => {
+    const { env } = makeEnv(validRow(), { moderation: Math.floor(Date.now() / 1000) - 10, force_password_change: 0 });
+    expect(await authenticateApiKey("annx_valid", env)).not.toBeNull();
   });
 
   it("resolves a valid key to its scope, mapping can_invite", async () => {

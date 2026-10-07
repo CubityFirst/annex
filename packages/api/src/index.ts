@@ -565,6 +565,7 @@ export default {
           headers: {
             "Content-Type": resolved.contentType,
             "Cache-Control": "public, max-age=300",
+            "X-Content-Type-Options": "nosniff",
             ...corsHeaders(),
           },
         });
@@ -900,16 +901,19 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
   const id = env.DOC_COLLAB.idFromName(`${docRow.project_id}:${docId}`);
   const stub = env.DOC_COLLAB.get(id);
 
-  const upstream = new Request(request.url, {
-    method: request.method,
-    headers: new Headers({
-      ...Object.fromEntries(request.headers),
-      "X-User-Id": session.userId,
-      "X-User-Name": caller.name,
-      "X-Project-Id": docRow.project_id,
-      "X-Doc-Id": docId,
-    }),
-  });
+  // The room trusts these identity headers, so they must REPLACE any
+  // client-supplied copies: a record spread of request.headers yields
+  // lowercase keys that the Headers constructor would append alongside ours
+  // ("attacker, real"). The name is URI-encoded so non-Latin-1 names
+  // (emoji, CJK) don't make Headers throw; the room decodes it.
+  const headers = new Headers(request.headers);
+  headers.set("X-User-Id", session.userId);
+  headers.set("X-User-Name", encodeURIComponent(caller.name));
+  headers.set("X-Project-Id", docRow.project_id);
+  headers.set("X-Doc-Id", docId);
+  if (session.sid) headers.set("X-Session-Id", session.sid);
+  else headers.delete("X-Session-Id");
+  const upstream = new Request(request.url, { method: request.method, headers });
   return stub.fetch(upstream);
 }
 

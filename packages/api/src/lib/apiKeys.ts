@@ -74,6 +74,8 @@ export function apiKeyInviteRoleAllowed(callerRole: Role, targetRole: Role): boo
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return false;
   if (!ASSIGNABLE_ROLES.includes(targetRole)) return false;
   if (ROLE_RANK[targetRole] > ROLE_RANK[callerRole]) return false;
+  // Admins cannot grant admin - only an owner can (mirrors members.ts).
+  if (callerRole === "admin" && ROLE_RANK[targetRole] >= ROLE_RANK["admin"]) return false;
   return true;
 }
 
@@ -118,6 +120,17 @@ export async function authenticateApiKey(token: string, env: Env): Promise<ApiKe
 
   const nowMs = Date.now();
   if (row.expires_at !== null && Date.parse(row.expires_at) <= nowMs) return null;
+
+  // The key acts as its owner, so it must stop working whenever the owner's
+  // JWT sessions would: account deleted, disabled, suspended, or forced to
+  // reset its password (mirrors loadCurrentSession's account gates).
+  const owner = await env.AUTH_DB.prepare(
+    "SELECT moderation, force_password_change FROM users WHERE id = ?",
+  ).bind(row.user_id).first<{ moderation: number; force_password_change: number }>();
+  if (!owner) return null;
+  if (owner.force_password_change) return null;
+  if (owner.moderation === -1) return null;
+  if (owner.moderation > 0 && Math.floor(nowMs / 1000) < owner.moderation) return null;
 
   // Lazy "last used" bookkeeping. The API worker's fetch handler has no
   // ExecutionContext, so this is a cheap awaited write (throttled to one per

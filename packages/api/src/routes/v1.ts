@@ -11,6 +11,7 @@ import {
 } from "../lib/apiKeys";
 import { createDoc, applyDocUpdate, deleteDoc, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
 import { parseFrontmatter } from "../lib/frontmatter";
+import { removeMember } from "./members";
 
 // ── Public, API-key-authenticated surface (/v1) ─────────────────────────────
 //
@@ -348,8 +349,7 @@ async function handleV1Members(request: Request, env: Env, auth: ApiKeyAuth, res
       .bind(auth.projectId, targetUserId).first<{ role: Role }>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     if (!apiKeyRemoveAllowed(caller.role, row.role)) return errorResponse(Errors.FORBIDDEN);
-    await env.DB.prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
-      .bind(auth.projectId, targetUserId).run();
+    await removeMember(env, auth.projectId, targetUserId);
     return okResponse({ deleted: true });
   }
 

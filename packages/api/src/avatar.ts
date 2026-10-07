@@ -13,6 +13,16 @@ export type AvatarVariant = "dark" | "light";
 
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
+// User ids are crypto.randomUUID(). The public GET must reject anything else:
+// an id like `<victim>-dark` would make migrateLegacy treat the victim's real
+// `avatars/<victim>-dark` object as a legacy key - copying it away and deleting
+// it - from an unauthenticated request.
+const USER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidAvatarUserId(userId: string): boolean {
+  return USER_ID_RE.test(userId);
+}
+
 /** Anything other than the literal "light" resolves to "dark". */
 export function parseVariant(raw: string | null | undefined): AvatarVariant {
   return raw === "light" ? "light" : "dark";
@@ -64,6 +74,7 @@ export async function resolveAvatar(
   userId: string,
   variant: AvatarVariant,
 ): Promise<ResolvedAvatar | null> {
+  if (!isValidAvatarUserId(userId)) return null;
   if (variant === "light") {
     return (await getExact(assets, avatarKey(userId, "light")))
       ?? (await getExact(assets, avatarKey(userId, "dark")))

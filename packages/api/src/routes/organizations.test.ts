@@ -297,6 +297,13 @@ describe("handleOrganizations members", () => {
     expect(res.status).toBe(400);
   });
 
+  it("403s when an org admin tries to invite an admin", async () => {
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ role: "admin" });
+    const res = await call(env, "POST", "/organizations/o1/members", { email: "b@x.z", role: "admin" });
+    expect(res.status).toBe(403);
+  });
+
   it("429s when the lookup rate limit trips", async () => {
     const { env, queueFirst } = makeEnv({ rateOk: false });
     queueFirst({ role: "admin" });

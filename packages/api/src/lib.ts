@@ -15,6 +15,9 @@ export interface Session {
   // Global site admin flag. Propagated from the auth session so admin-only
   // features (e.g. the theme picker) can be gated server- and client-side.
   isAdmin?: boolean;
+  // Server-side session row id. Carried into long-lived collab sockets so the
+  // room can notice a revoked/expired session after the upgrade.
+  sid?: string;
   // Per-user site theme. themeMode ∈ {dark,light,custom}; NULL = dark default.
   themeMode?: string | null;
   themeCustomColor?: string | null;

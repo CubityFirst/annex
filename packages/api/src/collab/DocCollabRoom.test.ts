@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DocCollabRoom } from "./DocCollabRoom";
+import { DocCollabRoom, sessionStillValid } from "./DocCollabRoom";
 
 // Unit tests for the in-DO access re-check (revalidateAccess): an open collab
 // socket is authorized only once at upgrade, so the room re-resolves effective
@@ -32,26 +32,26 @@ function dbForRoles(roles: Record<string, { project: string | null; org: string 
 
 interface FakeWs {
   closedWith: { code: number; reason: string } | null;
-  deserializeAttachment: () => { userId: string; userName: string; clientId: number };
+  deserializeAttachment: () => { userId: string; userName: string; clientId: number; sid?: string };
   close: (code: number, reason: string) => void;
 }
-function fakeWs(userId: string): FakeWs {
+function fakeWs(userId: string, sid?: string): FakeWs {
   const ws: FakeWs = {
     closedWith: null,
-    deserializeAttachment: () => ({ userId, userName: userId, clientId: 1 }),
+    deserializeAttachment: () => ({ userId, userName: userId, clientId: 1, sid }),
     close: (code, reason) => { ws.closedWith = { code, reason }; },
   };
   return ws;
 }
 
-function makeRoom(sockets: FakeWs[], db: D1Database): { revalidateAccess(): Promise<Set<string>> } {
+function makeRoom(sockets: FakeWs[], db: D1Database, authDb?: D1Database): { revalidateAccess(): Promise<Set<string>> } {
   const ctx = {
     getWebSockets: () => sockets,
     storage: { get: async (k: string) => (k === "docKey" ? "proj-1/doc-1" : undefined) },
   };
   const room = new DocCollabRoom(
     ctx as unknown as ConstructorParameters<typeof DocCollabRoom>[0],
-    { DB: db } as unknown as ConstructorParameters<typeof DocCollabRoom>[1],
+    { DB: db, AUTH_DB: authDb } as unknown as ConstructorParameters<typeof DocCollabRoom>[1],
   );
   return room as unknown as { revalidateAccess(): Promise<Set<string>> };
 }
@@ -123,5 +123,83 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
     const revoked = await room.revalidateAccess();
     expect(calls.first).toBe(0);
     expect(revoked.size).toBe(0);
+  });
+});
+
+// AUTH_DB stub for the session re-check: sessions[sid] is the joined row, or
+// undefined (no row) / "throw".
+function authDbFor(sessions: Record<string, Parameters<typeof sessionStillValid>[0] | "throw">) {
+  return {
+    prepare: () => ({
+      bind: (sid: string) => ({
+        first: async () => {
+          const r = sessions[sid];
+          if (r === "throw") throw new Error("auth db boom");
+          return r ?? null;
+        },
+      }),
+    }),
+  } as unknown as D1Database;
+}
+
+const live = { expires_at: Date.now() + 60_000, revoked_at: null, moderation: 0, force_password_change: 0 };
+
+describe("DocCollabRoom.revalidateAccess (session + account re-check)", () => {
+  it("closes only the socket whose session was revoked; the user's other session stays", async () => {
+    const stolen = fakeWs("alice", "s-old");
+    const own = fakeWs("alice", "s-new");
+    const { db } = dbForRoles({ alice: { project: "editor", org: null } });
+    const room = makeRoom([stolen, own], db, authDbFor({
+      "s-old": { ...live, revoked_at: Date.now() },
+      "s-new": live,
+    }));
+
+    const revoked = await room.revalidateAccess();
+    expect(stolen.closedWith?.code).toBe(1008);
+    expect(own.closedWith).toBeNull();
+    expect(revoked.has("sid:s-old")).toBe(true);
+    expect(revoked.has("alice")).toBe(false);
+  });
+
+  it("closes sockets of a suspended account, an expired session, or a missing session row", async () => {
+    const suspended = fakeWs("a", "s1");
+    const expired = fakeWs("b", "s2");
+    const missing = fakeWs("c", "s3");
+    const { db } = dbForRoles({
+      a: { project: "editor", org: null }, b: { project: "editor", org: null }, c: { project: "editor", org: null },
+    });
+    const room = makeRoom([suspended, expired, missing], db, authDbFor({
+      s1: { ...live, moderation: Math.floor(Date.now() / 1000) + 3600 },
+      s2: { ...live, expires_at: Date.now() - 1 },
+    }));
+
+    await room.revalidateAccess();
+    expect(suspended.closedWith?.code).toBe(1008);
+    expect(expired.closedWith?.code).toBe(1008);
+    expect(missing.closedWith?.code).toBe(1008);
+  });
+
+  it("fails open on an AUTH_DB error and skips sockets without a sid", async () => {
+    const errored = fakeWs("a", "s1");
+    const legacy = fakeWs("b");
+    const { db } = dbForRoles({ a: { project: "editor", org: null }, b: { project: "editor", org: null } });
+    const room = makeRoom([errored, legacy], db, authDbFor({ s1: "throw" }));
+
+    const revoked = await room.revalidateAccess();
+    expect(errored.closedWith).toBeNull();
+    expect(legacy.closedWith).toBeNull();
+    expect(revoked.size).toBe(0);
+  });
+});
+
+describe("sessionStillValid", () => {
+  const now = Date.now();
+  it("mirrors loadCurrentSession's gates", () => {
+    expect(sessionStillValid(live, now)).toBe(true);
+    expect(sessionStillValid(null, now)).toBe(false);
+    expect(sessionStillValid({ ...live, force_password_change: 1 }, now)).toBe(false);
+    expect(sessionStillValid({ ...live, moderation: -1 }, now)).toBe(false);
+    // An elapsed suspension no longer blocks.
+    expect(sessionStillValid({ ...live, moderation: Math.floor(now / 1000) - 10 }, now)).toBe(true);
   });
 });

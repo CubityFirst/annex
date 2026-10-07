@@ -2265,7 +2265,7 @@ export function SiteSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {ASSIGNABLE_ROLES.map(role => (
+                      {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
                         <SelectItem key={role} value={role}>
                           {ROLE_LABELS[role]}
                         </SelectItem>

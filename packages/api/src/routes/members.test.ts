@@ -92,6 +92,13 @@ describe("handleMembers POST (invite)", () => {
     expect(res.status).toBe(403);
   });
 
+  it("403s when an admin tries to invite an admin", async () => {
+    const { env, authFetch } = makeEnv();
+    const res = await call(env, "POST", "/projects/p1/members", { email: "b@x.z", role: "admin" });
+    expect(res.status).toBe(403);
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
   it("400s when trying to invite as owner", async () => {
     const { env } = makeEnv();
     const res = await call(env, "POST", "/projects/p1/members", { email: "b@x.z", role: "owner" });
@@ -202,11 +209,12 @@ describe("handleMembers DELETE", () => {
   it("lets a non-owner member remove themselves", async () => {
     vi.mocked(resolveRole).mockResolvedValue("editor");
     const selfUser = { userId: "u2", email: "x" } as unknown as Parameters<typeof handleMembers>[2];
-    const { env, run } = makeEnv();
+    const { env, batch, prepare } = makeEnv();
     const url = new URL("http://localhost/projects/p1/members/u2");
     const res = await handleMembers(new Request(url.toString(), { method: "DELETE" }), env, selfUser, url);
     expect(res.status).toBe(200);
-    expect(run).toHaveBeenCalled();
+    expect(batch).toHaveBeenCalled();
+    expect(prepare.mock.calls.some(c => (c[0] as string).includes("DELETE FROM doc_shares WHERE project_id = ? AND user_id = ?"))).toBe(true);
   });
 
   it("blocks the owner from leaving their own project", async () => {
@@ -228,10 +236,14 @@ describe("handleMembers DELETE", () => {
 
   it("lets an admin remove a viewer", async () => {
     vi.mocked(resolveRole).mockResolvedValue("admin");
-    const { env, queueFirst, run } = makeEnv();
+    const { env, queueFirst, batch, prepare, bindCalls } = makeEnv();
     queueFirst({ id: "m2", role: "viewer" });
     const res = await call(env, "DELETE", "/projects/p1/members/u2");
     expect(res.status).toBe(200);
-    expect(run).toHaveBeenCalled();
+    // Member row and their per-doc shares go together, so a leftover edit
+    // share can't outlive the membership.
+    expect((batch.mock.calls[0][0] as unknown[]).length).toBe(2);
+    expect(prepare.mock.calls.some(c => (c[0] as string).includes("DELETE FROM doc_shares WHERE project_id = ? AND user_id = ?"))).toBe(true);
+    expect(bindCalls).toContainEqual(["p1", "u2"]);
   });
 });

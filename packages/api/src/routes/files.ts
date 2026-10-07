@@ -161,6 +161,9 @@ export async function handleFiles(
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+    // Target folder must belong to this project (any folder type: pasted doc
+    // images land in a docs-type "doc_assets" folder).
+    if (!(await folderInProject(env.DB, folderId, projectId))) return errorResponse(Errors.BAD_REQUEST);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();

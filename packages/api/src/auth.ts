@@ -34,6 +34,7 @@ export async function authenticate(request: Request, env: Env): Promise<Session 
       editingFont: result.session.editingFont ?? null,
       uiFont: result.session.uiFont ?? null,
       isAdmin: result.session.isAdmin ?? false,
+      sid: result.session.sid,
       themeMode: result.session.themeMode ?? null,
       themeCustomColor: result.session.themeCustomColor ?? null,
     };

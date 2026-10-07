@@ -374,7 +374,9 @@ export default {
         const [, projectSlug, docId] = shareMatch;
         try {
           const cache = caches.default;
-          const cacheKey = new Request(`https://share-meta.internal/${projectSlug}/${docId}`);
+          // Host-scoped: the cached HTML embeds url.origin (canonical, og:url,
+          // card buttons), so a custom host must never fill the app host's entry.
+          const cacheKey = new Request(`https://share-meta.internal/${url.host}/${projectSlug}/${docId}`);
           const cached = await cache.match(cacheKey);
           if (cached) return cached;
 
@@ -419,7 +421,7 @@ export default {
         const [, token] = inviteMatch;
         try {
           const cache = caches.default;
-          const cacheKey = new Request(`https://invite-meta.internal/${token}`);
+          const cacheKey = new Request(`https://invite-meta.internal/${url.host}/${token}`); // host-scoped, see share-meta
           const cached = await cache.match(cacheKey);
           if (cached) return cached;
 
