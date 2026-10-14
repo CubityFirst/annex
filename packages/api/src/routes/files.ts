@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, isMutableFile, folderInProject, contentDispositionValue, deriveUploadMime, fileContentEtag, sanitizeUploadFileName, FILE_NAME_INVALID_CHARS, type Role } from "../lib";
+import { moveToTrash } from "../lib/trash";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 import { signContentToken, verifyContentToken } from "../lib/contentToken";
@@ -315,9 +316,10 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    await env.ASSETS.delete(`files/${fileId}`);
-    await env.DB.prepare("DELETE FROM files WHERE id = ?").bind(fileId).run();
-    return okResponse({ deleted: true });
+    // Binned, not destroyed - the R2 object stays until the entry is purged.
+    const trashed = await moveToTrash(env, { projectId: meta.project_id, type: "file", id: fileId, deletedBy: user.userId });
+    if (!trashed) return errorResponse(Errors.NOT_FOUND);
+    return okResponse({ deleted: true, trashEntryId: trashed.entryId });
   }
 
   return errorResponse(Errors.NOT_FOUND);

@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./docLinks", () => ({ indexDocLinks: vi.fn(), invalidateProjectGraphIndex: vi.fn() }));
 vi.mock("./fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsRow: vi.fn() }));
 
-import { applyDocUpdate, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, deleteDoc, pruneDocRevisions, normalizeDocSlug, syncDocSlug, type DocUpdateRow } from "./docOps";
+import { applyDocUpdate, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, pruneDocRevisions, normalizeDocSlug, syncDocSlug, type DocUpdateRow } from "./docOps";
 import { indexDocLinks, invalidateProjectGraphIndex } from "./docLinks";
-import { upsertFtsRow, deleteFtsRow } from "./fts";
+import { upsertFtsRow } from "./fts";
 
 type Env = Parameters<typeof applyDocUpdate>[0];
 
@@ -292,28 +292,6 @@ describe("deleteR2Prefix", () => {
     const { env, assetsDelete } = makeEnv();
     await deleteR2Prefix(env.ASSETS, "p1/d1/v/");
     expect(assetsDelete).not.toHaveBeenCalled();
-  });
-});
-
-describe("deleteDoc", () => {
-  it("deletes the body by key and the revision objects by prefix sweep, then cleans D1/FTS/graph", async () => {
-    const { env, prepare, assetsList, assetsDelete } = makeEnv();
-    assetsList.mockResolvedValueOnce({ objects: [{ key: "p1/d1/v/r1" }, { key: "p1/d1/v/r2" }], truncated: false, delimitedPrefixes: [] } as never);
-
-    await deleteDoc(env, "d1", "p1");
-
-    expect(assetsDelete).toHaveBeenCalledWith("p1/d1");
-    expect(assetsList).toHaveBeenCalledWith({ prefix: "p1/d1/v/", cursor: undefined });
-    expect(assetsDelete).toHaveBeenCalledWith(["p1/d1/v/r1", "p1/d1/v/r2"]);
-
-    const sql = preparedSql(prepare);
-    expect(sql.some(s => s.includes("DELETE FROM docs"))).toBe(true);
-    expect(sql.some(s => s.includes("DELETE FROM asset_revisions"))).toBe(true);
-    expect(sql.some(s => s.includes("DELETE FROM doc_shares"))).toBe(true);
-    // No per-revision D1 SELECT needed anymore.
-    expect(sql.some(s => s.includes("SELECT id FROM asset_revisions"))).toBe(false);
-    expect(deleteFtsRow).toHaveBeenCalledWith(expect.anything(), "d1");
-    expect(invalidateProjectGraphIndex).toHaveBeenCalledWith(env, "p1");
   });
 });
 

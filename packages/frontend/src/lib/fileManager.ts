@@ -119,3 +119,48 @@ export function folderCountLabel(c: FolderCounts | undefined): string {
   if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
   return parts.join(", ");
 }
+
+// Apply a local mutation (move / upload / delete) to one folder's badge counts
+// without refetching. Returns a new Map so React sees the change. A missing
+// entry starts from zero (e.g. a folder created in this view has no server
+// counts row yet), and counts never go negative - a stale decrement just
+// bottoms out until the next load corrects it.
+export function bumpFolderCounts(
+  counts: Map<string, FolderCounts>,
+  folderId: string,
+  delta: Partial<FolderCounts>,
+): Map<string, FolderCounts> {
+  const prev = counts.get(folderId) ?? { docs: 0, files: 0, folders: 0 };
+  const next = new Map(counts);
+  next.set(folderId, {
+    docs: Math.max(0, prev.docs + (delta.docs ?? 0)),
+    files: Math.max(0, prev.files + (delta.files ?? 0)),
+    folders: Math.max(0, prev.folders + (delta.folders ?? 0)),
+  });
+  return next;
+}
+
+// Which listed child-folder row's badge covers `folderId`. Badge counts are
+// full-subtree totals, so an item landing in a nested folder counts toward its
+// nearest listed ancestor. Without the folder tree (`all`) only a direct hit
+// can be resolved. null when no listed folder contains it (e.g. the current
+// folder itself or one of its ancestors - those have no badge).
+export function countedFolderFor(
+  folderId: string | null,
+  listedIds: ReadonlySet<string>,
+  all?: MoveFolderLike[] | null,
+): string | null {
+  if (!folderId) return null;
+  if (listedIds.has(folderId)) return folderId;
+  if (!all) return null;
+  const byId = new Map(all.map(f => [f.id, f]));
+  const seen = new Set<string>([folderId]);
+  let parentId = byId.get(folderId)?.parent_id ?? null;
+  // Defensive against a broken parent chain, like folderPathLabel.
+  while (parentId && !seen.has(parentId)) {
+    if (listedIds.has(parentId)) return parentId;
+    seen.add(parentId);
+    parentId = byId.get(parentId)?.parent_id ?? null;
+  }
+  return null;
+}

@@ -9,7 +9,8 @@ import {
   ASSIGNABLE_ROLES,
   type ApiKeyAuth,
 } from "../lib/apiKeys";
-import { createDoc, applyDocUpdate, deleteDoc, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
+import { createDoc, applyDocUpdate, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
+import { moveToTrash } from "../lib/trash";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { removeMember } from "./members";
 
@@ -258,7 +259,9 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
     const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?")
       .bind(auth.projectId).first<{ home_doc_id: string | null }>();
     if (proj?.home_doc_id === docId) return errorResponse(Errors.FORBIDDEN);
-    await deleteDoc(env, docId, auth.projectId);
+    // Same as the app: the doc goes to the site's recycle bin.
+    const trashed = await moveToTrash(env, { projectId: auth.projectId, type: "doc", id: docId, deletedBy: auth.userId });
+    if (!trashed) return errorResponse(Errors.NOT_FOUND);
     return okResponse({ deleted: true });
   }
 

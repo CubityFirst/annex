@@ -7,11 +7,13 @@ interface ToastInput {
   title?: React.ReactNode;
   description?: React.ReactNode;
   variant?: Variant;
+  // Inline button on the toast, e.g. "Undo" after moving an item to the bin.
+  action?: { label: string; onClick: () => void };
 }
 
-function toast({ title, description, variant }: ToastInput) {
+function toast({ title, description, variant, action }: ToastInput) {
   const fn = variant === "destructive" ? sonnerToast.error : sonnerToast.success;
-  const id = fn(title ?? "", { description });
+  const id = fn(title ?? "", { description, action });
   return { id, dismiss: () => sonnerToast.dismiss(id) };
 }
 

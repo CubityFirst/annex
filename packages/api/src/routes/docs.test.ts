@@ -9,13 +9,14 @@ vi.mock("../lib", async (importOriginal) => ({
 vi.mock("../lib/docOps", () => ({
   createDoc: vi.fn(),
   applyDocUpdate: vi.fn(),
-  deleteDoc: vi.fn(),
   snapshotDocRevision: vi.fn(),
 }));
+vi.mock("../lib/trash", () => ({ moveToTrash: vi.fn() }));
 
 import { resolveAccess } from "../lib/access";
 import { folderInProject } from "../lib";
-import { createDoc, applyDocUpdate, deleteDoc, snapshotDocRevision } from "../lib/docOps";
+import { createDoc, applyDocUpdate, snapshotDocRevision } from "../lib/docOps";
+import { moveToTrash } from "../lib/trash";
 
 const user = { userId: "user-1", email: "a@example.com" } as unknown as Parameters<typeof handleDocs>[2];
 
@@ -68,7 +69,7 @@ beforeEach(() => {
   vi.mocked(folderInProject).mockResolvedValue(true);
   vi.mocked(createDoc).mockResolvedValue({ id: "new-doc", title: "T", content: "", projectId: "p1", authorId: "user-1", folderId: null, publishedAt: null, createdAt: "2026", updatedAt: "2026" });
   vi.mocked(applyDocUpdate).mockResolvedValue({ updated: { id: "d1", title: "T", project_id: "p1", author_id: "user-1", published_at: null, show_heading: 1, show_last_updated: 1, folder_id: null, created_at: "2026", updated_at: "2026" }, savedContent: undefined });
-  vi.mocked(deleteDoc).mockResolvedValue(undefined);
+  vi.mocked(moveToTrash).mockResolvedValue({ entryId: "t1", homeDocMoved: false });
   vi.mocked(snapshotDocRevision).mockResolvedValue("rev-new");
 });
 
@@ -555,13 +556,14 @@ describe("handleDocs DELETE /docs/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("deletes the doc for an editor", async () => {
+  it("moves the doc to the recycle bin for an editor", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ project_id: "p1" }); // doc
     queueFirst({ home_doc_id: null }); // project
     const res = await call(env, "DELETE", "/docs/d1");
     expect(res.status).toBe(200);
-    expect(deleteDoc).toHaveBeenCalled();
+    expect(moveToTrash).toHaveBeenCalledWith(env, { projectId: "p1", type: "doc", id: "d1", deletedBy: "user-1" });
+    expect(((await res.json()) as { data: { trashEntryId: string } }).data.trashEntryId).toBe("t1");
   });
 });
 

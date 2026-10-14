@@ -1,6 +1,7 @@
 import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
-import { createDoc, applyDocUpdate, deleteDoc, snapshotDocRevision, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
+import { createDoc, applyDocUpdate, snapshotDocRevision, type DocUpdateRow, type DocUpdatePatch } from "../lib/docOps";
+import { moveToTrash } from "../lib/trash";
 import type { Env } from "../index";
 import { resolveAccess } from "../lib/access";
 
@@ -353,7 +354,7 @@ export async function handleDocs(
     return okResponse(savedContent !== undefined ? { ...updated, content: savedContent } : updated);
   }
 
-  // DELETE /docs/:id - editor or above
+  // DELETE /docs/:id - editor or above; moves the doc to the recycle bin
   if (docId && request.method === "DELETE") {
     const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
@@ -365,8 +366,10 @@ export async function handleDocs(
     const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(doc.project_id).first<{ home_doc_id: string | null }>();
     if (proj?.home_doc_id === docId) return errorResponse(Errors.FORBIDDEN);
 
-    await deleteDoc(env, docId, doc.project_id);
-    return okResponse({ deleted: true });
+    // Binned, not destroyed - restorable from the site's recycle bin.
+    const trashed = await moveToTrash(env, { projectId: doc.project_id, type: "doc", id: docId, deletedBy: user.userId });
+    if (!trashed) return errorResponse(Errors.NOT_FOUND);
+    return okResponse({ deleted: true, trashEntryId: trashed.entryId });
   }
 
   return errorResponse(Errors.NOT_FOUND);

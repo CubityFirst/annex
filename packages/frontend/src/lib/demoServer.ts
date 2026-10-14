@@ -61,6 +61,19 @@ interface DemoRevision {
   content: string;
 }
 
+// Recycle-bin entry: like the real API, binned rows leave the live lists
+// entirely and come back from this snapshot on restore.
+interface DemoTrashEntry {
+  id: string;
+  item_type: "doc" | "file" | "folder";
+  item_id: string;
+  name: string;
+  folder_id: string | null;
+  folder_path: string | null;
+  deleted_at: string;
+  snapshot: { folders: DemoFolder[]; docs: DemoDoc[]; files: DemoFile[]; revisions: DemoRevision[] };
+}
+
 interface Store {
   projectName: string;
   projectDescription: string;
@@ -83,6 +96,7 @@ interface Store {
   docs: DemoDoc[];
   files: DemoFile[];
   revisions: DemoRevision[];
+  trash: DemoTrashEntry[];
 }
 
 let store: Store | null = null;
@@ -373,6 +387,7 @@ function seed(): Store {
       { id: "demo-rev-1", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(60 * 24 * 2), changelog: "First draft", contributors: null, title: "Welcome", content: "# Welcome\n\nThis page is being written…" },
       { id: "demo-rev-2", doc_id: DOC_WELCOME, editor_id: DEMO_USER_ID, editor_name: DEMO_USER_NAME, created_at: minutesAgo(90), changelog: "Added the feature checklist and basics table", contributors: null, title: "Welcome to the Annex demo", content: WELCOME_CONTENT },
     ],
+    trash: [],
   };
 }
 
@@ -517,18 +532,89 @@ function ancestorsOf(s: Store, folderId: string | null): { id: string; name: str
   return chain;
 }
 
-function deleteFolderRecursive(s: Store, folderId: string): void {
-  const childFolders = s.folders.filter(f => f.parent_id === folderId);
-  for (const child of childFolders) deleteFolderRecursive(s, child.id);
-  for (const doc of s.docs.filter(d => d.folder_id === folderId)) deleteDoc(s, doc.id);
-  s.files = s.files.filter(f => f.folder_id !== folderId);
-  s.folders = s.folders.filter(f => f.id !== folderId);
+// Mirrors the API's moveToTrash: a folder takes its whole subtree into ONE
+// entry, except the home doc, which is moved to the root instead.
+function moveToDemoTrash(s: Store, type: DemoTrashEntry["item_type"], id: string): { entryId: string; homeDocMoved: boolean } | null {
+  let folders: DemoFolder[] = [];
+  let docs: DemoDoc[] = [];
+  let files: DemoFile[] = [];
+  let name: string;
+  let parentId: string | null;
+  let homeDocMoved = false;
+  if (type === "folder") {
+    const root = s.folders.find(f => f.id === id);
+    if (!root) return null;
+    name = root.name;
+    parentId = root.parent_id;
+    folders = s.folders.filter(f => isInSubtree(s, f.id, id));
+    const ids = new Set(folders.map(f => f.id));
+    docs = s.docs.filter(d => d.folder_id !== null && ids.has(d.folder_id));
+    files = s.files.filter(f => f.folder_id !== null && ids.has(f.folder_id));
+    const home = docs.find(d => d.id === s.homeDocId);
+    if (home) {
+      home.folder_id = null;
+      docs = docs.filter(d => d !== home);
+      homeDocMoved = true;
+    }
+  } else if (type === "doc") {
+    const doc = s.docs.find(d => d.id === id);
+    if (!doc) return null;
+    name = doc.title || "Untitled";
+    parentId = doc.folder_id;
+    docs = [doc];
+  } else {
+    const file = s.files.find(f => f.id === id);
+    if (!file) return null;
+    name = file.name;
+    parentId = file.folder_id;
+    files = [file];
+  }
+  const path = ancestorsOf(s, parentId).map(a => a.name).join(" / ");
+  const docIds = new Set(docs.map(d => d.id));
+  const entry: DemoTrashEntry = {
+    id: nextId("demo-trash"),
+    item_type: type,
+    item_id: id,
+    name,
+    folder_id: parentId,
+    folder_path: path || null,
+    deleted_at: nowIso(),
+    snapshot: { folders, docs, files, revisions: s.revisions.filter(r => docIds.has(r.doc_id)) },
+  };
+  s.folders = s.folders.filter(f => !folders.includes(f));
+  s.docs = s.docs.filter(d => !docIds.has(d.id));
+  s.files = s.files.filter(f => !files.includes(f));
+  s.revisions = s.revisions.filter(r => !docIds.has(r.doc_id));
+  s.trash.unshift(entry);
+  return { entryId: entry.id, homeDocMoved };
 }
 
-function deleteDoc(s: Store, docId: string): void {
-  s.docs = s.docs.filter(d => d.id !== docId);
-  s.revisions = s.revisions.filter(r => r.doc_id !== docId);
-  if (s.homeDocId === docId) s.homeDocId = null;
+function restoreDemoTrash(s: Store, entry: DemoTrashEntry) {
+  // Back into the original folder if it still exists, else the root.
+  const folderId = entry.folder_id && s.folders.some(f => f.id === entry.folder_id) ? entry.folder_id : null;
+  const { folders, docs, files, revisions } = entry.snapshot;
+  for (const f of folders) if (f.id === entry.item_id) f.parent_id = folderId;
+  for (const d of docs) if (d.id === entry.item_id) d.folder_id = folderId;
+  for (const f of files) if (f.id === entry.item_id) f.folder_id = folderId;
+  s.folders.push(...folders);
+  s.docs.push(...docs);
+  s.files.push(...files);
+  s.revisions.push(...revisions);
+  s.trash = s.trash.filter(e => e !== entry);
+  return { type: entry.item_type, itemId: entry.item_id, folderId };
+}
+
+function trashListing(e: DemoTrashEntry) {
+  const { snapshot, ...rest } = e;
+  return {
+    ...rest,
+    doc_count: snapshot.docs.length,
+    file_count: snapshot.files.length,
+    folder_count: Math.max(0, snapshot.folders.length - 1),
+    size: snapshot.files.reduce((n, f) => n + f.size, 0),
+    deleted_by: DEMO_USER_ID,
+    deleted_by_name: DEMO_USER_NAME,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +856,22 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       }
       if (method === "DELETE") return blocked("Site deletion is disabled in the demo.");
     }
+    if (sub === "trash") {
+      // The demo user is the owner, so they may also delete forever.
+      if (seg.length === 3 && method === "GET") return ok({ entries: s.trash.map(trashListing), retentionDays: 30, canPurge: true });
+      if (seg.length === 3 && method === "DELETE") {
+        const purged = s.trash.length;
+        s.trash = [];
+        return ok({ purged, remaining: 0 });
+      }
+      const entry = s.trash.find(e => e.id === seg[3]);
+      if (!entry) return notFound();
+      if (seg.length === 5 && seg[4] === "restore" && method === "POST") return ok(restoreDemoTrash(s, entry));
+      if (seg.length === 4 && method === "DELETE") {
+        s.trash = s.trash.filter(e => e !== entry);
+        return ok({ deleted: true });
+      }
+    }
     if (sub === "favourite" && method === "PATCH") {
       s.isFavourite = s.isFavourite ? 0 : 1;
       if (s.isFavourite) s.isHidden = 0;
@@ -892,8 +994,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
         return ok(rest);
       }
       if (method === "DELETE") {
-        deleteDoc(s, seg[1]);
-        return ok();
+        if (seg[1] === s.homeDocId) return blocked("The home document can't be deleted.");
+        return ok({ deleted: true, trashEntryId: moveToDemoTrash(s, "doc", seg[1])?.entryId });
       }
     }
     if (seg[2] === "revisions") {
@@ -976,8 +1078,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       return ok(folderListing(folder));
     }
     if (method === "DELETE") {
-      deleteFolderRecursive(s, folder.id);
-      return ok();
+      const binned = moveToDemoTrash(s, "folder", folder.id);
+      return ok({ deleted: true, trashEntryId: binned?.entryId, homeDocMoved: binned?.homeDocMoved ?? false });
     }
   }
 
@@ -1013,8 +1115,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
         return ok(fileListing(s, file));
       }
       if (method === "DELETE") {
-        s.files = s.files.filter(f => f.id !== seg[1]);
-        return ok();
+        return ok({ deleted: true, trashEntryId: moveToDemoTrash(s, "file", seg[1])?.entryId });
       }
     }
     if (seg[2] === "content" && method === "GET") {

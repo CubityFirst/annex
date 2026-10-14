@@ -1,7 +1,7 @@
 import type { Env } from "../index";
 import { parseFrontmatter } from "./frontmatter";
 import { indexDocLinks, invalidateProjectGraphIndex } from "./docLinks";
-import { upsertFtsRow, deleteFtsRow } from "./fts";
+import { upsertFtsRow } from "./fts";
 
 // Shared document write operations.
 //
@@ -372,26 +372,4 @@ export async function pruneDocRevisions(
     if (rows.results.length < batch) break;
   }
   return pruned;
-}
-
-// Deletes a doc and everything keyed off it: R2 body + every revision object,
-// the docs row, asset_revisions (no FK to docs, so it never cascades),
-// doc_shares, the FTS row, and the collab DO room. The graph is reindexed
-// because a removed title may have shadowed another doc's wikilink resolution.
-// The caller must enforce permission and any preconditions (e.g. home-doc).
-export async function deleteDoc(env: Env, docId: string, projectId: string): Promise<void> {
-  await env.ASSETS.delete(`${projectId}/${docId}`);
-  await deleteR2Prefix(env.ASSETS, `${projectId}/${docId}/v/`);
-  await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
-  await env.DB.prepare("DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?").bind(docId).run();
-  await env.DB.prepare("DELETE FROM doc_shares WHERE doc_id = ?").bind(docId).run();
-  await deleteFtsRow(env.DB, docId);
-  await invalidateProjectGraphIndex(env, projectId);
-
-  if (env.DOC_COLLAB) {
-    try {
-      const roomId = env.DOC_COLLAB.idFromName(`${projectId}:${docId}`);
-      await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/", { method: "DELETE" }));
-    } catch { /* non-fatal - room may never have been created */ }
-  }
 }

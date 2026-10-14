@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleFolders } from "./folders";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
+vi.mock("../lib/trash", () => ({ moveToTrash: vi.fn() }));
 vi.mock("../lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib")>()),
   folderInProject: vi.fn(),
@@ -9,6 +10,7 @@ vi.mock("../lib", async (importOriginal) => ({
 }));
 
 import { resolveRole } from "../lib/access";
+import { moveToTrash } from "../lib/trash";
 import { folderInProject, wouldCreateFolderCycle } from "../lib";
 
 const user = { userId: "user-1", email: "a@example.com" } as unknown as Parameters<typeof handleFolders>[2];
@@ -145,11 +147,24 @@ describe("handleFolders DELETE", () => {
     expect(res.status).toBe(404);
   });
 
-  it("deletes the folder for an editor", async () => {
+  it("moves the folder subtree to the recycle bin for an editor", async () => {
+    vi.mocked(moveToTrash).mockResolvedValue({ entryId: "t1", homeDocMoved: true });
     const { env, queueFirst, run } = makeEnv();
     queueFirst({ project_id: "p1" });
     const res = await call(env, "DELETE", "/folders/f1");
     expect(res.status).toBe(200);
-    expect(run).toHaveBeenCalled();
+    expect(moveToTrash).toHaveBeenCalledWith(env, expect.objectContaining({ projectId: "p1", type: "folder", id: "f1" }));
+    // No direct DELETE any more - that SET-NULL-dumped the contents at the root.
+    expect(run).not.toHaveBeenCalled();
+    expect(((await res.json()) as { data: { homeDocMoved: boolean } }).data.homeDocMoved).toBe(true);
+  });
+
+  it("403s for a viewer", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("viewer");
+    const { env, queueFirst } = makeEnv();
+    queueFirst({ project_id: "p1" });
+    const res = await call(env, "DELETE", "/folders/f1");
+    expect(res.status).toBe(403);
+    expect(moveToTrash).not.toHaveBeenCalled();
   });
 });

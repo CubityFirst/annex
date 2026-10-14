@@ -128,6 +128,31 @@ test.describe("demo sandbox", () => {
     await expect(page.getByText("Site published.")).toBeVisible();
   });
 
+  test("deleting a folder sends it to the recycle bin, and it can be restored", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/projects/demo-site");
+    const guidesRow = page.getByRole("row").filter({ has: page.getByLabel("Open folder Guides") });
+    await expect(guidesRow).toBeVisible();
+
+    await page.getByLabel("Actions for folder Guides").click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await expect(page.getByText(/will be moved to the recycle bin/)).toBeVisible();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(page.getByText('Moved "Guides" to the recycle bin.')).toBeVisible();
+    await expect(guidesRow).toHaveCount(0);
+
+    // Client-side navigation only from here: a full reload reseeds the demo store.
+    await page.getByRole("link", { name: "Recycle bin" }).click();
+    await expect(page.getByRole("heading", { name: "Recycle bin" })).toBeVisible();
+    await expect(page.getByText("Guides", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Restore Guides" }).click();
+    await expect(page.getByText('Restored "Guides"')).toBeVisible();
+    await expect(page.getByText("The recycle bin is empty")).toBeVisible();
+
+    await page.getByRole("link", { name: "File Manager" }).click();
+    await expect(guidesRow).toBeVisible();
+  });
+
   test("exit demo returns to the landing page", async ({ page }) => {
     await enterDemo(page);
     await page.click('button:has-text("Exit demo")');

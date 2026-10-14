@@ -210,9 +210,15 @@ projectsRouter.delete("/:id", async (c) => {
     .bind(projectId).first<{ id: string }>();
   if (!exists) return c.json({ ok: false, error: "Not found" }, 404);
 
-  const docs = await c.env.DB.prepare("SELECT id FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+  // Includes recycle-bin items (api lib/trash.ts): their rows cascade away
+  // with the project, but their R2 objects and revisions don't.
+  const docs = await c.env.DB.prepare(
+    "SELECT id FROM docs WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'doc'",
+  ).bind(projectId, projectId).all<{ id: string }>();
   const docIds = docs.results.map(d => d.id);
-  const files = await c.env.DB.prepare("SELECT id FROM files WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+  const files = await c.env.DB.prepare(
+    "SELECT id FROM files WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'file'",
+  ).bind(projectId, projectId).all<{ id: string }>();
 
   // R2 is not transactional; do the object deletes first, then the SQL.
   // Docs + revisions via prefix sweep; files and logos live under other

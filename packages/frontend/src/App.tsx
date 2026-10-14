@@ -24,6 +24,7 @@ import { PendingInvitesPage } from "./pages/PendingInvitesPage";
 import { OrgPage } from "./pages/OrgPage";
 import { OrgSettingsPage } from "./pages/OrgSettingsPage";
 import { TagPage } from "./pages/TagPage";
+import { TrashPage } from "./pages/TrashPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { AcknowledgementsPage } from "./pages/AcknowledgementsPage";
@@ -70,6 +71,7 @@ export function App() {
           <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
           <Route path="/projects/:projectId/graph" element={<GraphPage />} />
           <Route path="/projects/:projectId/tags/:tag" element={<TagPage />} />
+          <Route path="/projects/:projectId/trash" element={<TrashPage />} />
           <Route path="/settings" element={<UserSettingsPage />} />
           <Route path="/u/:userId" element={<UserProfilePage />} />
           <Route path="/invites/pending" element={<PendingInvitesPage />} />

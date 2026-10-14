@@ -449,10 +449,16 @@ export async function handleProjects(
     const role = await resolveRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.NOT_FOUND);
 
-    // Collect all docs (for the asset_revisions row cleanup below) and files.
-    const docs = await env.DB.prepare("SELECT id FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+    // Collect all docs (for the asset_revisions row cleanup below) and files,
+    // including those sitting in the recycle bin - their rows cascade away
+    // with the project, but their R2 objects and revisions don't.
+    const docs = await env.DB.prepare(
+      "SELECT id FROM docs WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'doc'",
+    ).bind(projectId, projectId).all<{ id: string }>();
     const docIds = docs.results.map(d => d.id);
-    const files = await env.DB.prepare("SELECT id FROM files WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+    const files = await env.DB.prepare(
+      "SELECT id FROM files WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'file'",
+    ).bind(projectId, projectId).all<{ id: string }>();
 
     // Every doc body (`{projectId}/{docId}`) and every revision snapshot
     // (`{projectId}/{docId}/v/{revId}`) lives under the `{projectId}/` prefix,

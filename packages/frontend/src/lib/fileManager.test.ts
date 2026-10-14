@@ -6,6 +6,8 @@ import {
   folderPathLabel,
   shiftSelectionRange,
   folderCountLabel,
+  bumpFolderCounts,
+  countedFolderFor,
   type MoveFolderLike,
 } from "./fileManager";
 
@@ -105,5 +107,54 @@ describe("folderCountLabel", () => {
 
   it("is empty for an empty folder", () => {
     expect(folderCountLabel({ docs: 0, files: 0, folders: 0 })).toBe("");
+  });
+});
+
+describe("bumpFolderCounts", () => {
+  it("applies the delta to one folder and returns a new map", () => {
+    const counts = new Map([["a", { docs: 1, files: 2, folders: 0 }], ["b", { docs: 5, files: 0, folders: 1 }]]);
+    const next = bumpFolderCounts(counts, "a", { docs: 1, folders: 2 });
+    expect(next).not.toBe(counts);
+    expect(next.get("a")).toEqual({ docs: 2, files: 2, folders: 2 });
+    expect(next.get("b")).toEqual({ docs: 5, files: 0, folders: 1 });
+    // Input untouched.
+    expect(counts.get("a")).toEqual({ docs: 1, files: 2, folders: 0 });
+  });
+
+  it("starts a missing entry from zero", () => {
+    expect(bumpFolderCounts(new Map(), "new", { files: 1 }).get("new")).toEqual({ docs: 0, files: 1, folders: 0 });
+  });
+
+  it("never goes negative", () => {
+    const counts = new Map([["a", { docs: 0, files: 1, folders: 0 }]]);
+    expect(bumpFolderCounts(counts, "a", { docs: -1, files: -3 }).get("a")).toEqual({ docs: 0, files: 0, folders: 0 });
+  });
+});
+
+describe("countedFolderFor", () => {
+  const tree = [folder("a"), folder("a1", "a"), folder("a1x", "a1"), folder("b")];
+  const listed = new Set(["a", "b"]);
+
+  it("returns a listed folder directly", () => {
+    expect(countedFolderFor("b", listed)).toBe("b");
+    expect(countedFolderFor("a", listed, tree)).toBe("a");
+  });
+
+  it("walks up to the nearest listed ancestor when the tree is known", () => {
+    expect(countedFolderFor("a1x", listed, tree)).toBe("a");
+    expect(countedFolderFor("a1", listed, tree)).toBe("a");
+  });
+
+  it("is null for the current folder / root, unknown folders, or without the tree", () => {
+    expect(countedFolderFor(null, listed, tree)).toBeNull();
+    expect(countedFolderFor("a1x", listed)).toBeNull();
+    expect(countedFolderFor("gone", listed, tree)).toBeNull();
+    // A parent (not a listed child) of the view has no badge.
+    expect(countedFolderFor("a", new Set(["a1"]), tree)).toBeNull();
+  });
+
+  it("stops on a parent cycle instead of looping", () => {
+    const cyclic = [folder("x", "y"), folder("y", "x")];
+    expect(countedFolderFor("x", new Set(["z"]), cyclic)).toBeNull();
   });
 });

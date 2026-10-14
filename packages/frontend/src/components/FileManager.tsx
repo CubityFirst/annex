@@ -16,7 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
-import { formatBytes, formatRelativeTime, moveDestinations, folderPathLabel, shiftSelectionRange, folderCountLabel } from "@/lib/fileManager";
+import { formatBytes, formatRelativeTime, moveDestinations, folderPathLabel, shiftSelectionRange, folderCountLabel, countedFolderFor, type FolderCounts } from "@/lib/fileManager";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useFolderContents, type FolderItem, type DocItem, type FileItem } from "@/hooks/useFolderContents";
 import { useUploads } from "@/hooks/useUploads";
@@ -27,6 +27,7 @@ import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Spinner } from "@/components/ui/spinner";
 import { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentGroup } from "@/components/ui/attachment";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
+import { restoreTrashEntry } from "@/lib/trash";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -122,7 +123,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     folders, setFolders,
     docs, setDocs,
     files, setFiles,
-    folderCounts, path, loading, error: loadError, reload,
+    folderCounts, bumpFolderCount, path, loading, error: loadError, reload,
   } = useFolderContents(projectId, currentFolderId, projectName);
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
@@ -179,12 +180,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   // external file drop state
   const [externalDragOver, setExternalDragOver] = useState(false);
 
+  // Latest listed child folders, for the upload callback below - it must stay
+  // referentially stable (queued uploads hold on to the closure they started
+  // with), so it can't close over `folders` directly.
+  const foldersRef = useRef(folders);
+  useEffect(() => { foldersRef.current = folders; }, [folders]);
+
   const { uploads, enqueueFiles, dismissUpload } = useUploads({
     projectId,
     currentFolderId,
     onDocCreated,
     appendDoc: useCallback((doc: DocItem) => setDocs(prev => [...prev, doc]), [setDocs]),
     appendFile: useCallback((file: FileItem) => setFiles(prev => [...prev, file]), [setFiles]),
+    // The user left the folder mid-upload; if they went up to its parent, that
+    // folder is now a child row and its badge should count the new item.
+    onUploadedElsewhere: useCallback((kind: "docs" | "files", folderId: string | null) => {
+      if (folderId && foldersRef.current.some(f => f.id === folderId)) bumpFolderCount(folderId, { [kind]: 1 });
+    }, [bumpFolderCount]),
   });
 
   // Hidden <input> backing the explicit toolbar Upload button (touch devices
@@ -243,7 +255,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       };
     }));
     return () => setBreadcrumbs([]);
-  }, [path, dropTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [path, dropTarget, canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function folderUrl(id: string | null) {
     return id ? `/projects/${projectId}/folders/${id}` : `/projects/${projectId}`;
@@ -281,6 +293,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   function updateDocLists(fn: (docs: DocItem[]) => DocItem[]) {
     setDocs(fn);
     setSearchResults(prev => (prev ? fn(prev) : prev));
+  }
+
+  // Keep the child-folder count badges in step with a local move/delete rather
+  // than refetching. Badges are subtree totals, so this resolves which listed
+  // folder covers `folderId` - the folder itself, or (once the Move dialog has
+  // loaded the full tree) its nearest listed ancestor. Moves within the current
+  // folder or into its ancestors resolve to nothing: those have no badge.
+  function bumpCountFor(folderId: string | null, delta: Partial<FolderCounts>) {
+    const target = countedFolderFor(folderId, new Set(folders.map(f => f.id)), moveFolders);
+    if (target) bumpFolderCount(target, delta);
   }
 
   async function handleCreateFolder(e: React.FormEvent) {
@@ -337,6 +359,13 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   async function moveDoc(docId: string, targetFolderId: string | null) {
     if (targetFolderId === currentFolderId && !inSearch) return;
+    // The home doc is pinned: its menu hides "Move to folder…" and its row isn't
+    // draggable, and this backstops any other route into a move.
+    const doc = searchResults?.find(d => d.id === docId) ?? docs.find(d => d.id === docId);
+    if (doc?.is_home === 1) return;
+    // A search hit can live in a nested folder, so its source may be a listed
+    // child whose badge has to drop as well.
+    const sourceFolderId = doc ? doc.folder_id : currentFolderId;
     updateDocLists(prev => prev.filter(d => d.id !== docId));
     setSelectedDocs(prev => { if (!prev.has(docId)) return prev; const next = new Set(prev); next.delete(docId); return next; });
     const result = await apiFetchJson(`/api/docs/${docId}`, {
@@ -344,7 +373,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    if (!result.ok && !result.redirected) {
+    if (result.ok) {
+      if (sourceFolderId !== targetFolderId) {
+        bumpCountFor(sourceFolderId, { docs: -1 });
+        bumpCountFor(targetFolderId, { docs: 1 });
+      }
+    } else if (!result.redirected) {
       toast({ title: "Failed to move document.", description: result.error, variant: "destructive" });
       await reload();
     }
@@ -352,13 +386,17 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   async function moveFolder(movedFolderId: string, targetParentId: string | null) {
     if (targetParentId === currentFolderId) return;
+    // The moved folder carries its whole subtree into the destination's totals.
+    const moved = folderCounts.get(movedFolderId);
     setFolders(prev => prev.filter(f => f.id !== movedFolderId));
     const result = await apiFetchJson(`/api/folders/${movedFolderId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ parentId: targetParentId }),
     });
-    if (!result.ok && !result.redirected) {
+    if (result.ok) {
+      bumpCountFor(targetParentId, { folders: 1 + (moved?.folders ?? 0), docs: moved?.docs ?? 0, files: moved?.files ?? 0 });
+    } else if (!result.redirected) {
       toast({ title: "Failed to move folder.", description: result.error, variant: "destructive" });
       await reload();
     }
@@ -430,7 +468,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    if (!result.ok && !result.redirected) {
+    if (result.ok) {
+      bumpCountFor(targetFolderId, { files: 1 });
+    } else if (!result.redirected) {
       toast({ title: "Failed to move file.", description: result.error, variant: "destructive" });
       await reload();
     }
@@ -487,6 +527,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       const deletedDocs = new Set(results.filter(r => r.kind === "doc" && r.ok).map(r => r.id));
       const deletedFiles = new Set(results.filter(r => r.kind === "file" && r.ok).map(r => r.id));
       const failed = results.filter(r => !r.ok).length;
+      // Search hits deleted from inside a listed child folder shrink its badge.
+      for (const d of searchResults ?? []) if (deletedDocs.has(d.id)) bumpCountFor(d.folder_id, { docs: -1 });
       updateDocLists(prev => prev.filter(d => !deletedDocs.has(d.id)));
       setFiles(prev => prev.filter(f => !deletedFiles.has(f.id)));
       setSelectedDocs(prev => { const next = new Set(prev); for (const id of deletedDocs) next.delete(id); return next; });
@@ -494,9 +536,24 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       if (failed > 0) {
         toast({ title: `${failed} item${failed === 1 ? "" : "s"} couldn't be deleted.`, variant: "destructive" });
       }
+      const moved = deletedDocs.size + deletedFiles.size;
+      if (moved > 0) {
+        toast({
+          title: `Moved ${moved} item${moved === 1 ? "" : "s"} to the recycle bin.`,
+          action: { label: "View bin", onClick: () => navigate(`/projects/${projectId}/trash`) },
+        });
+      }
     } finally {
       setDeleting(false);
     }
+  }
+
+  // "Undo" on the moved-to-bin toast: restore the entry, then refetch so the
+  // item (and any folder badge it affects) reappears where the server put it.
+  async function undoDelete(entryId: string, name: string) {
+    const result = await restoreTrashEntry(projectId, entryId);
+    if (result.ok) await reload();
+    else if (!result.redirected) toast({ title: `Couldn't restore "${name}".`, description: result.error, variant: "destructive" });
   }
 
   async function handleRename(e: React.FormEvent) {
@@ -545,14 +602,31 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   async function handleContextDelete() {
     if (!contextDeleteTarget || contextDeleting) return;
     setContextDeleting(true);
-    const { type, id } = contextDeleteTarget;
+    const { type, id, name } = contextDeleteTarget;
     try {
       const endpoint = type === "folder" ? `/api/folders/${id}` : type === "doc" ? `/api/docs/${id}` : `/api/files/${id}`;
-      const result = await apiFetchJson(endpoint, { method: "DELETE" });
+      const result = await apiFetchJson<{ trashEntryId?: string; homeDocMoved?: boolean }>(endpoint, { method: "DELETE" });
       if (result.ok) {
+        const entryId = result.data?.trashEntryId;
+        toast({
+          title: `Moved "${name}" to the recycle bin.`,
+          // The home doc can't be binned, so a folder holding it leaves it behind.
+          description: result.data?.homeDocMoved ? "The site's home document was moved to the top level." : undefined,
+          action: entryId ? { label: "Undo", onClick: () => { void undoDelete(entryId, name); } } : undefined,
+        });
+        if (result.data?.homeDocMoved && currentFolderId === null) void reload();
+        // Docs/files also leave the bulk selection - otherwise the toolbar keeps
+        // counting them and a later bulk delete reports them as failures.
         if (type === "folder") setFolders(prev => prev.filter(f => f.id !== id));
-        else if (type === "doc") updateDocLists(prev => prev.filter(d => d.id !== id));
-        else setFiles(prev => prev.filter(f => f.id !== id));
+        else if (type === "doc") {
+          const hit = searchResults?.find(d => d.id === id);
+          if (hit) bumpCountFor(hit.folder_id, { docs: -1 });
+          updateDocLists(prev => prev.filter(d => d.id !== id));
+          setSelectedDocs(prev => { if (!prev.has(id)) return prev; const next = new Set(prev); next.delete(id); return next; });
+        } else {
+          setFiles(prev => prev.filter(f => f.id !== id));
+          setSelectedFiles(prev => { if (!prev.has(id)) return prev; const next = new Set(prev); next.delete(id); return next; });
+        }
         setContextDeleteTarget(null);
       } else if (!result.redirected) {
         toast({ title: "Delete failed.", description: result.error, variant: "destructive" });
@@ -571,6 +645,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   }, [enqueueFiles]);
 
   function onDragStart(e: React.DragEvent, type: "doc" | "folder" | "file", id: string) {
+    // Rows are only `draggable` for editors, but a native drag of something
+    // inside a row still bubbles here - never arm an internal move for a
+    // viewer (it would 403, or for a doc-share editor silently not move).
+    if (!canEdit) return;
     draggedItem.current = { type, id };
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", id);
@@ -586,7 +664,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   // being viewed (the full-page overlay is the affordance for that), so ringing
   // a row would promise a per-folder upload that doesn't happen.
   function onCrumbDragOver(e: React.DragEvent, crumbId: string | null) {
-    if (!draggedItem.current) return;
+    if (!canEdit || !draggedItem.current) return;
     e.preventDefault();
     setDropTarget(crumbId ?? "root");
   }
@@ -599,7 +677,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     e.preventDefault();
     setDropTarget(null);
     const item = draggedItem.current;
-    if (!item) return;
+    if (!canEdit || !item) return;
     if (item.type === "doc") await moveDoc(item.id, targetFolderId);
     else if (item.type === "file") await moveFile(item.id, targetFolderId);
     else {
@@ -700,6 +778,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     </>
   );
 
+  // Folder delete dialog: say what goes to the bin with it (badge counts are
+  // full-subtree totals).
+  const contextDeleteCountLabel = contextDeleteTarget?.type === "folder"
+    ? folderCountLabel(folderCounts.get(contextDeleteTarget.id))
+    : "";
+
   const contextKit: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
   const dropdownKit: MenuKit = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
 
@@ -761,12 +845,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             const folderRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
-                draggable
+                draggable={canEdit}
+                  // Folders have no checkbox, but an editor's header reserves the
+                  // checkbox column - `null` renders the spacer so cells line up.
+                  checkboxCell={canEdit ? null : undefined}
                   onDragStart={e => onDragStart(e, "folder", folder.id)}
                   onDragEnd={onDragEnd}
                   onDragOver={e => {
                     // Internal drags only - see onCrumbDragOver.
-                    if (!draggedItem.current || draggedItem.current.id === folder.id) return;
+                    if (!canEdit || !draggedItem.current || draggedItem.current.id === folder.id) return;
                     e.preventDefault();
                     setDropTarget(folder.id);
                   }}
@@ -775,12 +862,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     e.preventDefault();
                     setDropTarget(null);
                     const item = draggedItem.current;
-                    if (!item || item.id === folder.id) return;
+                    if (!canEdit || !item || item.id === folder.id) return;
                     if (item.type === "doc") await moveDoc(item.id, folder.id);
                     else if (item.type === "file") await moveFile(item.id, folder.id);
                     else await moveFolder(item.id, folder.id);
                   }}
-                  className={`cursor-pointer ${isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""}`}
+                  className={isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : undefined}
                   cells={[
                     {
                       content: (
@@ -811,6 +898,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           )}
                         </div>
                       ),
+                      className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
                     { content: null },
@@ -839,7 +927,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             const docRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
-                draggable
+                // The home doc can't be moved (see moveDoc), so don't offer a drag.
+                draggable={canEdit && !isHome}
                   onDragStart={e => onDragStart(e, "doc", doc.id)}
                   onDragEnd={onDragEnd}
                   checkboxCell={!canEdit ? undefined : isHome ? null : (
@@ -952,7 +1041,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             const fileRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
-                draggable
+                draggable={canEdit}
                 onDragStart={e => onDragStart(e, "file", file.id)}
                 onDragEnd={onDragEnd}
                 checkboxCell={canEdit ? (
@@ -1394,7 +1483,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               Delete {selectedDocs.size + selectedFiles.size} {selectedDocs.size + selectedFiles.size === 1 ? "item" : "items"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This action is irreversible and all data will be lost.
+              {selectedDocs.size + selectedFiles.size === 1 ? "It" : "They"} will be moved to the recycle bin, where {selectedDocs.size + selectedFiles.size === 1 ? "it" : "they"} can be restored for 30 days.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1441,7 +1530,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <AlertDialogHeader>
             <AlertDialogTitle>Delete "{contextDeleteTarget?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action is irreversible and all data will be lost.
+              {contextDeleteTarget?.type === "folder"
+                ? `The folder${contextDeleteCountLabel ? ` and everything in it (${contextDeleteCountLabel})` : ""} will be moved to the recycle bin, where it can be restored for 30 days.`
+                : "It will be moved to the recycle bin, where it can be restored for 30 days."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

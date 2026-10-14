@@ -214,6 +214,9 @@ DELETE /v1/docs/:id
 Requires: `readwrite` scope **and** owner is editor+. The site's designated home
 document cannot be deleted (`403`).
 
+The document is moved to the site's **recycle bin**, not destroyed: a site editor
+can restore it from the app for 30 days, after which it is permanently deleted.
+
 ```bash
 curl -X DELETE https://docs.cubityfir.st/api/v1/docs/DOC_ID \
   -H "Authorization: Bearer $ANNEX_KEY"

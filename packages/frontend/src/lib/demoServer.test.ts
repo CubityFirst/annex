@@ -445,3 +445,34 @@ describe("demo server files and docs hygiene", () => {
     expect((await api(`/docs/${docId}/revisions`)).status).toBe(404);
   });
 });
+
+describe("demo server recycle bin", () => {
+  it("bins a folder subtree as one entry and restores it to where it was", async () => {
+    const folder = await post("/folders", { name: "Bin me", projectId: "demo-site", parentId: null, type: "docs" });
+    expect(folder.ok).toBe(true);
+    const inner = await post("/docs", { title: "Inside", content: "", projectId: "demo-site", folderId: folder.data.id });
+    expect(inner.ok).toBe(true);
+
+    const res = await del(`/folders/${folder.data.id}`);
+    expect(res.data.trashEntryId).toEqual(expect.any(String));
+    const root = await api("/projects/demo-site/contents");
+    expect(root.data.folders.some((f: { id: string }) => f.id === folder.data.id)).toBe(false);
+    expect((await api(`/docs/${inner.data.id}`)).status).toBe(404);
+
+    const bin = await api("/projects/demo-site/trash");
+    const entry = bin.data.entries.find((e: { id: string }) => e.id === res.data.trashEntryId);
+    expect(entry).toMatchObject({ item_type: "folder", name: "Bin me", doc_count: 1, folder_count: 0 });
+
+    const restored = await post(`/projects/demo-site/trash/${entry.id}/restore`);
+    expect(restored.data).toEqual({ type: "folder", itemId: folder.data.id, folderId: null });
+    expect((await api(`/docs/${inner.data.id}`)).ok).toBe(true);
+    expect((await api("/projects/demo-site/trash")).data.entries.some((e: { id: string }) => e.id === entry.id)).toBe(false);
+  });
+
+  it("deletes an entry forever", async () => {
+    const docId = await createDoc("Gone for good");
+    const { data } = await del(`/docs/${docId}`);
+    expect((await del(`/projects/demo-site/trash/${data.trashEntryId}`)).ok).toBe(true);
+    expect((await post(`/projects/demo-site/trash/${data.trashEntryId}/restore`)).status).toBe(404);
+  });
+});

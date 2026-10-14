@@ -18,8 +18,10 @@ import { handlePublicApi } from "./routes/v1";
 import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
+import { handleTrash } from "./routes/trash";
 import { releaseCustomDomain } from "./lib/customDomains";
 import { pruneDocRevisions } from "./lib/docOps";
+import { purgeExpiredTrash } from "./lib/trash";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
@@ -66,6 +68,12 @@ export default {
       pruneDocRevisions(env)
         .then(n => { if (n > 0) console.log(`[retention] pruned ${n} doc revisions`); })
         .catch(err => console.error("[retention] prune failed:", err)),
+    );
+    // Recycle-bin retention: entries older than TRASH_RETENTION_DAYS.
+    ctx.waitUntil(
+      purgeExpiredTrash(env)
+        .then(n => { if (n > 0) console.log(`[retention] purged ${n} recycle bin entries`); })
+        .catch(err => console.error("[retention] trash purge failed:", err)),
     );
   },
 
@@ -798,6 +806,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleDocShares(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/trash(\/|$)/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleTrash(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/export$/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

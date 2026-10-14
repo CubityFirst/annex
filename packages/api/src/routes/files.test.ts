@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleFiles } from "./files";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
+vi.mock("../lib/trash", () => ({ moveToTrash: vi.fn() }));
 vi.mock("../lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib")>()),
   serveR2Object: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("../lib/r2Presign", () => ({
 }));
 
 import { resolveRole } from "../lib/access";
+import { moveToTrash } from "../lib/trash";
 import { serveR2Object, folderInProject } from "../lib";
 import { signContentToken, verifyContentToken } from "../lib/contentToken";
 import { presignR2GetUrl } from "../lib/r2Presign";
@@ -629,13 +631,15 @@ describe("handleFiles DELETE /files/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("deletes the file + R2 blob for an editor", async () => {
-    const { env, queueFirst, del, run } = makeEnv();
+  it("moves the file to the recycle bin for an editor, keeping the R2 blob", async () => {
+    vi.mocked(moveToTrash).mockResolvedValue({ entryId: "t1", homeDocMoved: false });
+    const { env, queueFirst, del } = makeEnv();
     queueFirst({ project_id: "p1" });
     const res = await call(env, "DELETE", "/files/f1");
     expect(res.status).toBe(200);
-    expect(del).toHaveBeenCalledWith("files/f1");
-    expect(run).toHaveBeenCalled();
+    expect(moveToTrash).toHaveBeenCalledWith(env, expect.objectContaining({ projectId: "p1", type: "file", id: "f1" }));
+    // Bytes stay until the bin entry is purged.
+    expect(del).not.toHaveBeenCalled();
   });
 });
 

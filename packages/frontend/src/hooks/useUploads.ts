@@ -39,9 +39,12 @@ interface UseUploadsOptions {
   // Called on success while the user is still viewing the target folder.
   appendDoc: (doc: DocItem) => void;
   appendFile: (file: FileItem) => void;
+  // Called on success when the user has navigated away from the target folder
+  // - it may now be a child row whose count badge should include the upload.
+  onUploadedElsewhere?: (kind: "docs" | "files", folderId: string | null) => void;
 }
 
-export function useUploads({ projectId, currentFolderId, onDocCreated, appendDoc, appendFile }: UseUploadsOptions) {
+export function useUploads({ projectId, currentFolderId, onDocCreated, appendDoc, appendFile, onUploadedElsewhere }: UseUploadsOptions) {
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
   const uploadIdRef = useRef(0);
   const activeRef = useRef(0);
@@ -70,6 +73,7 @@ export function useUploads({ projectId, currentFolderId, onDocCreated, appendDoc
         if (docResult.ok && docResult.data) {
           onDocCreated(docResult.data);
           if (currentFolderRef.current === folderId) appendDoc(docResult.data);
+          else onUploadedElsewhere?.("docs", folderId);
           ok = true;
         } else {
           errorText = docResult.error;
@@ -89,6 +93,7 @@ export function useUploads({ projectId, currentFolderId, onDocCreated, appendDoc
         const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
         if (uploadResult.ok && uploadResult.data) {
           if (currentFolderRef.current === folderId) appendFile(uploadResult.data);
+          else onUploadedElsewhere?.("files", folderId);
           ok = true;
         } else {
           errorText = uploadResult.error;
@@ -107,7 +112,7 @@ export function useUploads({ projectId, currentFolderId, onDocCreated, appendDoc
           : prev.map(u => (u.id === entryId ? { ...u, status: "error", error: errorText } : u)),
       );
     }
-  }, [projectId, onDocCreated, appendDoc, appendFile]);
+  }, [projectId, onDocCreated, appendDoc, appendFile, onUploadedElsewhere]);
 
   const pump = useCallback(() => {
     while (activeRef.current < MAX_CONCURRENT_UPLOADS && queueRef.current.length > 0) {

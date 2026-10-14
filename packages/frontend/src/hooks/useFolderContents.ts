@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiFetch";
-import type { FolderCounts } from "@/lib/fileManager";
+import { bumpFolderCounts, type FolderCounts } from "@/lib/fileManager";
 
 // The listing state for one folder of the File Manager: folders / docs / files
 // plus per-folder counts and the breadcrumb ancestor chain. Owns the load
@@ -129,5 +129,12 @@ export function useFolderContents(projectId: string, folderId: string | null, pr
     load();
   }, [load]);
 
-  return { folders, setFolders, docs, setDocs, files, setFiles, folderCounts, path, loading, error, reload: load };
+  // Optimistic badge update for a child folder after a local move/upload/
+  // delete - cheaper than refetching /contents per mutation. A failed mutation
+  // reloads, which replaces the whole map with fresh server counts.
+  const bumpFolderCount = useCallback((id: string, delta: Partial<FolderCounts>) => {
+    setFolderCounts(prev => bumpFolderCounts(prev, id, delta));
+  }, []);
+
+  return { folders, setFolders, docs, setDocs, files, setFiles, folderCounts, bumpFolderCount, path, loading, error, reload: load };
 }

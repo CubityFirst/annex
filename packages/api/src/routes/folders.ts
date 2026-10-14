@@ -1,6 +1,7 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, folderInProject, wouldCreateFolderCycle, type Session, type Folder, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
+import { moveToTrash } from "../lib/trash";
 
 export async function handleFolders(
   request: Request,
@@ -201,7 +202,7 @@ export async function handleFolders(
     });
   }
 
-  // DELETE /folders/:id - editor or above
+  // DELETE /folders/:id - editor or above; bins the folder and its contents
   if (folderId && folderId !== "counts" && request.method === "DELETE") {
     const folder = await env.DB.prepare("SELECT project_id FROM folders WHERE id = ?")
       .bind(folderId).first<{ project_id: string }>();
@@ -211,8 +212,12 @@ export async function handleFolders(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    await env.DB.prepare("DELETE FROM folders WHERE id = ?").bind(folderId).run();
-    return okResponse({ deleted: true });
+    // The whole subtree (subfolders, docs, files) goes to the recycle bin as
+    // one entry. Previously the folder_id SET NULL cascade dumped the
+    // contents at the site root.
+    const trashed = await moveToTrash(env, { projectId: folder.project_id, type: "folder", id: folderId, deletedBy: user.userId });
+    if (!trashed) return errorResponse(Errors.NOT_FOUND);
+    return okResponse({ deleted: true, trashEntryId: trashed.entryId, homeDocMoved: trashed.homeDocMoved });
   }
 
   return errorResponse(Errors.NOT_FOUND);
