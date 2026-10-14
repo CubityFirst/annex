@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/lib/apiFetch", () => ({ apiFetchJson: vi.fn() }));
 const toastSpy = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: toastSpy }) }));
 
 import { apiFetchJson } from "@/lib/apiFetch";
-import { TrashPage } from "./TrashPage";
+import { RecycleBin } from "./RecycleBin";
 import type { TrashEntry, TrashListing } from "@/lib/trash";
 
 const entry = (over: Partial<TrashEntry> = {}): TrashEntry => ({
@@ -32,15 +32,10 @@ function listing(over: Partial<TrashListing> = {}): TrashListing {
   return { entries: [entry()], retentionDays: 30, canPurge: false, ...over };
 }
 
-function renderPage(myRole: string | null = "editor") {
-  const ctx = { myRole, setBreadcrumbs: vi.fn() };
+function renderBin() {
   render(
-    <MemoryRouter initialEntries={["/projects/p1/trash"]}>
-      <Routes>
-        <Route element={<Outlet context={ctx} />}>
-          <Route path="/projects/:projectId/trash" element={<TrashPage />} />
-        </Route>
-      </Routes>
+    <MemoryRouter>
+      <RecycleBin projectId="p1" />
     </MemoryRouter>,
   );
 }
@@ -51,10 +46,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TrashPage", () => {
+describe("RecycleBin", () => {
   it("lists binned entries with their origin, contents and deleter", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, data: listing() } as never);
-    renderPage();
+    renderBin();
     expect(await screen.findByText("Old notes")).toBeInTheDocument();
     expect(screen.getByText(/from Archive · 2 docs, 1 file · 2\.0 KB · deleted just now by Alice/)).toBeInTheDocument();
     expect(screen.getByText("30d left")).toBeInTheDocument();
@@ -63,7 +58,7 @@ describe("TrashPage", () => {
 
   it("hides delete-forever and Empty bin from a non-admin", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, data: listing({ canPurge: false }) } as never);
-    renderPage();
+    renderBin();
     await screen.findByText("Old notes");
     expect(screen.queryByRole("button", { name: /delete old notes forever/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /empty bin/i })).not.toBeInTheDocument();
@@ -74,7 +69,7 @@ describe("TrashPage", () => {
     fetchMock
       .mockResolvedValueOnce({ ok: true, data: listing() } as never)
       .mockResolvedValueOnce({ ok: true, data: { type: "folder", itemId: "fold1", folderId: null } } as never);
-    renderPage();
+    renderBin();
     await userEvent.click(await screen.findByRole("button", { name: /restore old notes/i }));
 
     expect(fetchMock).toHaveBeenLastCalledWith("/api/projects/p1/trash/t1/restore", { method: "POST" });
@@ -91,7 +86,7 @@ describe("TrashPage", () => {
     fetchMock
       .mockResolvedValueOnce({ ok: true, data: listing({ canPurge: true }) } as never)
       .mockResolvedValueOnce({ ok: true, data: { deleted: true } } as never);
-    renderPage("admin");
+    renderBin();
     await userEvent.click(await screen.findByRole("button", { name: /delete old notes forever/i }));
     // The confirmation spells out the folder's contents.
     expect(screen.getByText(/everything in it \(2 docs, 1 file\)/)).toBeInTheDocument();
@@ -101,9 +96,4 @@ describe("TrashPage", () => {
     await waitFor(() => expect(screen.queryByText("Old notes")).not.toBeInTheDocument());
   });
 
-  it("doesn't fetch for a viewer", () => {
-    renderPage("viewer");
-    expect(screen.getByText(/only editors can view the recycle bin/i)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

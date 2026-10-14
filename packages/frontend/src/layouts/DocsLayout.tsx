@@ -30,7 +30,6 @@ import {
   SlidersHorizontal,
   Check,
   Network,
-  Trash2,
   Search,
   Image,
   Music,
@@ -777,19 +776,6 @@ export function DocsLayout() {
                     title="Graph"
                   >
                     <Network className="h-3.5 w-3.5" />
-                  </NavLink>
-                ) : null}
-                {/* Recycle bin - editor+ only, matching the API gate. */}
-                {currentProject && ["editor", "admin", "owner"].includes(currentProject.role ?? "") ? (
-                  <NavLink
-                    to={`/projects/${projectId}/trash`}
-                    className={({ isActive }) =>
-                      cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0 px-2", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
-                    }
-                    title="Recycle bin"
-                    aria-label="Recycle bin"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
                   </NavLink>
                 ) : null}
               </div>

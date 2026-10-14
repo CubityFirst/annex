@@ -1,5 +1,5 @@
 import { useLayoutEffect } from "react";
-import { Routes, Route, useLocation, type Location } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams, type Location } from "react-router-dom";
 import { applyThemeToRoot, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/theme";
 import { DocsLayout } from "./layouts/DocsLayout";
 import { LandingPage } from "./pages/LandingPage";
@@ -24,13 +24,17 @@ import { PendingInvitesPage } from "./pages/PendingInvitesPage";
 import { OrgPage } from "./pages/OrgPage";
 import { OrgSettingsPage } from "./pages/OrgSettingsPage";
 import { TagPage } from "./pages/TagPage";
-import { TrashPage } from "./pages/TrashPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { AcknowledgementsPage } from "./pages/AcknowledgementsPage";
 import { TestAudioPage } from "./pages/TestAudioPage";
 import { AnimationsTestPage } from "./pages/tests/AnimationsTestPage";
 import { Toaster } from "@/components/ui/sonner";
+
+function TrashRedirect() {
+  const { projectId } = useParams<{ projectId: string }>();
+  return <Navigate to={`/projects/${projectId}/settings#recycle-bin`} replace />;
+}
 
 export function App() {
   const location = useLocation();
@@ -71,7 +75,8 @@ export function App() {
           <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
           <Route path="/projects/:projectId/graph" element={<GraphPage />} />
           <Route path="/projects/:projectId/tags/:tag" element={<TagPage />} />
-          <Route path="/projects/:projectId/trash" element={<TrashPage />} />
+          {/* The recycle bin lives in Site Settings; keep the old URL working. */}
+          <Route path="/projects/:projectId/trash" element={<TrashRedirect />} />
           <Route path="/settings" element={<UserSettingsPage />} />
           <Route path="/u/:userId" element={<UserProfilePage />} />
           <Route path="/invites/pending" element={<PendingInvitesPage />} />

@@ -540,7 +540,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       if (moved > 0) {
         toast({
           title: `Moved ${moved} item${moved === 1 ? "" : "s"} to the recycle bin.`,
-          action: { label: "View bin", onClick: () => navigate(`/projects/${projectId}/trash`) },
+          action: { label: "View bin", onClick: () => navigate(`/projects/${projectId}/settings#recycle-bin`) },
         });
       }
     } finally {

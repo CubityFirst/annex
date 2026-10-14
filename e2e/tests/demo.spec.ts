@@ -142,7 +142,8 @@ test.describe("demo sandbox", () => {
     await expect(guidesRow).toHaveCount(0);
 
     // Client-side navigation only from here: a full reload reseeds the demo store.
-    await page.getByRole("link", { name: "Recycle bin" }).click();
+    // The bin is a section of Site Settings.
+    await page.getByTitle("Site Settings").click();
     await expect(page.getByRole("heading", { name: "Recycle bin" })).toBeVisible();
     await expect(page.getByText("Guides", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Restore Guides" }).click();

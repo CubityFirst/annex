@@ -43,6 +43,7 @@ import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2 } from "lucide-react";
+import { RecycleBin } from "@/components/RecycleBin";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -76,6 +77,7 @@ const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "site", label: "Site" },
   { id: "features", label: "Features" },
   { id: "people", label: "People" },
+  { id: "content", label: "Content" },
   { id: "developer", label: "Developer" },
   { id: "danger", label: "Danger Zone" },
 ];
@@ -1211,6 +1213,8 @@ export function SiteSettingsPage() {
   }
 
   const isAdminOrOwner = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["admin"];
+  // Recycle bin: editor+, matching the API's /trash gate.
+  const canEditContent = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["editor"];
   const isOwner = myRole === "owner";
 
   if (!project) {
@@ -1236,6 +1240,7 @@ export function SiteSettingsPage() {
     { id: "custom-domain", label: "Custom Domain", group: "site", visible: isAdminOrOwner && customLinkEnabled },
     { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
     { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
+    { id: "recycle-bin", label: "Recycle bin", group: "content", visible: canEditContent },
     { id: "api-keys", label: "API Keys", group: "developer", visible: myRole !== null },
     { id: "danger", label: "Danger Zone", group: "danger", visible: myRole !== null, danger: true },
   ];
@@ -2283,6 +2288,17 @@ export function SiteSettingsPage() {
                 </Alert>
               )}
             </form>
+          </div>
+        </>
+      )}
+
+      {/* Recycle bin - editors and up */}
+      {canEditContent && projectId && (
+        <>
+          <Separator className="my-10" />
+
+          <div id="recycle-bin">
+            <RecycleBin projectId={projectId} />
           </div>
         </>
       )}

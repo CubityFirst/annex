@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { FileText, Folder, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -11,20 +10,18 @@ import { apiFetchJson } from "@/lib/apiFetch";
 import { formatBytes, formatRelativeTime } from "@/lib/fileManager";
 import { daysUntilPurge, restoreTrashEntry, restoredItemUrl, trashContentsLabel, type TrashEntry, type TrashListing } from "@/lib/trash";
 
-const CAN_EDIT_ROLES = new Set(["editor", "admin", "owner"]);
-
 function EntryIcon({ entry }: { entry: TrashEntry }) {
   if (entry.item_type === "folder") return <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />;
   if (entry.item_type === "doc") return <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />;
   return <FileTypeIcon mimeType="" name={entry.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />;
 }
 
-export function TrashPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+// The site recycle bin, rendered as the "Recycle bin" section of Site Settings
+// (editor+; the caller gates visibility). Lists binned entries with Restore,
+// plus admin-only "Delete forever" / "Empty bin".
+export function RecycleBin({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { myRole, setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
-  const canEdit = CAN_EDIT_ROLES.has(myRole ?? "");
 
   const [listing, setListing] = useState<TrashListing | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -34,13 +31,7 @@ export function TrashPage() {
   const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
   const [emptying, setEmptying] = useState(false);
 
-  useEffect(() => {
-    setBreadcrumbs([{ id: null, name: "Recycle bin" }]);
-    return () => setBreadcrumbs([]);
-  }, [setBreadcrumbs]);
-
   const load = useCallback(async () => {
-    if (!projectId) return;
     setLoadError(null);
     const result = await apiFetchJson<TrashListing>(`/api/projects/${projectId}/trash`);
     if (result.ok && result.data) setListing(result.data);
@@ -48,14 +39,14 @@ export function TrashPage() {
   }, [projectId]);
 
   useEffect(() => {
-    if (canEdit) load();
-  }, [canEdit, load]);
+    load();
+  }, [load]);
 
   const removeEntry = (id: string) =>
     setListing(prev => (prev ? { ...prev, entries: prev.entries.filter(e => e.id !== id) } : prev));
 
   async function handleRestore(entry: TrashEntry) {
-    if (!projectId || busyId) return;
+    if (busyId) return;
     setBusyId(entry.id);
     try {
       const result = await restoreTrashEntry(projectId, entry.id);
@@ -79,7 +70,7 @@ export function TrashPage() {
 
   async function handlePurge() {
     const entry = purgeTarget;
-    if (!projectId || !entry || busyId) return;
+    if (!entry || busyId) return;
     setBusyId(entry.id);
     try {
       const result = await apiFetchJson(`/api/projects/${projectId}/trash/${entry.id}`, { method: "DELETE" });
@@ -92,7 +83,7 @@ export function TrashPage() {
   }
 
   async function handleEmpty() {
-    if (!projectId || emptying) return;
+    if (emptying) return;
     setEmptying(true);
     setEmptyConfirmOpen(false);
     try {
@@ -109,35 +100,21 @@ export function TrashPage() {
     }
   }
 
-  if (!projectId) return null;
-
-  if (!canEdit) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Trash2 className="mb-3 h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
-        <p className="text-sm font-medium text-muted-foreground">Only editors can view the recycle bin.</p>
-      </div>
-    );
-  }
-
   const entries = listing?.entries ?? [];
   const retentionDays = listing?.retentionDays ?? 30;
 
   return (
-    <div className="px-4 py-6 sm:px-6 max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            <Trash2 className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-            Recycle bin
-          </h1>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold">Recycle bin</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Deleted items are kept for {retentionDays} days, then permanently deleted.
+            Deleted docs, files and folders are kept for {retentionDays} days, then permanently deleted.
             {listing && !listing.canPurge && " Only admins can delete items forever."}
           </p>
         </div>
         {listing?.canPurge && entries.length > 0 && (
-          <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setEmptyConfirmOpen(true)} disabled={emptying}>
+          <Button size="sm" variant="destructive" className="shrink-0 gap-1.5" onClick={() => setEmptyConfirmOpen(true)} disabled={emptying}>
             <Trash2 className="h-3.5 w-3.5" />
             {emptying ? "Emptying…" : "Empty bin"}
           </Button>
@@ -145,7 +122,7 @@ export function TrashPage() {
       </div>
 
       {loadError ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
           <p className="text-sm font-medium text-muted-foreground">Couldn't load the recycle bin.</p>
           <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
           <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => load()}>
@@ -155,15 +132,16 @@ export function TrashPage() {
         </div>
       ) : !listing ? (
         <div className="flex flex-col gap-1.5">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
         </div>
       ) : entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Trash2 className="mb-3 h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
-          <p className="text-sm font-medium text-muted-foreground">The recycle bin is empty</p>
+        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
+          <Trash2 className="mb-2 h-8 w-8 text-muted-foreground/30" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">The recycle bin is empty</p>
         </div>
       ) : (
-        <ul className="rounded-md border bg-background overflow-hidden" aria-label="Deleted items">
+        // Capped height so a full bin doesn't push the rest of Settings away.
+        <ul className="max-h-[28rem] overflow-y-auto rounded-md border bg-background" aria-label="Deleted items">
           {entries.map(entry => {
             const contents = trashContentsLabel(entry);
             const daysLeft = daysUntilPurge(entry.deleted_at, retentionDays);
