@@ -107,7 +107,7 @@ export class CodeFenceWidget extends WidgetType {
     outer.replaceChildren();
 
     if (html !== null) {
-      outer.className = "not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4";
+      outer.className = "not-prose relative my-4 rounded-md text-sm [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-4";
       const host = document.createElement("div");
       // Shiki escapes all user code content - safe to assign as HTML.
       host.innerHTML = html;

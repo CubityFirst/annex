@@ -224,10 +224,8 @@
   overflow: hidden;
   position: relative;
 }
-/* Reading mode: wrap long code lines instead of overflowing horizontally.
-   Shiki's <pre> is a grandchild of CodeBlock's wrapper, so CodeBlock's
-   `[&>pre]:overflow-x-auto` never matches it - without this rule, a single
-   long line pushes the document wider and breaks surrounding layout. */
+/* Reading mode: wrap long code lines instead of horizontally scrolling them
+   (the widget's `[&_pre]:overflow-x-auto` still applies in editing mode). */
 .cm-wysiwyg--reading .cm-codefence-widget-root pre,
 .cm-wysiwyg--reading .cm-codefence-widget-root pre code,
 .cm-wysiwyg--reading .cm-codefence-widget-root pre .line,

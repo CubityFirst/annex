@@ -296,7 +296,7 @@ export function FilePage() {
           <CodeBlock
             lang={guessLanguage(file.name)}
             code={textContent}
-            className="[&>pre]:max-h-[75vh] [&>pre]:overflow-y-auto"
+            className="[&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto"
           />
           {textTruncated && (
             <p className="mt-2 text-xs text-muted-foreground">

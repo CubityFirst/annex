@@ -77,7 +77,7 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
 
   if (html) {
     return (
-      <div className={`not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4 ${className ?? ""}`}>
+      <div className={`not-prose relative my-4 rounded-md text-sm [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-4 ${className ?? ""}`}>
         {/* Shiki escapes all user code content - safe to set innerHTML */}
         <div dangerouslySetInnerHTML={{ __html: html }} />
         {copyButton}
