@@ -29,6 +29,7 @@ import { TermsPage } from "./pages/TermsPage";
 import { AcknowledgementsPage } from "./pages/AcknowledgementsPage";
 import { TestAudioPage } from "./pages/TestAudioPage";
 import { AnimationsTestPage } from "./pages/tests/AnimationsTestPage";
+import { HomeVariantsPage } from "./pages/tests/home/HomeVariantsPage";
 import { Toaster } from "@/components/ui/sonner";
 
 function TrashRedirect() {
@@ -88,6 +89,7 @@ export function App() {
         <Route path="/acknowledgements" element={<AcknowledgementsPage />} />
         <Route path="/test/audio" element={<TestAudioPage />} />
         <Route path="/test/animations" element={<AnimationsTestPage />} />
+        <Route path="/test/home/:variant?" element={<HomeVariantsPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
         <Route path="/s/:projectId" element={<PublicDocPage />} />
         <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />
