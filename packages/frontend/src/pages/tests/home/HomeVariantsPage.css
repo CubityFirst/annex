@@ -193,23 +193,6 @@
   gap: 24px 48px;
   margin: 36px 0 56px;
 }
-.th-lens {
-  position: relative;
-  aspect-ratio: 1920 / 1200;
-  border: 1px solid var(--th-line);
-  overflow: hidden;
-  cursor: crosshair;
-  box-shadow: 0 0 0 6px var(--th-bg), 0 0 0 7px var(--th-line);
-}
-.th-lens img,
-.th-lens canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.th-lens canvas { image-rendering: pixelated; }
 
 .th-fade {
   height: 192px;
@@ -362,7 +345,7 @@
 .th-mono .th-extra h3 { color: var(--th-fg); }
 
 /* ── Mono: assemble ── */
-.th-assemble { position: relative; height: 280vh; }
+.th-assemble-hero { position: relative; height: 280vh; }
 .th-assemble-sticky {
   position: sticky;
   top: 0;
@@ -372,9 +355,9 @@
   align-items: center;
 }
 .th-assemble-sticky > .site-wrap { position: relative; z-index: 1; }
-.th-assemble .th-hero-bg { pointer-events: none; }
+.th-assemble-hero .th-hero-bg { pointer-events: none; }
 /* Faint silhouette fades in as the letters form, so the shape reads. */
-.th-assemble .th-mono-title { color: color-mix(in srgb, var(--th-fg) calc(var(--p) * 13%), transparent); }
+.th-assemble-hero .th-mono-title { color: color-mix(in srgb, var(--th-fg) calc(var(--p) * 13%), transparent); }
 /* Copy fades in only once the headline has formed (--p is scroll progress). */
 .th-assemble-copy,
 .th-assemble-kicker-b {
@@ -402,41 +385,13 @@
 }
 @keyframes th-bob { 50% { translate: 0 6px; } }
 
-/* Print treatment: paper-blank until it scrolls in, then rows feed one by one. */
-.th-treated-print .th-treated-real { opacity: 0; transition: opacity 0.45s steps(6, end); }
-.th-treated-print:hover .th-treated-real,
-.th-treated-print:focus-visible .th-treated-real { opacity: 1; }
-.th-treated-print .th-treated-fx { clip-path: inset(0 0 100% 0); }
-.th-treated-print.is-printed .th-treated-fx {
-  animation: th-print calc(var(--rows, 60) * 30ms) steps(var(--rows, 60), end) forwards;
-}
-.th-print-head {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 2px;
-  z-index: 2;
-  background: var(--th-fg);
-  box-shadow: 0 0 12px var(--th-fg);
-  opacity: 0;
-}
-.th-treated-print.is-printed .th-print-head {
-  animation: th-print-head calc(var(--rows, 60) * 30ms) steps(var(--rows, 60), end) forwards;
-}
-@keyframes th-print { to { clip-path: inset(0 0 0 0); } }
-@keyframes th-print-head {
-  0% { top: 0; opacity: 1; }
-  99% { top: 100%; opacity: 1; }
-  100% { top: 100%; opacity: 0; }
-}
 
 /* ── Mono: fluid ── */
-.th-fluid { display: flex; align-items: center; cursor: crosshair; }
-.th-fluid .th-hero-bg { pointer-events: none; }
+.th-fluid-hero { display: flex; align-items: center; cursor: crosshair; }
+.th-fluid-hero .th-hero-bg { pointer-events: none; }
 .th-fluid-title { color: var(--th-fg); }
-.th-fluid .th-sub { max-width: 460px; }
-.th-fluid .th-ctas { width: fit-content; }
+.th-fluid-hero .th-sub { max-width: 460px; }
+.th-fluid-hero .th-ctas { width: fit-content; }
 
 .th-graph-section { padding: 48px 0 24px; }
 .th-graph-section .th-show-body { max-width: 560px; margin-bottom: 32px; }
@@ -526,7 +481,7 @@
 .tui-file.is-sel .tui-dim { color: var(--th-bg); opacity: 0.6; }
 .tui-file[aria-current="page"]:not(.is-sel) { color: var(--th-fg); }
 .tui-doc { max-width: 78ch; }
-.tui-doc:has(.th-treated) { max-width: 1200px; }
+.tui-doc:has(.th-shot) { max-width: 1200px; }
 .tui-doc p { color: color-mix(in srgb, var(--th-fg) 82%, transparent); }
 .tui-h1 { font-size: 22px; font-weight: 500; color: var(--th-fg); margin-bottom: 10px !important; }
 .tui-h2 { font-size: 15px; font-weight: 500; color: var(--th-fg); margin-top: 14px !important; }
@@ -620,73 +575,14 @@
 }
 .th-show-body { font-size: 17px; line-height: 1.6; color: var(--th-dim); }
 
-.th-treated {
-  position: relative;
+.th-shot {
   margin: 0;
   aspect-ratio: 1920 / 1200;
   border: 1px solid var(--th-line);
   overflow: hidden;
   background: var(--th-bg);
-  outline: none;
 }
-.th-treated:focus-visible { outline: 2px solid var(--th-accent); outline-offset: 4px; }
-.th-treated-real,
-.th-treated-fx,
-.th-treated-noise {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.th-treated-fx { transition: opacity 0.45s steps(6, end); }
-.th-treated-dither .th-treated-fx { image-rendering: pixelated; }
-.th-treated:hover .th-treated-fx,
-.th-treated:focus-visible .th-treated-fx { opacity: 0; }
-
-/* Grain treatment: monochrome + phosphor tint + live grain over the real image. */
-.th-treated-grain .th-treated-real { filter: grayscale(1) contrast(1.15) brightness(0.85); transition: filter 0.5s; }
-.th-treated-grain::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: var(--th-accent);
-  mix-blend-mode: multiply;
-  transition: opacity 0.5s;
-}
-.th-treated-noise {
-  z-index: 2;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
-  opacity: 0.45;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: th-grain 0.6s steps(1, end) infinite;
-  transition: opacity 0.5s;
-}
-.th-treated-grain:hover .th-treated-real,
-.th-treated-grain:focus-visible .th-treated-real { filter: none; }
-.th-treated-grain:hover::before,
-.th-treated-grain:focus-visible::before,
-.th-treated-grain:hover .th-treated-noise,
-.th-treated-grain:focus-visible .th-treated-noise { opacity: 0; }
-
-.th-treated-hint {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 3;
-  font-family: var(--th-mono);
-  font-size: 11px;
-  color: var(--th-dim);
-  background: var(--th-bg);
-  padding: 3px 8px;
-  border: 1px solid var(--th-line);
-  transition: opacity 0.3s;
-}
-.th-treated:hover .th-treated-hint { opacity: 0; }
+.th-shot img { width: 100%; height: 100%; display: block; }
 
 /* ── Extras ── */
 .th-extras { padding: 72px 0; }
@@ -796,12 +692,10 @@
   .th-smoke-line kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .th-assemble { height: auto; }
+  .th-assemble-hero { height: auto; }
   .th-assemble-sticky { position: relative; }
   .th-assemble-hint, .th-assemble-kicker-a { display: none; }
-  .th-treated-print .th-treated-fx { clip-path: none; animation: none !important; }
   .tui-caret,
   .th::after,
-  .th-treated-noise,
   .th-uses-track { animation: none; }
 }

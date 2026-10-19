@@ -4,8 +4,8 @@ import { roll } from "@/lib/dice";
 import { AnnexLogo } from "@/components/AnnexLogo";
 import shotEdit from "@/assets/landing/editor.webp";
 import shotPublish from "@/assets/landing/publish.webp";
-import { MONO, runLoop, prefersReducedMotion } from "./ascii";
-import { TreatedImage } from "./TreatedImage";
+import { runLoop, prefersReducedMotion } from "./ascii";
+import { Screenshot } from "./Screenshot";
 
 // The landing page as a terminal app: a file tree, a content pane that
 // types each "file" out, a live activity log and a spinning ASCII cube.
@@ -365,7 +365,7 @@ export function AsciiTui({ isLoggedIn }: { isLoggedIn: boolean }) {
         <Pane title={file.name} className="tui-main">
           <article className="tui-doc" key={file.name}>
             {file.image ? (
-              <TreatedImage src={file.image.src} alt={file.image.alt} treatment="ascii" palette={["#0b0b0b", ...MONO.slice(1)]} />
+              <Screenshot src={file.image.src} alt={file.image.alt} />
             ) : (
               <>
                 <Markdown src={visible} />

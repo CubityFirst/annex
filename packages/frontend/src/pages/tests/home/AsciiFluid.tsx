@@ -213,7 +213,7 @@ export function AsciiFluid({ title, children }: Props) {
   }, []);
 
   return (
-    <section ref={section} className="th-hero th-fluid">
+    <section ref={section} className="th-hero th-fluid-hero">
       <canvas ref={canvas} className="th-hero-bg" aria-hidden="true" />
       <div className="site-wrap th-fluid-inner">
         <div ref={titleRoot}>{title}</div>

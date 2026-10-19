@@ -10,10 +10,9 @@ import shotEdit from "@/assets/landing/editor.webp";
 import shotDraw from "@/assets/landing/draw.webp";
 import shotPublish from "@/assets/landing/publish.webp";
 import { DitherField } from "./DitherField";
-import { DitherLens } from "./DitherLens";
 import { GrainSmoke, type SmokeHandle } from "./GrainSmoke";
 import { AsciiField } from "./AsciiField";
-import { BAYER8, TreatedImage, type Treatment } from "./TreatedImage";
+import { Screenshot } from "./Screenshot";
 import { AsciiAssemble } from "./AsciiAssemble";
 import { AsciiFluid } from "./AsciiFluid";
 import { AsciiGraph } from "./AsciiGraph";
@@ -25,20 +24,21 @@ import "./HomeVariantsPage.css";
 // /test/home/:variant - three alternative landing pages exploring "unslop"
 // textures: ordered dithering, film-grain smoke and ASCII. Each variant uses
 // its technique for something Annex-specific rather than as wallpaper:
-//   dither - the hero IS the product, dithered, with a lens that resolves the
-//            real UI (dithered edge); dithered gradient type + section fades.
+//   dither - a dithered field behind the hero; dithered gradient type +
+//            section fades.
 //   smoke  - an editor line in the hero; every keystroke puffs ink smoke from
 //            the caret. Enter keeps the line, the rest drifts away.
 //   ascii  - the headline is typeset out of a real markdown doc scrolling
 //            through the letterforms; pointer decodes glyphs, clicks ripple;
-//            screenshots rendered as ASCII; an ASCII dice roller.
+//            an ASCII dice roller.
 // Monochrome ASCII follow-ups:
 //   assemble - scroll-driven: a raw markdown file's characters fly out of
-//            the doc and rearrange into the headline; screenshots "print".
+//            the doc and rearrange into the headline.
 //   fluid  - a stable-fluids sim drawn in glyphs, stirred by the pointer and
 //            flowing around the real headline; an ASCII doc graph.
 //   tui    - the whole landing page as a terminal app (files, typed-out
 //            content, log, spinning cube, vim-ish keys and : commands).
+// Screenshots are always shown untouched - the textures stay off the product.
 
 type VariantId = "dither" | "smoke" | "ascii" | "assemble" | "fluid" | "tui";
 
@@ -51,20 +51,13 @@ const VARIANTS: { id: VariantId; label: string; mono?: boolean }[] = [
   { id: "tui", label: "tui", mono: true },
 ];
 
-// Image treatments draw onto palette[0], so mono uses the page background there.
-const MONO_IMAGE = ["#0b0b0b", ...MONO.slice(1)];
-
 const PALETTES: Record<VariantId, string[]> = {
   dither: ["#01030f", "#05125e", "#1a44f0", "#7fa2ff"],
   smoke: ["#020a07", "#0d5a3e", "#7dffc8"],
   ascii: ["#120205", "#4a0912", "#8c1324", "#d81c3a", "#ff5a70", "#ffc2ca"],
-  assemble: MONO_IMAGE,
-  fluid: MONO_IMAGE,
-  tui: MONO_IMAGE,
-};
-
-const TREATMENT: Record<VariantId, Treatment> = {
-  dither: "dither", smoke: "grain", ascii: "ascii", assemble: "print", fluid: "ascii", tui: "ascii",
+  assemble: MONO,
+  fluid: MONO,
+  tui: MONO,
 };
 
 const SHOWCASE = [
@@ -116,6 +109,18 @@ roll for the perfect cup: \`2d6+1d4\`
 see also [[french-press]] #brewing #notes
 `;
 
+const BAYER8 = (() => {
+  const m = new Float32Array(64);
+  const b2 = (x: number, y: number) => [0, 2, 3, 1][(y & 1) * 2 + (x & 1)];
+  for (let y = 0; y < 8; y++)
+    for (let x = 0; x < 8; x++) {
+      // Standard recursive Bayer construction.
+      const v = 16 * b2(x, y) + 4 * b2(x >> 1, y >> 1) + b2(x >> 2, y >> 2);
+      m[y * 8 + x] = (v + 0.5) / 64;
+    }
+  return m;
+})();
+
 /** A vertical dithered gradient (from -> to, either may be "transparent") as a data URL. */
 function ditherGradient(from: string, to: string, rows = 48, cols = 64) {
   const c = document.createElement("canvas");
@@ -147,14 +152,14 @@ function DitherHero({ primary }: { primary: { to: string; label: string } }) {
         <div className="th-hero-row">
           <p className="th-sub">
             A calm docs workspace for markdown, files and drawings - published to the web
-            when you're ready. Move your cursor over the screen below to see it in full resolution.
+            when you're ready.
           </p>
           <div className="th-ctas">
             <Link className="th-btn th-btn-primary" to={primary.to}>{primary.label} <ArrowRight size={16} aria-hidden="true" /></Link>
             <Link className="th-btn" to="/demo">See a demo</Link>
           </div>
         </div>
-        <DitherLens src={shotRead} alt="Annex - a calm reading view with an outline, tables and checklists" palette={PALETTES.dither} />
+        <Screenshot src={shotRead} alt="Annex - a calm reading view with an outline, tables and checklists" eager />
       </div>
     </section>
   );
@@ -478,7 +483,7 @@ export function HomeVariantsPage() {
                 <h2 className="th-show-title">{s.title}</h2>
                 <p className="th-show-body">{s.body}</p>
               </div>
-              <TreatedImage src={s.src} alt={s.alt} treatment={TREATMENT[variant]} palette={palette} />
+              <Screenshot src={s.src} alt={s.alt} />
             </div>
           ))}
         </section>

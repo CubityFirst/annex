@@ -212,7 +212,7 @@ export function AsciiAssemble({ title, kicker, children }: Props) {
   }, []);
 
   return (
-    <section ref={section} className="th-assemble" style={{ "--p": 0 } as CSSProperties}>
+    <section ref={section} className="th-assemble-hero" style={{ "--p": 0 } as CSSProperties}>
       <div className="th-assemble-sticky">
         <canvas ref={canvas} className="th-hero-bg" aria-hidden="true" />
         <p className="th-kicker th-assemble-kicker th-assemble-kicker-a" aria-hidden="true">{kicker[0]}</p>
