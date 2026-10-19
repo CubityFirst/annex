@@ -14,6 +14,11 @@ import { DitherLens } from "./DitherLens";
 import { GrainSmoke, type SmokeHandle } from "./GrainSmoke";
 import { AsciiField } from "./AsciiField";
 import { BAYER8, TreatedImage, type Treatment } from "./TreatedImage";
+import { AsciiAssemble } from "./AsciiAssemble";
+import { AsciiFluid } from "./AsciiFluid";
+import { AsciiGraph } from "./AsciiGraph";
+import { AsciiTui } from "./AsciiTui";
+import { MONO } from "./ascii";
 import "../../LandingPage.css";
 import "./HomeVariantsPage.css";
 
@@ -27,22 +32,40 @@ import "./HomeVariantsPage.css";
 //   ascii  - the headline is typeset out of a real markdown doc scrolling
 //            through the letterforms; pointer decodes glyphs, clicks ripple;
 //            screenshots rendered as ASCII; an ASCII dice roller.
+// Monochrome ASCII follow-ups:
+//   assemble - scroll-driven: a raw markdown file's characters fly out of
+//            the doc and rearrange into the headline; screenshots "print".
+//   fluid  - a stable-fluids sim drawn in glyphs, stirred by the pointer and
+//            flowing around the real headline; an ASCII doc graph.
+//   tui    - the whole landing page as a terminal app (files, typed-out
+//            content, log, spinning cube, vim-ish keys and : commands).
 
-type VariantId = "dither" | "smoke" | "ascii";
+type VariantId = "dither" | "smoke" | "ascii" | "assemble" | "fluid" | "tui";
 
-const VARIANTS: { id: VariantId; label: string }[] = [
+const VARIANTS: { id: VariantId; label: string; mono?: boolean }[] = [
   { id: "dither", label: "dither" },
   { id: "smoke", label: "smoke" },
   { id: "ascii", label: "ascii" },
+  { id: "assemble", label: "assemble", mono: true },
+  { id: "fluid", label: "fluid", mono: true },
+  { id: "tui", label: "tui", mono: true },
 ];
+
+// Image treatments draw onto palette[0], so mono uses the page background there.
+const MONO_IMAGE = ["#0b0b0b", ...MONO.slice(1)];
 
 const PALETTES: Record<VariantId, string[]> = {
   dither: ["#01030f", "#05125e", "#1a44f0", "#7fa2ff"],
   smoke: ["#020a07", "#0d5a3e", "#7dffc8"],
   ascii: ["#120205", "#4a0912", "#8c1324", "#d81c3a", "#ff5a70", "#ffc2ca"],
+  assemble: MONO_IMAGE,
+  fluid: MONO_IMAGE,
+  tui: MONO_IMAGE,
 };
 
-const TREATMENT: Record<VariantId, Treatment> = { dither: "dither", smoke: "grain", ascii: "ascii" };
+const TREATMENT: Record<VariantId, Treatment> = {
+  dither: "dither", smoke: "grain", ascii: "ascii", assemble: "print", fluid: "ascii", tui: "ascii",
+};
 
 const SHOWCASE = [
   {
@@ -269,6 +292,43 @@ function AsciiHero({ primary }: { primary: { to: string; label: string } }) {
   );
 }
 
+function HeroCopy({ primary, solid }: { primary: { to: string; label: string }; solid?: boolean }) {
+  const mark = solid ? { "data-ascii-solid": "" } : {};
+  return (
+    <>
+      <p className="th-sub" {...mark}>
+        A calm docs workspace. Write in markdown, keep your files and drawings alongside,
+        and publish any of it to the web when you're ready.
+      </p>
+      <div className="th-ctas" {...mark}>
+        <Link className="th-btn th-btn-primary" to={primary.to}>{primary.label} <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link className="th-btn" to="/demo">See a demo</Link>
+      </div>
+    </>
+  );
+}
+
+function AssembleHero({ primary }: { primary: { to: string; label: string } }) {
+  return (
+    <AsciiAssemble
+      kicker={["coffee-brewing-guide.md - raw markdown", "the same characters, rearranged."]}
+      title={<h1 className="th-mono-title"><span data-ascii-line>A place to</span><span data-ascii-line>keep anything.</span></h1>}
+    >
+      <HeroCopy primary={primary} />
+    </AsciiAssemble>
+  );
+}
+
+function FluidHero({ primary }: { primary: { to: string; label: string } }) {
+  return (
+    <AsciiFluid
+      title={<h1 className="th-mono-title th-fluid-title"><span data-ascii-line>Ideas swirl.</span><span data-ascii-line>Notes stay.</span></h1>}
+    >
+      <HeroCopy primary={primary} solid />
+    </AsciiFluid>
+  );
+}
+
 const DICE = ["1d20", "2d6+1d4", "4d6kh3", "1d100"];
 
 function AsciiDice() {
@@ -315,11 +375,11 @@ function AsciiDice() {
   );
 }
 
-function AsciiCta({ primary }: { primary: { to: string; label: string } }) {
+function AsciiCta({ primary, palette }: { primary: { to: string; label: string }; palette: string[] }) {
   const title = useRef<HTMLHeadingElement>(null);
   return (
     <section className="th-cta th-cta-ascii">
-      <AsciiField className="th-hero-bg" textRoot={title} source={DOC_SOURCE} palette={PALETTES.ascii} />
+      <AsciiField className="th-hero-bg" textRoot={title} source={DOC_SOURCE} palette={palette} />
       <div className="site-wrap th-cta-inner">
         <h2 ref={title} className="th-ascii-title th-ascii-title-sm"><span data-ascii-line>Your annex.</span></h2>
         <div className="th-ctas">
@@ -352,8 +412,35 @@ export function HomeVariantsPage() {
     document.head.appendChild(link);
   }, []);
 
+  const isMono = VARIANTS.find((v) => v.id === variant)?.mono;
+  const switcher = (
+    <nav className="th-switch" aria-label="Test variants">
+      <span>test/home</span>
+      {VARIANTS.map((v, i) => (
+        <Link
+          key={v.id}
+          to={`/test/home/${v.id}`}
+          aria-current={v.id === variant ? "page" : undefined}
+          className={v.mono && !VARIANTS[i - 1]?.mono ? "th-switch-group" : undefined}
+        >
+          {v.label}
+        </Link>
+      ))}
+    </nav>
+  );
+
+  if (variant === "tui") {
+    return (
+      <div className="landing th th-mono th-tui">
+        <AsciiTui isLoggedIn={isLoggedIn} />
+        <SiteFooter />
+        {switcher}
+      </div>
+    );
+  }
+
   return (
-    <div className={`landing th th-${variant}`}>
+    <div className={`landing th th-${variant}${isMono ? " th-mono" : ""}`}>
       <nav className="th-nav" aria-label="Main">
         <div className="th-nav-inner">
           <Link to="/" aria-label="Annex home"><AnnexLogo height={20} /></Link>
@@ -370,6 +457,8 @@ export function HomeVariantsPage() {
         {variant === "dither" && <DitherHero primary={primary} />}
         {variant === "smoke" && <SmokeHero primary={primary} />}
         {variant === "ascii" && <AsciiHero primary={primary} />}
+        {variant === "assemble" && <AssembleHero primary={primary} />}
+        {variant === "fluid" && <FluidHero primary={primary} />}
 
         <section className="th-uses" aria-label="What people keep in Annex">
           <div className="th-uses-track">
@@ -394,6 +483,17 @@ export function HomeVariantsPage() {
           ))}
         </section>
 
+        {variant === "fluid" && (
+          <section className="th-graph-section" aria-labelledby="th-graph-label">
+            <div className="site-wrap">
+              <p className="th-eyebrow">04 / tags &amp; graph</p>
+              <h2 id="th-graph-label" className="th-show-title">See how everything links together.</h2>
+              <p className="th-show-body">Wikilinks and tags become a living map of your site. Hover a doc to light up its neighbours.</p>
+              <AsciiGraph />
+            </div>
+          </section>
+        )}
+
         <section className="th-extras" aria-labelledby="th-extras-label">
           <div className="site-wrap">
             <h2 id="th-extras-label" className="th-eyebrow th-center">and everything else a docs site should do</h2>
@@ -404,7 +504,7 @@ export function HomeVariantsPage() {
                   <p>{desc}</p>
                 </li>
               ))}
-              {variant === "ascii" && <li className="th-extra th-extra-wide"><AsciiDice /></li>}
+              {(variant === "ascii" || isMono) && <li className="th-extra th-extra-wide"><AsciiDice /></li>}
             </ul>
           </div>
         </section>
@@ -445,17 +545,13 @@ export function HomeVariantsPage() {
             </div>
           </section>
         )}
-        {variant === "ascii" && <AsciiCta primary={primary} />}
+        {variant === "ascii" && <AsciiCta primary={primary} palette={PALETTES.ascii} />}
+        {(variant === "assemble" || variant === "fluid") && <AsciiCta primary={primary} palette={MONO} />}
       </main>
 
       <SiteFooter />
 
-      <nav className="th-switch" aria-label="Test variants">
-        <span>test/home</span>
-        {VARIANTS.map((v) => (
-          <Link key={v.id} to={`/test/home/${v.id}`} aria-current={v.id === variant ? "page" : undefined}>{v.label}</Link>
-        ))}
-      </nav>
+      {switcher}
     </div>
   );
 }

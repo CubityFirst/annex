@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 
 // A product screenshot re-rendered in the page's style - Bayer-dithered
-// duotone, ASCII glyphs, or tinted + grained - with the untouched capture
+// duotone, ASCII glyphs, tinted + grained, or ASCII "printed" line by line
+// (dot-matrix style) when it scrolls into view - with the untouched capture
 // cross-fading in on hover/focus so the real UI is one gesture away.
 
-export type Treatment = "dither" | "ascii" | "grain";
+export type Treatment = "dither" | "ascii" | "grain" | "print";
 
 type Props = {
   src: string;
@@ -109,10 +110,12 @@ function renderAscii(canvas: HTMLCanvasElement, img: HTMLImageElement, palette: 
       ctx.fillText(ch, x * cellW, (y + 0.5) * cellH);
     }
   }
+  return rows;
 }
 
 export function TreatedImage({ src, alt, treatment, palette }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const figure = useRef<HTMLElement>(null);
   const paletteKey = palette.join();
 
   useEffect(() => {
@@ -125,18 +128,29 @@ export function TreatedImage({ src, alt, treatment, palette }: Props) {
       if (cancelled || !canvas.current) return;
       const pal = paletteKey.split(",");
       if (treatment === "dither") renderDither(canvas.current, img, pal);
-      else renderAscii(canvas.current, img, pal);
+      else figure.current?.style.setProperty("--rows", String(renderAscii(canvas.current, img, pal)));
     };
     Promise.all([img.decode(), document.fonts?.ready]).then(run).catch(() => {});
-    return () => { cancelled = true; };
+    // "print" starts feeding paper the first time it is mostly on screen.
+    let io: IntersectionObserver | undefined;
+    if (treatment === "print" && figure.current) {
+      io = new IntersectionObserver(([e]) => {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("is-printed");
+        io?.disconnect();
+      }, { threshold: 0.4 });
+      io.observe(figure.current);
+    }
+    return () => { cancelled = true; io?.disconnect(); };
   }, [src, treatment, paletteKey]);
 
   return (
-    <figure className={`th-treated th-treated-${treatment}`} tabIndex={0}>
+    <figure ref={figure} className={`th-treated th-treated-${treatment}`} tabIndex={0}>
       <img className="th-treated-real" src={src} alt={alt} width={1920} height={1200} loading="lazy" decoding="async" />
       {treatment === "grain"
         ? <span className="th-treated-noise" aria-hidden="true" />
         : <canvas ref={canvas} className="th-treated-fx" aria-hidden="true" />}
+      {treatment === "print" && <span className="th-print-head" aria-hidden="true" />}
       <figcaption className="th-treated-hint" aria-hidden="true">hover to reveal</figcaption>
     </figure>
   );

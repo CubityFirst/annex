@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { buildTextMask, hash, noise } from "./ascii";
 
 // A character grid where the page's own headline is "typeset" out of a real
 // markdown document: every `[data-ascii-line]` element under `textRoot` is
@@ -23,19 +24,6 @@ type Props = {
   /** Dim -> bright colours, one batch per colour. */
   palette: string[];
 };
-
-function hash(x: number, y: number) {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function noise(x: number, y: number) {
-  const xi = Math.floor(x), yi = Math.floor(y);
-  const tx = x - xi, ty = y - yi;
-  const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
-  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
 
 export function AsciiField({ className, textRoot, source, palette }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -63,27 +51,7 @@ export function AsciiField({ className, textRoot, source, palette }: Props) {
     const FIELD_AT = 0, SCRAMBLE_AT = FIELD.length, TEXT_AT = FIELD.length + SCRAMBLE.length;
 
     const buildMask = () => {
-      const m = document.createElement("canvas");
-      m.width = cols;
-      m.height = rows;
-      const mc = m.getContext("2d", { willReadFrequently: true })!;
-      mc.scale(1 / cw, 1 / lineH);
-      const origin = canvas.getBoundingClientRect();
-      textRoot.current?.querySelectorAll<HTMLElement>("[data-ascii-line]").forEach((line) => {
-        const r = line.getBoundingClientRect();
-        const cs = getComputedStyle(line);
-        mc.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-        if ("letterSpacing" in mc) (mc as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = cs.letterSpacing === "normal" ? "0px" : cs.letterSpacing;
-        const label = (cs.textTransform === "uppercase" ? line.textContent?.toUpperCase() : line.textContent) ?? "";
-        const met = mc.measureText(label);
-        const asc = met.fontBoundingBoxAscent, desc = met.fontBoundingBoxDescent;
-        const baseline = r.top - origin.top + (r.height - (asc + desc)) / 2 + asc;
-        mc.fillStyle = "#fff";
-        mc.fillText(label, r.left - origin.left, baseline);
-      });
-      const d = mc.getImageData(0, 0, cols, rows).data;
-      mask = new Float32Array(cols * rows);
-      for (let i = 0; i < mask.length; i++) mask[i] = d[i * 4 + 3] / 255;
+      mask = buildTextMask(textRoot.current, canvas.getBoundingClientRect(), cols, rows, cw, lineH);
     };
 
     const resize = () => {

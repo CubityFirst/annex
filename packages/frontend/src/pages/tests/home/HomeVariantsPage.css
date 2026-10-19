@@ -40,6 +40,15 @@
   --th-accent-ink: #fff4f5;
   --th-line: rgba(255, 46, 74, 0.22);
 }
+.th-mono {
+  --th-bg: #0b0b0b;
+  --th-bg2: #111110;
+  --th-fg: #e8e4de;
+  --th-dim: #8a857d;
+  --th-accent: #e8e4de;
+  --th-accent-ink: #0b0b0b;
+  --th-line: rgba(232, 228, 222, 0.14);
+}
 .th ::selection { background: var(--th-accent); color: var(--th-accent-ink); }
 
 /* Page-wide film grain - the one texture every variant shares. */
@@ -329,6 +338,251 @@
 .th-dice p { flex: 1 1 240px; font-size: 14px; color: var(--th-dim); }
 .th-dice code { font-family: var(--th-mono); color: var(--th-fg); }
 
+/* ── Mono: shared ── */
+.th-mono-title {
+  font-family: var(--th-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  /* Each line is traced as one run of text, so lines must never wrap:
+     sized so ~14 uppercase chars fit the content column. */
+  font-size: clamp(36px, 8.2vw, 132px);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: transparent;
+  margin-bottom: 36px;
+}
+.th-mono-title span { display: block; width: fit-content; white-space: nowrap; }
+.th-mono .th-show-title,
+.th-mono .th-pricing-title {
+  font-family: var(--th-mono);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.th-mono .th-sub { color: var(--th-fg); opacity: 0.72; margin-bottom: 28px; }
+.th-mono .th-extra h3 { color: var(--th-fg); }
+
+/* ── Mono: assemble ── */
+.th-assemble { position: relative; height: 280vh; }
+.th-assemble-sticky {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.th-assemble-sticky > .site-wrap { position: relative; z-index: 1; }
+.th-assemble .th-hero-bg { pointer-events: none; }
+/* Faint silhouette fades in as the letters form, so the shape reads. */
+.th-assemble .th-mono-title { color: color-mix(in srgb, var(--th-fg) calc(var(--p) * 13%), transparent); }
+/* Copy fades in only once the headline has formed (--p is scroll progress). */
+.th-assemble-copy,
+.th-assemble-kicker-b {
+  opacity: clamp(0, calc((var(--p) - 0.82) * 6), 1);
+  transform: translateY(calc((1 - clamp(0, calc((var(--p) - 0.82) * 6), 1)) * 12px));
+}
+.th-assemble-kicker-a {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  opacity: clamp(0, calc(1 - var(--p) * 5), 1);
+}
+.th-assemble-hint {
+  position: absolute;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--th-mono);
+  font-size: 12px;
+  color: var(--th-dim);
+  opacity: clamp(0, calc(1 - var(--p) * 6), 1);
+  animation: th-bob 1.6s ease-in-out infinite;
+}
+@keyframes th-bob { 50% { translate: 0 6px; } }
+
+/* Print treatment: paper-blank until it scrolls in, then rows feed one by one. */
+.th-treated-print .th-treated-real { opacity: 0; transition: opacity 0.45s steps(6, end); }
+.th-treated-print:hover .th-treated-real,
+.th-treated-print:focus-visible .th-treated-real { opacity: 1; }
+.th-treated-print .th-treated-fx { clip-path: inset(0 0 100% 0); }
+.th-treated-print.is-printed .th-treated-fx {
+  animation: th-print calc(var(--rows, 60) * 30ms) steps(var(--rows, 60), end) forwards;
+}
+.th-print-head {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  z-index: 2;
+  background: var(--th-fg);
+  box-shadow: 0 0 12px var(--th-fg);
+  opacity: 0;
+}
+.th-treated-print.is-printed .th-print-head {
+  animation: th-print-head calc(var(--rows, 60) * 30ms) steps(var(--rows, 60), end) forwards;
+}
+@keyframes th-print { to { clip-path: inset(0 0 0 0); } }
+@keyframes th-print-head {
+  0% { top: 0; opacity: 1; }
+  99% { top: 100%; opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ── Mono: fluid ── */
+.th-fluid { display: flex; align-items: center; cursor: crosshair; }
+.th-fluid .th-hero-bg { pointer-events: none; }
+.th-fluid-title { color: var(--th-fg); }
+.th-fluid .th-sub { max-width: 460px; }
+.th-fluid .th-ctas { width: fit-content; }
+
+.th-graph-section { padding: 48px 0 24px; }
+.th-graph-section .th-show-body { max-width: 560px; margin-bottom: 32px; }
+.th-graph {
+  margin: 0;
+  height: clamp(360px, 52vw, 560px);
+  border: 1px solid var(--th-line);
+  background: var(--th-bg2);
+}
+.th-graph canvas { width: 100%; height: 100%; display: block; }
+
+/* ── Mono: tui ── */
+.th-tui .th-switch { bottom: 56px; }
+.th-tui .l-footer { padding-bottom: 96px; }
+.tui {
+  --tui-pad: clamp(8px, 1.6vw, 20px);
+  height: 100svh;
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+  padding: var(--tui-pad);
+  font-family: var(--th-mono);
+  font-size: clamp(13px, 0.55rem + 0.4vw, 17px);
+  line-height: 1.55;
+}
+.tui-dim { color: var(--th-dim); }
+.tui-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 4px 6px;
+  border-bottom: 1px dashed var(--th-line);
+}
+.tui-logo { display: inline-flex; }
+.tui-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-actions { display: flex; gap: 12px; }
+.tui-actions a { color: var(--th-dim); }
+.tui-actions a:hover, .tui-actions a.tui-cta { color: var(--th-fg); }
+.tui-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 250px) 1fr minmax(260px, 320px);
+  gap: 10px;
+}
+.tui-pane {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--th-line);
+}
+.tui-pane-body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 14px 12px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--th-line) transparent;
+}
+.tui-pane:focus-within { border-color: color-mix(in srgb, var(--th-fg) 45%, transparent); }
+.tui-pane-title {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 0 4px;
+  background: var(--th-bg);
+  color: var(--th-dim);
+  font-size: 12px;
+  line-height: 16px;
+  z-index: 1;
+}
+.tui-files ul { display: flex; flex-direction: column; }
+.tui-file {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--th-dim);
+  background: none;
+  border: 0;
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: pre;
+}
+.tui-file:hover { color: var(--th-fg); }
+.tui-file.is-sel { background: var(--th-fg); color: var(--th-bg); }
+.tui-file.is-sel .tui-dim { color: var(--th-bg); opacity: 0.6; }
+.tui-file[aria-current="page"]:not(.is-sel) { color: var(--th-fg); }
+.tui-doc { max-width: 78ch; }
+.tui-doc:has(.th-treated) { max-width: 1200px; }
+.tui-doc p { color: color-mix(in srgb, var(--th-fg) 82%, transparent); }
+.tui-h1 { font-size: 22px; font-weight: 500; color: var(--th-fg); margin-bottom: 10px !important; }
+.tui-h2 { font-size: 15px; font-weight: 500; color: var(--th-fg); margin-top: 14px !important; }
+.tui-h1 span, .tui-h2 span { color: var(--th-dim); }
+.tui-gap { height: 0.8em; }
+.tui-doc .tui-quote { color: var(--th-dim); }
+.tui-box { color: var(--th-fg); }
+.tui-link { color: var(--th-fg); text-decoration: underline !important; text-underline-offset: 3px; text-decoration-color: var(--th-dim) !important; }
+.tui-link:hover { background: var(--th-fg); color: var(--th-bg); text-decoration: none !important; }
+.tui-code {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--th-line);
+  color: var(--th-fg);
+  font: inherit;
+  white-space: pre-wrap;
+}
+.tui-caret { animation: tui-blink 1s steps(1) infinite; color: var(--th-fg); }
+@keyframes tui-blink { 50% { opacity: 0; } }
+.tui-side { min-height: 0; display: grid; grid-template-rows: auto 1fr; gap: 10px; }
+.tui-cube {
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.05;
+  color: var(--th-fg);
+  text-align: center;
+}
+.tui-log ol { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--th-dim); }
+.tui-log li::before { content: "› "; }
+.tui-log li:last-child { color: var(--th-fg); }
+.tui-log .tui-log-cmd { color: var(--th-fg); }
+.tui-log .tui-log-err { color: #ff8b7a; }
+.tui-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 28px;
+  padding: 0 8px 0 0;
+  background: color-mix(in srgb, var(--th-fg) 8%, transparent);
+  font-size: 12px;
+}
+.tui-mode { background: var(--th-fg); color: var(--th-bg); padding: 4px 10px; font-weight: 500; }
+.tui-hints { flex: 1; }
+.tui-cmd-btn { font: inherit; color: var(--th-dim); background: none; border: 1px solid var(--th-line); padding: 0 8px; cursor: pointer; }
+.tui-cmd { display: flex; align-items: center; gap: 4px; flex: 1; padding-left: 8px; }
+.tui-cmd input {
+  flex: 1;
+  font: inherit;
+  color: var(--th-fg);
+  background: transparent;
+  border: 0;
+  outline: none;
+  caret-color: var(--th-fg);
+}
+
 /* ── Uses ticker ── */
 .th-uses {
   overflow: hidden;
@@ -519,10 +773,17 @@
 .th-switch a { color: #aaa; padding: 6px 10px; }
 .th-switch a:hover { color: #fff; }
 .th-switch a[aria-current="page"] { color: var(--th-accent-ink); background: var(--th-accent); }
+.th-switch a.th-switch-group { margin-left: 4px; border-left: 1px solid rgba(255, 255, 255, 0.14); }
 
 .th .l-footer { position: relative; z-index: 1; padding-bottom: 72px; }
 
 @media (max-width: 900px) {
+  .tui { height: auto; min-height: 100svh; }
+  .tui-body { grid-template-columns: 1fr; }
+  .tui-files ul { flex-direction: row; overflow-x: auto; }
+  .tui-file { width: auto; }
+  .tui-main { min-height: 60svh; }
+  .tui-hints { display: none; }
   .th-show { grid-template-columns: 1fr; gap: 32px; padding-block: 40px; }
   .th-show-flip .th-show-copy { order: 0; }
   .th-extras-grid { grid-template-columns: 1fr 1fr; }
@@ -535,6 +796,11 @@
   .th-smoke-line kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .th-assemble { height: auto; }
+  .th-assemble-sticky { position: relative; }
+  .th-assemble-hint, .th-assemble-kicker-a { display: none; }
+  .th-treated-print .th-treated-fx { clip-path: none; animation: none !important; }
+  .tui-caret,
   .th::after,
   .th-treated-noise,
   .th-uses-track { animation: none; }
