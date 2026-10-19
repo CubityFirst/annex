@@ -6,6 +6,11 @@ main = "src/index.ts"
 compatibility_date = "2026-02-24"
 workers_dev = false
 
+# Hourly: performs account deletions scheduled from the Users page once their
+# grace window has passed (src/lib/userDeletion.ts runDueUserDeletions).
+[triggers]
+crons = ["17 * * * *"]
+
 [assets]
 directory = "./dist"
 binding = "SITE_ASSETS"

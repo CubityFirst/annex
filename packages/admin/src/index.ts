@@ -6,6 +6,7 @@ import { projectsRouter } from "./routes/projects";
 import { auditRouter } from "./routes/audit";
 import { oauthRouter } from "./routes/oauth";
 import { reportsRouter } from "./routes/reports";
+import { runDueUserDeletions } from "./lib/userDeletion";
 
 export interface Env {
   DB: D1Database;
@@ -209,4 +210,19 @@ app.all("*", async (c) => {
   return secured;
 });
 
-export default app;
+export { app };
+
+export default {
+  fetch: app.fetch,
+  // Hourly cron (see wrangler.toml [triggers]): performs account deletions
+  // scheduled from the Users page once their grace window has passed.
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      runDueUserDeletions(env)
+        .then(({ deleted, failed }) => {
+          if (deleted > 0 || failed > 0) console.log(`[user-deletion] deleted ${deleted}, failed ${failed}`);
+        })
+        .catch(err => console.error("[user-deletion] run failed:", err)),
+    );
+  },
+} satisfies ExportedHandler<Env>;

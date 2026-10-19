@@ -5,6 +5,7 @@ import { ALL_BADGE_BITS } from "../../../auth/src/badges";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
+import { USER_DELETION_GRACE_SECONDS, checkOwnership, placeholders } from "../lib/userDeletion";
 import type { AppEnv, Env } from "../index";
 
 const usersRouter = new Hono<AppEnv>();
@@ -27,6 +28,10 @@ interface UserRow {
   moderation: number;
   force_password_change: number;
   email_verified: number;
+  deletion_execute_after?: number | null;
+  deletion_requested_by_email?: string | null;
+  deletion_error?: string | null;
+  deletion_started_at?: number | null;
   badges?: number | null;
   latest_moderation_action: ModerationAction | null;
   latest_moderation_reason: string | null;
@@ -131,7 +136,8 @@ export function getCurrentStatus(moderation: number): CurrentStatus {
 }
 
 // Builds the optional account-status WHERE fragment for the user search.
-// `status` accepts exactly "active" | "disabled" | "suspended"; anything
+// `status` accepts exactly "active" | "disabled" | "suspended" |
+// "pending_deletion" (needs the search's `user_deletions d` join); anything
 // else (absent, empty, unknown) yields an empty clause => no status filter
 // (all accounts). Pure so it can be unit-tested in isolation, mirroring
 // buildAuditListQuery. `binds` are positional, in SQL order, to be spliced
@@ -147,6 +153,8 @@ export function buildUserStatusClause(
       return { sql: "u.moderation = -1", binds: [] };
     case "suspended":
       return { sql: "u.moderation > ?", binds: [nowSeconds] };
+    case "pending_deletion":
+      return { sql: "d.user_id IS NOT NULL", binds: [] };
     default:
       return { sql: "", binds: [] };
   }
@@ -367,8 +375,13 @@ usersRouter.get("/search", async (c) => {
         u.moderation,
         u.force_password_change,
         u.email_verified,
+        d.execute_after AS deletion_execute_after,
+        d.requested_by_email AS deletion_requested_by_email,
+        d.last_error AS deletion_error,
+        d.started_at AS deletion_started_at,
         ${latestModerationFields("u")}
       FROM users u
+      LEFT JOIN user_deletions d ON d.user_id = u.id
       WHERE ${where.join(" AND ")}
       ORDER BY u.created_at DESC, u.id DESC
       LIMIT ?
@@ -409,16 +422,35 @@ usersRouter.patch("/:id", async (c) => {
     return c.json({ ok: false, error: "Moderation reason is required" }, 400);
   }
 
+  // A bulk "Disable" over a selection that includes the operator would
+  // otherwise lock them out of the panel mid-run.
+  if (moderation !== 0 && id === session.userId) {
+    return c.json({ ok: false, error: "You can't disable your own account" }, 400);
+  }
+
   // Verify the user exists before the batch: the user_moderation_events
   // INSERT has a NOT NULL FK to users(id), so a bad id would otherwise
   // reject the whole batch as an opaque 500 instead of a clean 404.
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
-    .bind(id).first<{ "1": number }>();
+  const userRow = await c.env.AUTH_DB.prepare(
+    "SELECT u.id, d.user_id IS NOT NULL AS scheduled FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id WHERE u.id = ?",
+  ).bind(id).first<{ id: string; scheduled: number }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
+  // A scheduled deletion owns the account's moderation state (disabled until
+  // deleted). Any change - a re-enable, or a suspension that would lapse into
+  // "active" - must go through "Cancel deletion" so the two can't disagree.
+  if (userRow.scheduled) {
+    return c.json({ ok: false, error: "This account is scheduled for deletion - cancel the deletion first" }, 409);
+  }
+
+  // The check above gives a clean error; the same NOT EXISTS guard on both
+  // writes closes the race with a schedule committing in between (a batch is
+  // one transaction, so they apply together or not at all).
   const action = getModerationAction(moderation!);
-  await c.env.AUTH_DB.batch([
-    c.env.AUTH_DB.prepare("UPDATE users SET moderation = ? WHERE id = ?").bind(moderation, id),
+  const [updated] = await c.env.AUTH_DB.batch([
+    c.env.AUTH_DB.prepare(
+      "UPDATE users SET moderation = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?)",
+    ).bind(moderation, id, id),
     c.env.AUTH_DB.prepare(
       `
         INSERT INTO user_moderation_events (
@@ -429,10 +461,15 @@ usersRouter.patch("/:id", async (c) => {
           reason,
           actor_user_id,
           actor_email
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?)
       `,
-    ).bind(crypto.randomUUID(), id, action, moderation, reason || null, session.userId, session.email),
+    ).bind(crypto.randomUUID(), id, action, moderation, reason || null, session.userId, session.email, id),
   ]);
+  if ((updated?.meta?.changes ?? 0) === 0) {
+    return c.json({ ok: false, error: "This account is scheduled for deletion - cancel the deletion first" }, 409);
+  }
 
   // Also record in the central admin_audit_log so the unified /api/audit
   // view surfaces moderation alongside every other privileged action. The
@@ -522,6 +559,251 @@ usersRouter.post("/:id/resync-name", async (c) => {
   await writeAdminAudit(c.env, session, "user.name.resync", "user", id, updated);
   return c.json({ ok: true, data: updated });
 });
+
+// ---------------------------------------------------------------------------
+// Account deletion (bulk "Delete" on the Users page) - DELAYED, see
+// lib/userDeletion.ts. The panel never deletes an account outright:
+//   1. POST /delete-preview { ids } - read-only. Per account: owned sites
+//      (with doc + other-member counts), owned orgs, Stripe state, and
+//      whether it can't be scheduled (self / admin / already scheduled).
+//   2. POST /:id/deletion { confirm_site_ids, confirm_org_ids } - schedules
+//      one account: disables it now, deletes it after the grace window. Owned
+//      sites/orgs go with it ONLY when the caller lists exactly the set the
+//      account owns; the cron re-checks the same sets before deleting.
+//   3. DELETE /:id/deletion - cancels, restoring the previous moderation.
+// ---------------------------------------------------------------------------
+
+// The Users page selects at most a few loaded pages; this bounds the IN (...)
+// lists below well under D1's bound-parameter limit.
+const DELETE_PREVIEW_MAX_IDS = 50;
+
+export interface DeletePreviewSite {
+  id: string;
+  name: string;
+  docs: number;
+  // Members other than the owner (accepted + pending) - people who lose
+  // access if the site is deleted.
+  other_members: number;
+  published: boolean;
+}
+
+export interface DeletePreviewOrg {
+  id: string;
+  name: string;
+  // Sites attached to the org. Deleting an org DETACHES them (they survive);
+  // members lose the org's trickle-down access.
+  sites: number;
+  other_members: number;
+}
+
+export interface DeletePreviewEntry {
+  id: string;
+  email: string;
+  name: string;
+  // Non-null => the account can't be scheduled for deletion.
+  blocked: "self" | "admin" | "scheduled" | null;
+  owned_sites: DeletePreviewSite[];
+  owned_orgs: DeletePreviewOrg[];
+  has_stripe_customer: boolean;
+  has_subscription: boolean;
+}
+
+// POST /api/users/delete-preview - { ids: string[] }. Read-only; not audited.
+// Unknown ids are simply absent from the result.
+usersRouter.post("/delete-preview", async (c) => {
+  const session = c.get("session");
+  const body = await c.req.json<{ ids?: unknown }>().catch(() => ({} as { ids?: unknown }));
+  const ids = Array.isArray(body.ids)
+    ? [...new Set(body.ids.filter((v): v is string => typeof v === "string" && v.length > 0))]
+    : [];
+  if (ids.length === 0) return c.json({ ok: false, error: "No users selected" }, 400);
+  if (ids.length > DELETE_PREVIEW_MAX_IDS) {
+    return c.json({ ok: false, error: `Select at most ${DELETE_PREVIEW_MAX_IDS} users at a time` }, 400);
+  }
+  const ph = placeholders(ids.length);
+
+  const [users, sites, orgs] = await Promise.all([
+    c.env.AUTH_DB.prepare(
+      `SELECT u.id, u.email, u.name, u.is_admin, b.stripe_customer_id, b.stripe_subscription_id,
+              d.user_id IS NOT NULL AS scheduled
+       FROM users u
+       LEFT JOIN user_billing b ON b.user_id = u.id
+       LEFT JOIN user_deletions d ON d.user_id = u.id
+       WHERE u.id IN (${ph})`,
+    ).bind(...ids).all<{
+      id: string; email: string; name: string; is_admin: number;
+      stripe_customer_id: string | null; stripe_subscription_id: string | null; scheduled: number;
+    }>(),
+    c.env.DB.prepare(
+      `SELECT p.id, p.name, p.owner_id, p.published_at,
+              (SELECT COUNT(*) FROM docs d WHERE d.project_id = p.id) AS docs,
+              (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id <> p.owner_id) AS other_members
+       FROM projects p WHERE p.owner_id IN (${ph})
+       ORDER BY p.created_at DESC`,
+    ).bind(...ids).all<{
+      id: string; name: string; owner_id: string; published_at: string | null; docs: number; other_members: number;
+    }>(),
+    c.env.DB.prepare(
+      `SELECT o.id, o.name, o.owner_id,
+              (SELECT COUNT(*) FROM projects p WHERE p.organization_id = o.id) AS sites,
+              (SELECT COUNT(*) FROM organization_members om WHERE om.organization_id = o.id AND om.user_id <> o.owner_id) AS other_members
+       FROM organizations o WHERE o.owner_id IN (${ph})`,
+    ).bind(...ids).all<{ id: string; name: string; owner_id: string; sites: number; other_members: number }>(),
+  ]);
+
+  const byId = new Map(users.results.map(u => [u.id, u]));
+  // Preserve the caller's selection order.
+  const preview: DeletePreviewEntry[] = ids.flatMap(id => {
+    const u = byId.get(id);
+    if (!u) return [];
+    return [{
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      blocked: u.id === session.userId ? "self" : u.is_admin ? "admin" : u.scheduled ? "scheduled" : null,
+      owned_sites: sites.results
+        .filter(s => s.owner_id === id)
+        .map(s => ({ id: s.id, name: s.name, docs: s.docs, other_members: s.other_members, published: s.published_at !== null })),
+      owned_orgs: orgs.results
+        .filter(o => o.owner_id === id)
+        .map(o => ({ id: o.id, name: o.name, sites: o.sites, other_members: o.other_members })),
+      has_stripe_customer: Boolean(u.stripe_customer_id),
+      has_subscription: Boolean(u.stripe_subscription_id),
+    }];
+  });
+
+  return c.json({ ok: true, data: { users: preview } });
+});
+
+// POST /api/users/:id/deletion - { confirm_site_ids?: string[], confirm_org_ids?: string[] }
+//
+// Schedules the account for permanent deletion after the grace window and
+// disables it now (recorded as a normal moderation event so the history and
+// the Users-page status show why). Nothing irreversible happens here.
+usersRouter.post("/:id/deletion", async (c) => {
+  const session = c.get("session");
+  const id = c.req.param("id");
+  const body = await c.req.json<{ confirm_site_ids?: unknown; confirm_org_ids?: unknown }>()
+    .catch(() => ({} as { confirm_site_ids?: unknown; confirm_org_ids?: unknown }));
+  const toIds = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string"))] : []);
+  const confirm = { siteIds: toIds(body.confirm_site_ids), orgIds: toIds(body.confirm_org_ids) };
+
+  if (id === session.userId) {
+    return c.json({ ok: false, error: "You can't delete your own account from the admin panel" }, 400);
+  }
+
+  const user = await c.env.AUTH_DB.prepare(
+    `SELECT u.id, u.email, u.is_admin, u.moderation, d.user_id IS NOT NULL AS scheduled
+     FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id
+     WHERE u.id = ?`,
+  ).bind(id).first<{ id: string; email: string; is_admin: number; moderation: number; scheduled: number }>();
+  if (!user) return c.json({ ok: false, error: "User not found" }, 404);
+  if (user.is_admin) {
+    return c.json({ ok: false, error: "Admin accounts can't be deleted from the admin panel" }, 409);
+  }
+  if (user.scheduled) {
+    return c.json({ ok: false, error: `${user.email} is already scheduled for deletion` }, 409);
+  }
+
+  const ownership = await checkOwnership(c.env, id, user.email, confirm);
+  if (ownership.error) return c.json({ ok: false, error: ownership.error }, 409);
+
+  const executeAfter = Math.floor(Date.now() / 1000) + USER_DELETION_GRACE_SECONDS;
+  const reason = `Scheduled for permanent deletion on ${new Date(executeAfter * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  const inserted = await c.env.AUTH_DB.batch([
+    // previous_moderation is read from users INSIDE this transaction (before
+    // the disable below), not from the earlier SELECT - a moderation change
+    // committed in between must be what a later cancel restores.
+    c.env.AUTH_DB.prepare(
+      `INSERT INTO user_deletions
+         (user_id, id, requested_by, requested_by_email, execute_after, confirm_site_ids, confirm_org_ids, previous_moderation)
+       SELECT u.id, ?, ?, ?, ?, ?, ?, u.moderation FROM users u WHERE u.id = ?`,
+    ).bind(
+      crypto.randomUUID(), session.userId, session.email, executeAfter,
+      JSON.stringify(ownership.sites.map(s => s.id)), JSON.stringify(ownership.orgs.map(o => o.id)),
+      id,
+    ),
+    c.env.AUTH_DB.prepare("UPDATE users SET moderation = -1 WHERE id = ?").bind(id),
+    c.env.AUTH_DB.prepare(
+      `INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, actor_user_id, actor_email)
+       VALUES (?, ?, 'disabled', -1, ?, ?, ?)`,
+    ).bind(crypto.randomUUID(), id, reason, session.userId, session.email),
+  ]).then(
+    () => true,
+    // Another admin scheduling the same account at the same moment loses on
+    // the user_deletions primary key (the whole batch rolls back) - report
+    // that as the clean 409 the pre-check would have given.
+    async (err: unknown) => {
+      const raced = await c.env.AUTH_DB.prepare("SELECT 1 AS x FROM user_deletions WHERE user_id = ?").bind(id).first();
+      if (raced) return false;
+      throw err;
+    },
+  );
+  if (!inserted) return c.json({ ok: false, error: `${user.email} is already scheduled for deletion` }, 409);
+
+  await writeAdminAudit(c.env, session, "user.delete.schedule", "user", id, {
+    email: user.email,
+    execute_after: executeAfter,
+    sites: ownership.sites,
+    orgs: ownership.orgs,
+  });
+
+  return c.json({ ok: true, data: { execute_after: executeAfter } });
+});
+
+// DELETE /api/users/:id/deletion - cancel a scheduled deletion and restore the
+// account's moderation state from before it was scheduled. Refused once the
+// cron has started executing it (started_at) or while a cron run holds its
+// lease - a half-run deletion can only be finished, never rolled back.
+usersRouter.delete("/:id/deletion", async (c) => {
+  const session = c.get("session");
+  const id = c.req.param("id");
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  const row = await c.env.AUTH_DB.prepare(
+    "SELECT id, previous_moderation, started_at, lease_until FROM user_deletions WHERE user_id = ?",
+  ).bind(id).first<{ id: string; previous_moderation: number; started_at: number | null; lease_until: number | null }>();
+  if (!row) return c.json({ ok: false, error: "No deletion is scheduled for this account" }, 404);
+  const inProgress = "This deletion has already started and can't be cancelled";
+  if (row.started_at !== null) return c.json({ ok: false, error: inProgress }, 409);
+  if (row.lease_until !== null && row.lease_until >= nowSeconds) {
+    return c.json({ ok: false, error: "This deletion is being processed right now - try again in a few minutes" }, 409);
+  }
+
+  // One transaction. Every write is conditioned on THIS schedule (by id) still
+  // existing and being cancellable, checked before it's deleted - so a cron
+  // claim, or another admin's cancel, landing in between turns the whole
+  // cancel into a no-op instead of restoring (or un-banning) the account.
+  // previous_moderation is fixed per schedule id, so the value read above is
+  // the one this schedule recorded.
+  const restored = row.previous_moderation;
+  const cancellable =
+    "EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ? AND id = ? AND started_at IS NULL AND (lease_until IS NULL OR lease_until < ?))";
+  const guard = [id, row.id, nowSeconds];
+  const [, , removed] = await c.env.AUTH_DB.batch([
+    c.env.AUTH_DB.prepare(`UPDATE users SET moderation = ? WHERE id = ? AND ${cancellable}`)
+      .bind(restored, id, ...guard),
+    c.env.AUTH_DB.prepare(
+      `INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, actor_user_id, actor_email)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+       WHERE ${cancellable}`,
+    ).bind(
+      crypto.randomUUID(), id, getModerationAction(restored), restored,
+      "Scheduled deletion cancelled", session.userId, session.email, ...guard,
+    ),
+    c.env.AUTH_DB.prepare(
+      `DELETE FROM user_deletions
+       WHERE user_id = ? AND id = ? AND started_at IS NULL AND (lease_until IS NULL OR lease_until < ?)`,
+    ).bind(...guard),
+  ]);
+  if ((removed?.meta?.changes ?? 0) === 0) {
+    return c.json({ ok: false, error: "This deletion is being processed right now - try again in a few minutes" }, 409);
+  }
+
+  await writeAdminAudit(c.env, session, "user.delete.cancel", "user", id, { restored_moderation: restored });
+  return c.json({ ok: true, data: { moderation: restored } });
+});
+
 
 // GET /api/users/:id
 usersRouter.get("/:id", async (c) => {

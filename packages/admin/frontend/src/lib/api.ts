@@ -8,6 +8,14 @@ export interface AdminUser {
   moderation: number;
   force_password_change: number;
   email_verified: number;
+  // Set while a deletion is scheduled (unix seconds it runs after); the
+  // account is disabled until then. deletion_error = the last failed attempt.
+  deletion_execute_after?: number | null;
+  deletion_requested_by_email?: string | null;
+  deletion_error?: string | null;
+  // Set once the cron has begun executing it; from then on it can only be
+  // finished (retried), not cancelled.
+  deletion_started_at?: number | null;
   latest_moderation_action: "disabled" | "suspended" | "re_enabled" | null;
   latest_moderation_reason: string | null;
   latest_moderation_created_at: string | null;
@@ -208,12 +216,19 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
   // through every caller's existing error path (a sonner toast.error), so no
   // per-endpoint handling is needed.
   if (response.status === 429) {
-    throw new Error(
-      "Too many requests — you've hit the admin rate limit. Wait a few seconds, then try again.",
-    );
+    throw new RateLimitedError();
   }
 
   return response;
+}
+
+// Typed so bulk actions (which fire one request per selected row) can back
+// off and retry instead of failing the rest of the run.
+export class RateLimitedError extends Error {
+  constructor() {
+    super("Too many requests — you've hit the admin rate limit. Wait a few seconds, then try again.");
+    this.name = "RateLimitedError";
+  }
 }
 
 // Parses the `{ ok, data, error }` envelope every admin endpoint speaks,
@@ -292,6 +307,68 @@ export async function updateUserModeration(id: string, moderation: number, reaso
     body: JSON.stringify({ moderation, reason }),
   });
   await readOk(res, "Failed to update user");
+}
+
+export interface DeletePreviewSite {
+  id: string;
+  name: string;
+  docs: number;
+  // Members other than the owner (accepted + pending invites).
+  other_members: number;
+  published: boolean;
+}
+
+export interface DeletePreviewOrg {
+  id: string;
+  name: string;
+  // Attached sites - they're detached (not deleted) when the org goes.
+  sites: number;
+  other_members: number;
+}
+
+export interface DeletePreviewUser {
+  id: string;
+  email: string;
+  name: string;
+  // Non-null => can't be scheduled for deletion.
+  blocked: "self" | "admin" | "scheduled" | null;
+  owned_sites: DeletePreviewSite[];
+  owned_orgs: DeletePreviewOrg[];
+  has_stripe_customer: boolean;
+  has_subscription: boolean;
+}
+
+// Read-only: what deleting each of these accounts would take with it.
+export async function previewUserDeletion(ids: string[]): Promise<DeletePreviewUser[]> {
+  const res = await authFetch("/api/users/delete-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  return (await readData<{ users: DeletePreviewUser[] }>(res, "Failed to load deletion preview")).users;
+}
+
+// Schedules one account for permanent deletion after the grace window (it is
+// disabled immediately; any admin can cancel until then). The worker refuses
+// unless confirmSiteIds / confirmOrgIds name exactly the sites/orgs the account
+// owns right now - pass them only after the operator explicitly agreed to
+// delete them. Returns when the deletion will run (unix seconds).
+export async function scheduleUserDeletion(
+  id: string,
+  confirm: { siteIds: string[]; orgIds: string[] },
+): Promise<{ execute_after: number }> {
+  const res = await authFetch(`/api/users/${id}/deletion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm_site_ids: confirm.siteIds, confirm_org_ids: confirm.orgIds }),
+  });
+  return readData<{ execute_after: number }>(res, "Failed to schedule deletion");
+}
+
+// Cancels a scheduled deletion; the account's previous moderation state is restored.
+export async function cancelUserDeletion(id: string): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/deletion`, { method: "DELETE" });
+  await readOk(res, "Failed to cancel deletion");
 }
 
 export interface ProjectListResult {

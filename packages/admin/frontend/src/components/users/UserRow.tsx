@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,6 +49,7 @@ import { DetailsLoadingState } from "@/components/users/DetailsLoadingState";
 import {
   type AdminUser,
   type AdminUserDetails,
+  cancelUserDeletion,
   deleteUserAvatar,
   exportUserData,
   forceUserPasswordChange,
@@ -56,7 +58,7 @@ import {
   updateUserModeration,
 } from "@/lib/api";
 import { downloadBlob } from "@/lib/download";
-import { formatDate, initials } from "@/lib/format";
+import { formatDate, formatTimestampSeconds, initials } from "@/lib/format";
 import {
   type DisableMode,
   createDefaultDisableDate,
@@ -70,13 +72,15 @@ import { cn } from "@/lib/utils";
 
 export interface UserRowProps {
   user: AdminUser;
+  selected: boolean;
+  onSelectedChange: (selected: boolean) => void;
   onUpdated: (id: string, updates: Partial<AdminUser>) => void;
   // Fired after a moderation change lands, so the page can re-pull the list
   // (a freshly disabled user must drop out of an "Active"-filtered list).
   onModerated: () => void;
 }
 
-export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
+export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerated }: UserRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
   const [forcingPasswordChange, setForcingPasswordChange] = useState(false);
@@ -94,6 +98,9 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
   const [disableTime, setDisableTime] = useState(() => formatTimeInput(createDefaultDisableDate()));
   const [disableReason, setDisableReason] = useState("");
   const moderationState = getModerationState(user.moderation);
+  const deletionScheduled = user.deletion_execute_after != null;
+  const deletionStarted = user.deletion_started_at != null;
+  const [cancellingDeletion, setCancellingDeletion] = useState(false);
   const isReasonRequired = disableMode === "indefinitely" || disableMode === "until";
   const canSubmitDisable = !pending && disableReason.trim().length > 0;
 
@@ -210,6 +217,22 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
     }
   }
 
+  async function handleCancelDeletion() {
+    setCancellingDeletion(true);
+    try {
+      await cancelUserDeletion(user.id);
+      if (detailsOpen || details) void loadDetails(true, false);
+      // Moderation is restored server-side to whatever it was before; refetch
+      // rather than guess it here.
+      onModerated();
+      toast.success("Scheduled deletion cancelled");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to cancel deletion");
+    } finally {
+      setCancellingDeletion(false);
+    }
+  }
+
   async function handleEnableAccount() {
     setPending(true);
     try {
@@ -283,7 +306,23 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
 
   return (
     <>
-      <TableRow {...expandableRowProps(expanded, setExpanded)}>
+      <TableRow
+        {...expandableRowProps(expanded, setExpanded)}
+        className={cn("cursor-pointer", selected && "bg-muted/50")}
+      >
+        {/* The row itself toggles expansion on click/Enter/Space - keep the
+            checkbox's own clicks and key presses from reaching it. */}
+        <TableCell
+          className="w-8 pr-0"
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <Checkbox
+            checked={selected}
+            onCheckedChange={v => onSelectedChange(v === true)}
+            aria-label={`Select ${user.email}`}
+          />
+        </TableCell>
         <TableCell className="w-8 pr-0">
           {expanded
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -306,11 +345,16 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
         </TableCell>
         <TableCell>
           <div className="flex flex-wrap items-center gap-1">
-            {moderationState.kind === "disabled"
+            {deletionScheduled
+              ? <Badge variant="destructive">Deleting {formatTimestampSeconds(user.deletion_execute_after!)}</Badge>
+              : moderationState.kind === "disabled"
               ? <Badge variant="destructive">Disabled</Badge>
               : moderationState.kind === "suspended"
                 ? <Badge variant="secondary">Suspended</Badge>
                 : <Badge variant="default">Active</Badge>}
+            {user.deletion_error && (
+              <Badge variant="outline" className="text-destructive" title={user.deletion_error}>Deletion failed</Badge>
+            )}
             {!user.email_verified && (
               <Badge variant="outline" className="text-amber-600">Email unverified</Badge>
             )}
@@ -319,9 +363,28 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
       </TableRow>
       {expanded && (
         <TableRow className="bg-muted/20 hover:bg-transparent">
-          <TableCell colSpan={5} className="py-3 pl-10 pr-6">
+          <TableCell colSpan={6} className="py-3 pl-10 pr-6">
             <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
-              {moderationState.kind === "suspended" && (
+              {deletionScheduled && (
+                <div className="text-sm">
+                  <p>
+                    <span className="font-medium text-destructive">Scheduled for permanent deletion</span> on{" "}
+                    {formatTimestampSeconds(user.deletion_execute_after!)}
+                    {user.deletion_requested_by_email ? ` (requested by ${user.deletion_requested_by_email})` : ""}.
+                    The account is disabled until then.
+                  </p>
+                  {user.deletion_error && (
+                    <p className="mt-1 text-xs text-destructive">
+                      Last attempt failed: {user.deletion_error}. It retries hourly
+                      {deletionStarted
+                        ? " - the deletion is already under way, so it can only be finished, not cancelled."
+                        : "; cancel and reschedule to review again."}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!deletionScheduled && moderationState.kind === "suspended" && (
                 <p className="text-xs text-muted-foreground">
                   This account will be re-enabled automatically on {formatModerationUntil(moderationState.until)}.
                 </p>
@@ -440,7 +503,30 @@ export function UserRow({ user, onUpdated, onModerated }: UserRowProps) {
                   </AlertDialog>
                 )}
 
-                {moderationState.kind === "active" ? (
+                {deletionScheduled && deletionStarted ? (
+                  <Badge variant="outline" className="text-xs">Deletion in progress - can't be cancelled</Badge>
+                ) : deletionScheduled ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="outline" disabled={cancellingDeletion}>
+                        Cancel deletion
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel scheduled deletion?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          <strong>{user.email}</strong> will not be deleted, and the account returns to the state it
+                          was in before the deletion was scheduled.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep scheduled</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleCancelDeletion}>Cancel deletion</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : moderationState.kind === "active" ? (
                   <Dialog open={disableDialogOpen} onOpenChange={handleDisableDialogChange}>
                     <DialogTrigger asChild>
                       <Button size="sm" variant="destructive" disabled={pending}>

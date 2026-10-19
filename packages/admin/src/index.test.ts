@@ -9,7 +9,7 @@ vi.mock("./auth", () => ({
 }));
 vi.mock("./audit", () => ({ writeAdminAudit: vi.fn() }));
 
-import app from "./index";
+import { app } from "./index";
 import { requireAdminSession, verifySession } from "./auth";
 
 const session = { userId: "admin-1", email: "admin@example.com", expiresAt: Date.now() + 3600_000, isAdmin: true };

@@ -68,13 +68,15 @@ export interface SqliteD1 {
   sqlite: DatabaseSync;
 }
 
-export function createSqliteD1(): SqliteD1 {
+// `migrationsDir` defaults to the API DB; other packages pass e.g. the auth
+// migrations to get a real auth DB (the admin worker tests use both).
+export function createSqliteD1(migrationsDir: string = MIGRATIONS_DIR): SqliteD1 {
   const sqlite = new DatabaseSync(":memory:");
   // Several migrations rebuild tables (CREATE new / INSERT SELECT / DROP /
   // RENAME); apply them with FK enforcement off, then turn it on as D1 has it.
   sqlite.exec("PRAGMA foreign_keys = OFF");
-  for (const file of readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith(".sql")).sort()) {
-    sqlite.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+  for (const file of readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort()) {
+    sqlite.exec(readFileSync(join(migrationsDir, file), "utf8"));
   }
   sqlite.exec("PRAGMA foreign_keys = ON");
 

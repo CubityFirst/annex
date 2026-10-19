@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { upsertFtsRow } from "../../../api/src/lib/fts";
-import { releaseCustomDomain, removeCustomDomain } from "../../../api/src/lib/customDomains";
+import { removeCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
-import { deleteR2Prefix } from "../lib/r2";
+import { deleteProjectCascade } from "../lib/projectDelete";
 import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
 import type { AppEnv, Env } from "../index";
 
@@ -188,18 +188,8 @@ projectsRouter.delete("/:id/domain", async (c) => {
   return c.json({ ok: true, data: { hostname } });
 });
 
-// DELETE /api/projects/:id
-//
-// Mirrors the API worker's project-delete cleanup (packages/api/src/
-// routes/projects.ts) so an admin-driven delete doesn't leave orphans
-// the owner-driven path would have removed. Scale-safety mirrors it too:
-// every doc body and revision snapshot lives under the `{projectId}/`
-// prefix, so one batched prefix sweep removes them all (including objects
-// orphaned by failed inserts) in ~1 subrequest per 1000 keys, and the
-// per-doc-id SQL deletes are chunked to stay under D1's ~100 bound-
-// parameter limit. The final batch (satellite rows + FTS + the project
-// row, which cascades docs/files/members/domains) is a single D1 batch
-// so the row deletes can't half-apply.
+// DELETE /api/projects/:id - the cleanup itself lives in
+// lib/projectDelete.ts (shared with the admin account delete).
 projectsRouter.delete("/:id", async (c) => {
   const session = c.get("session");
   const projectId = c.req.param("id");
@@ -210,56 +200,9 @@ projectsRouter.delete("/:id", async (c) => {
     .bind(projectId).first<{ id: string }>();
   if (!exists) return c.json({ ok: false, error: "Not found" }, 404);
 
-  // Includes recycle-bin items (api lib/trash.ts): their rows cascade away
-  // with the project, but their R2 objects and revisions don't.
-  const docs = await c.env.DB.prepare(
-    "SELECT id FROM docs WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'doc'",
-  ).bind(projectId, projectId).all<{ id: string }>();
-  const docIds = docs.results.map(d => d.id);
-  const files = await c.env.DB.prepare(
-    "SELECT id FROM files WHERE project_id = ? UNION SELECT item_id FROM trash_items WHERE project_id = ? AND item_type = 'file'",
-  ).bind(projectId, projectId).all<{ id: string }>();
+  const counts = await deleteProjectCascade(c.env, projectId);
 
-  // R2 is not transactional; do the object deletes first, then the SQL.
-  // Docs + revisions via prefix sweep; files and logos live under other
-  // prefixes and are deleted by key, batched (R2 array delete takes up
-  // to 1000 keys per call).
-  await deleteR2Prefix(c.env.ASSETS, `${projectId}/`);
-  const otherKeys = [
-    ...files.results.map(f => `files/${f.id}`),
-    `site-logos/${projectId}-square`,
-    `site-logos/${projectId}-wide`,
-  ];
-  for (let i = 0; i < otherKeys.length; i += 1000) {
-    await c.env.ASSETS.delete(otherKeys.slice(i, i + 1000));
-  }
-
-  // asset_revisions and doc_shares have no ON DELETE CASCADE from docs;
-  // delete them in 50-id chunks so a large project never exceeds D1's
-  // bound-parameter limit (an unchunked IN(...) 500s past ~100 docs).
-  for (let i = 0; i < docIds.length; i += 50) {
-    const chunk = docIds.slice(i, i + 50);
-    const ph = chunk.map(() => "?").join(",");
-    await c.env.DB.batch([
-      c.env.DB.prepare(`DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${ph})`).bind(...chunk),
-      c.env.DB.prepare(`DELETE FROM doc_shares WHERE doc_id IN (${ph})`).bind(...chunk),
-    ]);
-  }
-
-  // Release the Cloudflare custom hostname (if any) before the batch deletes
-  // the project + its cascading project_custom_domains row. Best-effort no-op
-  // when CF isn't configured on the admin worker.
-  await releaseCustomDomain(c.env, projectId);
-
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId),
-    c.env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
-  ]);
-
-  await writeAdminAudit(c.env, session, "project.delete", "project", projectId, {
-    docs: docIds.length,
-    files: files.results.length,
-  });
+  await writeAdminAudit(c.env, session, "project.delete", "project", projectId, counts);
   return c.json({ ok: true });
 });
 
