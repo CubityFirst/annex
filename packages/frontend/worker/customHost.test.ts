@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAppHost, buildSitemapXml } from "./index";
+import worker, { isAppHost, buildSitemapXml, APP_ROBOTS_TXT, type Env } from "./index";
 
 describe("isAppHost", () => {
   it("treats our app, preview, and local-dev hosts as app hosts", () => {
@@ -47,5 +47,25 @@ describe("buildSitemapXml", () => {
     expect(xml).toContain("<loc>https://docs.acme.com/getting-started</loc>");
     expect(xml).not.toContain("<loc>https://docs.acme.com/d1</loc>");
     expect(xml).toContain("<loc>https://docs.acme.com/d2</loc>");
+  });
+});
+
+describe("app-host robots.txt", () => {
+  const env = {} as Env; // the robots path never touches a binding
+
+  it("is served on our own hosts", async () => {
+    const res = await worker.fetch(new Request("https://docs.cubityfir.st/robots.txt"), env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/plain");
+    expect(await res.text()).toBe(APP_ROBOTS_TXT);
+  });
+
+  it("blocks the app, auth flows and private API but keeps published sites crawlable", () => {
+    for (const path of ["/api/", "/oauth/", "/login", "/register", "/settings", "/projects/", "/dashboard", "/invite/"]) {
+      expect(APP_ROBOTS_TXT).toContain(`Disallow: ${path}\n`);
+    }
+    expect(APP_ROBOTS_TXT).toContain("Allow: /api/public/\n");
+    expect(APP_ROBOTS_TXT).not.toMatch(/Disallow: \/s\//);
+    expect(APP_ROBOTS_TXT).not.toMatch(/Disallow: \/\n/);
   });
 });

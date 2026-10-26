@@ -205,6 +205,34 @@ async function resolveCustomHost(env: Env, host: string): Promise<ResolvedSite |
   return json.data;
 }
 
+// robots.txt for our own hosts (docs.cubityfir.st etc.). Only the marketing/
+// legal pages and published `/s/` sites are meant to be indexed; everything
+// else is the signed-in app, auth flows (OIDC authorize URLs carry one-time
+// state/nonce/PKCE params), or token links. `/api/public/` stays crawlable
+// because published pages render from it - blocking it would leave Googlebot
+// with empty `/s/` pages. Keep in sync with the routes in src/App.tsx.
+export const APP_ROBOTS_TXT = [
+  "User-agent: *",
+  "Allow: /api/public/",
+  "Disallow: /api/",
+  "Disallow: /oauth/",
+  "Disallow: /stripe/",
+  "Disallow: /login",
+  "Disallow: /register",
+  "Disallow: /check-email",
+  "Disallow: /verify-email",
+  "Disallow: /demo",
+  "Disallow: /dashboard",
+  "Disallow: /projects/",
+  "Disallow: /settings",
+  "Disallow: /u/",
+  "Disallow: /orgs/",
+  "Disallow: /invites/",
+  "Disallow: /invite/",
+  "Disallow: /test/",
+  "",
+].join("\n");
+
 // Minimal sitemap for a custom-domain site: the root (home doc) plus every
 // doc's clean URL (the doc's custom frontmatter slug when it has one, its id
 // otherwise). The home doc is listed only as `/` so the same content doesn't
@@ -366,6 +394,10 @@ export default {
       if (!isAppHost(host)) {
         const customResponse = await handleCustomHost(request, env, url, host);
         if (customResponse) return customResponse;
+      } else if (url.pathname === "/robots.txt") {
+        return new Response(APP_ROBOTS_TXT, {
+          headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "public, max-age=3600" },
+        });
       }
 
       // Inject OG metadata for share links
