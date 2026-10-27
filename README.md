@@ -256,3 +256,7 @@ Requires a Cloudflare account with D1, R2, and Workers enabled, and `wrangler lo
 ## License
 
 Copyright (c) 2026 Michael Burr. Free for non-commercial use; commercial use requires prior written permission. See [LICENSE](LICENSE) for full terms.
+
+## Test
+
+This is a test.
