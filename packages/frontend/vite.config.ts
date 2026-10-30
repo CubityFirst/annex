@@ -58,7 +58,16 @@ export default defineConfig(({ mode }) => {
           // Link-unfurl card for crawlers only - no reason to precache it.
           globIgnores: ["og-image.png"],
           navigateFallback: "/index.html",
-          navigateFallbackDenylist: [/^\/api\//],
+          // The public marketing/legal pages skip the precached shell and load
+          // straight from the network, so a deploy shows up on them at once
+          // instead of waiting for the "new version" prompt. Nobody edits
+          // there, so the stable-shell guarantee isn't worth it - but they
+          // don't work offline. (Matched against pathname + search.)
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/(?:privacy|terms|acknowledgements)?\/?(?:\?.*)?$/,
+            /^\/test\//,
+          ],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           cleanupOutdatedCaches: true,
         },
