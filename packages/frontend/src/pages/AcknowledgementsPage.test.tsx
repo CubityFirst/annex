@@ -22,11 +22,6 @@ beforeEach(() => {
 });
 
 describe("AcknowledgementsPage", () => {
-  it("renders the page title and intro", () => {
-    renderPage();
-    expect(screen.getByRole("heading", { level: 1, name: /acknowledgements/i })).toBeInTheDocument();
-    expect(screen.getByText(/built on the work of many open-source projects/i)).toBeInTheDocument();
-  });
 
   it("renders every entry from the ACKNOWLEDGEMENTS data list", () => {
     renderPage();

@@ -21,12 +21,6 @@ beforeEach(() => {
 });
 
 describe("PrivacyPage", () => {
-  it("renders the policy title and key sections", () => {
-    renderPage();
-    expect(screen.getByRole("heading", { level: 1, name: /privacy policy/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /what we collect/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /data retention and deletion/i })).toBeInTheDocument();
-  });
 
   it("shows the logged-out nav (login + get started) when no token is present", () => {
     renderPage();

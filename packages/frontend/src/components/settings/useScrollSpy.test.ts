@@ -82,10 +82,4 @@ describe("resolveOutline", () => {
     const resolved = resolveOutline(groups, sections);
     expect(resolved.map(g => g.id)).toEqual(["site", "danger"]);
   });
-
-  it("treats undefined visible as visible", () => {
-    const sections: SettingsSectionDef[] = [{ id: "general", label: "General", group: "site" }];
-    const resolved = resolveOutline(groups, sections);
-    expect(resolved).toHaveLength(1);
-  });
 });

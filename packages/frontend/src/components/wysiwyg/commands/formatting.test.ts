@@ -17,8 +17,7 @@ import {
 
 // The formatting commands only touch `view.state` and `view.dispatch`, so a
 // real DOM-backed EditorView isn't needed - a fake that applies dispatched
-// specs to a held state (same trick as calloutEnter.test.ts) reproduces the
-// exact transaction semantics.
+// specs to a held state reproduces the exact transaction semantics.
 
 interface Result {
   doc: string;

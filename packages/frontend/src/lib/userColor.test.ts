@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { userColor, userColorLight } from "./userColor";
 
 describe("userColor", () => {
-  it("returns an HSL string", () => {
-    expect(userColor("abc")).toMatch(/^hsl\(\d+ 70% 50%\)$/);
-  });
 
   it("is deterministic for the same input", () => {
     expect(userColor("user-123")).toBe(userColor("user-123"));

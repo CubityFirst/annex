@@ -66,6 +66,11 @@ describe("muxAnimatedWebP", () => {
     expect(out[42] | (out[43] << 8)).toBe(0);
 
     expect(ascii(out, 44, 4)).toBe("ANMF");
+    // Each ANMF here is 8 (header) + 16 (frame fields) + 12 (VP8 chunk) = 36
+    // bytes, so the second frame follows at 80 and carries its own delay.
+    expect(ascii(out, 80, 4)).toBe("ANMF");
+    expect(u24(out, 80 + 8 + 12)).toBe(200);
+    expect(out.byteLength).toBe(116);
   });
 
   it("preserves per-frame delay in the ANMF duration field", () => {

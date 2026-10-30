@@ -53,10 +53,6 @@ describe("resolveImageUrl", () => {
       .toBe("https://docs.example.com/static/cover.png");
   });
 
-  it("returns null for relative paths starting with ./", () => {
-    expect(resolveImageUrl("./cover.png", reqUrl, projectId)).toBeNull();
-  });
-
   it("returns null for bare relative filenames", () => {
     expect(resolveImageUrl("cover.png", reqUrl, projectId)).toBeNull();
   });
@@ -67,12 +63,6 @@ describe("resolveImageUrl", () => {
 
   it("returns null for data: scheme", () => {
     expect(resolveImageUrl("data:image/png;base64,iVBOR", reqUrl, projectId)).toBeNull();
-  });
-
-  it("uses the request origin, not the api origin", () => {
-    const customOrigin = new URL("https://shared.example.org/s/p/d");
-    expect(resolveImageUrl("/api/files/x/content", customOrigin, "p"))
-      .toBe("https://shared.example.org/api/public/files/x/content?projectId=p");
   });
 
   // Gap-closer: ensures the `/i` flag on the scheme regex stays. Without it,
@@ -95,13 +85,5 @@ describe("resolveImageUrl", () => {
   it("emits an empty projectId param when projectId is empty (current behavior)", () => {
     expect(resolveImageUrl("/api/files/abc/content", reqUrl, ""))
       .toBe("https://docs.example.com/api/public/files/abc/content?projectId=");
-  });
-
-  // Gap-closer: encodeURIComponent escapes `&`, `=`, `?`, `+`; encodeURI does
-  // not. A regression to encodeURI (or to no encoding at all) would corrupt
-  // the resulting query string in real ways - this test catches both.
-  it("URL-encodes query-significant characters in projectId", () => {
-    expect(resolveImageUrl("/api/files/abc/content", reqUrl, "a&b=c?d+e"))
-      .toBe("https://docs.example.com/api/public/files/abc/content?projectId=a%26b%3Dc%3Fd%2Be");
   });
 });

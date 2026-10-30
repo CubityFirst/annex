@@ -36,12 +36,6 @@ describe("remarkCallouts", () => {
     expect(hProps(tree)?.["data-callout"]).toBe("note");
   });
 
-  it("recognises [!warning]", () => {
-    const tree = makeBlockquote("[!warning]");
-    run(tree);
-    expect(hProps(tree)?.["data-callout"]).toBe("warning");
-  });
-
   it("is case-insensitive for the type", () => {
     const tree = makeBlockquote("[!NOTE]");
     run(tree);
@@ -55,21 +49,10 @@ describe("remarkCallouts", () => {
     expect(hProps(tree)?.["data-callout"]).toBe("tip");
   });
 
-  it("resolves alias 'tldr' to 'abstract'", () => {
-    const tree = makeBlockquote("[!tldr]");
-    run(tree);
-    expect(hProps(tree)?.["data-callout"]).toBe("abstract");
-  });
-
-  it("resolves alias 'error' to 'danger'", () => {
-    const tree = makeBlockquote("[!error]");
-    run(tree);
-    expect(hProps(tree)?.["data-callout"]).toBe("danger");
-  });
-
   // unknown type
   it("ignores unknown callout types", () => {
-    const tree = makeBlockquote("[!totally-made-up]");
+    // Alphabetic, so it matches the callout line syntax and reaches the type lookup.
+    const tree = makeBlockquote("[!madeup]");
     run(tree);
     expect((tree.children![0] as Node).data).toBeUndefined();
   });

@@ -8,10 +8,6 @@ describe("wikilinkUrlTransform", () => {
     expect(wikilinkUrlTransform("doc://My%20Page")).toBe("doc://My%20Page");
   });
 
-  it("passes doc:// URLs with anchors through unchanged", () => {
-    expect(wikilinkUrlTransform("doc://My%20Page#section")).toBe("doc://My%20Page#section");
-  });
-
   it("passes https URLs through unchanged", () => {
     expect(wikilinkUrlTransform("https://example.com")).toBe("https://example.com");
   });

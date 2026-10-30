@@ -36,6 +36,7 @@ describe("visitCodeFence - ```excalidraw embed", () => {
     const widgets = widgetsFor("```excalidraw\nfile-abc123\n```");
     expect(widgets.some((w) => w instanceof ExcalidrawEmbedWidget)).toBe(true);
     expect(widgets.some((w) => w instanceof CodeFenceWidget)).toBe(false);
+    expect(widgets.some((w) => w instanceof FileEmbedWidget)).toBe(false);
   });
 
   it("the embedded id round-trips via widget equality", () => {
@@ -78,12 +79,6 @@ describe("visitCodeFence - ```file embed", () => {
     const widgets = widgetsFor("```file\n\n```");
     expect(widgets.some((w) => w instanceof FileEmbedWidget)).toBe(false);
     expect(widgets.some((w) => w instanceof CodeFenceWidget)).toBe(true);
-  });
-
-  it("an excalidraw fence is unaffected", () => {
-    const widgets = widgetsFor("```excalidraw\nfile-abc123\n```");
-    expect(widgets.some((w) => w instanceof ExcalidrawEmbedWidget)).toBe(true);
-    expect(widgets.some((w) => w instanceof FileEmbedWidget)).toBe(false);
   });
 });
 

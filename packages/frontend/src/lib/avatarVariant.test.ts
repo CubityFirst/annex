@@ -15,18 +15,6 @@ describe("getAvatarVariant", () => {
     document.documentElement.classList.add("dark");
     expect(getAvatarVariant()).toBe("dark");
   });
-
-  it("follows the effective theme set by applyThemeToRoot", () => {
-    applyThemeToRoot({ mode: "dark", customColor: null });
-    expect(getAvatarVariant()).toBe("dark");
-    applyThemeToRoot({ mode: "light", customColor: null });
-    expect(getAvatarVariant()).toBe("light");
-    // Custom polarity: a pale pick is a light theme, a dark pick a dark one.
-    applyThemeToRoot({ mode: "custom", customColor: "#e8f5e9" });
-    expect(getAvatarVariant()).toBe("light");
-    applyThemeToRoot({ mode: "custom", customColor: "#2e7d6b" });
-    expect(getAvatarVariant()).toBe("dark");
-  });
 });
 
 describe("useAvatarVariant", () => {

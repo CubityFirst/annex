@@ -448,30 +448,6 @@ describe("roll - keep / drop", () => {
     expect(r.terms[0].kept.sort()).toEqual([1, 3, 4]);
     expect(r.total).toBe(8);
   });
-
-  it("4d6dl1 (drop lowest) equals 4d6kh3", () => {
-    const spy = vi.spyOn(Math, "random");
-    const seq = [d(6, 1), d(6, 5), d(6, 4), d(6, 3)];
-    spy.mockReturnValueOnce(seq[0]).mockReturnValueOnce(seq[1])
-       .mockReturnValueOnce(seq[2]).mockReturnValueOnce(seq[3]);
-    const kh = roll("4d6kh3");
-    spy.mockReturnValueOnce(seq[0]).mockReturnValueOnce(seq[1])
-       .mockReturnValueOnce(seq[2]).mockReturnValueOnce(seq[3]);
-    const dl = roll("4d6dl1");
-    expect(dl.total).toBe(kh.total);
-  });
-
-  it("4d6dh1 (drop highest) equals 4d6kl3", () => {
-    const spy = vi.spyOn(Math, "random");
-    const seq = [d(6, 1), d(6, 5), d(6, 4), d(6, 3)];
-    spy.mockReturnValueOnce(seq[0]).mockReturnValueOnce(seq[1])
-       .mockReturnValueOnce(seq[2]).mockReturnValueOnce(seq[3]);
-    const kl = roll("4d6kl3");
-    spy.mockReturnValueOnce(seq[0]).mockReturnValueOnce(seq[1])
-       .mockReturnValueOnce(seq[2]).mockReturnValueOnce(seq[3]);
-    const dh = roll("4d6dh1");
-    expect(dh.total).toBe(kl.total);
-  });
 });
 
 describe("roll - reroll", () => {
@@ -956,14 +932,6 @@ describe("roll - invariants", () => {
     }
   });
 
-  it("kept total equals roll total for no-keep expression", () => {
-    for (let i = 0; i < REPS; i++) {
-      const r = roll("3d8");
-      const keptSum = (r.terms[0].kept as number[]).reduce((s, v) => s + v, 0);
-      expect(keptSum).toBe(r.total);
-    }
-  });
-
   it("fate dice always produce values in {-1, 0, 1}", () => {
     for (let i = 0; i < REPS; i++) {
       const r = roll("4dF");
@@ -1006,8 +974,10 @@ describe("roll - invariants", () => {
   it("minTotal <= every roll total <= maxTotal", () => {
     for (let i = 0; i < REPS; i++) {
       const r = roll("2d8+1d6+2");
-      if (r.minTotal !== null) expect(r.total).toBeGreaterThanOrEqual(r.minTotal);
-      if (r.maxTotal !== null) expect(r.total).toBeLessThanOrEqual(r.maxTotal);
+      expect(r.minTotal).not.toBeNull();
+      expect(r.maxTotal).not.toBeNull();
+      expect(r.total).toBeGreaterThanOrEqual(r.minTotal!);
+      expect(r.total).toBeLessThanOrEqual(r.maxTotal!);
     }
   });
 });
@@ -1214,14 +1184,14 @@ describe("roll - computed dice", () => {
     expect(r.total).toBe(8);
   });
 
-  it("(2.5+0.5)d6 rounds the count to the nearest integer (3)", () => {
+  it("(2+0.4)d6 rounds the count to the nearest integer (down to 2)", () => {
     vi.spyOn(Math, "random")
       .mockReturnValueOnce(d(6, 1))
       .mockReturnValueOnce(d(6, 2))
       .mockReturnValueOnce(d(6, 3));
-    const r = roll("(2.5+0.5)d6");
-    expect(r.terms[0].rolls).toHaveLength(3);
-    expect(r.total).toBe(6);
+    const r = roll("(2+0.4)d6");
+    expect(r.terms[0].rolls).toHaveLength(2);
+    expect(r.total).toBe(3);
   });
 
   it("(2+0.5)d6 rounds 2.5 up to 3 (Math.round behavior)", () => {

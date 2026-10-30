@@ -64,12 +64,6 @@ describe("remarkImageAttrs", () => {
     expect(imageStyle(tree)).toBeUndefined();
   });
 
-  it("ignores unknown attributes (no width/height)", () => {
-    const tree = makePara("img.png", "{.class #id}");
-    run(tree);
-    expect(imageStyle(tree)).toBeUndefined();
-  });
-
   it("strips the {…} block from the trailing text node", () => {
     const tree = makePara("img.png", "{width=80%}");
     run(tree);
@@ -167,6 +161,7 @@ describe("remarkImageAttrs", () => {
   it("leaves the trailing block in place when no attribute is recognized", () => {
     const tree = makePara("img.png", "{.class #id}");
     run(tree);
+    expect(imageStyle(tree)).toBeUndefined();
     const children = paraChildren(tree);
     expect(children).toHaveLength(2);
     expect(children[1].value).toBe("{.class #id}");
