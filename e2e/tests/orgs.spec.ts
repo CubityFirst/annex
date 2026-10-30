@@ -183,8 +183,10 @@ test("role trickles down: member can see and open the org's site", async () => {
   await memberPage.goto(`/orgs/${orgId}`);
   await expect(memberPage.getByRole("heading", { name: SITE_NAME })).toBeVisible({ timeout: 5000 });
   await memberPage.goto(`/projects/${siteId}`);
-  await expect(memberPage).toHaveURL(new RegExp(`/projects/${siteId}`), { timeout: 8000 });
-  await expect(memberPage).not.toHaveURL(/\/(dashboard|login)/);
+  // A 403/404 only bounces to /dashboard after the fetch, so the URL checks
+  // alone pass instantly; the loaded (empty) listing proves access.
+  await expect(memberPage.getByText("This folder is empty")).toBeVisible({ timeout: 10000 });
+  await expect(memberPage).toHaveURL(new RegExp(`/projects/${siteId}`));
 });
 
 // ── Owner: rename the org ───────────────────────────────────────────────────────

@@ -148,11 +148,6 @@ test("the public reader serves the doc by project id, unauthenticated", async ({
 test("unpublishing the project blocks public access", async () => {
   await page.goto(projectSettingsUrl);
   await page.getByRole("button", { name: "Unpublish" }).click();
-  // Confirmation prompt may appear (alertdialog) or may be inline; handle both.
-  const confirmDialog = page.getByRole("alertdialog");
-  if (await confirmDialog.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await confirmDialog.getByRole("button", { name: /unpublish|yes/i }).click();
-  }
   await expect(page.getByRole("button", { name: "Publish site" })).toBeVisible({ timeout: 10000 });
 
   // Anonymous request to the public URL should now fail. PublicDocPage

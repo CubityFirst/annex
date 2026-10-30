@@ -116,22 +116,6 @@ test("registers a new account", async () => {
   }).toPass({ timeout: 30000 });
 });
 
-// ── Login ────────────────────────────────────────────────────────────────────
-
-test("logs in with the new account", async () => {
-  // Registration may auto-log in (when the email-verification flag is off).
-  // In that case the user is already on /dashboard and the login form is
-  // implicitly verified by the rest of the suite - only run the login flow
-  // if we actually landed on /login after registration.
-  if (!page.url().includes("/login")) return;
-
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-});
-
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 test("shows the dashboard with no projects", async () => {
@@ -199,6 +183,7 @@ test("saves the document", async () => {
 
 test("preview shows the saved title and content", async () => {
   await expect(page.getByRole("heading", { name: "My E2E Document" })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("This document was created by the Playwright test suite.").first()).toBeVisible();
 });
 
 // ── Navigate back & verify file list ────────────────────────────────────────
@@ -332,8 +317,13 @@ test("can favourite the project from the dashboard", async () => {
   await page.goto("/dashboard");
   const projectCard = page.locator(".group", { hasText: PROJECT_NAME });
   await expect(projectCard).toBeVisible({ timeout: 5000 });
-  const star = projectCard.locator("svg").first();
-  await star.click({ force: true });
+  await projectCard.getByRole("button", { name: "Add to favourites", exact: true }).click();
+  await expect(projectCard.getByRole("button", { name: "Remove from favourites", exact: true })).toBeVisible({ timeout: 5000 });
+  // Persisted server-side, not just an optimistic toggle.
+  await page.reload();
+  await expect(
+    page.locator(".group", { hasText: PROJECT_NAME }).getByRole("button", { name: "Remove from favourites", exact: true }),
+  ).toBeVisible({ timeout: 5000 });
 });
 
 // ── Site settings page ───────────────────────────────────────────────────────

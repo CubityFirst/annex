@@ -256,6 +256,9 @@ test("invite link - project appears in link-invitee's dashboard", async () => {
 
 test("invite link - owner revokes the link", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
+  // The link exists, so its Revoke button must load before anything else is
+  // checked (an empty or dropped list fetch also reads "No invite links yet.").
+  await expect(ownerPage.getByRole("button", { name: "Revoke" })).toBeVisible({ timeout: 10000 });
   // Retry on transient drops of the revoke DELETE: the button only disappears
   // once the request lands, so re-clicking while it's still there is safe.
   await expect(async () => {

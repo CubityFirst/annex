@@ -279,10 +279,13 @@ test("clicking outline after manually scrolling to the bottom still scrolls back
 
   // Drive the viewport to the bottom directly - we don't care how it got
   // there, only that scrolling back to a top heading works.
-  await page.evaluate(() => {
-    const vp = document.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+  // Target the doc scroller explicitly: the first Radix viewport in the DOM
+  // is the sidebar nav, which would leave the doc at the top.
+  await page.evaluate((sel) => {
+    const vp = document.querySelector(sel) as HTMLElement | null;
     if (vp) vp.scrollTop = vp.scrollHeight;
-  });
+  }, PUBLIC_SCROLLER);
+  await expect.poll(() => page.evaluate((sel) => document.querySelector(sel)?.scrollTop ?? 0, PUBLIC_SCROLLER)).toBeGreaterThan(0);
 
   const outline = page.locator("aside", { hasText: "Outline" });
   await outline.getByRole("button", { name: "Alpha Section" }).click();
