@@ -161,11 +161,6 @@ describe("resolveDoc", () => {
     expect(resolveDoc("API Reference", ctx)).toBe(docs[1]);
   });
 
-  it("resolves by last segment when partial path matches", () => {
-    // Just the leaf "API Reference" should resolve
-    expect(resolveDoc("API Reference", ctx)).toBe(docs[1]);
-  });
-
   it("does not match when path segments exceed the doc's full path length", () => {
     expect(resolveDoc("Extra/Reference/API Reference", ctx)).toBeUndefined();
   });

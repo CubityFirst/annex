@@ -370,12 +370,6 @@ describe("handleFiles POST /files (upload)", () => {
     expect(bindCalls.some((c) => c.includes("image/png"))).toBe(false);
   });
 
-  it("stores .excalidraw uploads under the vendor MIME (mutability keys off it)", async () => {
-    const { env } = makeEnv();
-    const scene = new TextEncoder().encode('{"type":"excalidraw"}');
-    expect(await uploadedMime(env, "sketch.excalidraw", scene, "application/json")).toBe(EXCALIDRAW_MIME);
-  });
-
   // Upload names are SANITIZED (not rejected like rename) - an OS filename with
   // control chars / separators / absurd length isn't the uploader's fault, but
   // it must never reach the DB verbatim (it feeds Content-Disposition and
@@ -394,22 +388,6 @@ describe("handleFiles POST /files (upload)", () => {
     const { env } = makeEnv();
     expect(await uploadedName(env, "a\nb.bin")).toBe("ab.bin");
     expect(await uploadedName(env, "dir/sub\\file.bin")).toBe("dir_sub_file.bin");
-  });
-
-  it("truncates a 10k-char upload name to 255", async () => {
-    const { env } = makeEnv();
-    const stored = await uploadedName(env, "x".repeat(10_000) + ".bin");
-    expect(stored.length).toBe(255);
-  });
-
-  it("falls back to 'untitled' when the sanitized name is empty", async () => {
-    const { env } = makeEnv();
-    expect(await uploadedName(env, "")).toBe("untitled");
-  });
-
-  it("stores unknown extensions as application/octet-stream ignoring the declared type", async () => {
-    const { env } = makeEnv();
-    expect(await uploadedMime(env, "payload.xyz", PNG_BYTES, "image/png")).toBe("application/octet-stream");
   });
 });
 

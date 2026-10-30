@@ -1,43 +1,61 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileServeHeaders, contentDispositionValue, deriveUploadMime, fileContentEtag, sanitizeUploadFileName, FILE_NAME_INVALID_CHARS, folderInProject, wouldCreateFolderCycle, parseByteRange, serveR2Object, isInlineSafeMime, isMutableFile, EXCALIDRAW_MIME } from "./lib";
+import { createSqliteD1 } from "./test/sqliteD1";
 
-// Minimal D1-ish stub: prepare().bind().first() resolves to the queued result.
-function dbReturning(result: unknown) {
-  const first = vi.fn().mockResolvedValue(result);
-  const bind = vi.fn().mockReturnValue({ first });
-  const prepare = vi.fn().mockReturnValue({ bind });
-  return { db: { prepare } as unknown as D1Database, prepare, bind, first };
+// Real SQLite with every migration applied: these guards are pure SQL (the
+// cycle check is a recursive CTE), so a stub would only echo its own answer.
+// Tree in proj-1: F -> F1 -> F2 (docs folders), FF (a files folder), U (sibling).
+function folderDb() {
+  const { db, sqlite } = createSqliteD1();
+  const T0 = "2026-01-01T00:00:00.000Z";
+  sqlite.prepare("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('proj-1', 'A', 'u1', ?), ('proj-2', 'B', 'u1', ?)").run(T0, T0);
+  const folder = (id: string, project: string, parent: string | null, type = "docs") =>
+    sqlite.prepare("INSERT INTO folders (id, name, project_id, parent_id, type, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, id, project, parent, type, T0);
+  folder("F", "proj-1", null);
+  folder("F1", "proj-1", "F");
+  folder("F2", "proj-1", "F1");
+  folder("U", "proj-1", null);
+  folder("FF", "proj-1", null, "files");
+  folder("P2", "proj-2", null);
+  return db;
 }
 
 describe("folderInProject (cross-project relocation guard)", () => {
   it("treats null/empty target as the project root (always valid, no query)", async () => {
-    const { db, prepare } = dbReturning(null);
+    const db = folderDb();
+    const prepare = vi.spyOn(db, "prepare");
     expect(await folderInProject(db, null, "proj-1")).toBe(true);
     expect(await folderInProject(db, undefined, "proj-1")).toBe(true);
     expect(await folderInProject(db, "", "proj-1")).toBe(true);
     expect(prepare).not.toHaveBeenCalled();
   });
 
-  it("returns true only when a row matches the folder+project", async () => {
-    const { db, bind } = dbReturning({ ok: 1 });
-    expect(await folderInProject(db, "folder-A", "proj-1", "docs")).toBe(true);
-    expect(bind).toHaveBeenCalledWith("folder-A", "proj-1", "docs");
+  it("returns true only when the folder is in the project (and of the requested type)", async () => {
+    const db = folderDb();
+    expect(await folderInProject(db, "F1", "proj-1", "docs")).toBe(true);
+    expect(await folderInProject(db, "FF", "proj-1")).toBe(true);
+    expect(await folderInProject(db, "FF", "proj-1", "docs")).toBe(false);
   });
 
-  it("returns false when the folder belongs to another project (no row)", async () => {
-    const { db } = dbReturning(null);
-    expect(await folderInProject(db, "folder-in-proj-2", "proj-1")).toBe(false);
+  it("returns false when the folder belongs to another project", async () => {
+    const db = folderDb();
+    expect(await folderInProject(db, "P2", "proj-1")).toBe(false);
+    expect(await folderInProject(db, "missing", "proj-1")).toBe(false);
   });
 });
 
 describe("wouldCreateFolderCycle", () => {
-  it("true when the folder appears in the new parent's ancestor chain", async () => {
-    const { db } = dbReturning({ ok: 1 });
-    expect(await wouldCreateFolderCycle(db, "F", "descendant-of-F")).toBe(true);
+  it("true when the new parent is the folder itself or any descendant", async () => {
+    const db = folderDb();
+    expect(await wouldCreateFolderCycle(db, "F", "F")).toBe(true);
+    expect(await wouldCreateFolderCycle(db, "F", "F1")).toBe(true);
+    expect(await wouldCreateFolderCycle(db, "F", "F2")).toBe(true);
   });
-  it("false when no cycle (no row)", async () => {
-    const { db } = dbReturning(null);
-    expect(await wouldCreateFolderCycle(db, "F", "unrelated")).toBe(false);
+  it("false for an ancestor, sibling or unknown parent", async () => {
+    const db = folderDb();
+    expect(await wouldCreateFolderCycle(db, "F2", "F")).toBe(false);
+    expect(await wouldCreateFolderCycle(db, "F", "U")).toBe(false);
+    expect(await wouldCreateFolderCycle(db, "F", "missing")).toBe(false);
   });
 });
 

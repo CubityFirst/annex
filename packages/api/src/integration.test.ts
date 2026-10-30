@@ -145,7 +145,7 @@ describe.skipIf(!serversUp)("API - authenticated project + doc flow", () => {
     expect(res.status).toBe(200);
     const body = await res.json<{ ok: boolean; data: unknown[] }>();
     expect(body.ok).toBe(true);
-    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data).toEqual([]);
   });
 
   it("POST /projects creates a project", async () => {

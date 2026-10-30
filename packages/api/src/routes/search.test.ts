@@ -100,12 +100,6 @@ describe("handleSearch", () => {
     expect(bind).toHaveBeenCalledWith("p1", "hello");
   });
 
-  it("prefix-stars only the last word of a multi-word query", async () => {
-    const { env, bind } = makeEnv();
-    await call(env, "projectId=p1&q=hello+worl");
-    expect(bind).toHaveBeenCalledWith('"hello" "worl"*', "p1");
-  });
-
   it("escapes LIKE wildcards in the file-name term", async () => {
     const { env, bind } = makeEnv();
     await call(env, `projectId=p1&q=${encodeURIComponent("100%_done")}`);

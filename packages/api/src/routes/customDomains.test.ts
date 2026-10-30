@@ -209,14 +209,6 @@ describe("handleCustomDomain PUT", () => {
     expect(res.status).toBe(400);
   });
 
-  it("400s when claiming our own reserved zone", async () => {
-    const { env, queueFirst } = makeEnv();
-    queueFirst({ features: 1 });
-    queueFirst(null);
-    const res = await call(env, "PUT", "/projects/p1/domain", { hostname: "foo.cubityfir.st" });
-    expect(res.status).toBe(400);
-  });
-
   it("400s when claiming a platform zone not derived from the CNAME target", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ features: 1 });

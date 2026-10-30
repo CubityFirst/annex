@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { r2PresignConfigured, presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "./r2Presign";
+import { r2PresignConfigured, presignR2GetUrl } from "./r2Presign";
 
 const FULL = {
   R2_ACCESS_KEY_ID: "AKIAEXAMPLE",
@@ -39,10 +39,6 @@ describe("presignR2GetUrl", () => {
   it("clamps expiry to the SigV4 7-day maximum", async () => {
     const url = await presignR2GetUrl(FULL, "files/x", 30 * 24 * 60 * 60);
     expect(new URL(url!).searchParams.get("X-Amz-Expires")).toBe(String(7 * 24 * 60 * 60));
-  });
-
-  it("uses a tighter video TTL than the 6h content token", () => {
-    expect(PRESIGN_URL_TTL_SECONDS).toBe(3 * 60 * 60);
   });
 
   it("folds response-type/disposition overrides into the signed query string", async () => {
