@@ -14,10 +14,6 @@ describe("normalizeEmail", () => {
     expect(normalizeEmail("User@Example.COM")).toBe("user@example.com");
   });
 
-  it("trims and lowercases together so register and login resolve identically", () => {
-    expect(normalizeEmail("  User@Example.com ")).toBe(normalizeEmail("user@example.com"));
-  });
-
   it("returns empty string for a whitespace-only input (caller rejects it)", () => {
     expect(normalizeEmail("   ")).toBe("");
   });

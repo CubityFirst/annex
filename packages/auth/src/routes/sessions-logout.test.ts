@@ -38,21 +38,13 @@ describe("handleSessionsLogout", () => {
     expect(revokeSession).not.toHaveBeenCalled();
   });
 
-  it("revokes the caller's own current session", async () => {
+  it("revokes the caller's own current session, never rate limited - the best-effort client swallow must not leave the session alive", async () => {
     vi.mocked(requireAuthenticatedSession).mockResolvedValue({
       userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current",
     });
     const res = await handleSessionsLogout(req(), env);
     expect(res.status).toBe(200);
     expect(revokeSession).toHaveBeenCalledWith(env, "sess-current", "user-1");
-  });
-
-  it("is never rate limited - the best-effort client swallow must not leave the session alive", async () => {
-    vi.mocked(requireAuthenticatedSession).mockResolvedValue({
-      userId: "user-1", email: "test@example.com", expiresAt: Date.now() + 3600_000, sid: "sess-current",
-    });
-    const res = await handleSessionsLogout(req(), env);
-    expect(res.status).toBe(200);
     expect(limit).not.toHaveBeenCalled();
   });
 
