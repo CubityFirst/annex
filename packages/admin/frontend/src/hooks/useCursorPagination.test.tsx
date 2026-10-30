@@ -66,8 +66,10 @@ describe("useCursorPagination", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => result.current.goOlder());
     await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(fetcher).toHaveBeenCalledTimes(2);
 
     act(() => result.current.refresh());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.pageNumber).toBe(2);
     expect(fetcher).toHaveBeenLastCalledWith("c1", expect.anything());

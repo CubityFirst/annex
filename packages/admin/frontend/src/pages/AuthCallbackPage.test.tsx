@@ -49,11 +49,15 @@ describe("AuthCallbackPage", () => {
   });
 
   it("strips the one-time code from the address before exchanging", async () => {
+    // The page strips the code from the real window URL (MemoryRouter's
+    // location never reaches the address bar), so put it there first.
+    window.history.pushState({}, "", "/auth/callback?code=cb-strip");
     const replaceState = vi.spyOn(window.history, "replaceState");
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "t" } }));
     renderCallback("cb-strip");
     await waitFor(() => expect(replaceState).toHaveBeenCalled());
     const strippedUrl = String(replaceState.mock.calls[0][2]);
+    expect(strippedUrl).toContain("/auth/callback");
     expect(strippedUrl).not.toContain("cb-strip");
     replaceState.mockRestore();
   });

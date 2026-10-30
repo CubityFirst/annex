@@ -46,7 +46,7 @@ vi.mock("@/lib/api", () => {
 
 import { App } from "./App";
 import { TransientVerifyError, verifyAdminSession } from "@/lib/api";
-import { setToken } from "@/lib/auth";
+import { getToken, setToken } from "@/lib/auth";
 
 const SESSION = {
   userId: "u-1",
@@ -88,6 +88,7 @@ describe("App session gating", () => {
     vi.mocked(verifyAdminSession).mockRejectedValue(new Error("Unauthorized"));
     renderApp();
     expect(await screen.findByText(/Continue to Annex sign-in/)).toBeInTheDocument();
+    expect(getToken()).toBeNull();
   });
 
   it("shows a RETRY screen (keeps the token) on a transient verify failure (AF-C6)", async () => {
@@ -97,6 +98,7 @@ describe("App session gating", () => {
     expect(await screen.findByText(/Couldn't reach the admin API/)).toBeInTheDocument();
     expect(screen.getByText("Retry")).toBeInTheDocument();
     expect(screen.queryByText(/Continue to Annex sign-in/)).not.toBeInTheDocument();
+    expect(getToken()).toBe("tok");
   });
 
   it("rejects a token whose own expiry has passed even if the server said ok", async () => {
@@ -104,5 +106,6 @@ describe("App session gating", () => {
     vi.mocked(verifyAdminSession).mockResolvedValue({ ...SESSION, expiresAt: Date.now() - 1000 });
     renderApp();
     expect(await screen.findByText(/Continue to Annex sign-in/)).toBeInTheDocument();
+    expect(getToken()).toBeNull();
   });
 });
