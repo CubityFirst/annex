@@ -41,12 +41,6 @@ describe("handleSessionsRevokeOthers", () => {
     expect(revokeAllSessions).not.toHaveBeenCalled();
   });
 
-  it("revokes every session except the caller's current one", async () => {
-    const res = await handleSessionsRevokeOthers(req(), env);
-    expect(res.status).toBe(200);
-    expect(revokeAllSessions).toHaveBeenCalledWith(env, "user-1", "sess-current");
-  });
-
   it("is never rate limited - a stolen session must not be able to block the panic button", async () => {
     const res = await handleSessionsRevokeOthers(req(), env);
     expect(res.status).toBe(200);

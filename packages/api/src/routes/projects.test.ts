@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleProjects } from "./projects";
+import { createSqliteD1 } from "../test/sqliteD1";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
 vi.mock("../lib/fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsForProject: vi.fn() }));
@@ -230,44 +231,31 @@ describe("handleProjects GET /projects/:id/contents", () => {
     expect(json.data.docs).toHaveLength(1);
   });
 
-  it("returns per-subtree folder counts including files (FM-M1)", async () => {
+  it("returns per-subtree folder counts including files, and file updated_at (FM-M1, FM-L1)", async () => {
+    // Real SQLite: the counts are a recursive CTE whose docs/files joins must be
+    // pre-aggregated - a raw join fans out to docs×files rows per folder and
+    // inflates both counts. Only running the SQL can catch that.
     vi.mocked(resolveRole).mockResolvedValue("editor");
-    const { env, queueBatch, prepare, bindCalls } = makeEnv();
-    // A folder holding 2 docs + 3 files in its subtree must report both counts.
-    queueBatch([
-      { results: [{ id: "fl1" }] }, // folders
-      { results: [] },              // docs
-      { results: [] },              // files
-      { results: [{ folder_id: "fl1", folders: 1, docs: 2, files: 3 }] }, // counts
-    ]);
-    const res = await call(env, "GET", "/projects/p1/contents");
+    const { db, sqlite } = createSqliteD1();
+    const T0 = "2026-01-01T00:00:00.000Z";
+    const exec = (sql: string, ...args: (string | null)[]) => sqlite.prepare(sql).run(...args);
+    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p1', 'Site', 'user-1', ?)", T0);
+    exec("INSERT INTO folders (id, name, project_id, parent_id, created_at) VALUES ('fl1', 'Top', 'p1', NULL, ?), ('fl2', 'Sub', 'p1', 'fl1', ?)", T0, T0);
+    for (const [id, folder] of [["d1", "fl1"], ["d2", "fl1"], ["d3", "fl2"]]) {
+      exec("INSERT INTO docs (id, title, project_id, author_id, folder_id, created_at, updated_at) VALUES (?, ?, 'p1', 'user-1', ?, ?, ?)", id, id, folder, T0, T0);
+    }
+    for (const [id, folder] of [["f1", "fl1"], ["f2", "fl1"], ["f3", "fl1"], ["f4", "fl2"], ["root", null]]) {
+      exec("INSERT INTO files (id, name, mime_type, size, project_id, folder_id, uploaded_by, created_at, updated_at) VALUES (?, ?, 'image/png', 1, 'p1', ?, 'user-1', ?, ?)", id, id, folder, T0, "2026-02-02T00:00:00.000Z");
+    }
+    const { env } = makeEnv();
+    const res = await call({ ...env, DB: db }, "GET", "/projects/p1/contents");
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { data: { folderCounts: Record<string, { docs: number; files: number; folders: number }> } };
-    expect(json.data.folderCounts["fl1"]).toEqual({ docs: 2, files: 3, folders: 1 });
-
-    // Docs and files must join as PRE-AGGREGATED per-folder counts (one row
-    // each per subtree entry) - joining the raw tables would fan out to a
-    // docs×files cross product per folder, so the SUM of pre-counts is both
-    // the correctness and the row-cost guard.
-    const countsSql = prepare.mock.calls.map((c) => c[0] as string).find((s) => s.includes("WITH RECURSIVE subtree"));
-    expect(countsSql).toBeDefined();
-    expect(countsSql).toContain("COALESCE(SUM(d.n), 0) AS docs");
-    expect(countsSql).toContain("COALESCE(SUM(fl.n), 0) AS files");
-    expect(countsSql).toContain("LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM docs WHERE project_id = ? GROUP BY folder_id) d ON d.folder_id = s.folder_id");
-    expect(countsSql).toContain("LEFT JOIN (SELECT folder_id, COUNT(*) AS n FROM files WHERE project_id = ? GROUP BY folder_id) fl ON fl.folder_id = s.folder_id");
-    // …and each aggregate gets its own project bind (5 binds total at root).
-    expect(bindCalls).toContainEqual(["p1", null, "p1", "p1", "p1"]);
-  });
-
-  it("selects f.updated_at in the file listing (FM-L1)", async () => {
-    vi.mocked(resolveRole).mockResolvedValue("editor");
-    const { env, queueBatch, prepare } = makeEnv();
-    queueBatch([{ results: [] }, { results: [] }, { results: [] }, { results: [] }]);
-    const res = await call(env, "GET", "/projects/p1/contents");
-    expect(res.status).toBe(200);
-    const fileSql = prepare.mock.calls.map((c) => c[0] as string).find((s) => s.includes("FROM files f") && s.includes("uploader_name"));
-    expect(fileSql).toBeDefined();
-    expect(fileSql).toContain("f.updated_at");
+    const json = (await res.json()) as {
+      data: { folderCounts: Record<string, { docs: number; files: number; folders: number }>; files: { id: string; updated_at: string }[] };
+    };
+    expect(json.data.folderCounts).toEqual({ fl1: { docs: 3, files: 4, folders: 1 } });
+    // FM-L1: the file listing carries updated_at.
+    expect(json.data.files).toEqual([expect.objectContaining({ id: "root", updated_at: "2026-02-02T00:00:00.000Z" })]);
   });
 });
 

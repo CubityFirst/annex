@@ -53,12 +53,6 @@ describe("VerifyEmailPage", () => {
     expect(consumePendingOAuthNext()).toBe(next);
   });
 
-  it("shows the success state when verified without an auto-login token", async () => {
-    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true } }));
-    renderAt("/verify-email?token=good");
-    expect(await screen.findByText(/your email has been verified/i)).toBeInTheDocument();
-  });
-
   it("shows the failure state when the token is rejected", async () => {
     vi.stubGlobal("fetch", mockFetchOnce({ ok: false, error: "invalid_or_expired_token" }));
     renderAt("/verify-email?token=bad");

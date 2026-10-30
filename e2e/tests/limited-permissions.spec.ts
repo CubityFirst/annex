@@ -228,10 +228,10 @@ test("owner creates a doc with content", async () => {
 
 test("by default the limited user does NOT see the doc in the file list", async () => {
   await limitedPage.goto(`/projects/${projectId}`);
-  // Wait for the FileManager request to settle. The project page renders
-  // some chrome immediately, so we can't rely on a "loaded" sentinel - the
-  // assertion timeout is the wait.
-  await expect(limitedPage.getByText(DOC_TITLE)).not.toBeVisible({ timeout: 5000 });
+  // A negative assertion passes instantly (even on the loading skeleton), so
+  // first wait for the listing to load: with no shares it's the empty state.
+  await expect(limitedPage.getByText("This folder is empty")).toBeVisible({ timeout: 10000 });
+  await expect(limitedPage.getByText(DOC_TITLE)).not.toBeVisible();
 });
 
 // ── Owner grants view access ─────────────────────────────────────────────────

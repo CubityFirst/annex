@@ -96,7 +96,8 @@ describe("demo server revisions", () => {
   it("applies the default limit of 50 and caps at 200", async () => {
     const docId = await createDoc("Limits doc");
     vi.useFakeTimers();
-    for (let i = 1; i <= 55; i++) {
+    // More than the 200 cap, so ?limit=9999 can only return 200 if it's enforced.
+    for (let i = 1; i <= 205; i++) {
       vi.setSystemTime(new Date(Date.UTC(2026, 1, 1, 0, i)));
       await put(`/docs/${docId}`, { content: `rev ${i}` });
     }
@@ -105,7 +106,7 @@ describe("demo server revisions", () => {
     const defaulted = await api(`/docs/${docId}/revisions`);
     expect(defaulted.data).toHaveLength(50);
     const capped = await api(`/docs/${docId}/revisions?limit=9999`);
-    expect(capped.data).toHaveLength(55);
+    expect(capped.data).toHaveLength(200);
     const explicit = await api(`/docs/${docId}/revisions?limit=51`);
     expect(explicit.data).toHaveLength(51);
   });

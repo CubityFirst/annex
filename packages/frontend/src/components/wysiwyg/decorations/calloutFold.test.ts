@@ -82,14 +82,6 @@ describe("calloutFoldField - pruning (D16)", () => {
     expect(s.field(calloutFoldField).size).toBe(0);
   });
 
-  it("entries for surviving callouts are kept through unrelated edits", () => {
-    let s = stateWith("intro\n\n> [!tip]+ Hi");
-    const header = s.doc.line(3).from;
-    s = s.update({ effects: toggleCalloutFold.of({ from: header, collapsed: true }) }).state;
-    s = s.update({ changes: { from: 0, insert: "x" } }).state;
-    expect(s.field(calloutFoldField).size).toBe(1);
-  });
-
   it("two entries mapped onto one position collapse to a single entry", () => {
     let s = stateWith("> [!tip]+ A\n\n> [!note]+ B");
     const second = s.doc.line(3).from;

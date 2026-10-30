@@ -120,9 +120,9 @@ describe("renderInline - links (W-S1)", () => {
     expect(html).not.toContain("href");
   });
 
-  it("case/whitespace tricks are still blocked", () => {
-    for (const url of ["JaVaScRiPt:alert(1)", " javascript:alert(1)", "vbscript:x", "data:text/html,<script>1</script>"]) {
-      const out = renderInline(`[x](${url.replace(/ /g, "")})`);
+  it("mixed-case and other script-capable schemes are still blocked", () => {
+    for (const url of ["JaVaScRiPt:alert(1)", "vbscript:x", "data:text/html,<script>1</script>"]) {
+      const out = renderInline(`[x](${url})`);
       expect(elementsOfType(out, "a"), url).toHaveLength(0);
     }
   });

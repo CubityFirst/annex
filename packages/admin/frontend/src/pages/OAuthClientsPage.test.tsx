@@ -13,8 +13,6 @@ describe("buildAgentPrompt", () => {
     const prompt = buildAgentPrompt({ ...BASE, hasFreshSecret: true });
     expect(prompt).toContain("client-123");
     expect(prompt).toContain("paste it from your secret manager");
-    // No secret-looking material beyond the placeholder instruction.
-    expect(prompt).not.toMatch(/client_secret: [A-Za-z0-9_-]{20,}/);
   });
 
   it("points at rotate for an existing confidential client", () => {

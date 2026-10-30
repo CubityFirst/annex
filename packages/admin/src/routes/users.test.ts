@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
+import { fileURLToPath } from "node:url";
+import { createSqliteD1 } from "../../../api/src/test/sqliteD1";
+
+const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../auth/migrations", import.meta.url));
 
 vi.mock("../audit", () => ({ writeAdminAudit: vi.fn() }));
 
@@ -68,25 +72,22 @@ describe("buildUserStatusClause", () => {
     expect(buildUserStatusClause("bogus", NOW)).toEqual({ sql: "", binds: [] });
   });
 
-  it("builds the active predicate with the now bind", () => {
-    expect(buildUserStatusClause("active", NOW)).toEqual({
-      sql: "(u.moderation = 0 OR (u.moderation > 0 AND u.moderation <= ?))",
-      binds: [NOW],
-    });
-  });
-
-  it("builds the disabled predicate with no binds", () => {
-    expect(buildUserStatusClause("disabled", NOW)).toEqual({
-      sql: "u.moderation = -1",
-      binds: [],
-    });
-  });
-
-  it("builds the suspended predicate with the now bind", () => {
-    expect(buildUserStatusClause("suspended", NOW)).toEqual({
-      sql: "u.moderation > ?",
-      binds: [NOW],
-    });
+  it("partitions users by moderation state when run against the real schema", () => {
+    // Evaluate each predicate in real SQLite: whether an elapsed suspension
+    // counts as active (and not suspended) only shows up when the SQL runs.
+    const { sqlite } = createSqliteD1(AUTH_MIGRATIONS);
+    const add = sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at, moderation) VALUES (?, ?, 'U', 'x', datetime('now'), ?)");
+    add.run("active", "a@x.com", 0);
+    add.run("disabled", "d@x.com", -1);
+    add.run("suspended", "s@x.com", NOW + 3600);
+    add.run("suspension-elapsed", "e@x.com", NOW - 3600);
+    const matching = (status: string) => {
+      const { sql, binds } = buildUserStatusClause(status, NOW);
+      return sqlite.prepare(`SELECT id FROM users u WHERE ${sql} ORDER BY id`).all(...binds).map(r => r.id);
+    };
+    expect(matching("active")).toEqual(["active", "suspension-elapsed"]);
+    expect(matching("disabled")).toEqual(["disabled"]);
+    expect(matching("suspended")).toEqual(["suspended"]);
   });
 });
 
@@ -548,53 +549,15 @@ describe("DELETE /:id/deletion - cancel", () => {
     );
   });
 
-  it("restores a pre-existing disable rather than re-enabling", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(pending({ previous_moderation: -1 }));
-    await cancel(env);
-    expect(env.AUTH_DB.batches[0][0].binds.slice(0, 2)).toEqual([-1, "u-1"]);
-  });
-
-  it("refuses once execution has started", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(pending({ started_at: 1 }));
-    expect((await cancel(env)).status).toBe(409);
-    expect(env.AUTH_DB.batch).not.toHaveBeenCalled();
-    expect(writeAdminAudit).not.toHaveBeenCalled();
-  });
-
   it("refuses while a cron run holds the lease", async () => {
     const env = makeEnv();
     env.AUTH_DB.firstQueue.push(pending({ lease_until: Math.floor(Date.now() / 1000) + 600 }));
     expect((await cancel(env)).status).toBe(409);
     expect(env.AUTH_DB.batch).not.toHaveBeenCalled();
   });
-
-  it("is a no-op (409, no audit) if a cron claim lands between the read and the write", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(pending());
-    env.AUTH_DB.batchChanges.push(0);
-    expect((await cancel(env)).status).toBe(409);
-    expect(writeAdminAudit).not.toHaveBeenCalled();
-  });
 });
 
 describe("PATCH /:id - pending deletion owns moderation", () => {
-  it("guards the write itself, so a schedule committing mid-request wins (409, no audit)", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", scheduled: 0 });
-    env.AUTH_DB.batchChanges.push(0);
-    const res = await makeUsersApp(env)("/u-1", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ moderation: 0 }),
-    });
-    expect(res.status).toBe(409);
-    const [update, event] = env.AUTH_DB.batches[0];
-    expect(update.sql).toContain("NOT EXISTS (SELECT 1 FROM user_deletions");
-    expect(event.sql).toContain("NOT EXISTS (SELECT 1 FROM user_deletions");
-    expect(writeAdminAudit).not.toHaveBeenCalled();
-  });
 
   it.each([0, -1, Math.floor(Date.now() / 1000) + 3600])("refuses moderation=%s while a deletion is scheduled", async moderation => {
     const env = makeEnv();

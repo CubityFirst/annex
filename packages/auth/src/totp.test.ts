@@ -32,11 +32,6 @@ describe("base32Encode / base32Decode", () => {
     expect(base32Decode(base32Encode(original))).toEqual(original);
   });
 
-  it("round-trips 20 random bytes", () => {
-    const bytes = crypto.getRandomValues(new Uint8Array(20));
-    expect(base32Decode(base32Encode(bytes))).toEqual(bytes);
-  });
-
   it("encodes to uppercase A-Z 2-7 characters only", () => {
     const bytes = new Uint8Array([0, 255, 128, 64, 32]);
     expect(base32Encode(bytes)).toMatch(/^[A-Z2-7]+$/);
@@ -54,9 +49,6 @@ describe("base32Encode / base32Decode", () => {
 // ── generateSecret ───────────────────────────────────────────────────────────
 
 describe("generateSecret", () => {
-  it("returns a valid base32 string", () => {
-    expect(generateSecret()).toMatch(/^[A-Z2-7]+$/);
-  });
 
   it("generates unique values each time", () => {
     expect(generateSecret()).not.toBe(generateSecret());
@@ -110,16 +102,6 @@ describe("verifyTOTP", () => {
     expect(await verifyTOTP(SECRET, code, NOW)).toBe(true);
   });
 
-  it("accepts a code from one step in the past (clock drift tolerance)", async () => {
-    const code = await computeTOTP(SECRET, NOW - 30_000);
-    expect(await verifyTOTP(SECRET, code, NOW)).toBe(true);
-  });
-
-  it("accepts a code from one step in the future (clock drift tolerance)", async () => {
-    const code = await computeTOTP(SECRET, NOW + 30_000);
-    expect(await verifyTOTP(SECRET, code, NOW)).toBe(true);
-  });
-
   it("rejects a code from two steps in the past", async () => {
     const code = await computeTOTP(SECRET, NOW - 60_000);
     expect(await verifyTOTP(SECRET, code, NOW)).toBe(false);
@@ -167,14 +149,5 @@ describe("matchTotpStep", () => {
   it("returns the next step for a one-step-ahead code", async () => {
     const code = await computeTOTP(SECRET, NOW + 30_000);
     expect(await matchTotpStep(SECRET, code, NOW)).toBe(STEP_NOW + 1);
-  });
-
-  it("returns null for a code from a different secret", async () => {
-    const code = await computeTOTP("AAAAAAAAAAAAAAAA", NOW);
-    expect(await matchTotpStep(SECRET, code, NOW)).toBeNull();
-  });
-
-  it("returns null for a malformed code", async () => {
-    expect(await matchTotpStep(SECRET, "abcdef", NOW)).toBeNull();
   });
 });

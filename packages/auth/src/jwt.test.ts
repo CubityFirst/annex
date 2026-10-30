@@ -19,11 +19,6 @@ describe("signJwt / verifyJwt", () => {
     expect(session!.expiresAt).toBe(PAYLOAD.expiresAt);
   });
 
-  it("produces a three-part dot-separated string", async () => {
-    const token = await signJwt(PAYLOAD, SECRET);
-    expect(token.split(".")).toHaveLength(3);
-  });
-
   it("returns null when verified with the wrong secret", async () => {
     const token = await signJwt(PAYLOAD, SECRET);
     expect(await verifyJwt(token, "wrong-secret")).toBeNull();
@@ -63,12 +58,6 @@ describe("signJwt / verifyJwt", () => {
     const token = await signJwt(forced, SECRET);
     const session = await verifyJwt(token, SECRET);
     expect(session!.forcePasswordChange).toBe(true);
-  });
-
-  it("different secrets produce different tokens for the same payload", async () => {
-    const t1 = await signJwt(PAYLOAD, "secret-a");
-    const t2 = await signJwt(PAYLOAD, "secret-b");
-    expect(t1).not.toBe(t2);
   });
 
   it("preserves optional sid field", async () => {

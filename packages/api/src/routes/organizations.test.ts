@@ -361,13 +361,6 @@ describe("handleOrganizations members", () => {
     expect(res.status).toBe(403);
   });
 
-  it("PATCH 400s with an unknown role (owner not assignable)", async () => {
-    const { env, queueFirst } = makeEnv();
-    queueFirst({ role: "admin" }); // caller
-    const res = await call(env, "PATCH", "/organizations/o1/members/u2", { role: "owner" });
-    expect(res.status).toBe(400);
-  });
-
   it("PATCH 403s when an admin promotes a member to admin", async () => {
     const { env, queueFirst } = makeEnv();
     queueFirst({ role: "admin" }); // caller

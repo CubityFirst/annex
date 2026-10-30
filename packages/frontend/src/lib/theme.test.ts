@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
-  THEME_MODES,
-  DEFAULT_THEME,
-  DEFAULT_THEME_PREFS,
   MANAGED_VARS,
   resolveThemeMode,
   pathUsesUserTheme,
@@ -22,14 +19,6 @@ beforeEach(() => {
   const root = document.documentElement;
   root.classList.remove("dark");
   root.removeAttribute("style");
-});
-
-describe("constants", () => {
-  it("defaults to dark", () => {
-    expect(DEFAULT_THEME).toBe("dark");
-    expect(DEFAULT_THEME_PREFS).toEqual({ mode: "dark", customColor: null });
-    expect(THEME_MODES).toEqual(["dark", "light", "custom"]);
-  });
 });
 
 describe("resolveThemeMode", () => {

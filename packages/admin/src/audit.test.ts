@@ -1,24 +1,20 @@
 import { describe, it, expect } from "vitest";
+import { fileURLToPath } from "node:url";
+import { createSqliteD1 } from "../../api/src/test/sqliteD1";
 import { writeAdminAudit } from "./audit";
 import type { Env } from "./index";
 import type { AdminSession } from "./auth";
 
-function fakeDb() {
-  const calls: { sql: string; args: unknown[] }[] = [];
-  const AUTH_DB = {
-    prepare(sql: string) {
-      return {
-        bind(...args: unknown[]) {
-          return {
-            run: async () => {
-              calls.push({ sql, args });
-            },
-          };
-        },
-      };
-    },
-  };
-  return { env: { AUTH_DB } as unknown as Env, calls };
+// Real SQLite with every auth migration applied, so the INSERT's column list is
+// checked against the real admin_audit_log schema (a mock only sees bind order).
+const AUTH_MIGRATIONS = fileURLToPath(new URL("../../auth/migrations", import.meta.url));
+
+function makeEnv() {
+  const { db, sqlite } = createSqliteD1(AUTH_MIGRATIONS);
+  sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('admin-1', 'admin@example.com', 'A', 'x', datetime('now'))").run();
+  const rows = () =>
+    sqlite.prepare("SELECT id, actor_user_id, actor_email, action, target_type, target_id, detail FROM admin_audit_log").all().map(r => ({ ...r }));
+  return { env: { AUTH_DB: db } as unknown as Env, rows };
 }
 
 const ACTOR: AdminSession = {
@@ -30,24 +26,23 @@ const ACTOR: AdminSession = {
 
 describe("writeAdminAudit", () => {
   it("inserts an actor-attributed row with serialized detail", async () => {
-    const { env, calls } = fakeDb();
+    const { env, rows } = makeEnv();
     await writeAdminAudit(env, ACTOR, "user.ink.grant", "user", "u-9", { expiresAt: null });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0].sql).toContain("INSERT INTO admin_audit_log");
-    const [id, actorId, actorEmail, action, targetType, targetId, detail] = calls[0].args;
-    expect(typeof id).toBe("string");
-    expect(actorId).toBe("admin-1");
-    expect(actorEmail).toBe("admin@example.com");
-    expect(action).toBe("user.ink.grant");
-    expect(targetType).toBe("user");
-    expect(targetId).toBe("u-9");
-    expect(detail).toBe(JSON.stringify({ expiresAt: null }));
+    expect(rows()).toEqual([{
+      id: expect.any(String),
+      actor_user_id: "admin-1",
+      actor_email: "admin@example.com",
+      action: "user.ink.grant",
+      target_type: "user",
+      target_id: "u-9",
+      detail: JSON.stringify({ expiresAt: null }),
+    }]);
   });
 
   it("stores NULL detail when none is provided", async () => {
-    const { env, calls } = fakeDb();
+    const { env, rows } = makeEnv();
     await writeAdminAudit(env, ACTOR, "user.avatar.delete", "user", "u-9");
-    expect(calls[0].args[6]).toBeNull();
+    expect(rows()).toEqual([expect.objectContaining({ action: "user.avatar.delete", detail: null })]);
   });
 });

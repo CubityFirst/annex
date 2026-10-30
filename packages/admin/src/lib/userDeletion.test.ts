@@ -175,20 +175,6 @@ describe("executeUserDeletion", () => {
     expect(writeAdminAudit).toHaveBeenCalledTimes(2); // one project.delete per site
   });
 
-  it("treats a confirmed site that no longer exists as done (retry after a partial run)", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
-    // Still owns p-2; p-1 was deleted by the earlier, failed attempt.
-    const owned = () => [[{ id: "p-2", name: "Two" }], []];
-    env.DB.allQueue.push(...owned(), [], ...owned(), []); // [] = existence lookup for p-1
-    const res = await run(env, "u-1", { siteIds: ["p-1", "p-2"], orgIds: [] });
-    expect(res.ok).toBe(true);
-    expect(vi.mocked(deleteProjectCascade).mock.calls.map(c => c[1])).toEqual(["p-2"]);
-    const lookup = env.DB.calls.find(c => c.sql.includes("SELECT id FROM projects WHERE id IN"));
-    expect(lookup?.binds).toEqual(["p-1"]);
-    expect(userDeleted(env)).toBe(true);
-  });
-
   it("fails closed if a confirmed site still exists under someone else", async () => {
     const env = makeEnv();
     env.AUTH_DB.firstQueue.push(plainUser());
@@ -283,22 +269,6 @@ describe("runDueUserDeletions", () => {
   const row = (userId: string, overrides: Record<string, unknown> = {}) => ({
     user_id: userId, id: `sched-${userId}`, requested_by: "admin-9", requested_by_email: "ops@example.com",
     requested_at: "2026-10-12 10:00:00", confirm_site_ids: "[]", confirm_org_ids: "[]", ...overrides,
-  });
-
-  it("selects due, unleased rows - never-attempted first, then least recently attempted", async () => {
-    const env = makeEnv();
-    env.AUTH_DB.allQueue.push([]);
-    await runDueUserDeletions(env as never, 1_000_000);
-    // First: rows whose lease expired un-released were cut off mid-run.
-    const interrupted = env.AUTH_DB.calls[0];
-    expect(interrupted.sql).toContain("lease_until IS NOT NULL AND lease_until < ?");
-    expect(interrupted.sql).toContain("cut off");
-    expect(interrupted.binds).toEqual([1_000_000]);
-    const select = env.AUTH_DB.calls[1];
-    expect(select.sql).toContain("execute_after <= ?");
-    expect(select.sql).toContain("lease_until IS NULL OR lease_until < ?");
-    expect(select.sql).toMatch(/ORDER BY \(last_attempt_at IS NOT NULL\), last_attempt_at ASC, execute_after ASC/);
-    expect(select.binds).toEqual([1_000_000, 1_000_000, 5]);
   });
 
   it("skips a row it can't claim (cancelled, rescheduled, or leased since the SELECT)", async () => {

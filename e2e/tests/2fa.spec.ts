@@ -173,14 +173,6 @@ test("registers a fresh account for 2FA testing", async () => {
   }).toPass({ timeout: 30000 });
 });
 
-test("logs in after registration", async () => {
-  // Registration may redirect to /login rather than auto-logging in.
-  if (page.url().includes("/login")) {
-    await loginWithPassword(page);
-  }
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-});
-
 // ════════════════════════════════════════════════════════════════════════════
 // TOTP
 // ════════════════════════════════════════════════════════════════════════════
@@ -197,6 +189,8 @@ test("TOTP - enables authenticator app", async () => {
 
   const code = await computeTOTP(totpSecret);
   await fillOTP(page, code);
+  // First sign-in factor on the account, so enrollment asks for the password.
+  await page.locator("#totp-enrollment-password").fill(PASSWORD);
   await page.getByRole("button", { name: "Enable 2FA" }).click();
 
   // Setup exits and the disable button appears.
@@ -309,6 +303,8 @@ test("WebAuthn - registers a virtual passkey", async ({ browserName }) => {
   await page.getByRole("button", { name: "Add security key" }).click();
   await expect(page.getByLabel(/key name/i)).toBeVisible({ timeout: 3000 });
   await page.getByLabel(/key name/i).fill("Playwright Virtual Key");
+  // TOTP was disabled above, so the passkey is a first factor too.
+  await page.locator("#key-enrollment-password").fill(PASSWORD);
 
   // "Register key" triggers startRegistration() in the browser; the virtual
   // authenticator responds automatically.
@@ -321,11 +317,13 @@ test("WebAuthn - registers a virtual passkey", async ({ browserName }) => {
 test("WebAuthn - login triggers the passkey ceremony", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
+  const finish = page.waitForResponse(r => r.url().includes("/api/webauthn/auth/finish") && r.request().method() === "POST");
   await loginWithPassword(page);
 
   // The server returns webauthn_required and the login page immediately starts
   // the WebAuthn ceremony (startAuthentication).  The virtual authenticator
   // handles it silently, so we land on the dashboard without manual input.
+  expect((await finish).ok()).toBe(true);
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
 });
 
@@ -347,7 +345,10 @@ test("WebAuthn - removes the passkey (requires WebAuthn confirmation)", async ({
 test("WebAuthn - login no longer requires a key after removal", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
+  const login = page.waitForResponse(r => r.url().endsWith("/api/login") && r.request().method() === "POST");
   await loginWithPassword(page);
+  // webauthn_required comes back as ok: false - the password alone must succeed now.
+  expect(((await (await login).json()) as { ok: boolean }).ok).toBe(true);
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 });
 
@@ -364,6 +365,8 @@ test("re-enables TOTP before account deletion", async () => {
 
   const code = await computeTOTP(totpSecret);
   await fillOTP(page, code);
+  // The passkey was removed, so this is again the only factor.
+  await page.locator("#totp-enrollment-password").fill(PASSWORD);
   await page.getByRole("button", { name: "Enable 2FA" }).click();
   await expect(page.getByRole("button", { name: "Disable authenticator app" })).toBeVisible({ timeout: 10000 });
 });

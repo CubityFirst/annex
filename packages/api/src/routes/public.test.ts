@@ -4,6 +4,7 @@ vi.mock("../auth", () => ({ authenticate: vi.fn() }));
 
 import { enrichFilesWithStreamUrls, handlePublic, handlePublicReport, MAX_REPORT_NOTE_LENGTH } from "./public";
 import { authenticate } from "../auth";
+import { createSqliteD1 } from "../test/sqliteD1";
 import type { Env } from "../index";
 
 const PRESIGN_ENV = {
@@ -198,20 +199,30 @@ describe("GET /public/projects/:idOrSlug/logo/:variant", () => {
   it("gates on site publish OR a solo-published doc, never site publish alone", async () => {
     // A solo-published doc exposes the standalone public doc page - whose header
     // renders this logo - for an UNPUBLISHED site, so the gate must accept
-    // "unpublished site with at least one published doc". Pin the SQL shape: a
-    // regression back to a bare `published_at IS NOT NULL` broke exactly this
-    // (logo uploaded, one doc shared, site never published -> broken image).
-    const env = logoEnv({ id: "proj-1" });
-    const url = logoUrl("wide");
-    const res = await handlePublic(new Request(url), env, url);
-    expect(res.status).toBe(200);
-    const prepare = (env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
-    const sql = (prepare.mock.calls[0][0] as string).replace(/\s+/g, " ");
-    expect(sql).toContain("logo_wide_updated_at IS NOT NULL");
-    expect(sql).toContain("(published_at IS NOT NULL OR EXISTS (SELECT 1 FROM docs WHERE docs.project_id = projects.id AND docs.published_at IS NOT NULL))");
-    // The id-or-slug from the URL feeds both lookup placeholders.
-    const bind = prepare.mock.results[0].value.bind as ReturnType<typeof vi.fn>;
-    expect(bind.mock.calls[0]).toEqual(["p1", "p1"]);
+    // "unpublished site with at least one published doc". A regression back to
+    // a bare `published_at IS NOT NULL` broke exactly this (logo uploaded, one
+    // doc shared, site never published -> broken image). Real SQLite, so the
+    // gate's SQL is actually evaluated.
+    const { db, sqlite } = createSqliteD1();
+    const T0 = "2026-01-01T00:00:00.000Z";
+    const exec = (sql: string, ...args: (string | null)[]) => sqlite.prepare(sql).run(...args);
+    exec("INSERT INTO projects (id, name, owner_id, created_at, vanity_slug, logo_wide_updated_at) VALUES ('solo', 'S', 'u1', ?, 'solo-slug', ?)", T0, T0);
+    exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at, published_at) VALUES ('d1', 'D', 'solo', 'u1', ?, ?, ?)", T0, T0, T0);
+    exec("INSERT INTO projects (id, name, owner_id, created_at, logo_wide_updated_at) VALUES ('private', 'P', 'u1', ?, ?)", T0, T0);
+    exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES ('d2', 'D', 'private', 'u1', ?, ?)", T0, T0);
+    exec("INSERT INTO projects (id, name, owner_id, created_at, published_at) VALUES ('nologo', 'N', 'u1', ?, ?)", T0, T0);
+    const env = { ...logoEnv(null), DB: db } as unknown as Env & { ASSETS: { get: ReturnType<typeof vi.fn> } };
+    const get = (idOrSlug: string, variant = "wide") => {
+      const url = new URL(`http://localhost/public/projects/${idOrSlug}/logo/${variant}`);
+      return handlePublic(new Request(url), env, url);
+    };
+
+    expect((await get("solo")).status).toBe(200);
+    expect((await get("solo-slug")).status).toBe(200);
+    expect(env.ASSETS.get).toHaveBeenLastCalledWith("site-logos/solo-wide");
+    expect((await get("private")).status).toBe(404); // unpublished, no published doc
+    expect((await get("nologo")).status).toBe(404); // published, but no wide logo uploaded
+    expect((await get("solo", "square")).status).toBe(404); // only the wide variant exists
   });
 });
 

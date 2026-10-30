@@ -219,7 +219,11 @@ test("uploading with the toggle on Light stores an independent light variant", a
   await expect(dialog).toBeVisible({ timeout: 5000 });
   const applyButton = dialog.getByRole("button", { name: /^Apply$/ });
   await expect(applyButton).toBeEnabled({ timeout: 15000 });
+  // GETs fall back across variants, so they can't show which slot was
+  // written - assert on the upload request itself.
+  const upload = page.waitForResponse(r => r.request().method() === "POST" && r.url().includes("/api/avatar?variant=light"));
   await applyButton.click();
+  expect((await upload).ok()).toBe(true);
   await expect(page.getByText("Avatar updated")).toBeVisible({ timeout: 15000 });
 
   // Both variants now resolve independently.
@@ -234,14 +238,15 @@ test("uploading with the toggle on Light stores an independent light variant", a
 test("deleting only the light variant falls back to dark; dark is untouched", async () => {
   const status = await page.evaluate(async (uid) => {
     const token = localStorage.getItem("token");
-    await fetch("/api/avatar?variant=light", {
+    const del = await fetch("/api/avatar?variant=light", {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
     const l = await fetch(`/api/avatar/${uid}?variant=light&v=${Date.now()}`);
     const d = await fetch(`/api/avatar/${uid}?variant=dark&v=${Date.now()}`);
-    return { light: l.status, dark: d.status };
+    return { del: del.status, light: l.status, dark: d.status };
   }, userId);
+  expect(status.del).toBe(200);
   // Light now resolves via fallback to the still-present dark variant.
   expect(status.light).toBe(200);
   expect(status.dark).toBe(200);

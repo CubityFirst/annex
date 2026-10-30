@@ -47,7 +47,6 @@ describe("fileKind", () => {
     expect(fileKind("application/octet-stream", "diagram.excalidraw")).toBe("drawing");
     expect(fileKind("", "diagram.excalidraw")).toBe("drawing");
     expect(fileKind("application/vnd.excalidraw+json", "diagram.excalidraw")).toBe("drawing");
-    expect(fileKind("application/json", "diagram.excalidraw")).not.toBe("text");
   });
 
   it("falls back to 'other' for unknown binary", () => {

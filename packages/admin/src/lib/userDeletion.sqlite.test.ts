@@ -298,6 +298,18 @@ describe("delayed deletion (real SQLite)", () => {
     expect(t.userExists("big")).toBe(false);
   });
 
+  it("leaves a due row alone while another run holds a live lease on it", async () => {
+    const t = setup();
+    t.addUser("u-1");
+    at(T0);
+    await t.scheduleDeletion("u-1");
+    const due = T0 + 7 * DAY + 60;
+    t.auth.sqlite.prepare("UPDATE user_deletions SET lease_until = ? WHERE user_id = 'u-1'").run(due + 600);
+    expect(await t.runAt(due)).toEqual({ deleted: 0, failed: 0 });
+    expect(t.userExists("u-1")).toBe(true);
+    expect(t.schedule("u-1")).toMatchObject({ lease_until: due + 600, started_at: null });
+  });
+
   it("flags a row whose lease expired without an outcome as cut off", async () => {
     const t = setup();
     t.addUser("u-1");

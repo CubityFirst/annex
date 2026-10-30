@@ -111,16 +111,6 @@ test("registers a fresh account", async () => {
   }).toPass({ timeout: 30000 });
 });
 
-test("logs in after registration", async () => {
-  if (page.url().includes("/login")) {
-    await page.getByLabel("Email").fill(EMAIL);
-    await page.getByLabel("Password").fill(PASSWORD);
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Sign in" }).click();
-  }
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-});
-
 // ── Change-email dialog ───────────────────────────────────────────────────────
 
 test("change email button opens the dialog", async () => {
@@ -169,8 +159,8 @@ test("old email no longer logs in", async () => {
   await page.getByLabel("Password").fill(PASSWORD);
   await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Should stay on login (auth rejected).
-  await expect(page).toHaveURL(/\/login/, { timeout: 8000 });
+  // Auth rejected. The page is already on /login, so wait for the error itself.
+  await expect(page.getByText("Invalid email or password.")).toBeVisible({ timeout: 8000 });
 });
 
 test("new email logs in successfully", async () => {

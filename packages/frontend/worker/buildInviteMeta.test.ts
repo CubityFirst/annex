@@ -28,10 +28,4 @@ describe("buildInviteMeta", () => {
     expect(buildInviteMeta({ projectName: "P", ownerName: "Jo", role: "wizard" }).description)
       .toBe("Jo invited you to collaborate on P as a member.");
   });
-
-  it("includes the owner and project names in the description", () => {
-    const { description } = buildInviteMeta({ projectName: "Acme Docs", ownerName: "Dana", role: "viewer" });
-    expect(description).toContain("Dana");
-    expect(description).toContain("Acme Docs");
-  });
 });

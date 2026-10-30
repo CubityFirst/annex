@@ -12,6 +12,7 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-exp-${RUN_ID}@example.com`;
@@ -144,24 +145,13 @@ test("sets up a project with two docs (root + folder)", async () => {
 
 test("the Export site button downloads a valid zip containing both docs", async () => {
   await page.goto(projectSettingsUrl);
-  await expect(page.getByRole("button", { name: /export site/i })).toBeVisible({ timeout: 5000 });
+  const exportButton = page.getByRole("button", { name: /export site/i });
+  await expect(exportButton).toBeVisible({ timeout: 5000 });
 
-  // The export endpoint streams a zip; we fetch it directly from the page
-  // context (so cookies/bearer token are attached) and verify the bytes.
-  const result = await page.evaluate(async ({ projectId }) => {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/projects/${projectId}/export`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return { status: res.status, ok: false };
-    const buf = await res.arrayBuffer();
-    return { status: res.status, ok: true, bytes: Array.from(new Uint8Array(buf)) };
-  }, { projectId });
-
-  expect(result.status).toBe(200);
-  expect(result.ok).toBe(true);
-
-  const bytes = new Uint8Array(result.bytes!);
+  // Click the real button: it fetches the zip and saves it via a blob download.
+  const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
+  expect(download.suggestedFilename()).toBe(`${PROJECT_NAME}.zip`);
+  const bytes = new Uint8Array(await readFile((await download.path())!));
   // Zip files always start with the local file header signature "PK\x03\x04".
   expect(bytes[0]).toBe(0x50);
   expect(bytes[1]).toBe(0x4B);

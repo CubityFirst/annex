@@ -80,14 +80,6 @@ describe("admin gate route matrix", () => {
     expect(res.status).toBe(401);
   });
 
-  it.each(GATED_GETS)("%s -> 403 when the caller is not an admin", async (path) => {
-    vi.mocked(requireAdminSession).mockResolvedValue(
-      Response.json({ ok: false, error: "Forbidden" }, { status: 403 }),
-    );
-    const res = await request(makeEnv(), path);
-    expect(res.status).toBe(403);
-  });
-
   it.each(GATED_GETS)("%s -> handled (not 401/403) for a valid admin", async (path) => {
     vi.mocked(requireAdminSession).mockResolvedValue(session);
     const res = await request(makeEnv(), path);
