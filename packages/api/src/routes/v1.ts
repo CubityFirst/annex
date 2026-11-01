@@ -3,6 +3,7 @@ import type { Env } from "../index";
 import { resolveAccess } from "../lib/access";
 import {
   authenticateApiKey,
+  revokeApiKeyBySecret,
   scopeAllowsWrite,
   apiKeyInviteRoleAllowed,
   apiKeyRemoveAllowed,
@@ -87,7 +88,25 @@ function safeParseTags(raw: string): string[] {
   }
 }
 
+function bearerToken(request: Request): string {
+  const authHeader = request.headers.get("Authorization");
+  return authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+}
+
 export async function handlePublicApi(request: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname.replace(/\/+$/, "");
+
+  // 0. Self-revocation (DELETE /v1/key). Handled BEFORE the killswitch so a
+  // leaked key can still be killed while the API is switched off (mirrors key
+  // management staying up during an outage), and before the account/membership
+  // gates because revoking only ever removes access - see revokeApiKeyBySecret.
+  if (path === "/v1/key" && request.method === "DELETE") {
+    const token = bearerToken(request);
+    const revoked = token ? await revokeApiKeyBySecret(token, env) : false;
+    if (!revoked) return errorResponse(Errors.UNAUTHORIZED);
+    return okResponse({ revoked: true });
+  }
+
   // 1. Killswitch. Checked before any auth/DB work so a kill takes effect with
   // zero load. Defaults to enabled when the flag/binding is unavailable (local
   // dev or a flag-service outage) - this is a deliberate-off switch, not
@@ -99,8 +118,7 @@ export async function handlePublicApi(request: Request, env: Env, url: URL): Pro
 
   // 2. Key auth. Any failure (missing/garbage token, JWT, unknown/revoked/
   // expired key) collapses to a single opaque 401 that leaks no key state.
-  const authHeader = request.headers.get("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const token = bearerToken(request);
   const auth = token ? await authenticateApiKey(token, env) : null;
   if (!auth) return errorResponse(Errors.UNAUTHORIZED);
 
@@ -114,9 +132,41 @@ export async function handlePublicApi(request: Request, env: Env, url: URL): Pro
   // so a key can never be aimed at a different site.
   const parts = url.pathname.replace(/^\/v1\/?/, "").split("/").filter(Boolean);
 
+  if (parts[0] === "key" && parts.length === 1 && request.method === "GET") return handleV1KeyInfo(env, auth);
   if (parts[0] === "docs") return handleV1Docs(request, env, auth, parts.slice(1));
   if (parts[0] === "members") return handleV1Members(request, env, auth, parts.slice(1));
   return errorResponse(Errors.NOT_FOUND);
+}
+
+// GET /v1/key - introspect the calling key: which site it is bound to, its
+// ceiling (scope/canInvite) and the owner's live role. Lets clients holding
+// several keys (e.g. the MCP server) label and route them without the caller
+// ever naming a site. Subject to the same live-membership floor as every other
+// /v1 read, so a removed owner's key reveals nothing - not even the site name.
+async function handleV1KeyInfo(env: Env, auth: ApiKeyAuth): Promise<Response> {
+  const caller = await liveCaller(env, auth.projectId, auth.userId);
+  if (caller === null) return errorResponse(Errors.FORBIDDEN);
+  const row = await env.DB.prepare(
+    `SELECT k.name AS key_name, k.key_prefix, k.created_at, k.expires_at,
+            p.name AS site_name, p.vanity_slug AS site_vanity_slug
+     FROM api_keys k JOIN projects p ON p.id = k.project_id
+     WHERE k.id = ?`,
+  ).bind(auth.keyId).first<{
+    key_name: string; key_prefix: string; created_at: string; expires_at: string | null;
+    site_name: string; site_vanity_slug: string | null;
+  }>();
+  if (!row) return errorResponse(Errors.UNAUTHORIZED);
+  return okResponse({
+    id: auth.keyId,
+    name: row.key_name,
+    keyPrefix: row.key_prefix,
+    scope: auth.scope,
+    canInvite: auth.canInvite,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    role: caller.role,
+    site: { id: auth.projectId, name: row.site_name, vanitySlug: row.site_vanity_slug },
+  });
 }
 
 async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: string[]): Promise<Response> {

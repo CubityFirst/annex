@@ -89,6 +89,24 @@ export function apiKeyRemoveAllowed(callerRole: Role, targetRole: Role): boolean
   return true;
 }
 
+// Self-revocation: whoever holds the secret may kill it. Possession of the
+// secret is the whole proof required - deliberately WITHOUT the owner-account
+// and live-membership gates authenticateApiKey applies, because revoking can
+// only ever reduce access (a leaked key belonging to a suspended or removed
+// owner must still be killable). Expired-but-unrevoked keys are revoked too, so
+// they disappear from the owner's key list.
+//
+// Returns true iff this call flipped the key to revoked. Unknown, malformed and
+// already-revoked secrets all return false and map to the same opaque 401.
+export async function revokeApiKeyBySecret(token: string, env: Pick<Env, "DB">): Promise<boolean> {
+  if (!isApiKeyToken(token)) return false;
+  const keyHash = await hashApiKey(token);
+  const res = await env.DB.prepare(
+    "UPDATE api_keys SET revoked_at = ? WHERE key_hash = ? AND revoked_at IS NULL",
+  ).bind(new Date().toISOString(), keyHash).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
 interface ApiKeyRow {
   id: string;
   user_id: string;

@@ -390,3 +390,45 @@ describe.skipIf(!apiServerUp)("API keys - rate limiting", () => {
     expect(statuses.every(s => s === 200 || s === 429)).toBe(true);
   });
 });
+
+describe.skipIf(!apiServerUp)("API keys - /v1/key introspection + self-revocation", () => {
+  let ownerToken = "";
+  let projectId = "";
+
+  beforeAll(async () => {
+    ownerToken = (await registerAndLogin("self-owner")).token;
+    projectId = (await (await fetch(`${API_URL}/projects`, { method: "POST", headers: jwt(ownerToken), body: JSON.stringify({ name: "Self Revoke Project" }) })).json<{ data: { id: string } }>()).data.id;
+  });
+
+  it("GET /v1/key reports the bound site + ceiling, never the secret", async () => {
+    const created = await createKey(ownerToken, projectId, { scope: "readwrite", name: "introspect" });
+    const res = await fetch(`${API_URL}/v1/key`, { headers: key(created.secret!) });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ data: { id: string; scope: string; role: string; site: { id: string; name: string } } }>();
+    expect(body.data.id).toBe(created.id);
+    expect(body.data.scope).toBe("readwrite");
+    expect(body.data.role).toBe("owner");
+    expect(body.data.site).toMatchObject({ id: projectId, name: "Self Revoke Project" });
+    expect(JSON.stringify(body)).not.toContain(created.secret!);
+  });
+
+  it("DELETE /v1/key revokes the presenting key only; it vanishes from the owner's list", async () => {
+    const doomed = await createKey(ownerToken, projectId, { scope: "read", name: "doomed" });
+    const survivor = await createKey(ownerToken, projectId, { scope: "read", name: "survivor" });
+
+    const del = await fetch(`${API_URL}/v1/key`, { method: "DELETE", headers: key(doomed.secret!) });
+    expect(del.status).toBe(200);
+    expect((await fetch(`${API_URL}/v1/docs`, { headers: key(doomed.secret!) })).status).toBe(401);
+    expect((await fetch(`${API_URL}/v1/docs`, { headers: key(survivor.secret!) })).status).toBe(200);
+    // Second attempt: already dead → opaque 401.
+    expect((await fetch(`${API_URL}/v1/key`, { method: "DELETE", headers: key(doomed.secret!) })).status).toBe(401);
+
+    const list = await (await fetch(`${API_URL}/projects/${projectId}/api-keys`, { headers: jwt(ownerToken) })).json<{ data: { id: string }[] }>();
+    expect(list.data.some(k => k.id === doomed.id)).toBe(false);
+    expect(list.data.some(k => k.id === survivor.id)).toBe(true);
+  });
+
+  it("DELETE /v1/key never accepts a JWT", async () => {
+    expect((await fetch(`${API_URL}/v1/key`, { method: "DELETE", headers: jwt(ownerToken) })).status).toBe(401);
+  });
+});
