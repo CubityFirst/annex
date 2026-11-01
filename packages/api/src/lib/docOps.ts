@@ -1,7 +1,7 @@
 import type { Env } from "../index";
 import { parseFrontmatter } from "./frontmatter";
-import { indexDocLinks, invalidateProjectGraphIndex } from "./docLinks";
-import { upsertFtsRow } from "./fts";
+import { docLinkStatements, graphInvalidationStatement } from "./docLinks";
+import { ftsUpsertStatements } from "./fts";
 
 // Shared document write operations.
 //
@@ -53,11 +53,18 @@ export function normalizeDocSlug(raw: string | undefined): string | null {
 // its previous working URL). An absent/invalid frontmatter slug clears the
 // column unconditionally.
 export async function syncDocSlug(env: Env, projectId: string, docId: string, rawSlug: string | undefined): Promise<void> {
+  await syncDocSlugStatement(env, projectId, docId, rawSlug).run();
+}
+
+// Statement form of syncDocSlug, for folding into a write batch. The
+// uniqueness guard is evaluated when the statement executes, so it keeps the
+// same first-claimant-wins semantics inside a batch.
+export function syncDocSlugStatement(env: Env, projectId: string, docId: string, rawSlug: string | undefined): D1PreparedStatement {
   const slug = normalizeDocSlug(rawSlug);
-  await env.DB.prepare(
+  return env.DB.prepare(
     `UPDATE docs SET slug = ?2 WHERE id = ?1 AND (?2 IS NULL OR NOT EXISTS (
        SELECT 1 FROM docs WHERE project_id = ?3 AND slug = ?2 AND id <> ?1))`,
-  ).bind(docId, slug, projectId).run();
+  ).bind(docId, slug, projectId);
 }
 
 export interface CreateDocInput {
@@ -88,16 +95,19 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<Create
   const sidebarPosition = fm.sidebar_position ?? null;
   const tags = fm.tags ? JSON.stringify(fm.tags) : null;
 
+  // Body first: if it fails nothing is written to D1. The D1 side is one
+  // atomic batch (row, slug, FTS, graph invalidation).
   await env.ASSETS.put(`${input.projectId}/${id}`, content);
-  await env.DB.prepare(
-    "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-  ).bind(id, input.title, input.projectId, input.authorId, input.folderId, sidebarPosition, tags, now, now).run();
-  await syncDocSlug(env, input.projectId, id, fm.slug);
-  await upsertFtsRow(env.DB, id, input.projectId, input.title, content);
-
-  // A new doc may be the target of references in other docs, so the whole
-  // project's graph index must be recomputed.
-  await invalidateProjectGraphIndex(env, input.projectId);
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, input.title, input.projectId, input.authorId, input.folderId, sidebarPosition, tags, now, now),
+    syncDocSlugStatement(env, input.projectId, id, fm.slug),
+    ...ftsUpsertStatements(env.DB, id, input.projectId, input.title, content),
+    // A new doc may be the target of references in other docs, so the whole
+    // project's graph index must be recomputed.
+    graphInvalidationStatement(env, input.projectId),
+  ]);
 
   return {
     id,
@@ -171,32 +181,58 @@ export interface SnapshotDocRevisionInput {
   now?: string;
 }
 
-// The full revision side-effect chain, shared by applyDocUpdate (explicit
-// saves) and DocCollabRoom's session-end checkpoint: R2 `v/` snapshot,
+// The revision rows of the side-effect chain, shared by snapshotDocRevision
+// and applyDocUpdate: asset_revisions row (with title), FTS reindex, doc-link
+// graph reindex, and AI-summary cache invalidation. Returned as statements so
+// each caller folds them, together with its docs UPDATE and slug sync, into
+// ONE atomic batch - a failure part-way can't leave e.g. a revision row whose
+// FTS/links/updated_at never caught up.
+function revisionStatements(
+  env: Env,
+  input: SnapshotDocRevisionInput & { now: string },
+  revisionId: string,
+  linkStmts: D1PreparedStatement[],
+): D1PreparedStatement[] {
+  return [
+    env.DB.prepare(
+      "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors, title) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+    ).bind(revisionId, input.docId, input.projectId, input.editorId, input.editorName, input.now, input.changelog ?? null, input.contributors ?? null, input.title),
+    ...ftsUpsertStatements(env.DB, input.docId, input.projectId, input.title, input.content),
+    ...linkStmts,
+    // Drop any cached AI summary - its version is the doc's updated_at at
+    // cache time, and that is about to advance.
+    env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(input.docId),
+  ];
+}
+
+// The full revision side-effect chain, used by DocCollabRoom's session-end
+// checkpoint and the title-only revision restore: R2 `v/` snapshot,
 // asset_revisions row (with title), FTS reindex, doc-link graph reindex,
-// AI-summary cache invalidation, and the docs.updated_at bump. Does NOT write
-// the live R2 body - callers own that (applyDocUpdate writes it; the collab DO
-// mirrors it from persist()).
+// AI-summary cache invalidation, frontmatter column sync and the
+// docs.updated_at bump. Does NOT write the live R2 body - callers own that
+// (the collab DO mirrors it from persist()). applyDocUpdate builds the same
+// chain itself so it can merge its own docs UPDATE into the batch.
+//
+// Round trips: the v/ PUT runs concurrently with the doc-link resolution read
+// (skipped for link-free content); then every D1 write goes in one batch.
 export async function snapshotDocRevision(env: Env, input: SnapshotDocRevisionInput): Promise<string> {
   const now = input.now ?? new Date().toISOString();
   const revisionId = crypto.randomUUID();
-  await env.ASSETS.put(`${input.projectId}/${input.docId}/v/${revisionId}`, input.content);
-  await env.DB.prepare(
-    "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors, title) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
-  ).bind(revisionId, input.docId, input.projectId, input.editorId, input.editorName, now, input.changelog ?? null, input.contributors ?? null, input.title).run();
-  await upsertFtsRow(env.DB, input.docId, input.projectId, input.title, input.content);
-  await indexDocLinks(env, input.projectId, input.docId, input.content);
-  // Drop any cached AI summary - its version is the doc's updated_at at cache
-  // time, and that is about to advance.
-  await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(input.docId).run();
+  const [, linkStmts] = await Promise.all([
+    env.ASSETS.put(`${input.projectId}/${input.docId}/v/${revisionId}`, input.content),
+    docLinkStatements(env, input.projectId, input.docId, input.content),
+  ]);
   // Sync the frontmatter-derived columns alongside the updated_at bump so
   // every revision-writing path (explicit save, collab checkpoint, restore)
   // keeps them consistent with the body it just persisted - the collab
   // checkpoint in particular never goes through applyDocUpdate.
   const fm = parseFrontmatter(input.content);
-  await env.DB.prepare("UPDATE docs SET sidebar_position = ?, tags = ?, updated_at = ? WHERE id = ?")
-    .bind(fm.sidebar_position ?? null, fm.tags ? JSON.stringify(fm.tags) : null, now, input.docId).run();
-  await syncDocSlug(env, input.projectId, input.docId, fm.slug);
+  await env.DB.batch([
+    ...revisionStatements(env, { ...input, now }, revisionId, linkStmts),
+    env.DB.prepare("UPDATE docs SET sidebar_position = ?, tags = ?, updated_at = ? WHERE id = ?")
+      .bind(fm.sidebar_position ?? null, fm.tags ? JSON.stringify(fm.tags) : null, now, input.docId),
+    syncDocSlugStatement(env, input.projectId, input.docId, fm.slug),
+  ]);
   return revisionId;
 }
 
@@ -204,11 +240,18 @@ export interface ApplyDocUpdateOptions {
   // Invoked once, ONLY when the body actually changed, to produce the
   // contributors JSON stored on the new revision (the interactive collab path
   // also relies on this firing only-on-change for its DO-set-clearing side
-  // effect). Omitted for programmatic edits, which have a single editor.
+  // effect - which is why it can't be started speculatively alongside the
+  // baseline read). Omitted for programmatic edits, which have a single editor.
   gatherContributors?: () => Promise<string | null>;
 }
 
 // Applies an already-authorized patch to a doc.
+//
+// D1 round trips for a content change: latest-revision lookup, doc-link
+// resolution read (only when the body contains link syntax), and ONE atomic
+// write batch (revision row, FTS, doc_links, AI-summary invalidation, a single
+// merged docs UPDATE, slug sync, graph invalidation). The two R2 PUTs, the
+// collab contributors fetch and the link read run concurrently.
 export async function applyDocUpdate(
   env: Env,
   doc: DocUpdateRow,
@@ -219,24 +262,32 @@ export async function applyDocUpdate(
 ): Promise<DocUpdateResult> {
   const now = new Date().toISOString();
   let savedContent: string | undefined;
+  const stmts: D1PreparedStatement[] = [];
+
+  // The live R2 body, read at most once (fallback baseline and/or the FTS
+  // body for a title-only change).
+  let liveBody: Promise<string> | undefined;
+  const readLiveBody = () =>
+    (liveBody ??= env.ASSETS.get(`${doc.project_id}/${doc.id}`).then(o => (o ? o.text() : "")));
 
   if (patch.content !== undefined) {
     // Baseline = latest revision's content (not the live R2 body - the collab
     // DO mirrors over that, which would make post-mirror explicit saves look
     // like no-ops). Docs with no revisions yet fall back to the live body.
     const baseline = await latestDocRevisionContent(env, doc.project_id, doc.id);
-    const oldContent = baseline !== null ? baseline : await (async () => {
-      const oldR2 = await env.ASSETS.get(`${doc.project_id}/${doc.id}`);
-      return oldR2 ? await oldR2.text() : "";
-    })();
+    const oldContent = baseline !== null ? baseline : await readLiveBody();
     if (patch.content !== oldContent) {
       savedContent = patch.content;
-
-      const contributorsJson = opts.gatherContributors ? await opts.gatherContributors() : null;
-      // The live body may already hold this exact content (collab-mirrored
-      // case) - writing it again is harmless and keeps this path simple.
-      await env.ASSETS.put(`${doc.project_id}/${doc.id}`, patch.content);
-      await snapshotDocRevision(env, {
+      const revisionId = crypto.randomUUID();
+      const [contributorsJson, linkStmts] = await Promise.all([
+        opts.gatherContributors ? opts.gatherContributors() : Promise.resolve(null),
+        docLinkStatements(env, doc.project_id, doc.id, patch.content),
+        // The live body may already hold this exact content (collab-mirrored
+        // case) - writing it again is harmless and keeps this path simple.
+        env.ASSETS.put(`${doc.project_id}/${doc.id}`, patch.content),
+        env.ASSETS.put(`${doc.project_id}/${doc.id}/v/${revisionId}`, patch.content),
+      ]);
+      stmts.push(...revisionStatements(env, {
         projectId: doc.project_id,
         docId: doc.id,
         content: patch.content,
@@ -246,7 +297,7 @@ export async function applyDocUpdate(
         changelog: patch.changelog ?? null,
         contributors: contributorsJson,
         now,
-      });
+      }, revisionId, linkStmts));
     }
   }
 
@@ -258,7 +309,9 @@ export async function applyDocUpdate(
 
   // Build dynamic SET clause. Splitting published_at out of the COALESCE group
   // is required: an undefined publishedAt should leave the column untouched, but
-  // null is a meaningful explicit unpublish, so we can't COALESCE there.
+  // null is a meaningful explicit unpublish, so we can't COALESCE there. This
+  // is the ONLY docs UPDATE on this path - it also carries the revision's
+  // frontmatter sync (sidebar_position/tags) and the updated_at bump.
   const sets: string[] = [];
   const binds: unknown[] = [];
   if (patch.title !== undefined) { sets.push("title = ?"); binds.push(patch.title); }
@@ -271,32 +324,30 @@ export async function applyDocUpdate(
   sets.push("updated_at = ?");
   binds.push(now);
   binds.push(doc.id);
-  await env.DB.prepare(`UPDATE docs SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  stmts.push(env.DB.prepare(`UPDATE docs SET ${sets.join(", ")} WHERE id = ?`).bind(...binds));
 
-  // Content provided but unchanged → snapshotDocRevision didn't run, so the
-  // slug still needs syncing here (repairs docs whose column drifted, e.g.
-  // saves from before the slug column existed).
-  if (newFm !== undefined && savedContent === undefined) {
-    await syncDocSlug(env, doc.project_id, doc.id, newFm.slug);
+  // Whenever content is provided - changed or not - resync the slug from it
+  // (the unchanged case repairs docs whose column drifted, e.g. saves from
+  // before the slug column existed).
+  if (newFm !== undefined) {
+    stmts.push(syncDocSlugStatement(env, doc.project_id, doc.id, newFm.slug));
   }
 
   // Title or folder changes affect how *other* docs' wikilinks resolve, so the
   // project-wide index must be rebuilt.
   if ((patch.title && patch.title !== doc.title) || patch.folderId !== undefined) {
-    await invalidateProjectGraphIndex(env, doc.project_id);
+    stmts.push(graphInvalidationStatement(env, doc.project_id));
   }
 
-  // Only re-index FTS when the body changed (title or content). Settings-only
-  // toggles don't affect search. When the content changed, snapshotDocRevision
-  // already reindexed with the final title, so only a title-only change needs
-  // handling here (content fetched from the live body).
-  if (patch.title !== undefined && savedContent === undefined) {
-    const ftsContent = await (async () => {
-      const r2 = await env.ASSETS.get(`${doc.project_id}/${doc.id}`);
-      return r2 ? await r2.text() : "";
-    })();
-    await upsertFtsRow(env.DB, doc.id, doc.project_id, patch.title, ftsContent);
+  // Only re-index FTS when the indexed text changed. A content change already
+  // reindexed (with the final title) via revisionStatements, so only an
+  // actual title change without a content change needs handling here (body
+  // from the live R2 object). Settings-only toggles and no-op saves don't.
+  if (savedContent === undefined && patch.title !== undefined && patch.title !== doc.title) {
+    stmts.push(...ftsUpsertStatements(env.DB, doc.id, doc.project_id, patch.title, await readLiveBody()));
   }
+
+  await env.DB.batch(stmts);
 
   const updated: DocUpdateRow = {
     ...doc,
