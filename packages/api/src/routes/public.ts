@@ -114,7 +114,9 @@ type PublicNavDoc = Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sid
 // are index seeks (projects PK / idx_projects_vanity_slug).
 const PROJECT_KEY_SQL =
   "COALESCE((SELECT id FROM projects WHERE id = ?), (SELECT id FROM projects WHERE vanity_slug = ?))";
-// Same, but only ever resolves to a published site.
+// Same, but only ever resolves to a published site: when the id match is
+// unpublished, a published vanity-slug match is used instead - the outcome of
+// the old `(id = ? OR vanity_slug = ?) AND published_at IS NOT NULL` lookup.
 const PUBLISHED_PROJECT_KEY_SQL =
   "COALESCE((SELECT id FROM projects WHERE id = ? AND published_at IS NOT NULL), (SELECT id FROM projects WHERE vanity_slug = ? AND published_at IS NOT NULL))";
 
