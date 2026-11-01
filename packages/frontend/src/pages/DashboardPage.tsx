@@ -6,22 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getToken } from "@/lib/auth";
-import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import type { DocsLayoutContext, ProjectListItem } from "@/layouts/DocsLayout";
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  doc_count: number;
-  member_count: number;
-  published_at: string | null;
-  ai_enabled: number;
-  is_favourite: number;
-  is_hidden: number;
-  features: number;
-  organization_id: string | null;
-  organization_name: string | null;
-}
+type Project = ProjectListItem;
 
 const REALTIME_FEATURE = 4;
 
@@ -38,12 +25,13 @@ interface Org {
 }
 
 export function DashboardPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const navigate = useNavigate();
-  const { openCreateSite, openCreateOrg } = useOutletContext<DocsLayoutContext>();
+  // The site list lives in DocsLayout: it loads it for the sidebar and
+  // refetches it with doc/member counts whenever the dashboard is entered.
+  const { openCreateSite, openCreateOrg, projects, setProjects } = useOutletContext<DocsLayoutContext>();
 
   function sortByFavourite(list: Project[]) {
     return [...list].sort((a, b) => b.is_favourite - a.is_favourite);
@@ -83,12 +71,6 @@ export function DashboardPage() {
   useEffect(() => {
     const token = getToken();
     if (!token) return;
-    fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: Project[] }) => {
-        if (json.ok && json.data) setProjects(json.data);
-      })
-      .catch(() => {});
     fetch("/api/pending-invites", { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then((json: { ok: boolean; data?: unknown[] }) => {
@@ -131,9 +113,13 @@ export function DashboardPage() {
               <CardTitle as="h3">{project.name}</CardTitle>
             </div>
           </div>
-          <Badge variant="outline" className="shrink-0">
-            {project.doc_count} {project.doc_count === 1 ? "doc" : "docs"}
-          </Badge>
+          {/* Counts arrive with the dashboard's ?counts=1 load; a list reused
+              from the sidebar's boot fetch has none until that lands. */}
+          {project.doc_count != null && (
+            <Badge variant="outline" className="shrink-0">
+              {project.doc_count} {project.doc_count === 1 ? "doc" : "docs"}
+            </Badge>
+          )}
         </CardHeader>
 
         <CardContent className="flex-1">
@@ -246,21 +232,23 @@ export function DashboardPage() {
             </Tooltip>
           )}
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className="ml-auto flex items-center gap-1 text-muted-foreground/60"
-                aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
-                title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
-              >
-                <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
-                <span className="text-xs">{project.member_count}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              {project.member_count} {project.member_count === 1 ? "member" : "members"}
-            </TooltipContent>
-          </Tooltip>
+          {project.member_count != null && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className="ml-auto flex items-center gap-1 text-muted-foreground/60"
+                  aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                  title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                >
+                  <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                  <span className="text-xs">{project.member_count}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {project.member_count} {project.member_count === 1 ? "member" : "members"}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </CardFooter>
 
       </Card>

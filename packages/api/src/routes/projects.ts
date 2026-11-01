@@ -84,21 +84,28 @@ export async function handleProjects(
   // JSON or the logo_wide / vanity_slug / home_doc_id columns that the list
   // consumers (DashboardPage, DocsLayout, UserSettingsPage) never read - those
   // belong on the single-project endpoint.
+  // The per-site doc_count / member_count subqueries are opt-in (`?counts=1`):
+  // only the dashboard cards render them, and they're two correlated COUNTs
+  // per site on a list the sidebar loads on every app boot.
   if (!projectId && request.method === "GET") {
+    const withCounts = url.searchParams.get("counts") === "1";
+    const countColumns = withCounts
+      ? `,
+              (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count,
+              (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count`
+      : "";
     const rows = await env.DB.prepare(
       `SELECT p.id, p.name, p.description, p.owner_id, p.created_at, p.published_at,
               p.changelog_mode, p.ai_enabled, p.ai_summarization_type,
               p.graph_enabled, p.features, p.organization_id, p.logo_square_updated_at,
               pm.role, pm.is_favourite, pm.is_hidden,
-              o.name AS organization_name,
-              (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count,
-              (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count
+              o.name AS organization_name${countColumns}
        FROM projects p
        INNER JOIN project_members pm ON pm.project_id = p.id
        LEFT JOIN organizations o ON o.id = p.organization_id
        WHERE pm.user_id = ? AND pm.accepted = 1
        ORDER BY pm.is_favourite DESC, p.created_at DESC`,
-    ).bind(user.userId).all<Project & { role: Role; is_favourite: number; is_hidden: number; doc_count: number; member_count: number; organization_id: string | null; organization_name: string | null }>();
+    ).bind(user.userId).all<Project & { role: Role; is_favourite: number; is_hidden: number; doc_count?: number; member_count?: number; organization_id: string | null; organization_name: string | null }>();
     return okResponse(rows.results);
   }
 
