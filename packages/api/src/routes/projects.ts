@@ -175,9 +175,8 @@ export async function handleProjects(
       ? env.DB.prepare(
           `WITH accessible_folder_ids AS (
              SELECT DISTINCT d.folder_id
-             FROM docs d
-             JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
-             WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+             FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id
+             WHERE ds.project_id = ? AND ds.user_id = ? AND d.project_id = ? AND d.folder_id IS NOT NULL
            ),
            ancestors(id, parent_id) AS (
              SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
@@ -189,36 +188,36 @@ export async function handleProjects(
            WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = 'docs'
              AND f.parent_id IS ?
            ORDER BY f.name ASC`,
-        ).bind(user.userId, projectId, projectId, folderFilter)
+        ).bind(projectId, user.userId, projectId, projectId, folderFilter)
       : (folderFilter
           ? env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id = ? AND type = 'docs' ORDER BY name ASC")
               .bind(projectId, folderFilter)
           : env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id IS NULL AND type = 'docs' ORDER BY name ASC")
               .bind(projectId));
 
-    const docSelect = `
+    // is_home compares against one uncorrelated home_doc_id lookup instead of
+    // joining projects per doc row. Limited members are driven from their
+    // doc_shares rows (idx_doc_shares_project_user) rather than every doc in
+    // the site; d.project_id is still checked so results are unchanged.
+    const docColumns = `
       SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position, d.tags,
         COALESCE(pm.name, d.author_id) AS author_name,
         pm.role AS author_role,
-        CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home
-      FROM docs d
-      LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
-      LEFT JOIN projects p ON p.id = d.project_id
+        CASE WHEN d.id = (SELECT home_doc_id FROM projects WHERE id = ?) THEN 1 ELSE 0 END AS is_home
     `;
+    const authorJoin = "LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id";
+    const docFrom = isLimited
+      ? `FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id ${authorJoin}
+         WHERE ds.project_id = ? AND ds.user_id = ? AND d.project_id = ?`
+      : `FROM docs d ${authorJoin} WHERE d.project_id = ?`;
+    const docFromBinds = isLimited ? [projectId, user.userId, projectId] : [projectId];
     const docOrder = "ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC";
-    const sharesJoin = "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?";
 
-    const docsQuery = isLimited
-      ? (folderFilter
-          ? env.DB.prepare(`${docSelect} ${sharesJoin} WHERE d.project_id = ? AND d.folder_id = ? ${docOrder}`)
-              .bind(user.userId, projectId, folderFilter)
-          : env.DB.prepare(`${docSelect} ${sharesJoin} WHERE d.project_id = ? AND d.folder_id IS NULL ${docOrder}`)
-              .bind(user.userId, projectId))
-      : (folderFilter
-          ? env.DB.prepare(`${docSelect} WHERE d.project_id = ? AND d.folder_id = ? ${docOrder}`)
-              .bind(projectId, folderFilter)
-          : env.DB.prepare(`${docSelect} WHERE d.project_id = ? AND d.folder_id IS NULL ${docOrder}`)
-              .bind(projectId));
+    const docsQuery = folderFilter
+      ? env.DB.prepare(`${docColumns} ${docFrom} AND d.folder_id = ? ${docOrder}`)
+          .bind(projectId, ...docFromBinds, folderFilter)
+      : env.DB.prepare(`${docColumns} ${docFrom} AND d.folder_id IS NULL ${docOrder}`)
+          .bind(projectId, ...docFromBinds);
 
     const fileSelect = `
       SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at, f.updated_at,
@@ -246,6 +245,10 @@ export async function handleProjects(
     // row each per subtree entry - joining the raw tables directly would fan
     // out to docs×files rows per folder (a 300-doc/300-file folder = 90k join
     // rows) before any COUNT could collapse them. This keeps the cost additive.
+    // The recursive step is written `subtree CROSS JOIN folders` so SQLite
+    // keeps the (small) work queue as the outer loop and probes folders by
+    // (project_id, parent_id) per queue row - with folders as the outer loop
+    // it re-read every folder in the site for each queued row.
     const countsQuery = isLimited
       ? null
       : env.DB.prepare(`
@@ -253,7 +256,7 @@ export async function handleProjects(
             SELECT id, id FROM folders WHERE project_id = ? AND type = 'docs' AND parent_id IS ?
             UNION ALL
             SELECT s.ancestor_id, f.id
-              FROM folders f JOIN subtree s ON f.parent_id = s.folder_id
+              FROM subtree s CROSS JOIN folders f ON f.parent_id = s.folder_id
              WHERE f.project_id = ? AND f.type = 'docs'
           )
           SELECT

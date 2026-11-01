@@ -11,7 +11,7 @@ import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
-import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
+import { handleGraph, handlePublicGraph, handleGraphReindex, reindexStaleGraphs } from "./routes/graph";
 import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
 import { handlePublicApi } from "./routes/v1";
@@ -74,6 +74,12 @@ export default {
       purgeExpiredTrash(env)
         .then(n => { if (n > 0) console.log(`[retention] purged ${n} recycle bin entries`); })
         .catch(err => console.error("[retention] trash purge failed:", err)),
+    );
+    // Rebuild stale doc-link graphs (bounded) - public graph views never do.
+    ctx.waitUntil(
+      reindexStaleGraphs(env)
+        .then(n => { if (n > 0) console.log(`[graph] reindexed ${n} stale site graphs`); })
+        .catch(err => console.error("[graph] stale reindex failed:", err)),
     );
   },
 

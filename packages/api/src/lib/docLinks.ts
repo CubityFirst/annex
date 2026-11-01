@@ -135,9 +135,17 @@ export async function indexDocLinks(env: Env, projectId: string, sourceId: strin
   await replaceLinksForSource(env, projectId, sourceId, targets);
 }
 
+// Rebuilds every doc_links row for the project from the live R2 bodies.
+// Does NOT touch projects.graph_indexed_at: callers own that (routes/graph.ts
+// claims the job atomically before calling this, so concurrent viewers don't
+// each repeat the N R2 reads + write batch).
 export async function reindexProject(env: Env, projectId: string): Promise<void> {
-  const { docs, folders } = await fetchProjectStructure(env, projectId);
+  const [{ docs, folders }, tagRows] = await Promise.all([
+    fetchProjectStructure(env, projectId),
+    env.DB.prepare("SELECT id, tags FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string; tags: string | null }>(),
+  ]);
   const ctx = buildResolutionContext(docs, folders);
+  const storedTags = new Map(tagRows.results.map(r => [r.id, r.tags]));
 
   const contents = await Promise.all(
     docs.map(d => env.ASSETS.get(`${projectId}/${d.id}`).then(o => o ? o.text() : "")),
@@ -155,13 +163,16 @@ export async function reindexProject(env: Env, projectId: string): Promise<void>
           .bind(docs[i].id, t, projectId),
       );
     }
-    const tags = parseFrontmatter(content).tags ?? null;
-    stmts.push(
-      env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?")
-        .bind(tags ? JSON.stringify(tags) : null, docs[i].id),
-    );
+    // Every save path (createDoc, applyDocUpdate, snapshotDocRevision) keeps
+    // docs.tags in step with the body, so only write the rare row that has
+    // drifted (e.g. a body last saved before tags were tracked) rather than
+    // one UPDATE per doc on every reindex.
+    const fmTags = parseFrontmatter(content).tags;
+    const tags = fmTags ? JSON.stringify(fmTags) : null;
+    if (storedTags.has(docs[i].id) && storedTags.get(docs[i].id) !== tags) {
+      stmts.push(env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?").bind(tags, docs[i].id));
+    }
   }
-  stmts.push(env.DB.prepare("UPDATE projects SET graph_indexed_at = ? WHERE id = ?").bind(new Date().toISOString(), projectId));
   await env.DB.batch(stmts);
 }
 
