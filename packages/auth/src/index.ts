@@ -10,6 +10,7 @@ import { handleUpdateInkPrefs } from "./routes/update-ink-prefs";
 import { handleUpdateReadingFont } from "./routes/update-reading-font";
 import { handleUpdateTheme } from "./routes/update-theme";
 import { handleUpdateBio } from "./routes/update-bio";
+import { handleUpdateHandle } from "./routes/update-handle";
 import { handleTotpSetup } from "./routes/totp-setup";
 import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
@@ -152,6 +153,8 @@ export default {
         response = await handleUpdateTheme(request, env);
       } else if (url.pathname === "/update-bio" && request.method === "POST") {
         response = await handleUpdateBio(request, env);
+      } else if (url.pathname === "/update-handle" && request.method === "POST") {
+        response = await handleUpdateHandle(request, env);
       } else if (url.pathname === "/totp/setup" && request.method === "POST") {
         response = await handleTotpSetup(request, env);
       } else if (url.pathname === "/totp/enable" && request.method === "POST") {

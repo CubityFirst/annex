@@ -41,6 +41,7 @@ import { formatInkSince } from "@/lib/inkDate";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
 import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { normalizeHandle, handleProblem, HANDLE_MAX_LENGTH, HANDLE_PROBLEM_MESSAGES, type HandleProblem } from "@/lib/handle";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 import { getAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
@@ -228,6 +229,18 @@ export function UserSettingsPage() {
   const [bioSaving, setBioSaving] = useState(false);
   const BIO_MAX = 280;
 
+  // Opt-in `/@handle` profile link. Off = no handle saved (null). The switch
+  // can be flipped on locally before a handle is saved; turning it off with a
+  // saved handle releases the name (after a confirm).
+  const [handle, setHandle] = useState("");
+  const [currentHandle, setCurrentHandle] = useState<string | null>(null);
+  const [handleEnabled, setHandleEnabled] = useState(false);
+  const [handleSaving, setHandleSaving] = useState(false);
+  const [handleError, setHandleError] = useState<string | null>(null);
+  const [handleDisableConfirmOpen, setHandleDisableConfirmOpen] = useState(false);
+  // Admin lock (admin worker PATCH /api/users/:id/handle): read-only here.
+  const [handleLocked, setHandleLocked] = useState(false);
+
   // Favourite published sites for the profile card.
   const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null; note: string | null }>>([]);
   const [favouritesLoading, setFavouritesLoading] = useState(true);
@@ -252,7 +265,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; userId: string; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -266,6 +279,10 @@ export function UserSettingsPage() {
           setTimezonePrivate(json.data.timezone === null);
           setBio(json.data.bio ?? "");
           setCurrentBio(json.data.bio ?? "");
+          setCurrentHandle(json.data.handle ?? null);
+          setHandle(json.data.handle ?? "");
+          setHandleEnabled(!!json.data.handle);
+          setHandleLocked(!!json.data.handleLocked);
           setPersonalPlan(json.data.personalPlan);
           setPersonalPlanSince(json.data.personalPlanSince);
           setPersonalPlanStatus(json.data.personalPlanStatus);
@@ -1119,6 +1136,75 @@ export function UserSettingsPage() {
     }
   }
 
+  // PATCH /me/handle. `next` null turns the profile link off.
+  async function saveHandle(next: string | null): Promise<boolean> {
+    setHandleSaving(true);
+    setHandleError(null);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/handle", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ handle: next }),
+      });
+      const json = await res.json() as { ok: boolean; error?: string; reason?: HandleProblem | "locked"; data?: { handle: string | null } };
+      if (json.ok) {
+        const saved = json.data?.handle ?? null;
+        setCurrentHandle(saved);
+        setHandle(saved ?? "");
+        return true;
+      }
+      if (res.status === 409) setHandleError("That username is taken.");
+      else if (json.reason === "locked") {
+        setHandleLocked(true);
+        setHandle(currentHandle ?? "");
+        toast({ title: "Your profile link is locked by an admin.", variant: "destructive" });
+      } else if (json.reason && HANDLE_PROBLEM_MESSAGES[json.reason]) setHandleError(HANDLE_PROBLEM_MESSAGES[json.reason]);
+      else toast({ title: json.error ?? "Failed to update profile link", variant: "destructive" });
+      return false;
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+      return false;
+    } finally {
+      setHandleSaving(false);
+    }
+  }
+
+  async function handleSaveHandle(e: React.FormEvent) {
+    e.preventDefault();
+    const next = normalizeHandle(handle);
+    if (!next || next === currentHandle) return;
+    const problem = handleProblem(next);
+    if (problem) {
+      setHandleError(HANDLE_PROBLEM_MESSAGES[problem]);
+      return;
+    }
+    const wasOn = currentHandle !== null;
+    if (await saveHandle(next)) toast({ title: wasOn ? "Profile link updated" : "Profile link turned on" });
+  }
+
+  function handleToggleProfileLink(next: boolean) {
+    setHandleError(null);
+    if (next) {
+      setHandleEnabled(true);
+      return;
+    }
+    if (currentHandle) {
+      setHandleDisableConfirmOpen(true);
+    } else {
+      setHandleEnabled(false);
+      setHandle("");
+    }
+  }
+
+  async function confirmDisableProfileLink() {
+    setHandleDisableConfirmOpen(false);
+    if (await saveHandle(null)) {
+      setHandleEnabled(false);
+      toast({ title: "Profile link turned off" });
+    }
+  }
+
   async function handleSaveBio(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = bio.trim();
@@ -1567,7 +1653,109 @@ export function UserSettingsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground pl-6">When enabled, your timezone won't appear on your profile card.</p>
               </div>
+
+              <div className="flex flex-col gap-2 max-w-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <Label htmlFor="profile-link-toggle">Profile link</Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pick a username so signed-in people can open your profile at <span className="font-mono">/@username</span>.
+                    </p>
+                    {handleLocked && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <LockKeyhole className="size-3 shrink-0" />
+                        Managed by an Annex admin - you can't change it.
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    id="profile-link-toggle"
+                    checked={handleEnabled}
+                    disabled={handleSaving || handleLocked}
+                    onCheckedChange={handleToggleProfileLink}
+                  />
+                </div>
+                {handleEnabled && (() => {
+                  const draft = normalizeHandle(handle);
+                  const changed = !handleLocked && draft !== (currentHandle ?? "");
+                  const draftProblem = draft ? handleProblem(draft) : null;
+                  const message = handleError ?? (changed && draftProblem ? HANDLE_PROBLEM_MESSAGES[draftProblem] : null);
+                  const link = currentHandle ? `${window.location.origin}/@${currentHandle}` : null;
+                  return (
+                    <form onSubmit={handleSaveHandle} className="flex flex-col gap-1.5">
+                      <Label htmlFor="profile-handle" className="sr-only">Username</Label>
+                      <div className="flex items-center">
+                        <InlineSaveControls
+                          changed={changed}
+                          saving={handleSaving}
+                          onReset={() => { setHandle(currentHandle ?? ""); setHandleError(null); }}
+                          saveDisabled={!draft || !!draftProblem}
+                          resetLabel="Reset username"
+                          saveLabel="Save username"
+                        >
+                          <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+                          <Input
+                            id="profile-handle"
+                            value={handle}
+                            onChange={e => { setHandle(e.target.value); setHandleError(null); }}
+                            readOnly={handleLocked}
+                            placeholder="username"
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            maxLength={HANDLE_MAX_LENGTH + 1}
+                            aria-invalid={!!message}
+                            aria-describedby={message ? "profile-handle-error" : undefined}
+                            className="flex-1 pl-7 pr-9"
+                          />
+                        </InlineSaveControls>
+                      </div>
+                      {message ? (
+                        <p id="profile-handle-error" role="alert" className="text-xs text-destructive">{message}</p>
+                      ) : link ? (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Link to={`/@${currentHandle}`} className="truncate font-mono hover:text-foreground hover:underline">{link}</Link>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label="Copy profile link"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(link)
+                                    .then(() => toast({ title: "Profile link copied" }))
+                                    .catch(() => toast({ title: "Couldn't copy the link", variant: "destructive" }));
+                                }}
+                                className="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <Copy className="size-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Copy profile link</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Letters, numbers, - and _. Save to turn the link on.</p>
+                      )}
+                    </form>
+                  );
+                })()}
+              </div>
             </div>
+
+            <AlertDialog open={handleDisableConfirmOpen} onOpenChange={setHandleDisableConfirmOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Turn off your profile link?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    /@{currentHandle} will stop working and the username will be released, so someone else could claim it.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep it</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDisableProfileLink}>Turn off</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </section>
 
           <Separator className="my-6" />

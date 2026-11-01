@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zipSync, strToU8 } from "fflate";
 import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 import { ALL_BADGE_BITS } from "../../../auth/src/badges";
+import { normalizeHandle, handleProblem, HANDLE_MIN_LENGTH, HANDLE_MAX_LENGTH } from "../../../auth/src/handle";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
@@ -33,6 +34,8 @@ interface UserRow {
   deletion_error?: string | null;
   deletion_started_at?: number | null;
   badges?: number | null;
+  handle?: string | null;
+  handle_locked?: number | null;
   latest_moderation_action: ModerationAction | null;
   latest_moderation_reason: string | null;
   latest_moderation_created_at: string | null;
@@ -79,6 +82,8 @@ interface UserDetails {
     force_password_change: boolean;
     email_verified: boolean;
     badges: number;
+    handle: string | null;
+    handle_locked: boolean;
   };
   moderation: {
     current_status: CurrentStatus;
@@ -225,6 +230,8 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
         u.force_password_change,
         u.email_verified,
         p.badges,
+        p.handle,
+        p.handle_locked,
         ${latestModerationFields("u")}
       FROM users u
       LEFT JOIN user_preferences p ON p.user_id = u.id
@@ -300,6 +307,8 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       force_password_change: Boolean(profile.force_password_change),
       email_verified: Boolean(profile.email_verified),
       badges: profile.badges ?? 0,
+      handle: profile.handle ?? null,
+      handle_locked: !!profile.handle_locked,
     },
     moderation: {
       current_status: currentStatus,
@@ -350,11 +359,13 @@ usersRouter.get("/search", async (c) => {
   }
   const keyset = keysetClause(cursor, "u.created_at", "u.id");
 
-  // The email/id search is always present; the optional status predicate and
-  // the keyset cursor are AND-ed onto it. Bind order follows clause order:
-  // the two search binds, then status binds, then the keyset binds.
-  const where = [`(u.email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR u.id = ?)`];
-  const binds: unknown[] = [`%${escapeLike(q)}%`, q];
+  // The email/id/handle search is always present; the optional status
+  // predicate and the keyset cursor are AND-ed onto it. Bind order follows
+  // clause order: the three search binds, then status binds, then the keyset
+  // binds. The handle match is exact on the normalized form, so `@Name`
+  // finds the user whose profile link is /@name.
+  const where = [`(u.email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR u.id = ? OR p.handle = ?)`];
+  const binds: unknown[] = [`%${escapeLike(q)}%`, q, normalizeHandle(q)];
   if (statusClause.sql) {
     where.push(statusClause.sql);
     binds.push(...statusClause.binds);
@@ -379,9 +390,11 @@ usersRouter.get("/search", async (c) => {
         d.requested_by_email AS deletion_requested_by_email,
         d.last_error AS deletion_error,
         d.started_at AS deletion_started_at,
+        p.handle,
         ${latestModerationFields("u")}
       FROM users u
       LEFT JOIN user_deletions d ON d.user_id = u.id
+      LEFT JOIN user_preferences p ON p.user_id = u.id
       WHERE ${where.join(" AND ")}
       ORDER BY u.created_at DESC, u.id DESC
       LIMIT ?
@@ -509,6 +522,74 @@ usersRouter.patch("/:id/badges", async (c) => {
   ).bind(id, badges).run();
   await writeAdminAudit(c.env, session, "user.badges.update", "user", id, { badges });
   return c.json({ ok: true });
+});
+
+// PATCH /api/users/:id/handle - { handle?: string | null, locked?: boolean }
+// Moderates the opt-in `/@<handle>` profile link. `handle` sets/renames (null
+// or "" clears and releases it); `locked` stops the user changing it from
+// their own settings (auth /update-handle refuses while locked). Admins may
+// assign reserved names (e.g. an official account) but not malformed ones.
+// Only the provided fields are written, so toggling the lock never races a
+// concurrent user rename back to a stale value.
+usersRouter.patch("/:id/handle", async (c) => {
+  const session = c.get("session");
+  const id = c.req.param("id");
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  if (!body || typeof body !== "object") return c.json({ ok: false, error: "Invalid body" }, 400);
+  const hasHandle = "handle" in body;
+  const hasLocked = "locked" in body;
+  if (!hasHandle && !hasLocked) return c.json({ ok: false, error: "Nothing to update" }, 400);
+
+  let handle: string | null = null;
+  if (hasHandle) {
+    if (body.handle !== null && typeof body.handle !== "string") {
+      return c.json({ ok: false, error: "Invalid handle" }, 400);
+    }
+    const normalized = typeof body.handle === "string" ? normalizeHandle(body.handle) : "";
+    if (normalized) {
+      const problem = handleProblem(normalized);
+      if (problem === "length") return c.json({ ok: false, error: `Username must be ${HANDLE_MIN_LENGTH}-${HANDLE_MAX_LENGTH} characters` }, 400);
+      if (problem === "characters") {
+        return c.json({ ok: false, error: "Username may only use a-z, 0-9, - and _, starting and ending with a letter or number" }, 400);
+      }
+      // "reserved" is deliberately allowed for admins.
+      handle = normalized;
+    }
+  }
+  if (hasLocked && typeof body.locked !== "boolean") return c.json({ ok: false, error: "Invalid locked value" }, 400);
+  const locked = body.locked === true;
+
+  const current = await c.env.AUTH_DB.prepare(
+    `SELECT u.id, p.handle, p.handle_locked
+     FROM users u LEFT JOIN user_preferences p ON p.user_id = u.id
+     WHERE u.id = ?`,
+  ).bind(id).first<{ id: string; handle: string | null; handle_locked: number | null }>();
+  if (!current) return c.json({ ok: false, error: "User not found" }, 404);
+
+  const sets: string[] = [];
+  if (hasHandle) sets.push("handle = excluded.handle");
+  if (hasLocked) sets.push("handle_locked = excluded.handle_locked");
+  try {
+    await c.env.AUTH_DB.prepare(
+      `INSERT INTO user_preferences (user_id, handle, handle_locked) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET ${sets.join(", ")}`,
+    ).bind(id, hasHandle ? handle : null, hasLocked && locked ? 1 : 0).run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+      return c.json({ ok: false, error: "That username is taken" }, 409);
+    }
+    throw err;
+  }
+
+  const result = {
+    handle: hasHandle ? handle : current.handle ?? null,
+    handle_locked: hasLocked ? locked : !!current.handle_locked,
+  };
+  await writeAdminAudit(c.env, session, "user.handle.update", "user", id, {
+    ...(hasHandle ? { from: current.handle ?? null, to: handle } : {}),
+    ...(hasLocked ? { locked } : {}),
+  });
+  return c.json({ ok: true, data: result });
 });
 
 // POST /api/users/:id/force-password-change

@@ -11,6 +11,8 @@ type LookupUserRow = {
   timezone: string | null;
   badges: number | null;
   bio: string | null;
+  handle: string | null;
+  handle_locked: number | null;
 };
 
 export async function handleLookupById(request: Request, env: Env): Promise<Response> {
@@ -23,7 +25,7 @@ export async function handleLookupById(request: Request, env: Env): Promise<Resp
   const [userResult, pendingResult] = await env.DB.batch([
     env.DB.prepare(
       `SELECT u.id, u.email, u.name, u.email_verified, u.created_at,
-              p.timezone, p.badges, p.bio
+              p.timezone, p.badges, p.bio, p.handle, p.handle_locked
        FROM users u
        LEFT JOIN user_preferences p ON p.user_id = u.id
        WHERE u.id = ?`,
@@ -41,5 +43,5 @@ export async function handleLookupById(request: Request, env: Env): Promise<Resp
 
   const emailVerificationEnabled = await isEmailVerificationEnabled(env, user.id);
 
-  return okResponse({ userId: user.id, email: user.email, name: user.name, emailVerified: user.email_verified === 1, emailVerificationEnabled, pendingEmail: pending?.email ?? null, createdAt: user.created_at, timezone: user.timezone, badges: user.badges ?? 0, bio: user.bio });
+  return okResponse({ userId: user.id, email: user.email, name: user.name, emailVerified: user.email_verified === 1, emailVerificationEnabled, pendingEmail: pending?.email ?? null, createdAt: user.created_at, timezone: user.timezone, badges: user.badges ?? 0, bio: user.bio, handle: user.handle ?? null, handleLocked: !!user.handle_locked });
 }

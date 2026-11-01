@@ -18,6 +18,7 @@ import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml,
 import { ReportUserDialog } from "@/components/ReportUserDialog";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
+import { profilePath } from "@/lib/handle";
 import { TimezoneMap } from "@/components/TimezoneMap";
 import { InkSparkle } from "@/components/InkSparkle";
 import ReactMarkdown from "react-markdown";
@@ -94,6 +95,8 @@ interface ProfileData {
   name: string;
   createdAt: string;
   timezone?: string;
+  /** Opt-in vanity profile handle (`/@handle`); absent when the link is off. */
+  handle?: string;
   sharedProjects: SharedProject[];
   favouriteSites: FavouriteSite[];
   bio?: string;
@@ -220,6 +223,9 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
             ) : (
               <h2 className="truncate text-lg font-semibold">{displayName}</h2>
             )}
+            {profile?.handle && (
+              <p className="truncate text-sm text-muted-foreground">@{profile.handle}</p>
+            )}
             {profile && (() => {
               const badgeBits = profile.badges ?? 0;
               const isInk = profile.personalPlan === "ink";
@@ -322,7 +328,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
           <div className="flex flex-col gap-1 px-3 py-3">
             <button
               type="button"
-              onClick={() => { setOpen(false); navigate(`/u/${userId}`, { state: { backgroundLocation: location } }); }}
+              onClick={() => { setOpen(false); navigate(profilePath(userId, profile?.handle), { state: { backgroundLocation: location } }); }}
               className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
             >
               <Eye className="size-4 shrink-0 text-muted-foreground" />
