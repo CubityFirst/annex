@@ -19,8 +19,8 @@ type ProjectDeleteEnv = Pick<Env, "DB" | "ASSETS"> & CustomDomainEnv;
 // cascading project_custom_domains row - goes, then one D1 batch for the rows
 // with no FK cascade from projects (asset_revisions, the docs_fts virtual
 // table) plus the project row itself, so the row deletes can't half-apply. A
-// failure anywhere before the batch leaves the site intact and the whole call
-// safe to retry.
+// failure before the batch leaves the project row in place (its R2 content may
+// already be gone, as before) and the whole call safe to retry.
 export async function deleteProjectCascade(
   env: ProjectDeleteEnv,
   projectId: string,

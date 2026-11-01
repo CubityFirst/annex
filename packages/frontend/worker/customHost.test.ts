@@ -61,7 +61,7 @@ describe("app-host robots.txt", () => {
   });
 
   it("blocks the app, auth flows and private API but keeps published sites crawlable", () => {
-    for (const path of ["/api/", "/oauth/", "/login", "/register", "/settings", "/projects/", "/dashboard", "/invite/"]) {
+    for (const path of ["/api/", "/oauth/", "/login", "/register", "/settings", "/projects/", "/dashboard", "/invite/", "/u/", "/@"]) {
       expect(APP_ROBOTS_TXT).toContain(`Disallow: ${path}\n`);
     }
     expect(APP_ROBOTS_TXT).toContain("Allow: /api/public/\n");

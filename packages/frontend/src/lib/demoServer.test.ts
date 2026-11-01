@@ -419,6 +419,23 @@ describe("demo server user prefs", () => {
     await patch("/me/reading-font", { readingFont: null });
   });
 
+  it("supports the opt-in /@handle profile link", async () => {
+    expect((await api("/users/by-handle/demo-person")).status).toBe(404);
+
+    const set = await patch("/me/handle", { handle: "@Demo-Person" });
+    expect(set.data.handle).toBe("demo-person");
+    expect((await api("/me")).data.handle).toBe("demo-person");
+    const resolved = await api("/users/by-handle/DEMO-PERSON");
+    expect(resolved.data.userId).toBe((await api("/me")).data.userId);
+    expect((await api(`/users/${resolved.data.userId}`)).data.handle).toBe("demo-person");
+
+    expect((await patch("/me/handle", { handle: "admin" })).status).toBe(400);
+
+    await patch("/me/handle", { handle: null });
+    expect((await api("/me")).data.handle).toBeNull();
+    expect((await api("/users/by-handle/demo-person")).status).toBe(404);
+  });
+
   it("refuses avatar changes and account deletion with readable messages", async () => {
     expect((await post("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");
     expect((await del("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");
