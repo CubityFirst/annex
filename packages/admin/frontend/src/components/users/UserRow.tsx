@@ -339,7 +339,12 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
             {formatDate(user.created_at)}
           </span>
         </TableCell>
-        <TableCell className="hidden sm:table-cell">{user.name}</TableCell>
+        <TableCell className="hidden sm:table-cell">
+          {user.name}
+          {user.handle && (
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">@{user.handle}</span>
+          )}
+        </TableCell>
         <TableCell className="hidden text-muted-foreground text-xs md:table-cell">
           {formatDate(user.created_at)}
         </TableCell>
