@@ -16,6 +16,7 @@
 import { isDemoMode, DEMO_USER_ID, DEMO_USER_NAME, DEMO_USER_EMAIL } from "./demo";
 import { parseFrontmatter } from "./frontmatter";
 import { EXCALIDRAW_MIME } from "./excalidraw";
+import { normalizeHandle, handleProblem } from "./handle";
 
 const PROJECT_ID = "demo-site";
 
@@ -89,6 +90,7 @@ interface Store {
   userName: string;
   userTimezone: string | null;
   userBio: string | null;
+  userHandle: string | null;
   readingFont: string | null;
   editingFont: string | null;
   uiFont: string | null;
@@ -367,6 +369,7 @@ function seed(): Store {
     userName: DEMO_USER_NAME,
     userTimezone: null,
     userBio: null,
+    userHandle: null,
     readingFont: null,
     editingFont: null,
     uiFont: null,
@@ -758,6 +761,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       emailVerificationEnabled: false,
       timezone: s.userTimezone,
       bio: s.userBio,
+      handle: s.userHandle,
+      handleLocked: false,
       personalPlan: "free",
       personalPlanSince: null,
       personalPlanStatus: null,
@@ -791,6 +796,16 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     s.userBio = typeof body.bio === "string" && body.bio ? body.bio : null;
     return ok({ bio: s.userBio });
   }
+  if (seg[0] === "me" && seg[1] === "handle" && method === "PATCH") {
+    const body = await readJsonBody(input, init);
+    const next = typeof body.handle === "string" ? normalizeHandle(body.handle) : "";
+    if (next) {
+      const problem = handleProblem(next);
+      if (problem) return json({ ok: false, error: "Bad request", reason: problem }, 400);
+    }
+    s.userHandle = next || null;
+    return ok({ handle: s.userHandle });
+  }
   if (seg[0] === "me" && seg[1] === "reading-font" && method === "PATCH") {
     const body = await readJsonBody(input, init);
     if ("readingFont" in body) s.readingFont = typeof body.readingFont === "string" ? body.readingFont : null;
@@ -804,10 +819,16 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   if (seg[0] === "users" && seg[2] === "report" && method === "POST") {
     return blocked("Reporting is disabled in the demo.");
   }
+  if (seg[0] === "users" && seg[1] === "by-handle" && seg.length === 3 && method === "GET") {
+    const wanted = normalizeHandle(decodeURIComponent(seg[2]));
+    if (!s.userHandle || wanted !== s.userHandle) return notFound();
+    return ok({ userId: DEMO_USER_ID, name: s.userName, handle: s.userHandle });
+  }
   if (seg[0] === "users" && seg.length === 2 && method === "GET") {
     return ok({
       userId: seg[1],
       name: seg[1] === DEMO_USER_ID ? s.userName : "Unknown",
+      ...(seg[1] === DEMO_USER_ID && s.userHandle ? { handle: s.userHandle } : {}),
       createdAt: minutesAgo(60 * 24 * 7),
       sharedProjects: [],
       favouriteSites: [],

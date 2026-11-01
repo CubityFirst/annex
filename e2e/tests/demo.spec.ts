@@ -154,6 +154,47 @@ test.describe("demo sandbox", () => {
     await expect(guidesRow).toBeVisible();
   });
 
+  test("profile link: claim a username, open /@username, turn it off", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/settings");
+    const toggle = page.getByRole("switch", { name: "Profile link" });
+    await expect(toggle).not.toBeChecked();
+    await expect(page.locator("#profile-handle")).toHaveCount(0);
+
+    await toggle.click();
+    await page.fill("#profile-handle", "ad");
+    await expect(page.getByText("Use 3–30 characters.")).toBeVisible();
+    await page.fill("#profile-handle", "Demo-Person");
+    await page.getByRole("button", { name: "Save username" }).click();
+    await expect(page.getByText("Profile link turned on")).toBeVisible();
+
+    // Client-side navigation only: a full reload reseeds the demo store.
+    await page.getByRole("link", { name: /\/@demo-person$/ }).click();
+    await page.waitForURL("**/@demo-person");
+    await expect(page.getByRole("heading", { level: 1, name: "Demo User" })).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("@demo-person", { exact: true })).toBeVisible();
+
+    await page.goBack();
+    await page.getByRole("switch", { name: "Profile link" }).click();
+    await expect(page.getByText("Turn off your profile link?")).toBeVisible();
+    await page.getByRole("button", { name: "Turn off" }).click();
+    await expect(page.getByText("Profile link turned off")).toBeVisible();
+    await expect(page.locator("#profile-handle")).toHaveCount(0);
+  });
+
+  test("unknown /@username shows a 404; other unknown paths keep the plain 404", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/@Nobody-Here");
+    // Canonicalized to lowercase before resolving.
+    await page.waitForURL("**/@nobody-here");
+    await expect(page.getByText("Nobody is using")).toBeVisible();
+    await expect(page.getByText(BANNER_TEXT)).toBeVisible(); // inside the app shell
+
+    await page.goto("/not-a-real-page");
+    await expect(page.getByText("The page you requested does not exist")).toBeVisible();
+    await expect(page.getByText(BANNER_TEXT)).toHaveCount(0);
+  });
+
   test("exit demo returns to the landing page", async ({ page }) => {
     await enterDemo(page);
     await page.click('button:has-text("Exit demo")');

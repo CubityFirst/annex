@@ -226,6 +226,7 @@ export const APP_ROBOTS_TXT = [
   "Disallow: /projects/",
   "Disallow: /settings",
   "Disallow: /u/",
+  "Disallow: /@",
   "Disallow: /orgs/",
   "Disallow: /invites/",
   "Disallow: /invite/",

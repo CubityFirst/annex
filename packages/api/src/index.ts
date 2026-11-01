@@ -19,6 +19,7 @@ import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
 import { handleTrash } from "./routes/trash";
+import { handleUserByHandle } from "./routes/userHandles";
 import { releaseCustomDomain } from "./lib/customDomains";
 import { pruneDocRevisions } from "./lib/docOps";
 import { purgeExpiredTrash } from "./lib/trash";
@@ -321,7 +322,7 @@ export default {
             : Promise.resolve(true),
         ]);
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         return addCorsHeaders(Response.json({
           ok: true,
@@ -334,6 +335,8 @@ export default {
             userId: session.userId,
             timezone: data.data.timezone,
             bio: data.data.bio,
+            handle: data.data.handle ?? null,
+            handleLocked: data.data.handleLocked ?? false,
             personalPlan: session.personalPlan ?? "free",
             personalPlanSince: session.personalPlanSince ?? null,
             personalPlanStatus: session.personalPlanStatus ?? null,
@@ -448,6 +451,22 @@ export default {
         const body = await request.json<unknown>();
         const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-bio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
+      }
+
+      // PATCH /me/handle - set or clear the opt-in public profile handle (the
+      // /@<handle> link). The auth worker validates + enforces uniqueness
+      // (409 when taken).
+      if (url.pathname === "/me/handle" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-handle", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
           body: JSON.stringify(body),
@@ -672,6 +691,15 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
+      // GET /users/by-handle/:handle - authenticated, resolves a /@<handle>
+      // profile link to a user id (routes/userHandles.ts).
+      const userHandleMatch = url.pathname.match(/^\/users\/by-handle\/([^/]+)$/);
+      if (userHandleMatch && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        return addCorsHeaders(await handleUserByHandle(env, userHandleMatch[1]));
+      }
+
       // POST /users/:userId/report - authenticated abuse report from the
       // profile card (routes/reports.ts).
       const userReportMatch = url.pathname.match(/^\/users\/([^/]+)\/report$/);
@@ -696,7 +724,7 @@ export default {
         if (!lookupRes.ok) {
           return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
         }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null } }>();
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null; handle?: string | null } }>();
         if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
 
         const sharedRows = await env.DB.prepare(
@@ -757,6 +785,7 @@ export default {
           badges: lookupData.data.badges ?? 0,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
+        if (lookupData.data.handle) profileData.handle = lookupData.data.handle;
         // Bio is supporter-gated on display: only render if the target user
         // currently holds Ink. The column persists across cancel/resub cycles
         // so a user gets their bio back if they re-subscribe.
