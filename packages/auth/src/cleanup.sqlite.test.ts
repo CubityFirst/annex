@@ -165,6 +165,8 @@ describe("handleLookupById", () => {
       timezone: "Europe/London",
       badges: 0,
       bio: "hi",
+      handle: null,
+      handleLocked: false,
     });
   });
 
