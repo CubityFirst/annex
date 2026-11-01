@@ -25,6 +25,21 @@ export function sanitizeFtsQuery(q: string): string {
   return words.map((w, i) => (i === words.length - 1 ? `"${w}"*` : `"${w}"`)).join(" ");
 }
 
+export function ftsUpsertStatements(
+  db: D1Database,
+  docId: string,
+  projectId: string,
+  title: string,
+  content: string,
+): D1PreparedStatement[] {
+  const body = stripMarkdown(content);
+  return [
+    db.prepare("DELETE FROM docs_fts WHERE doc_id = ?").bind(docId),
+    db.prepare("INSERT INTO docs_fts(doc_id, project_id, title, body) VALUES (?, ?, ?, ?)")
+      .bind(docId, projectId, title, body),
+  ];
+}
+
 export async function upsertFtsRow(
   db: D1Database,
   docId: string,
@@ -32,12 +47,7 @@ export async function upsertFtsRow(
   title: string,
   content: string,
 ): Promise<void> {
-  const body = stripMarkdown(content);
-  await db.batch([
-    db.prepare("DELETE FROM docs_fts WHERE doc_id = ?").bind(docId),
-    db.prepare("INSERT INTO docs_fts(doc_id, project_id, title, body) VALUES (?, ?, ?, ?)")
-      .bind(docId, projectId, title, body),
-  ]);
+  await db.batch(ftsUpsertStatements(db, docId, projectId, title, content));
 }
 
 export async function deleteFtsRow(db: D1Database, docId: string): Promise<void> {
