@@ -61,6 +61,26 @@ that auth-table schema changes carry. The owner is just a stored user id.
    top of the live request-time admin re-check (which still handles
    demotion-after-creation).
 
+8. **Self-revocation (`DELETE /v1/key`).** `revokeApiKeyBySecret` revokes the
+   presented key by hash. It runs **before the killswitch** and **without** the
+   owner-account/live-membership gates, because revoking only ever removes
+   access, so a leaked key stays killable during an API outage or after its owner
+   lost access. Already-revoked/unknown → the same opaque 401. `GET /v1/key`
+   (introspection: site, scope, canInvite, owner's live role) goes through the
+   normal killswitch → auth → rate-limit → live-membership path.
+
+## MCP server (`packages/mcp`)
+
+A stdio MCP server over `/v1` (`@annex/mcp`, `dist/index.js`). Multi-site =
+multi-key: `ANNEX_API_KEYS` takes several `annx_…`/`alias=annx_…` entries, each
+resolved via `GET /v1/key` into a site handle. Tools take a `site` arg that maps
+to a key. The server never names a site in the URL, so the site-from-key
+invariant holds. Tool listing is capability-gated (write tools only if some key
+is `readwrite`, member tools only if some key `canInvite`, `ANNEX_MCP_READ_ONLY`
+hides mutations), but Annex remains the real enforcement. `revoke_key` calls
+`DELETE /v1/key`. **There is deliberately no user-scoped token.** See
+`packages/mcp/README.md`.
+
 ## Key files
 
 - `packages/api/src/lib/apiKeys.ts` - gen/hash/discriminator, `authenticateApiKey`, pure auth predicates.

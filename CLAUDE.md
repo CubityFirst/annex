@@ -5,6 +5,7 @@ pnpm + Turbo monorepo
 - `packages/frontend` - React 19 SPA (Vite, Tailwind CSS 4, shadcn/ui)
 - `packages/api` - Core Cloudflare Worker (projects, docs, files)
 - `packages/auth` - Auth Cloudflare Worker (login, register, TOTP, WebAuthn)
+- `packages/mcp` - stdio MCP server over the public `/v1` API, authenticated by one or more site-scoped API keys (see "Public API & Scoped API Keys")
 
 ### Auth
 
@@ -68,7 +69,7 @@ Yjs-based realtime co-editing gated per-project by `projects.features & 4` (`Pro
 
 ## Public API & Scoped API Keys
 
-A narrow public REST surface under **`/v1`** on the API worker (reachable at `https://<site>/api/v1`), authenticated by user-generated **scoped API keys** (`annx_…`) created in Site Settings → Developer → API Keys. Covers doc CRUD + move and member invite/revoke; the site is always implied by the key. **Anything touching the `api_keys` table, `lib/apiKeys.ts`, `lib/docOps.ts`, `routes/v1.ts`, `routes/apiKeys.ts`, the `RATE_LIMITER_API` binding, the Flagship `api` killswitch, or the "API Keys" settings section belongs to this system** - see `memories/Api-Keys.md` for schema, the security invariants (separate key-only auth path used **only** by `/v1`; keys are ceilings re-checked against live membership), rate limiting/killswitch, and tests. Public consumer reference: `docs/api/README.md`.
+A narrow public REST surface under **`/v1`** on the API worker (reachable at `https://<site>/api/v1`), authenticated by user-generated **scoped API keys** (`annx_…`) created in Site Settings → Developer → API Keys. Covers doc CRUD + move, member invite/revoke, key introspection (`GET /v1/key`) and key self-revocation (`DELETE /v1/key`, deliberately ahead of the killswitch and account gates); the site is always implied by the key. The **MCP server** (`packages/mcp`) is a client of `/v1` that takes several keys (one per site) - it must never gain a user-scoped/all-sites credential. **Anything touching the `api_keys` table, `lib/apiKeys.ts`, `lib/docOps.ts`, `routes/v1.ts`, `routes/apiKeys.ts`, `packages/mcp`, the `RATE_LIMITER_API` binding, the Flagship `api` killswitch, or the "API Keys" settings section belongs to this system** - see `memories/Api-Keys.md` for schema, the security invariants (separate key-only auth path used **only** by `/v1`; keys are ceilings re-checked against live membership), rate limiting/killswitch, and tests. Public consumer reference: `docs/api/README.md`.
 
 **Critical invariant:** API keys are authenticated by `authenticateApiKey` and wired **only** into the `/v1` router - never through the shared JWT `authenticate()`. A key sent to any other route fails JWT parsing → 401, which is what stops a scoped key from escaping its site/scope ceiling. Do not route keys through `authenticate()`.
 

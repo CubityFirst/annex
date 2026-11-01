@@ -281,9 +281,66 @@ curl -X DELETE https://docs.cubityfir.st/api/v1/members/USER_ID \
 
 ---
 
+## The calling key
+
+### Inspect the key
+
+```
+GET /v1/key
+```
+Requires: any valid key whose owner still has access to the site. Returns the
+site the key is bound to, its ceiling, and the owner's current role. Useful when
+an integration holds several keys and needs to tell them apart. The secret is
+never echoed.
+
+```jsonc
+{ "ok": true, "data": {
+  "id": "…", "name": "CI", "keyPrefix": "annx_AbC123", "scope": "read",
+  "canInvite": false, "createdAt": "…", "expiresAt": null, "role": "editor",
+  "site": { "id": "…", "name": "Team Handbook", "vanitySlug": null }
+} }
+```
+
+### Revoke the key (self-revocation)
+
+```
+DELETE /v1/key
+```
+Revokes **the key presented in the `Authorization` header**, and only that key.
+Holding the secret is the only proof needed. It works:
+
+* even while the API is globally disabled (`503 api_disabled` does not apply), and
+* even if the key's owner has since been removed from the site or suspended,
+
+so a leaked key can always be killed by whoever finds it. Revocation is
+immediate and permanent.
+
+```bash
+curl -X DELETE https://docs.cubityfir.st/api/v1/key \
+  -H "Authorization: Bearer $ANNEX_KEY"
+```
+
+```jsonc
+{ "ok": true, "data": { "revoked": true } }
+```
+
+An unknown, malformed or **already revoked** key returns the usual opaque `401`.
+Either way, the key no longer works.
+
+---
+
+## MCP server
+
+[`packages/mcp`](../../packages/mcp/README.md) is a Model Context Protocol server
+over this API, for AI clients like Claude Code. It accepts several keys (one per
+site) and exposes doc, member and `revoke_key` tools.
+
+---
+
 ## Managing keys
 
-Keys are created and revoked from the app, not the API:
+Keys are created in the app. They can be revoked in the app, or by the key itself
+with [`DELETE /v1/key`](#revoke-the-key-self-revocation):
 
 **Site Settings → Developer → API Keys → New key**
 
