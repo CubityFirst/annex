@@ -78,10 +78,12 @@ describe("sweepExpiredRows", () => {
     const now = Date.now();
     const cutoff = now - SWEEP_RETENTION_MS;
 
-    // Sessions. Every writer sets expires_at = created_at + <= 7d, so a row
-    // revoked before the cutoff has also expired before it.
+    // Sessions: expired before the cutoff, or revoked before it (even when
+    // it only expired after the cutoff).
     addSession(sqlite, "s-expired-old", "u1", cutoff - SESSION_TTL_MS - DAY);
     addSession(sqlite, "s-revoked-old", "u1", cutoff - 10 * DAY, cutoff - 9 * DAY);
+    addSession(sqlite, "s-revoked-old-unexpired-at-cutoff", "u1", cutoff - 2 * DAY, cutoff - DAY);
+    addSession(sqlite, "s-expired-after-cutoff", "u1", cutoff - 2 * DAY);
     addSession(sqlite, "s-expired-recent", "u1", now - SESSION_TTL_MS - DAY);
     addSession(sqlite, "s-revoked-recent", "u1", now - DAY, now - DAY / 2);
     addSession(sqlite, "s-active", "u1", now - DAY);
@@ -100,7 +102,7 @@ describe("sweepExpiredRows", () => {
 
     await sweepExpiredRows(env, now);
 
-    expect(ids("SELECT id FROM sessions")).toEqual(["s-active", "s-expired-recent", "s-revoked-recent"]);
+    expect(ids("SELECT id FROM sessions")).toEqual(["s-active", "s-expired-after-cutoff", "s-expired-recent", "s-revoked-recent"]);
     expect(ids("SELECT event_id AS id FROM webhook_events")).toEqual(["evt-recent"]);
     // Recently-expired change tokens survive so verify-email can still
     // answer "change_link_expired" for a stale link.
