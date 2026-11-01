@@ -291,23 +291,22 @@ describe("DELETE /:id - scale safety (AB-H1)", () => {
       "site-logos/proj-1-square", "site-logos/proj-1-wide",
     ]);
 
-    // 150 docs -> three 50-id chunks of (asset_revisions + doc_shares), then
-    // the final fts+projects batch.
-    expect(batches.length).toBe(4);
-    for (const batch of batches.slice(0, 3)) {
-      expect(batch[0].sql).toContain("asset_revisions");
-      expect(batch[1].sql).toContain("doc_shares");
-      // The whole point: never more than 50 bound params per statement.
-      expect(batch[0].binds.length).toBeLessThanOrEqual(50);
-      expect(batch[1].binds.length).toBeLessThanOrEqual(50);
-    }
-    const chunkBinds = batches.slice(0, 3).flatMap(b => b[0].binds);
-    expect(chunkBinds).toEqual(docIds.map(d => d.id));
+    // 150 docs -> three 50-id asset_revisions chunks (doc_shares cascade from
+    // docs, so there is no separate delete), then the final batch.
+    const chunks = calls.filter(c => c.sql.includes("asset_revisions"));
+    expect(chunks.length).toBe(3);
+    // The whole point: never more than 50 bound params per statement.
+    for (const chunk of chunks) expect(chunk.binds.length).toBeLessThanOrEqual(50);
+    expect(chunks.flatMap(c => c.binds)).toEqual(docIds.map(d => d.id));
+    expect(calls.some(c => c.sql.includes("doc_shares"))).toBe(false);
 
-    const finalBatch = batches[3];
+    expect(batches.length).toBe(1);
+    const finalBatch = batches[0];
     expect(finalBatch[0].sql).toContain("docs_fts");
-    expect(finalBatch[1].sql).toContain("DELETE FROM projects");
+    expect(finalBatch[1].sql).toContain("DELETE FROM docs WHERE project_id = ?");
     expect(finalBatch[1].binds).toEqual(["proj-1"]);
+    expect(finalBatch[2].sql).toContain("DELETE FROM projects");
+    expect(finalBatch[2].binds).toEqual(["proj-1"]);
 
     expect(releaseCustomDomain).toHaveBeenCalledWith(expect.anything(), "proj-1");
     expect(writeAdminAudit).toHaveBeenCalledTimes(1);

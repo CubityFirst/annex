@@ -151,12 +151,15 @@ describe("executeUserDeletion", () => {
       expect.stringContaining("DELETE FROM project_members"),
       expect.stringContaining("DELETE FROM organization_members"),
       expect.stringContaining("DELETE FROM api_keys"),
+      expect.stringContaining("DELETE FROM doc_shares"),
+      expect.stringContaining("DELETE FROM user_favourite_projects"),
     ]);
     expect(env.ASSETS.delete).toHaveBeenCalledWith(["avatars/u-1-dark", "avatars/u-1-light", "avatars/u-1"]);
     const finalBatch = env.AUTH_DB.batches.at(-1)!;
     expect(finalBatch[0].sql).toContain("INSERT INTO admin_audit_log");
     expect(finalBatch[0].binds[0]).toBe("user.delete");
-    expect(finalBatch[1].sql).toContain("DELETE FROM users");
+    expect(finalBatch[1].sql).toContain("DELETE FROM email_verification_tokens");
+    expect(finalBatch[2].sql).toContain("DELETE FROM users");
     expect(writeAdminAudit).not.toHaveBeenCalled();
     expect(adminAuditStatement).toHaveBeenCalledTimes(1);
   });

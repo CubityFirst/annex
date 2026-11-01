@@ -89,6 +89,60 @@ describe("delayed deletion (real SQLite)", () => {
     expect(audit).toEqual([{ action: "user.delete", actor_user_id: "admin-1" }]);
   });
 
+  it("removes the account's FK-less rows in both DBs, and only that account's", async () => {
+    const t = setup();
+    t.addUser("u-1");
+    t.addUser("u-2");
+    t.addSite("p-other", "u-2");
+    const now = "2026-10-01 00:00:00";
+    t.api.sqlite.prepare("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES ('d-1', 'T', 'p-other', 'u-2', ?, ?)").run(now, now);
+    for (const uid of ["u-1", "u-2"]) {
+      t.api.sqlite.prepare("INSERT INTO doc_shares (id, doc_id, user_id, project_id, granted_by, created_at) VALUES (?, 'd-1', ?, 'p-other', 'u-2', ?)")
+        .run(`share-${uid}`, uid, now);
+      t.api.sqlite.prepare("INSERT INTO user_favourite_projects (user_id, project_id, created_at) VALUES (?, 'p-other', 1)").run(uid);
+      t.auth.sqlite.prepare("INSERT INTO email_verification_tokens (id, user_id, created_at, expires_at, email) VALUES (?, ?, 1, 2, ?)")
+        .run(`tok-${uid}`, uid, `new-${uid}@x.com`);
+    }
+    at(T0);
+    await t.scheduleDeletion("u-1");
+    expect(await t.runAt(T0 + 7 * DAY + 60)).toEqual({ deleted: 1, failed: 0 });
+    expect(t.userExists("u-1")).toBe(false);
+
+    const users = (db: typeof t.api.sqlite, table: string) =>
+      db.prepare(`SELECT user_id FROM ${table} ORDER BY user_id`).all().map(r => r.user_id);
+    expect(users(t.api.sqlite, "doc_shares")).toEqual(["u-2"]);
+    expect(users(t.api.sqlite, "user_favourite_projects")).toEqual(["u-2"]);
+    expect(users(t.auth.sqlite, "email_verification_tokens")).toEqual(["u-2"]);
+  });
+
+  it("a retry after the API-side cleanup already ran still finishes the account", async () => {
+    const t = setup();
+    t.addUser("u-1");
+    t.auth.sqlite.prepare("INSERT INTO email_verification_tokens (id, user_id, created_at, expires_at) VALUES ('tok-1', 'u-1', 1, 2)").run();
+    at(T0);
+    await t.scheduleDeletion("u-1");
+    // First attempt dies on the final auth batch (after the API deletes ran).
+    const realBatch = t.auth.db.batch.bind(t.auth.db);
+    let failNext = true;
+    (t.auth.db as unknown as { batch: typeof realBatch }).batch = async (stmts) => {
+      if (failNext && stmts.some(s => (s as unknown as { sql: string }).sql.includes("DELETE FROM users"))) {
+        failNext = false;
+        throw new Error("simulated auth batch failure");
+      }
+      return realBatch(stmts);
+    };
+    const run1 = T0 + 7 * DAY + 60;
+    expect(await t.runAt(run1)).toEqual({ deleted: 0, failed: 1 });
+    expect(t.userExists("u-1")).toBe(true);
+    // The batch rolled back as a whole: the token is still there too.
+    expect(t.auth.sqlite.prepare("SELECT COUNT(*) AS n FROM email_verification_tokens").get()).toEqual({ n: 1 });
+    expect(t.schedule("u-1")!.started_at).not.toBeNull();
+
+    expect(await t.runAt(run1 + 3600)).toEqual({ deleted: 1, failed: 0 });
+    expect(t.userExists("u-1")).toBe(false);
+    expect(t.auth.sqlite.prepare("SELECT COUNT(*) AS n FROM email_verification_tokens").get()).toEqual({ n: 0 });
+  });
+
   it("cancel restores the account and the cron leaves it alone", async () => {
     const t = setup();
     t.addUser("u-1");

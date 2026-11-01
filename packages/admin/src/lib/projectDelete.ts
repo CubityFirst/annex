@@ -14,9 +14,9 @@ import type { Env } from "../index";
 // prefix, so one batched prefix sweep removes them all (including objects
 // orphaned by failed inserts) in ~1 subrequest per 1000 keys, and the
 // per-doc-id SQL deletes are chunked to stay under D1's ~100 bound-
-// parameter limit. The final batch (satellite rows + FTS + the project
-// row, which cascades docs/files/members/domains) is a single D1 batch
-// so the row deletes can't half-apply.
+// parameter limit. The final batch (FTS rows, docs, and the project row,
+// which cascades files/folders/members/domains) is a single D1 batch so
+// the row deletes can't half-apply.
 //
 // The caller owns the existence check and the audit row.
 export async function deleteProjectCascade(
@@ -47,16 +47,15 @@ export async function deleteProjectCascade(
     await env.ASSETS.delete(otherKeys.slice(i, i + 1000));
   }
 
-  // asset_revisions and doc_shares have no ON DELETE CASCADE from docs;
-  // delete them in 50-id chunks so a large project never exceeds D1's
+  // asset_revisions has no foreign key to docs, so it doesn't cascade;
+  // delete it in 50-id chunks so a large project never exceeds D1's
   // bound-parameter limit (an unchunked IN(...) 500s past ~100 docs).
+  // (doc_shares, doc_links and doc_ai_summaries do cascade from docs.)
   for (let i = 0; i < docIds.length; i += 50) {
     const chunk = docIds.slice(i, i + 50);
     const ph = chunk.map(() => "?").join(",");
-    await env.DB.batch([
-      env.DB.prepare(`DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${ph})`).bind(...chunk),
-      env.DB.prepare(`DELETE FROM doc_shares WHERE doc_id IN (${ph})`).bind(...chunk),
-    ]);
+    await env.DB.prepare(`DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${ph})`)
+      .bind(...chunk).run();
   }
 
   // Release the Cloudflare custom hostname (if any) before the batch deletes
@@ -64,8 +63,14 @@ export async function deleteProjectCascade(
   // when CF isn't configured on the admin worker.
   await releaseCustomDomain(env, projectId);
 
+  // Docs go explicitly before the project: left to the project's cascade,
+  // the folders cascade would first SET NULL docs.folder_id on every
+  // foldered doc (a row update each) only for the docs cascade to delete
+  // them. docs_fts is a standalone FTS table (no triggers), so its order
+  // relative to the docs delete doesn't matter.
   await env.DB.batch([
     env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId),
+    env.DB.prepare("DELETE FROM docs WHERE project_id = ?").bind(projectId),
     env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
   ]);
 
