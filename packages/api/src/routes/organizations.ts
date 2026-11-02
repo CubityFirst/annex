@@ -85,11 +85,14 @@ export async function handleOrganizations(
       const ownerName = await callerDisplayName(env, request, user);
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      await env.DB.prepare("INSERT INTO organizations (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)")
-        .bind(id, name, user.userId, now).run();
-      await env.DB.prepare(
-        "INSERT INTO organization_members (id, organization_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, 'owner', ?, ?, 1)",
-      ).bind(crypto.randomUUID(), id, user.userId, user.email, ownerName, user.userId, now).run();
+      // One batch so a failed member insert can't leave an ownerless org.
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO organizations (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)")
+          .bind(id, name, user.userId, now),
+        env.DB.prepare(
+          "INSERT INTO organization_members (id, organization_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, 'owner', ?, ?, 1)",
+        ).bind(crypto.randomUUID(), id, user.userId, user.email, ownerName, user.userId, now),
+      ]);
 
       return okResponse({ id, name, owner_id: user.userId, created_at: now, role: "owner", site_count: 0, member_count: 1 }, 201);
     }

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleDocs } from "./docs";
+import { createSqliteD1 } from "../test/sqliteD1";
+import { seedContentFixture, ALL_P1_DOCS, SHARED_WITH_LIMITED, T0 } from "../test/contentFixture";
 
 vi.mock("../lib/access", () => ({ resolveAccess: vi.fn() }));
 vi.mock("../lib", async (importOriginal) => ({
@@ -96,29 +98,56 @@ describe("handleDocs GET list", () => {
     expect(json.data).toHaveLength(1);
   });
 
-  it("supports a search query (q)", async () => {
-    const { env, queueAll, prepare, bindCalls } = makeEnv();
-    queueAll({ results: [{ id: "d1", title: "Match" }] });
-    const res = await call(env, "GET", "/docs?projectId=p1&q=Match");
+  // Real SQLite from here: the binds, the doc_shares-driven limited query and
+  // the home-doc subquery only prove themselves by running the SQL.
+  function sqliteEnv() {
+    const { db, sqlite } = createSqliteD1();
+    seedContentFixture(sqlite);
+    const { env } = makeEnv();
+    return Object.assign({ ...env, DB: db } as typeof env, { sqlite });
+  }
+  async function ids(env: Parameters<typeof handleDocs>[1], path: string) {
+    const res = await call(env, "GET", path);
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { data: unknown[] };
-    expect(json.data).toHaveLength(1);
-    // Must run the LIKE-filtered query and bind (projectId, %q%, %q%) in order
-    // for a non-limited member (no leading userId for the shares JOIN).
-    expect(prepare.mock.calls.some(c => (c[0] as string).includes("LIKE LOWER(?)"))).toBe(true);
-    expect(bindCalls).toContainEqual(["p1", "%Match%", "%Match%"]);
+    const json = (await res.json()) as { data: { id: string; is_home: number }[] };
+    return json.data;
+  }
+
+  it("lists every site doc for a full member, flagging only the home doc", async () => {
+    const env = sqliteEnv();
+    const rows = await ids(env, "/docs?projectId=p1");
+    expect(rows.map(r => r.id).sort()).toEqual([...ALL_P1_DOCS].sort());
+    expect(rows.filter(r => r.is_home === 1).map(r => r.id)).toEqual(["d-home"]);
   });
 
-  it("search binds the limited viewer's userId before the LIKE params", async () => {
+  it("supports a search query (q) for a full member", async () => {
+    const env = sqliteEnv();
+    expect((await ids(env, "/docs?projectId=p1&q=title d1")).map(r => r.id)).toEqual(["d1"]);
+    // Subtree-scoped search: fa holds d1, fb (child) d2, fg (grandchild) d6.
+    expect((await ids(env, "/docs?projectId=p1&q=title&rootFolderId=fa")).map(r => r.id).sort()).toEqual(["d1", "d2", "d6"]);
+  });
+
+  it("limits a limited member to their own in-site shares on every list shape", async () => {
     vi.mocked(resolveAccess).mockResolvedValue(access("limited"));
-    const { env, queueAll, prepare, bindCalls } = makeEnv();
-    queueAll({ results: [{ id: "d1", title: "Match" }] });
-    const res = await call(env, "GET", "/docs?projectId=p1&q=Match");
-    expect(res.status).toBe(200);
-    // A limited viewer's search JOINs doc_shares and binds userId first, then
-    // projectId + the two LIKE patterns.
-    expect(prepare.mock.calls.some(c => (c[0] as string).includes("JOIN doc_shares ds"))).toBe(true);
-    expect(bindCalls).toContainEqual(["user-1", "p1", "%Match%", "%Match%"]);
+    const env = sqliteEnv();
+    // All docs: d1/d2/d4 only - not user-2's d3, not the stray p2 share (x1).
+    expect((await ids(env, "/docs?projectId=p1")).map(r => r.id).sort()).toEqual(SHARED_WITH_LIMITED);
+    expect((await ids(env, "/docs?projectId=p1&folderId=fa")).map(r => r.id)).toEqual(["d1"]);
+    expect((await ids(env, "/docs?projectId=p1&folderId=fc")).map(r => r.id)).toEqual([]);
+    expect((await ids(env, "/docs?projectId=p1&folderId=")).map(r => r.id)).toEqual(["d4"]);
+    expect((await ids(env, "/docs?projectId=p1&q=title")).map(r => r.id).sort()).toEqual(SHARED_WITH_LIMITED);
+    // Subtree search binds the CTE's rootFolderId ahead of the share filter
+    // (it used to bind the userId into the folder slot and match nothing).
+    expect((await ids(env, "/docs?projectId=p1&q=title&rootFolderId=fa")).map(r => r.id).sort()).toEqual(["d1", "d2"]);
+    expect((await ids(env, "/docs?projectId=p1&q=title&rootFolderId=px")).map(r => r.id)).toEqual([]);
+  });
+
+  it("flags the home doc for a limited member who holds a share on it", async () => {
+    vi.mocked(resolveAccess).mockResolvedValue(access("limited"));
+    const env = sqliteEnv();
+    env.sqlite.prepare("INSERT INTO doc_shares (id, doc_id, user_id, project_id, granted_by, created_at) VALUES ('sh', 'd-home', 'user-1', 'p1', 'owner', ?)").run(T0);
+    const rows = await ids(env, "/docs?projectId=p1&folderId=");
+    expect(rows.map(r => [r.id, r.is_home]).sort()).toEqual([["d-home", 1], ["d4", 0]]);
   });
 });
 

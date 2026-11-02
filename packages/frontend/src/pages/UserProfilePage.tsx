@@ -3,15 +3,15 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { getToken } from "@/lib/auth";
 
-export function UserProfilePage() {
-  const { userId } = useParams<{ userId: string }>();
+/** The standalone profile "page" (a full-page profile card) for a resolved user id. */
+export function UserProfileView({ userId, initialName = "" }: { userId: string; initialName?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const cameFromInApp = Boolean((location.state as { backgroundLocation?: unknown } | null)?.backgroundLocation);
-  const [name, setName] = useState<string>("");
+  const [name, setName] = useState<string>(initialName);
 
   useEffect(() => {
-    if (!userId) return;
+    if (initialName) return;
     let cancelled = false;
     const token = getToken();
     fetch(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -21,12 +21,11 @@ export function UserProfilePage() {
       })
       .catch(() => { /* UserProfileCard handles its own fetch + error state */ });
     return () => { cancelled = true; };
-  }, [userId]);
-
-  if (!userId) return null;
+  }, [userId, initialName]);
 
   return (
     <UserProfileCard
+      key={userId}
       userId={userId}
       name={name}
       open
@@ -39,4 +38,10 @@ export function UserProfilePage() {
       standalone
     />
   );
+}
+
+export function UserProfilePage() {
+  const { userId } = useParams<{ userId: string }>();
+  if (!userId) return null;
+  return <UserProfileView userId={userId} />;
 }

@@ -5,9 +5,11 @@ import {
   buildResolutionContext,
   resolveDoc,
   computeLinksForDoc,
+  reindexProject,
   type DocRow,
   type FolderRow,
 } from "./docLinks";
+import { createSqliteD1 } from "../test/sqliteD1";
 
 // ── extractRefs ──────────────────────────────────────────────────────────────
 
@@ -199,5 +201,55 @@ describe("computeLinksForDoc", () => {
   it("deduplicates multiple references to the same target", () => {
     const links = computeLinksForDoc("src", "[[Target]] and [[Target]] again", ctx);
     expect(links.size).toBe(1);
+  });
+});
+
+// ── reindexProject (real SQLite) ────────────────────────────────────────────
+
+describe("reindexProject", () => {
+  async function setup(bodies: Record<string, string>, storedTags: Record<string, string | null>) {
+    const { db, sqlite } = createSqliteD1();
+    const T = "2026-01-01T00:00:00.000Z";
+    sqlite.prepare("INSERT INTO projects (id, name, owner_id, created_at, graph_indexed_at) VALUES ('p1', 'Site', 'u1', ?, NULL)").run(T);
+    for (const id of Object.keys(bodies)) {
+      sqlite.prepare("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at, tags) VALUES (?, ?, 'p1', 'u1', ?, ?, ?)")
+        .run(id, id.toUpperCase(), T, T, storedTags[id] ?? null);
+    }
+    const prepareSpy: string[] = [];
+    const DB = new Proxy(db, {
+      get(target, prop, recv) {
+        if (prop === "prepare") return (s: string) => { prepareSpy.push(s); return target.prepare(s); };
+        return Reflect.get(target, prop, recv);
+      },
+    });
+    const env = {
+      DB,
+      ASSETS: { get: async (key: string) => { const b = bodies[key.split("/")[1]]; return b === undefined ? null : { text: async () => b }; } },
+    } as unknown as Parameters<typeof reindexProject>[0];
+    return { env, sqlite, prepareSpy };
+  }
+
+  it("rebuilds the links and leaves graph_indexed_at to the caller", async () => {
+    const { env, sqlite } = await setup({ a: "see [[B]]", b: "back to [[A]]", c: "" }, {});
+    sqlite.prepare("INSERT INTO doc_links (source_doc_id, target_doc_id, project_id) VALUES ('c', 'a', 'p1')").run();
+    await reindexProject(env, "p1");
+    const links = sqlite.prepare("SELECT source_doc_id AS s, target_doc_id AS t FROM doc_links ORDER BY s").all();
+    expect(links).toEqual([{ s: "a", t: "b" }, { s: "b", t: "a" }]);
+    const proj = sqlite.prepare("SELECT graph_indexed_at FROM projects WHERE id = 'p1'").get() as { graph_indexed_at: string | null };
+    expect(proj.graph_indexed_at).toBeNull();
+  });
+
+  it("writes docs.tags only for rows that drifted from the body", async () => {
+    const { env, sqlite, prepareSpy } = await setup(
+      { a: "---\ntags: [x, y]\n---\nbody", b: "---\ntags: [z]\n---\n", c: "no frontmatter" },
+      { a: JSON.stringify(["x", "y"]), b: null, c: JSON.stringify(["stale"]) },
+    );
+    await reindexProject(env, "p1");
+    const tags = Object.fromEntries(
+      (sqlite.prepare("SELECT id, tags FROM docs ORDER BY id").all() as { id: string; tags: string | null }[]).map(r => [r.id, r.tags]),
+    );
+    expect(tags).toEqual({ a: JSON.stringify(["x", "y"]), b: JSON.stringify(["z"]), c: null });
+    // In sync (a) costs no write: only b and c were updated.
+    expect(prepareSpy.filter(s => s.startsWith("UPDATE docs SET tags"))).toHaveLength(2);
   });
 });

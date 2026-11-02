@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CursorPaginationFooter } from "@/components/CursorPaginationFooter";
 import { useCursorPagination } from "@/hooks/useCursorPagination";
 import { formatDateTime } from "@/lib/format";
+import { DOCS_APP_ORIGIN } from "@/lib/docsOrigin";
 import {
   type AdminSiteReport,
   type AdminUserReport,
@@ -14,12 +15,6 @@ import {
   listSiteReports,
   updateReportStatus,
 } from "@/lib/api";
-
-// The docs app origin, for deep-linking a report to the public page it was
-// filed from (same DEV/prod split as lib/handoff.ts).
-const DOCS_APP_ORIGIN = import.meta.env.DEV
-  ? "http://localhost:5173"
-  : "https://docs.cubityfir.st";
 
 const STATUS_BADGE_VARIANT: Record<ReportStatus, "destructive" | "default" | "secondary" | "outline"> = {
   open: "destructive",

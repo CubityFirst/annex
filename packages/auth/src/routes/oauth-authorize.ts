@@ -110,25 +110,27 @@ export async function handleOAuthAuthorize(request: Request, env: Env): Promise<
   const now = Date.now();
   const code = crypto.randomUUID();
 
-  // Opportunistic GC of dead codes (mirrors admin-handoff-start).
-  await env.DB.prepare(
-    "DELETE FROM oauth_codes WHERE expires_at <= ? OR consumed_at IS NOT NULL",
-  ).bind(now).run();
-
-  await env.DB.prepare(
-    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scope, code_challenge, nonce, created_at, expires_at, consumed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-  ).bind(
-    code,
-    client.client_id,
-    session.userId,
-    redirectUri,
-    scope,
-    body.code_challenge,
-    body.nonce ?? null,
-    now,
-    now + OIDC_CODE_TTL_MS,
-  ).run();
+  // Opportunistic GC of expired codes (mirrors admin-handoff-start), batched
+  // with the INSERT. Consumed codes are left to expire (<= OIDC_CODE_TTL_MS):
+  // the token endpoint only accepts `consumed_at IS NULL`, so they're inert,
+  // and an `OR consumed_at IS NOT NULL` arm would force a full table scan.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM oauth_codes WHERE expires_at <= ?").bind(now),
+    env.DB.prepare(
+      `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scope, code_challenge, nonce, created_at, expires_at, consumed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).bind(
+      code,
+      client.client_id,
+      session.userId,
+      redirectUri,
+      scope,
+      body.code_challenge,
+      body.nonce ?? null,
+      now,
+      now + OIDC_CODE_TTL_MS,
+    ),
+  ]);
 
   return okResponse({ redirectTo: buildRedirect(redirectUri, { code, state }) });
 }

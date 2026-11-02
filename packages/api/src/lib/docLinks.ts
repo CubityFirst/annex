@@ -107,37 +107,61 @@ export function computeLinksForDoc(
   return targets;
 }
 
+// One D1 round trip: both reads ride a single batch rather than two
+// concurrent subrequests.
 async function fetchProjectStructure(env: Env, projectId: string): Promise<{ docs: DocRow[]; folders: FolderRow[] }> {
-  const [docsResult, foldersResult] = await Promise.all([
-    env.DB.prepare("SELECT id, title, folder_id FROM docs WHERE project_id = ?").bind(projectId).all<DocRow>(),
-    env.DB.prepare("SELECT id, name, parent_id FROM folders WHERE project_id = ?").bind(projectId).all<FolderRow>(),
+  const [docsResult, foldersResult] = await env.DB.batch([
+    env.DB.prepare("SELECT id, title, folder_id FROM docs WHERE project_id = ?").bind(projectId),
+    env.DB.prepare("SELECT id, name, parent_id FROM folders WHERE project_id = ?").bind(projectId),
   ]);
-  return { docs: docsResult.results, folders: foldersResult.results };
+  return {
+    docs: (docsResult.results ?? []) as DocRow[],
+    folders: (foldersResult.results ?? []) as FolderRow[],
+  };
 }
 
-async function replaceLinksForSource(env: Env, projectId: string, sourceId: string, targets: Set<string>): Promise<void> {
+// Builds (without running) the statements that replace one doc's outgoing
+// links, so callers can fold them into a larger atomic write batch. Content
+// with no link syntax at all resolves to an empty target set no matter what
+// the site contains, so the project-structure read is skipped and only the
+// DELETE is returned.
+export async function docLinkStatements(env: Env, projectId: string, sourceId: string, content: string): Promise<D1PreparedStatement[]> {
   const stmts: D1PreparedStatement[] = [
     env.DB.prepare("DELETE FROM doc_links WHERE source_doc_id = ?").bind(sourceId),
   ];
-  for (const t of targets) {
+  if (extractRefs(content).length === 0) return stmts;
+  const { docs, folders } = await fetchProjectStructure(env, projectId);
+  const ctx = buildResolutionContext(docs, folders);
+  for (const t of computeLinksForDoc(sourceId, content, ctx)) {
     stmts.push(
       env.DB.prepare("INSERT OR IGNORE INTO doc_links (source_doc_id, target_doc_id, project_id) VALUES (?, ?, ?)")
         .bind(sourceId, t, projectId),
     );
   }
-  await env.DB.batch(stmts);
+  return stmts;
 }
 
 export async function indexDocLinks(env: Env, projectId: string, sourceId: string, content: string): Promise<void> {
-  const { docs, folders } = await fetchProjectStructure(env, projectId);
-  const ctx = buildResolutionContext(docs, folders);
-  const targets = computeLinksForDoc(sourceId, content, ctx);
-  await replaceLinksForSource(env, projectId, sourceId, targets);
+  await env.DB.batch(await docLinkStatements(env, projectId, sourceId, content));
 }
 
+// Statement form of invalidateProjectGraphIndex, for callers that fold the
+// invalidation into a larger atomic write batch.
+export function graphInvalidationStatement(env: Env, projectId: string): D1PreparedStatement {
+  return env.DB.prepare("UPDATE projects SET graph_indexed_at = NULL WHERE id = ?").bind(projectId);
+}
+
+// Rebuilds every doc_links row for the project from the live R2 bodies.
+// Does NOT touch projects.graph_indexed_at: callers own that (routes/graph.ts
+// claims the job atomically before calling this, so concurrent viewers don't
+// each repeat the N R2 reads + write batch).
 export async function reindexProject(env: Env, projectId: string): Promise<void> {
-  const { docs, folders } = await fetchProjectStructure(env, projectId);
+  const [{ docs, folders }, tagRows] = await Promise.all([
+    fetchProjectStructure(env, projectId),
+    env.DB.prepare("SELECT id, tags FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string; tags: string | null }>(),
+  ]);
   const ctx = buildResolutionContext(docs, folders);
+  const storedTags = new Map(tagRows.results.map(r => [r.id, r.tags]));
 
   const contents = await Promise.all(
     docs.map(d => env.ASSETS.get(`${projectId}/${d.id}`).then(o => o ? o.text() : "")),
@@ -155,13 +179,16 @@ export async function reindexProject(env: Env, projectId: string): Promise<void>
           .bind(docs[i].id, t, projectId),
       );
     }
-    const tags = parseFrontmatter(content).tags ?? null;
-    stmts.push(
-      env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?")
-        .bind(tags ? JSON.stringify(tags) : null, docs[i].id),
-    );
+    // Every save path (createDoc, applyDocUpdate, snapshotDocRevision) keeps
+    // docs.tags in step with the body, so only write the rare row that has
+    // drifted (e.g. a body last saved before tags were tracked) rather than
+    // one UPDATE per doc on every reindex.
+    const fmTags = parseFrontmatter(content).tags;
+    const tags = fmTags ? JSON.stringify(fmTags) : null;
+    if (storedTags.has(docs[i].id) && storedTags.get(docs[i].id) !== tags) {
+      stmts.push(env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?").bind(tags, docs[i].id));
+    }
   }
-  stmts.push(env.DB.prepare("UPDATE projects SET graph_indexed_at = ? WHERE id = ?").bind(new Date().toISOString(), projectId));
   await env.DB.batch(stmts);
 }
 

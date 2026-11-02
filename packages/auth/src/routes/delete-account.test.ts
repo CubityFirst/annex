@@ -25,6 +25,7 @@ function makeEnv(opts: {
   billingRow?: { stripe_customer_id: string | null } | null;
 } = {}) {
   const run = vi.fn().mockResolvedValue({});
+  const batch = vi.fn(async (stmts: unknown[]) => stmts.map(() => ({ results: [], meta: {} })));
   const passwordFirst = vi.fn().mockResolvedValue(
     opts.passwordHash ? { password_hash: opts.passwordHash } : null,
   );
@@ -37,7 +38,7 @@ function makeEnv(opts: {
   }));
 
   return {
-    DB: { prepare },
+    DB: { prepare, batch },
     RATE_LIMITER_AUTH: {
       limit: vi.fn().mockResolvedValue({ success: opts.rateLimitSuccess ?? true }),
     },
@@ -101,6 +102,11 @@ describe("handleDeleteAccount", () => {
     );
     expect(res.status).toBe(200);
     expect(env.DB.prepare).toHaveBeenCalledWith("DELETE FROM users WHERE id = ?");
+    // email_verification_tokens has no FK cascade - its rows (incl. a pending
+    // change-email address) are removed in the same batch as the user row.
+    expect(env.DB.prepare).toHaveBeenCalledWith("DELETE FROM email_verification_tokens WHERE user_id = ?");
+    expect(env.DB.batch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(env.DB.batch).mock.calls[0][0]).toHaveLength(2);
   });
 
   it("does not delete when MFA fails", async () => {
@@ -112,6 +118,7 @@ describe("handleDeleteAccount", () => {
     const env = makeEnv({ passwordHash: hash });
     await handleDeleteAccount(makeRequest({ currentPassword: "correct-password" }), env);
     expect(env.DB.prepare).not.toHaveBeenCalledWith("DELETE FROM users WHERE id = ?");
+    expect(env.DB.batch).not.toHaveBeenCalled();
   });
 
   it("deletes the Stripe customer before deleting the account", async () => {
