@@ -42,6 +42,13 @@ export function decodeCursor(raw: string): KeysetCursor | null {
 // cursor under ORDER BY (<tsCol> DESC, <idCol> DESC). Column names are
 // caller-supplied SQL identifiers (e.g. "u.created_at" / "u.id") and must
 // NEVER be user input. Returns an empty clause for a null cursor (first page).
+//
+// A row-value comparison rather than the equivalent
+// `ts < ? OR (ts = ? AND id < ?)`: SQLite turns the row value into a range
+// seek on a created_at index, whereas the OR form plans as a full index scan
+// (or a MULTI-INDEX OR plus a sort of everything older), so page N would read
+// every row before it. Both columns are NOT NULL wherever this is used, so
+// the two forms select the same rows.
 export function keysetClause(
   cursor: KeysetCursor | null,
   tsCol: string,
@@ -49,7 +56,7 @@ export function keysetClause(
 ): { sql: string; binds: string[] } {
   if (!cursor) return { sql: "", binds: [] };
   return {
-    sql: `(${tsCol} < ? OR (${tsCol} = ? AND ${idCol} < ?))`,
-    binds: [cursor.ts, cursor.ts, cursor.id],
+    sql: `(${tsCol}, ${idCol}) < (?, ?)`,
+    binds: [cursor.ts, cursor.id],
   };
 }

@@ -13,6 +13,8 @@ import {
   getCurrentStatus,
   buildBillingDetails,
   buildUserStatusClause,
+  buildUserSearchQuery,
+  exactUserMatch,
   type BillingRow,
 } from "./users";
 import { writeAdminAudit } from "../audit";
@@ -579,15 +581,188 @@ describe("PATCH /:id - pending deletion owns moderation", () => {
 });
 
 describe("GET /search - pending deletion", () => {
-  it("joins user_deletions and supports the pending_deletion filter", async () => {
+  it("drives the pending_deletion filter from user_deletions", async () => {
     const env = makeEnv();
     env.AUTH_DB.allQueue.push([]);
     const res = await makeUsersApp(env)("/search?q=&status=pending_deletion");
     expect(res.status).toBe(200);
-    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM users"));
-    expect(call?.sql).toContain("LEFT JOIN user_deletions d");
+    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM user_deletions d CROSS JOIN users u"));
     expect(call?.sql).toContain("d.user_id IS NOT NULL");
     expect(call?.sql).toContain("deletion_execute_after");
+  });
+
+  it("left-joins user_deletions for every other status", async () => {
+    const env = makeEnv();
+    env.AUTH_DB.allQueue.push([]);
+    const res = await makeUsersApp(env)("/search?q=&status=disabled");
+    expect(res.status).toBe(200);
+    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM users u LEFT JOIN user_deletions d"));
+    expect(call?.sql).toContain("deletion_execute_after");
+  });
+});
+
+describe("exactUserMatch", () => {
+  it("classifies UUIDs, full emails, and everything else", () => {
+    expect(exactUserMatch("3f2b8c4e-1a2b-4c3d-9e8f-0123456789ab")).toBe("id");
+    expect(exactUserMatch(" 3F2B8C4E-1A2B-4C3D-9E8F-0123456789AB ")).toBe("id");
+    expect(exactUserMatch("bob@example.com")).toBe("email");
+    expect(exactUserMatch(" Bob@Example.com ")).toBe("email");
+    expect(exactUserMatch("bob@")).toBe("substring");
+    expect(exactUserMatch("example.com")).toBe("substring");
+    expect(exactUserMatch("bob @example.com")).toBe("substring");
+    expect(exactUserMatch("")).toBe("substring");
+  });
+});
+
+// Real SQLite (every auth migration applied) for the search + details reads:
+// result sets, paging, the exact-match fallback, and the query plans that are
+// the point of the exact/partial-index/pending-deletion paths.
+describe("user search + details against the real schema", () => {
+  const NOW = Math.floor(Date.now() / 1000);
+  const U1 = "11111111-1111-4111-8111-111111111111";
+
+  function setup() {
+    const auth = createSqliteD1(AUTH_MIGRATIONS);
+    const env = { ...makeEnv(), AUTH_DB: auth.db };
+    const addUser = (id: string, email: string, createdAt: string, moderation = 0) =>
+      auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at, moderation) VALUES (?, ?, ?, 'x', ?, ?)")
+        .run(id, email, id, createdAt, moderation);
+    const addEvent = (id: string, userId: string, action: string, reason: string | null, createdAt: string) =>
+      auth.sqlite.prepare("INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, created_at) VALUES (?, ?, ?, -1, ?, ?)")
+        .run(id, userId, action, reason, createdAt);
+    addUser(U1, "alice@example.com", "2026-01-01 00:00:00");
+    addUser("u-2", "bob@example.com", "2026-01-02 00:00:00", -1);
+    addUser("u-3", "xbob@example.com", "2026-01-02 00:00:00", NOW + 3600);
+    addUser("u-4", "carol@example.com", "2026-01-03 00:00:00", NOW - 3600);
+    addUser("u-5", "dave@example.com", "2026-01-04 00:00:00", -1);
+    auth.sqlite.prepare("INSERT INTO user_deletions (user_id, id, requested_by, requested_by_email, execute_after) VALUES ('u-5', 'del-1', 'admin-1', 'admin@example.com', ?)")
+      .run(NOW + 86400);
+    // Two events on one created_at: the later-inserted (higher rowid) wins.
+    addEvent("e-1", "u-2", "suspended", "first", "2026-02-01 00:00:00");
+    addEvent("e-2", "u-2", "disabled", "spam", "2026-02-02 00:00:00");
+    addEvent("e-3", "u-2", "re_enabled", null, "2026-01-15 00:00:00");
+    addEvent("e-4", "u-5", "re_enabled", null, "2026-02-01 00:00:00");
+    addEvent("e-5", "u-5", "disabled", null, "2026-02-01 00:00:00");
+    return { auth, env, request: makeUsersApp(env) };
+  }
+
+  async function search(request: ReturnType<typeof makeUsersApp>, query: string) {
+    const res = await request(`/search?${query}`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: { users: Array<Record<string, unknown>>; nextCursor: string | null } };
+    return body.data;
+  }
+  const ids = (data: { users: Array<Record<string, unknown>> }) => data.users.map(u => u.id);
+
+  it("filters by status, newest first", async () => {
+    const { request } = setup();
+    expect(ids(await search(request, "q="))).toEqual(["u-5", "u-4", "u-3", "u-2", U1]);
+    expect(ids(await search(request, "q=&status=disabled"))).toEqual(["u-5", "u-2"]);
+    expect(ids(await search(request, "q=&status=suspended"))).toEqual(["u-3"]);
+    expect(ids(await search(request, "q=&status=active"))).toEqual(["u-4", U1]);
+    const pending = await search(request, "q=&status=pending_deletion");
+    expect(ids(pending)).toEqual(["u-5"]);
+    expect(pending.users[0]).toMatchObject({ deletion_requested_by_email: "admin@example.com", deletion_execute_after: NOW + 86400 });
+  });
+
+  it("unpacks the latest moderation event (created_at, then rowid, newest wins)", async () => {
+    const { request } = setup();
+    const { users } = await search(request, "q=");
+    const byId = Object.fromEntries(users.map(u => [u.id, u]));
+    expect(byId["u-2"]).toMatchObject({
+      latest_moderation_action: "disabled",
+      latest_moderation_reason: "spam",
+      latest_moderation_created_at: "2026-02-02 00:00:00",
+    });
+    expect(byId["u-5"]).toMatchObject({ latest_moderation_action: "disabled", latest_moderation_reason: null });
+    expect(byId[U1]).toMatchObject({
+      latest_moderation_action: null,
+      latest_moderation_reason: null,
+      latest_moderation_created_at: null,
+    });
+    expect(byId[U1]).not.toHaveProperty("latest_moderation");
+  });
+
+  it("matches a full email or UUID exactly, and falls back to substring on a miss", async () => {
+    const { request } = setup();
+    // Exact: the substring search would also have returned xbob@example.com.
+    expect(ids(await search(request, "q=bob%40example.com"))).toEqual(["u-2"]);
+    expect(ids(await search(request, `q=${U1}`))).toEqual([U1]);
+    // Differently-cased input still hits the normalized address.
+    expect(ids(await search(request, "q=BOB%40Example.com"))).toEqual(["u-2"]);
+    // A full-looking address that isn't one falls back to the substring search.
+    expect(ids(await search(request, "q=bob%40example.co"))).toEqual(["u-3", "u-2"]);
+    // An exact hit excluded by the status filter falls back too.
+    expect(ids(await search(request, "q=xbob%40example.com&status=disabled"))).toEqual([]);
+    // Plain substring search.
+    expect(ids(await search(request, "q=bob"))).toEqual(["u-3", "u-2"]);
+  });
+
+  it("pages with the keyset cursor without skips or repeats across tied timestamps", async () => {
+    const { auth, request } = setup();
+    for (let i = 0; i < 30; i++) {
+      auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, 'n', 'x', '2026-03-01 00:00:00')")
+        .run(`t-${String(i).padStart(2, "0")}`, `t${i}@example.com`);
+    }
+    const seen: unknown[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await search(request, `q=${cursor ? `&cursor=${cursor}` : ""}`);
+      seen.push(...ids(page));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(seen).toHaveLength(35);
+    expect(new Set(seen).size).toBe(35);
+    expect(seen.slice(0, 2)).toEqual(["t-29", "t-28"]);
+    expect(seen.slice(-5)).toEqual(["u-5", "u-4", "u-3", "u-2", U1]);
+  });
+
+  function plan(auth: ReturnType<typeof createSqliteD1>, opts: Parameters<typeof buildUserSearchQuery>[0]): string {
+    const { sql, binds } = buildUserSearchQuery(opts);
+    return auth.sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(binds as never[]), 26).map(r => String(r.detail)).join("\n");
+  }
+
+  it("plans exact lookups as unique-index seeks and pending deletion from user_deletions", () => {
+    const { auth } = setup();
+    const base = { status: null, cursor: null, nowSeconds: NOW };
+    expect(plan(auth, { ...base, q: U1, match: "id" })).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_1 \(id=\?\)/);
+    expect(plan(auth, { ...base, q: "bob@example.com", match: "email" })).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_2 \(email=\?\)/);
+    const pending = plan(auth, { ...base, q: "", match: "substring", status: "pending_deletion" });
+    expect(pending.split("\n")[0]).toMatch(/^(SCAN|SEARCH) d\b/);
+    expect(pending).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_1 \(id=\?\)/);
+  });
+
+  it("uses the partial moderated-users index for disabled/suspended when it exists (auth 0035)", () => {
+    const { auth } = setup();
+    auth.sqlite.exec("CREATE INDEX IF NOT EXISTS users_moderated_created_at ON users(created_at DESC, id DESC) WHERE moderation <> 0");
+    const base = { q: "", match: "substring" as const, cursor: { ts: "2026-01-03 00:00:00", id: "u-4" }, nowSeconds: NOW };
+    expect(plan(auth, { ...base, status: "disabled" })).toContain("USING INDEX users_moderated_created_at");
+    expect(plan(auth, { ...base, status: "suspended" })).toContain("USING INDEX users_moderated_created_at");
+  });
+
+  it("GET /:id reads profile, TOTP, preferences and billing in one users query", async () => {
+    const { auth, env, request } = setup();
+    auth.sqlite.prepare("UPDATE users SET totp_secret = 'S', email_verified = 1 WHERE id = 'u-2'").run();
+    auth.sqlite.prepare("INSERT INTO user_preferences (user_id, badges) VALUES ('u-2', 3)").run();
+    auth.sqlite.prepare("INSERT INTO user_billing (user_id, stripe_customer_id, granted_plan, granted_plan_reason, granted_plan_started_at) VALUES ('u-2', 'cus_1', 'ink', 'comp', ?)")
+      .run(Date.now() - 1000);
+    const prepare = vi.spyOn(env.AUTH_DB, "prepare");
+    const res = await request("/u-2");
+    expect(res.status).toBe(200);
+    const { data } = await res.json() as { data: Record<string, any> };
+    expect(prepare.mock.calls.filter(([sql]) => /FROM users\b/.test(sql))).toHaveLength(1);
+    expect(data.profile).toMatchObject({ id: "u-2", account_status: "disabled", email_verified: true, badges: 3 });
+    expect(data.moderation.current_reason).toBe("spam");
+    expect(data.moderation.history.map((e: { action: string }) => e.action)).toEqual(["disabled", "suspended", "re_enabled"]);
+    expect(data.security.totp_enabled).toBe(true);
+    expect(data.billing).toMatchObject({ resolved_plan: "ink", via: "granted", stripe: { customer_id: "cus_1" } });
+
+    const plain = await (await request(`/${U1}`)).json() as { data: Record<string, any> };
+    expect(plain.data.security.totp_enabled).toBe(false);
+    expect(plain.data.moderation.current_reason).toBeNull();
+    expect(plain.data.billing).toMatchObject({ resolved_plan: "free", granted: null });
+
+    expect((await request("/nope")).status).toBe(404);
   });
 });
 

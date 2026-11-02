@@ -289,17 +289,22 @@ export async function executeUserDeletion(
     await env.DB.prepare(`DELETE FROM organizations WHERE owner_id = ? AND id IN (${placeholders(chunk.length)})`)
       .bind(userId, ...chunk).run();
   }
+  // API-DB rows keyed by the user with no FK to cascade from (users live in
+  // the auth DB). Plain deletes, so a retried run just re-applies them.
   await env.DB.batch([
     env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM api_keys WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM doc_shares WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_favourite_projects WHERE user_id = ?").bind(userId),
   ]);
 
   await env.ASSETS.delete([`avatars/${userId}-dark`, `avatars/${userId}-light`, `avatars/${userId}`]);
 
   // The account row and its audit record commit together: if either fails,
   // neither lands, the schedule survives (it cascades with the user), and
-  // the next run retries.
+  // the next run retries. email_verification_tokens has no FK to users, so
+  // it goes explicitly - its rows carry pending change-email addresses.
   await env.AUTH_DB.batch([
     adminAuditStatement(env, actor, "user.delete", "user", userId, {
       email: user.email,
@@ -309,6 +314,7 @@ export async function executeUserDeletion(
       stripe_customer_deleted: stripeCustomerDeleted,
       ...auditExtra,
     }),
+    env.AUTH_DB.prepare("DELETE FROM email_verification_tokens WHERE user_id = ?").bind(userId),
     env.AUTH_DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);
 

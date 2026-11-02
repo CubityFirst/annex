@@ -142,7 +142,8 @@ export function getCurrentStatus(moderation: number): CurrentStatus {
 
 // Builds the optional account-status WHERE fragment for the user search.
 // `status` accepts exactly "active" | "disabled" | "suspended" |
-// "pending_deletion" (needs the search's `user_deletions d` join); anything
+// "pending_deletion" (needs the search's `user_deletions d` join, which
+// buildUserSearchQuery makes the driving table for that status); anything
 // else (absent, empty, unknown) yields an empty clause => no status filter
 // (all accounts). Pure so it can be unit-tested in isolation, mirroring
 // buildAuditListQuery. `binds` are positional, in SQL order, to be spliced
@@ -154,10 +155,13 @@ export function buildUserStatusClause(
   switch (status) {
     case "active":
       return { sql: "(u.moderation = 0 OR (u.moderation > 0 AND u.moderation <= ?))", binds: [nowSeconds] };
+    // "disabled" (`u.moderation = -1`) can use the partial
+    // idx_users_disabled_created ... WHERE moderation = -1 index (auth 0036).
+    // The redundant `u.moderation <> 0` is harmless; "suspended" still scans.
     case "disabled":
-      return { sql: "u.moderation = -1", binds: [] };
+      return { sql: "u.moderation = -1 AND u.moderation <> 0", binds: [] };
     case "suspended":
-      return { sql: "u.moderation > ?", binds: [nowSeconds] };
+      return { sql: "u.moderation > ? AND u.moderation <> 0", binds: [nowSeconds] };
     case "pending_deletion":
       return { sql: "d.user_id IS NOT NULL", binds: [] };
     default:
@@ -165,12 +169,112 @@ export function buildUserStatusClause(
   }
 }
 
-function latestModerationFields(tableAlias = "u"): string {
-  return `
-    (SELECT action FROM user_moderation_events e WHERE e.user_id = ${tableAlias}.id ORDER BY e.created_at DESC, rowid DESC LIMIT 1) AS latest_moderation_action,
-    (SELECT reason FROM user_moderation_events e WHERE e.user_id = ${tableAlias}.id ORDER BY e.created_at DESC, rowid DESC LIMIT 1) AS latest_moderation_reason,
-    (SELECT created_at FROM user_moderation_events e WHERE e.user_id = ${tableAlias}.id ORDER BY e.created_at DESC, rowid DESC LIMIT 1) AS latest_moderation_created_at
-  `;
+// The user's latest moderation event as one correlated lookup returning
+// json_array(action, reason, created_at) (NULL when there's none), instead of
+// three identical subqueries; withLatestModeration unpacks it.
+const LATEST_MODERATION_SQL = `(
+          SELECT json_array(e.action, e.reason, e.created_at) FROM user_moderation_events e
+          WHERE e.user_id = u.id ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1
+        ) AS latest_moderation`;
+
+export type UserSearchRaw = Omit<
+  UserRow,
+  "latest_moderation_action" | "latest_moderation_reason" | "latest_moderation_created_at"
+> & { latest_moderation: string | null };
+
+export function withLatestModeration(row: UserSearchRaw): UserRow {
+  const { latest_moderation, ...rest } = row;
+  const [action, reason, createdAt] = latest_moderation
+    ? (JSON.parse(latest_moderation) as [ModerationAction, string | null, string])
+    : [null, null, null];
+  return {
+    ...rest,
+    latest_moderation_action: action,
+    latest_moderation_reason: reason,
+    latest_moderation_created_at: createdAt,
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// How the search text is matched. A UUID-shaped query is looked up by id and
+// a full email address by email (both unique-index seeks); anything else is
+// the email substring search, which has to scan. The handler falls back to
+// "substring" when an exact lookup finds nothing, so a partial or
+// differently-cased address still finds what the substring search would.
+export type UserSearchMatch = "id" | "email" | "substring";
+
+export function exactUserMatch(q: string): UserSearchMatch {
+  const t = q.trim();
+  if (UUID_RE.test(t)) return "id";
+  if (EMAIL_RE.test(t)) return "email";
+  return "substring";
+}
+
+// The user-search list query. Search, status, and keyset cursor are AND-ed
+// WHERE clauses; binds are positional in SQL order, excluding the trailing
+// LIMIT bind (the caller appends it). Pure so it can run against real SQLite
+// in tests.
+export function buildUserSearchQuery(opts: {
+  q: string;
+  match: UserSearchMatch;
+  status: string | null;
+  cursor: KeysetCursor | null;
+  nowSeconds: number;
+}): { sql: string; binds: unknown[] } {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (opts.match === "id") {
+    where.push("u.id = ?");
+    binds.push(opts.q.trim());
+  } else if (opts.match === "email") {
+    // Stored addresses are normalized (trimmed, lowercased) by the auth worker.
+    where.push("u.email = ?");
+    binds.push(opts.q.trim().toLowerCase());
+  } else if (opts.q) {
+    // The handle match is exact on the normalized form, so `@Name` finds the
+    // user whose profile link is /@name.
+    where.push(`(u.email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR u.id = ? OR p.handle = ?)`);
+    binds.push(`%${escapeLike(opts.q)}%`, opts.q, normalizeHandle(opts.q));
+  }
+  const statusClause = buildUserStatusClause(opts.status, opts.nowSeconds);
+  if (statusClause.sql) {
+    where.push(statusClause.sql);
+    binds.push(...statusClause.binds);
+  }
+  const keyset = keysetClause(opts.cursor, "u.created_at", "u.id");
+  if (keyset.sql) {
+    where.push(keyset.sql);
+    binds.push(...keyset.binds);
+  }
+  // Pending deletions are few, so that filter is driven from user_deletions
+  // (CROSS JOIN pins it as the outer loop) and sorted, instead of walking
+  // every user in created_at order looking for the scheduled ones.
+  const from = opts.status === "pending_deletion"
+    ? "FROM user_deletions d CROSS JOIN users u ON u.id = d.user_id LEFT JOIN user_preferences p ON p.user_id = u.id"
+    : "FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id LEFT JOIN user_preferences p ON p.user_id = u.id";
+  const sql = `
+      SELECT
+        u.id,
+        u.email,
+        u.name,
+        u.created_at,
+        u.moderation,
+        u.force_password_change,
+        u.email_verified,
+        d.execute_after AS deletion_execute_after,
+        d.requested_by_email AS deletion_requested_by_email,
+        d.last_error AS deletion_error,
+        d.started_at AS deletion_started_at,
+        p.handle,
+        ${LATEST_MODERATION_SQL}
+      ${from}
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY u.created_at DESC, u.id DESC
+      LIMIT ?
+    `;
+  return { sql, binds };
 }
 
 export interface BillingRow {
@@ -218,46 +322,40 @@ export function buildBillingDetails(row: BillingRow): BillingDetails {
   };
 }
 
+type ProfileRow = BillingRow & {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+  moderation: number;
+  force_password_change: number;
+  email_verified: number;
+  has_totp: number;
+  badges: number | null;
+  handle: string | null;
+  handle_locked: number | null;
+};
+
 async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null> {
-  const profile = await env.AUTH_DB.prepare(
-    `
-      SELECT
-        u.id,
-        u.email,
-        u.name,
-        u.created_at,
-        u.moderation,
-        u.force_password_change,
-        u.email_verified,
-        p.badges,
-        p.handle,
-        p.handle_locked,
-        ${latestModerationFields("u")}
-      FROM users u
-      LEFT JOIN user_preferences p ON p.user_id = u.id
-      WHERE u.id = ?
-    `,
-  ).bind(id).first<UserRow>();
-
-  if (!profile) return null;
-
-  const billingRow = await env.AUTH_DB.prepare(
-    `SELECT p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
-            b.stripe_customer_id, b.stripe_subscription_id,
-            b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
-            b.personal_plan_cancel_at,
-            b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at,
-            b.granted_plan_reason
-     FROM users u
-     LEFT JOIN user_billing b ON b.user_id = u.id
-     LEFT JOIN user_preferences p ON p.user_id = u.id
-     WHERE u.id = ?`,
-  ).bind(id).first<BillingRow>();
-
-  const [totpRow, webauthn, backupCodeSummary, moderationHistory, ownedProjects, memberships] = await Promise.all([
+  // The users row (profile + TOTP flag) and its preferences/billing
+  // satellites in one read, in parallel with everything else; for an
+  // unknown id the other lookups just come back empty.
+  const [profile, webauthn, backupCodeSummary, moderationHistory, ownedProjects, memberships] = await Promise.all([
     env.AUTH_DB.prepare(
-      "SELECT totp_secret IS NOT NULL AS has_totp FROM users WHERE id = ?",
-    ).bind(id).first<{ has_totp: number }>(),
+      `SELECT u.id, u.email, u.name, u.created_at, u.moderation, u.force_password_change,
+              u.email_verified, u.totp_secret IS NOT NULL AS has_totp,
+              p.badges, p.handle, p.handle_locked,
+              p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+              b.stripe_customer_id, b.stripe_subscription_id,
+              b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+              b.personal_plan_cancel_at,
+              b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at,
+              b.granted_plan_reason
+       FROM users u
+       LEFT JOIN user_preferences p ON p.user_id = u.id
+       LEFT JOIN user_billing b ON b.user_id = u.id
+       WHERE u.id = ?`,
+    ).bind(id).first<ProfileRow>(),
     env.AUTH_DB.prepare(
       "SELECT id, name, created_at FROM webauthn_credentials WHERE user_id = ? ORDER BY created_at DESC",
     ).bind(id).all<{ id: string; name: string; created_at: string }>(),
@@ -293,8 +391,13 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     ).bind(id).all<{ id: string; name: string; role: string; created_at: string }>(),
   ]);
 
+  if (!profile) return null;
+
   const currentStatus = getCurrentStatus(profile.moderation);
-  const currentReason = currentStatus === "active" ? null : profile.latest_moderation_reason;
+  // The history is newest-first in the same (created_at DESC, rowid DESC)
+  // order as the user list's latest-moderation lookup, so its head is the
+  // latest event.
+  const currentReason = currentStatus === "active" ? null : (moderationHistory.results[0]?.reason ?? null);
 
   return {
     profile: {
@@ -324,7 +427,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       })),
     },
     security: {
-      totp_enabled: Boolean(totpRow?.has_totp),
+      totp_enabled: Boolean(profile.has_totp),
       passkeys: webauthn.results.map(k => ({ id: k.id, name: k.name, registered_at: k.created_at })),
       backup_codes: {
         total: backupCodeSummary?.total ?? 0,
@@ -336,12 +439,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       owned_projects: ownedProjects.results.map(p => ({ id: p.id, name: p.name, created_at: p.created_at })),
       project_memberships: memberships.results.map(m => ({ project_id: m.id, project_name: m.name, role: m.role, joined_at: m.created_at })),
     },
-    billing: buildBillingDetails(billingRow ?? {
-      stripe_customer_id: null, stripe_subscription_id: null,
-      personal_plan: null, personal_plan_status: null, personal_plan_started_at: null, personal_plan_cancel_at: null,
-      personal_plan_style: null, personal_presence_color: null, personal_crit_sparkles: null,
-      granted_plan: null, granted_plan_expires_at: null, granted_plan_started_at: null, granted_plan_reason: null,
-    }),
+    billing: buildBillingDetails(profile),
   };
 }
 
@@ -349,7 +447,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
 usersRouter.get("/search", async (c) => {
   const q = c.req.query("q") ?? "";
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const statusClause = buildUserStatusClause(c.req.query("status") ?? null, nowSeconds);
+  const status = c.req.query("status") ?? null;
 
   const rawCursor = c.req.query("cursor");
   let cursor: KeysetCursor | null = null;
@@ -357,54 +455,21 @@ usersRouter.get("/search", async (c) => {
     cursor = decodeCursor(rawCursor);
     if (!cursor) return c.json({ ok: false, error: "Invalid cursor" }, 400);
   }
-  const keyset = keysetClause(cursor, "u.created_at", "u.id");
-
-  // The email/id/handle search is always present; the optional status
-  // predicate and the keyset cursor are AND-ed onto it. Bind order follows
-  // clause order: the three search binds, then status binds, then the keyset
-  // binds. The handle match is exact on the normalized form, so `@Name`
-  // finds the user whose profile link is /@name.
-  const where = [`(u.email LIKE ? ${LIKE_ESCAPE_CLAUSE} OR u.id = ? OR p.handle = ?)`];
-  const binds: unknown[] = [`%${escapeLike(q)}%`, q, normalizeHandle(q)];
-  if (statusClause.sql) {
-    where.push(statusClause.sql);
-    binds.push(...statusClause.binds);
-  }
-  if (keyset.sql) {
-    where.push(keyset.sql);
-    binds.push(...keyset.binds);
-  }
 
   // One extra row tells us whether an older page exists without a count.
-  const rows = await c.env.AUTH_DB.prepare(
-    `
-      SELECT
-        u.id,
-        u.email,
-        u.name,
-        u.created_at,
-        u.moderation,
-        u.force_password_change,
-        u.email_verified,
-        d.execute_after AS deletion_execute_after,
-        d.requested_by_email AS deletion_requested_by_email,
-        d.last_error AS deletion_error,
-        d.started_at AS deletion_started_at,
-        p.handle,
-        ${latestModerationFields("u")}
-      FROM users u
-      LEFT JOIN user_deletions d ON d.user_id = u.id
-      LEFT JOIN user_preferences p ON p.user_id = u.id
-      WHERE ${where.join(" AND ")}
-      ORDER BY u.created_at DESC, u.id DESC
-      LIMIT ?
-    `,
-  )
-    .bind(...binds, USER_PAGE_SIZE + 1)
-    .all<UserRow>();
+  const run = async (match: UserSearchMatch) => {
+    const { sql, binds } = buildUserSearchQuery({ q, match, status, cursor, nowSeconds });
+    return (await c.env.AUTH_DB.prepare(sql).bind(...binds, USER_PAGE_SIZE + 1).all<UserSearchRaw>()).results;
+  };
+  const match = exactUserMatch(q);
+  let results = await run(match);
+  // An exact lookup that misses falls back to the substring search. Every
+  // request in a paging sequence takes the same path: an exact hit is at
+  // most one row (so it never yields a cursor), and a miss stays a miss.
+  if (results.length === 0 && match !== "substring") results = await run("substring");
 
-  const hasMore = rows.results.length > USER_PAGE_SIZE;
-  const users = hasMore ? rows.results.slice(0, USER_PAGE_SIZE) : rows.results;
+  const hasMore = results.length > USER_PAGE_SIZE;
+  const users = (hasMore ? results.slice(0, USER_PAGE_SIZE) : results).map(withLatestModeration);
   const last = users[users.length - 1];
   const nextCursor =
     hasMore && last ? encodeCursor({ ts: last.created_at, id: last.id }) : null;
