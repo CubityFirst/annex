@@ -8,7 +8,18 @@
 -- runs. Safe to run any number of times; on a consistent index it changes
 -- nothing.
 --
---   cd packages/api && npx wrangler d1 execute cubedocs-main --remote --file scripts/repair-docs-fts.sql
+--   cd packages/api && npx wrangler d1 execute cubedocs-main --remote \
+--     --command="$(grep -v '^--' scripts/repair-docs-fts.sql | tr '\n' ' ')"
+--
+-- (Git Bash/POSIX shell.) Why not plain `--file` / `--command "$(cat ...)"`:
+-- a remote --file goes through D1's bulk-import API rather than the query
+-- path `migrations apply` uses (the path that created and rebuilt docs_fts);
+-- and on Windows `npx` runs through a .cmd shim that cuts an argument off at
+-- its first newline, so a multi-line --command silently runs only its first
+-- line. Stripping the full-line comments and joining the lines avoids both;
+-- the output must show 8 result sets, the last two being the checks below.
+-- Every step is defined on the current state alone, so a run interrupted
+-- part-way is fixed by simply running it again.
 --
 -- Old code always deletes EVERY row of a doc before inserting its new one, so
 -- if a doc has both a mapped row and unmapped rows, the mapped row was written

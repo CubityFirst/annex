@@ -261,7 +261,11 @@ describe("scripts/repair-docs-fts.sql", () => {
 
     const repair = readFileSync(fileURLToPath(new URL("../../scripts/repair-docs-fts.sql", import.meta.url)), "utf8");
     const snapshot = () => all(sqlite, "SELECT doc_id, body, pid FROM docs_fts ORDER BY doc_id");
-    sqlite.exec(repair);
+    // First run exactly as the runbook in the script's header feeds it to
+    // `wrangler d1 execute --command`: full-line comments stripped, one line.
+    const runbookForm = repair.split(/\r?\n/).filter(l => !l.startsWith("--")).join(" ");
+    expect(runbookForm).not.toContain("--");
+    sqlite.exec(runbookForm);
     const once = snapshot();
     expect(once).toEqual([
       { doc_id: "a1", body: "mapped current", pid: ftsSiteToken(P1) },
