@@ -153,6 +153,39 @@ describe("handleProjects GET list / POST create", () => {
     expect(json.data).toHaveLength(1);
   });
 
+  it("only computes doc/member counts when asked with ?counts=1", async () => {
+    // Real SQLite so the conditional SQL actually runs against the schema.
+    const { db, sqlite } = createSqliteD1();
+    const T0 = "2026-01-01T00:00:00.000Z";
+    const exec = (sql: string, ...args: (string | number)[]) => sqlite.prepare(sql).run(...args);
+    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p1', 'Site', 'user-1', ?)", T0);
+    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p2', 'Not mine', 'user-2', ?)", T0);
+    const member = (id: string, projectId: string, userId: string, role: string, accepted: number) =>
+      exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, 'e', 'n', ?, 'user-1', ?, ?)",
+        id, projectId, userId, role, T0, accepted);
+    member("m1", "p1", "user-1", "owner", 1);
+    member("m2", "p1", "user-3", "viewer", 1);
+    member("m3", "p1", "user-4", "viewer", 0); // pending - not counted
+    member("m4", "p2", "user-2", "owner", 1);
+    for (const id of ["d1", "d2"]) {
+      exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES (?, 'D', 'p1', 'user-1', ?, ?)", id, T0, T0);
+    }
+    const { env: mockEnv } = makeEnv();
+    const env = { ...mockEnv, DB: db } as typeof mockEnv;
+
+    const plain = await call(env, "GET", "/projects");
+    const plainRows = ((await plain.json()) as { data: Record<string, unknown>[] }).data;
+    expect(plainRows.map(r => r.id)).toEqual(["p1"]);
+    expect(plainRows[0]).toMatchObject({ id: "p1", name: "Site", role: "owner" });
+    expect(plainRows[0]).not.toHaveProperty("doc_count");
+    expect(plainRows[0]).not.toHaveProperty("member_count");
+
+    const counted = await call(env, "GET", "/projects?counts=1");
+    const countedRows = ((await counted.json()) as { data: Record<string, unknown>[] }).data;
+    expect(countedRows).toHaveLength(1);
+    expect(countedRows[0]).toMatchObject({ id: "p1", role: "owner", doc_count: 2, member_count: 2 });
+  });
+
   it("400s POST without a name", async () => {
     const { env } = makeEnv();
     const res = await call(env, "POST", "/projects", { description: "x" });
