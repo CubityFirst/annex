@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleFolders } from "./folders";
+import { createSqliteD1 } from "../test/sqliteD1";
+import { seedContentFixture } from "../test/contentFixture";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
 vi.mock("../lib/trash", () => ({ moveToTrash: vi.fn() }));
@@ -72,6 +74,42 @@ describe("handleFolders GET list", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: unknown[] };
     expect(json.data).toHaveLength(1);
+  });
+});
+
+describe("handleFolders GET list (real SQLite)", () => {
+  function sqliteEnv() {
+    const { db, sqlite } = createSqliteD1();
+    seedContentFixture(sqlite);
+    return { DB: db } as unknown as Parameters<typeof handleFolders>[1];
+  }
+  async function names(env: Parameters<typeof handleFolders>[1], path: string) {
+    const res = await call(env, "GET", path);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: { id: string }[] }).data.map(f => f.id);
+  }
+
+  it("shows a limited member only the ancestor chain of their in-site shares", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("limited");
+    const env = sqliteEnv();
+    // d1 in fa, d2 in fa/fb: fa at the root, fb under fa. Never fc (user-2's
+    // share), fg (no shared doc below it) or px (the stray p2 share).
+    expect(await names(env, "/folders?projectId=p1")).toEqual(["fa"]);
+    expect(await names(env, "/folders?projectId=p1&parentId=fa")).toEqual(["fb"]);
+    expect(await names(env, "/folders?projectId=p1&parentId=fb")).toEqual([]);
+    expect(await names(env, "/folders?projectId=p1&all=1")).toEqual(["fa", "fb"]);
+  });
+
+  it("shows a full member every folder", async () => {
+    const env = sqliteEnv();
+    expect(await names(env, "/folders?projectId=p1")).toEqual(["fa", "fc"]);
+    expect(await names(env, "/folders?projectId=p1&all=1")).toEqual(["fa", "fb", "fc", "fg"]);
+  });
+
+  it("no longer serves the unused /folders/counts route", async () => {
+    const env = sqliteEnv();
+    const res = await call(env, "GET", "/folders/counts?projectId=p1");
+    expect(res.status).toBe(404);
   });
 });
 

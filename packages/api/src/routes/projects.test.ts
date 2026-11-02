@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleProjects } from "./projects";
 import { createSqliteD1 } from "../test/sqliteD1";
+import { seedContentFixture } from "../test/contentFixture";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
 vi.mock("../lib/fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsForProject: vi.fn() }));
@@ -290,6 +291,53 @@ describe("handleProjects GET /projects/:id/contents", () => {
     expect(json.data.folderCounts).toEqual({ fl1: { docs: 3, files: 4, folders: 1 } });
     // FM-L1: the file listing carries updated_at.
     expect(json.data.files).toEqual([expect.objectContaining({ id: "root", updated_at: "2026-02-02T00:00:00.000Z" })]);
+  });
+});
+
+describe("handleProjects GET /projects/:id/contents (real SQLite, nested + limited)", () => {
+  type Contents = {
+    folders: { id: string }[];
+    docs: { id: string; is_home: number }[];
+    files: unknown[];
+    folderCounts: Record<string, { docs: number; files: number; folders: number }>;
+    ancestors: { id: string }[];
+  };
+  async function contents(path: string): Promise<Contents> {
+    const { db, sqlite } = createSqliteD1();
+    seedContentFixture(sqlite);
+    const { env } = makeEnv();
+    const res = await call({ ...env, DB: db }, "GET", path);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: Contents }).data;
+  }
+
+  it("counts whole subtrees (grandchildren included) and flags the home doc", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("editor");
+    const root = await contents("/projects/p1/contents");
+    // fa holds d1, fa/fb d2, fa/fb/fg d6: 3 docs and 2 descendant folders.
+    expect(root.folderCounts).toEqual({
+      fa: { docs: 3, files: 0, folders: 2 },
+      fc: { docs: 1, files: 0, folders: 0 },
+    });
+    expect(root.docs.map(d => [d.id, d.is_home]).sort()).toEqual([["d-home", 1], ["d4", 0], ["d5", 0]]);
+    const inFa = await contents("/projects/p1/contents?folderId=fa");
+    expect(inFa.folderCounts).toEqual({ fb: { docs: 2, files: 0, folders: 1 } });
+    expect(inFa.ancestors.map(a => a.id)).toEqual(["fa"]);
+  });
+
+  it("gives a limited member only their in-site shares and the folders leading to them", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("limited");
+    const root = await contents("/projects/p1/contents");
+    expect(root.folders.map(f => f.id)).toEqual(["fa"]);
+    expect(root.docs.map(d => d.id)).toEqual(["d4"]);
+    expect(root.files).toEqual([]);
+    expect(root.folderCounts).toEqual({});
+    const inFa = await contents("/projects/p1/contents?folderId=fa");
+    expect(inFa.folders.map(f => f.id)).toEqual(["fb"]);
+    expect(inFa.docs.map(d => d.id)).toEqual(["d1"]);
+    const inFc = await contents("/projects/p1/contents?folderId=fc");
+    expect(inFc.docs).toEqual([]);
+    expect(inFc.folders).toEqual([]);
   });
 });
 
