@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleOrganizations } from "./organizations";
+import { createSqliteD1 } from "../test/sqliteD1";
 
 vi.mock("./members", () => ({ loadMemberPlans: vi.fn() }));
 
@@ -71,14 +72,29 @@ describe("handleOrganizations collection", () => {
     expect(res.status).toBe(400);
   });
 
+  // Real SQLite so the org row + owner membership are checked as one batch.
+  function sqliteEnv() {
+    const { db, sqlite } = createSqliteD1();
+    const { env } = makeEnv();
+    return { env: { ...env, DB: db } as typeof env, sqlite };
+  }
+
   it("creates an org (201) with an owner membership", async () => {
-    const { env, run } = makeEnv();
+    const { env, sqlite } = sqliteEnv();
     const res = await call(env, "POST", "/organizations", { name: "New Org" });
     expect(res.status).toBe(201);
-    expect(run).toHaveBeenCalledTimes(2); // org row + owner membership
-    const json = (await res.json()) as { data: { name: string; role: string } };
+    const json = (await res.json()) as { data: { id: string; name: string; role: string } };
     expect(json.data.name).toBe("New Org");
     expect(json.data.role).toBe("owner");
+    expect(sqlite.prepare("SELECT role, name, accepted FROM organization_members WHERE organization_id = ? AND user_id = 'caller-1'").get(json.data.id))
+      .toEqual({ role: "owner", name: "Caller Name", accepted: 1 });
+  });
+
+  it("leaves no org row behind when the owner-member insert fails", async () => {
+    const { env, sqlite } = sqliteEnv();
+    sqlite.exec("CREATE TRIGGER fail_member BEFORE INSERT ON organization_members BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    await expect(call(env, "POST", "/organizations", { name: "New Org" })).rejects.toThrow(/boom/);
+    expect((sqlite.prepare("SELECT COUNT(*) AS n FROM organizations").get() as { n: number }).n).toBe(0);
   });
 
   it("404s an unsupported collection method", async () => {

@@ -19,8 +19,8 @@ import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
 import { handleTrash } from "./routes/trash";
+import { cleanupDeletedAccount } from "./lib/projectDelete";
 import { handleUserByHandle } from "./routes/userHandles";
-import { releaseCustomDomain } from "./lib/customDomains";
 import { pruneDocRevisions } from "./lib/docOps";
 import { purgeExpiredTrash } from "./lib/trash";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
@@ -372,11 +372,14 @@ export default {
           });
           if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
           const trimmedName = body.name.trim();
-          await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
-            .bind(trimmedName, session.userId).run();
-          // Keep org-membership rows' denormalized name in sync too.
-          await env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ?")
-            .bind(trimmedName, session.userId).run();
+          // Keep the denormalized site- and org-membership name snapshots in
+          // sync; the <> guard skips rows that already match.
+          await env.DB.batch([
+            env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ? AND name <> ?")
+              .bind(trimmedName, session.userId, trimmedName),
+            env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ? AND name <> ?")
+              .bind(trimmedName, session.userId, trimmedName),
+          ]);
           responseData.name = trimmedName;
         }
 
@@ -547,7 +550,13 @@ export default {
           // this project isn't already in their list (so re-POST of an existing
           // favourite stays idempotent).
           const countRow = await env.DB.prepare(
-            "SELECT COUNT(*) as n, SUM(CASE WHEN project_id = ? THEN 1 ELSE 0 END) as has FROM user_favourite_projects WHERE user_id = ?",
+            // Count only what GET /me/favourite-sites lists (existing, published
+            // sites) so orphaned/unpublished rows the user can't see or remove
+            // don't hold them at the cap.
+            `SELECT COUNT(*) as n, SUM(CASE WHEN ufp.project_id = ? THEN 1 ELSE 0 END) as has
+             FROM user_favourite_projects ufp
+             JOIN projects p ON p.id = ufp.project_id
+             WHERE ufp.user_id = ? AND p.published_at IS NOT NULL`,
           ).bind(projectId, session.userId).first<{ n: number; has: number }>();
           if (countRow && countRow.has === 0 && countRow.n >= 3) {
             return addCorsHeaders(errorResponse(Errors.CONFLICT));
@@ -670,23 +679,11 @@ export default {
         const authJson = await authRes.json<{ ok: boolean; error?: string }>();
         if (!authJson.ok) return addCorsHeaders(Response.json(authJson, { status: authRes.status }));
 
-        // Delete projects the user owns (cascades to docs, members, etc.)
-        const ownedProjects = await env.DB.prepare(
-          "SELECT id FROM projects WHERE owner_id = ?",
-        ).bind(session.userId).all<{ id: string }>();
-        for (const proj of ownedProjects.results) {
-          // Release each site's Cloudflare custom hostname before its row (and
-          // cascading project_custom_domains row) is deleted.
-          await releaseCustomDomain(env, proj.id);
-          await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(proj.id).run();
-        }
-
-        // Remove user from any remaining project + organization memberships
-        await env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(session.userId).run();
-        await env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(session.userId).run();
-
-        // Delete avatar (both variants + any legacy object)
-        await deleteAllAvatarVariants(env.ASSETS, session.userId);
+        // The account is gone: delete any owned site in full (same cleanup as
+        // DELETE /projects/:id - R2, revisions, FTS, custom domain), then the
+        // remaining memberships and the avatar. Best-effort per step (see
+        // lib/projectDelete.ts) - there is nothing left to roll back to.
+        await cleanupDeletedAccount(env, session.userId);
 
         return addCorsHeaders(Response.json({ ok: true }));
       }
@@ -981,10 +978,12 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
 // successful change).
 async function syncMemberEmails(env: Env, userId: string, email: string): Promise<void> {
   try {
-    await env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ?")
-      .bind(email, userId).run();
-    await env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ?")
-      .bind(email, userId).run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ? AND email <> ?")
+        .bind(email, userId, email),
+      env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ? AND email <> ?")
+        .bind(email, userId, email),
+    ]);
   } catch (err) {
     console.error("syncMemberEmails failed", { userId, err });
   }
