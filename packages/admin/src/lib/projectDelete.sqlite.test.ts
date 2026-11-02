@@ -17,7 +17,9 @@ function setup() {
     for (const [doc, folder] of [[`${p}-d1`, null], [`${p}-d2`, `${p}-f`], [`${p}-d3`, `${p}-sub`]] as const) {
       s.prepare("INSERT INTO docs (id, title, project_id, folder_id, author_id, created_at, updated_at) VALUES (?, 'T', ?, ?, 'u-1', ?, ?)")
         .run(doc, p, folder, now, now);
-      s.prepare("INSERT INTO docs_fts (title, body, doc_id, project_id) VALUES ('T', 'body', ?, ?)").run(doc, p);
+      // Current (0064) FTS layout: site token + rowid map row.
+      s.prepare("INSERT INTO docs_fts (title, body, pid, doc_id, project_id) VALUES ('T', 'body', hex(?), ?, ?)").run(p, doc, p);
+      s.prepare("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), ?)").run(doc);
       s.prepare("INSERT INTO doc_shares (id, doc_id, user_id, project_id, granted_by, created_at) VALUES (?, ?, 'u-2', ?, 'u-1', ?)")
         .run(`${doc}-share`, doc, p, now);
       s.prepare("INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES (?, 'S', 1)").run(doc);
@@ -52,11 +54,13 @@ describe("deleteProjectCascade (real SQLite)", () => {
       expect(count(table, `${col} = 'p-1'`), table).toBe(0);
     }
     expect(count("doc_ai_summaries", "doc_id LIKE 'p-1-%'")).toBe(0);
+    expect(count("docs_fts_map", "doc_id LIKE 'p-1-%'")).toBe(0);
 
     // p-2 is untouched.
     expect(count("docs", "project_id = 'p-2'")).toBe(3);
     expect(count("doc_shares", "project_id = 'p-2'")).toBe(3);
     expect(count("docs_fts", "project_id = 'p-2'")).toBe(3);
+    expect(count("docs_fts_map", "doc_id LIKE 'p-2-%'")).toBe(3);
     expect(count("asset_revisions", "project_id = 'p-2'")).toBe(3);
     expect(count("doc_ai_summaries", "doc_id LIKE 'p-2-%'")).toBe(3);
     expect(count("folders", "project_id = 'p-2'")).toBe(2);

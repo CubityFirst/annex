@@ -1,4 +1,5 @@
 import { deleteR2Prefix } from "./docOps";
+import { ftsDeleteProjectStatements } from "./fts";
 import { releaseCustomDomain, type CustomDomainEnv } from "./customDomains";
 import { deleteAllAvatarVariants } from "../avatar";
 import type { Env } from "../index";
@@ -18,8 +19,8 @@ type ProjectDeleteEnv = Pick<Env, "DB" | "ASSETS"> & CustomDomainEnv;
 // then release the Cloudflare custom hostname before the project row - and its
 // cascading project_custom_domains row - goes, then one D1 batch for the rows
 // with no FK cascade from projects (asset_revisions, the docs_fts virtual
-// table) plus the project row itself, so the row deletes can't half-apply. A
-// failure before the batch leaves the project row in place (its R2 content may
+// table and its docs_fts_map rowid map) plus the project row itself, so the
+// row deletes can't half-apply. A failure before the batch leaves the project row in place (its R2 content may
 // already be gone, as before) and the whole call safe to retry.
 export async function deleteProjectCascade(
   env: ProjectDeleteEnv,
@@ -51,7 +52,7 @@ export async function deleteProjectCascade(
   // insertDocRevision), so one statement covers live and binned docs alike.
   await env.DB.batch([
     env.DB.prepare("DELETE FROM asset_revisions WHERE project_id = ?").bind(projectId),
-    env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId),
+    ...ftsDeleteProjectStatements(env.DB, projectId),
     env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
   ]);
 }

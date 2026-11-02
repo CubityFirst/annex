@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
 
 vi.mock("../audit", () => ({ writeAdminAudit: vi.fn() }));
-vi.mock("../../../api/src/lib/fts", () => ({ upsertFtsRow: vi.fn() }));
 vi.mock("../../../api/src/lib/customDomains", () => ({
   releaseCustomDomain: vi.fn(),
   removeCustomDomain: vi.fn(),
@@ -300,13 +299,17 @@ describe("DELETE /:id - scale safety (AB-H1)", () => {
     expect(chunks.flatMap(c => c.binds)).toEqual(docIds.map(d => d.id));
     expect(calls.some(c => c.sql.includes("doc_shares"))).toBe(false);
 
+    // One final batch: FTS rows (map first, then the rows, both via the
+    // site's pid token), the site's docs, then the project row.
     expect(batches.length).toBe(1);
     const finalBatch = batches[0];
-    expect(finalBatch[0].sql).toContain("docs_fts");
-    expect(finalBatch[1].sql).toContain("DELETE FROM docs WHERE project_id = ?");
-    expect(finalBatch[1].binds).toEqual(["proj-1"]);
-    expect(finalBatch[2].sql).toContain("DELETE FROM projects");
+    expect(finalBatch[0].sql).toContain("DELETE FROM docs_fts_map");
+    expect(finalBatch[1].sql).toContain("DELETE FROM docs_fts WHERE docs_fts MATCH ?");
+    expect(finalBatch[1].binds[0]).toMatch(/^pid:"[0-9A-F]+"$/);
+    expect(finalBatch[2].sql).toContain("DELETE FROM docs WHERE project_id = ?");
     expect(finalBatch[2].binds).toEqual(["proj-1"]);
+    expect(finalBatch[3].sql).toContain("DELETE FROM projects");
+    expect(finalBatch[3].binds).toEqual(["proj-1"]);
 
     expect(releaseCustomDomain).toHaveBeenCalledWith(expect.anything(), "proj-1");
     expect(writeAdminAudit).toHaveBeenCalledTimes(1);
@@ -382,12 +385,21 @@ describe("POST /:id/reindex (AB-H2)", () => {
   });
 
   it("reindexes a small project and audits after success", async () => {
-    const { db, firstQueue, allQueue } = makeDb();
+    const dbRef = makeDb();
+    const { db, firstQueue, allQueue } = dbRef;
     firstQueue.push({ id: "proj-1" });
     allQueue.push([{ id: "d1", title: "One" }, { id: "d2", title: "Two" }]);
     const request = makeApp({ DB: db, ASSETS: r2 });
     const res = await request("/proj-1/reindex", { method: "POST" });
     expect(res.status).toBe(200);
+    // One batch for the chunk (3 statements per doc), then the stale-row prune.
+    const { batches } = dbRef;
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toHaveLength(6);
+    expect(batches[0][1].sql).toContain("INSERT INTO docs_fts");
+    expect(batches[0][1].binds).toContain("d1");
+    expect(batches[0][4].binds).toContain("d2");
+    expect(batches[1][1].sql).toContain("doc_id NOT IN (SELECT id FROM docs WHERE project_id = ?)");
     expect(writeAdminAudit).toHaveBeenCalledWith(
       expect.anything(), session, "project.reindex", "project", "proj-1", { indexed: 2 },
     );

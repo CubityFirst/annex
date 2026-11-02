@@ -1,5 +1,5 @@
 import { okResponse, errorResponse, Errors, type Session } from "../lib";
-import { sanitizeFtsQuery } from "../lib/fts";
+import { siteFtsMatch } from "../lib/fts";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 
@@ -107,7 +107,10 @@ export async function handleSearch(
     return okResponse({ docs, files: [], folders: [] } satisfies SearchResponse);
   }
 
-  const ftsQuery = sanitizeFtsQuery(q!);
+  // The MATCH is scoped to the site by its indexed pid token, so FTS5 only
+  // evaluates this site's rows; `f.project_id = ?` stays as a cheap
+  // belt-and-braces check on the rows it returns. pid gets bm25 weight 0.
+  const ftsQuery = siteFtsMatch(projectId, q!);
 
   let docsPromise;
   if (role === "limited") {
@@ -115,22 +118,22 @@ export async function handleSearch(
       SELECT f.doc_id, f.title,
         snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
         fo.name AS folder, d.updated_at,
-        bm25(docs_fts, 5.0, 1.0) AS rank
+        bm25(docs_fts, 5.0, 1.0, 0.0) AS rank
       FROM docs_fts f
-      JOIN doc_shares ds ON ds.doc_id = f.doc_id AND ds.user_id = ?
       JOIN docs d ON d.id = f.doc_id
       LEFT JOIN folders fo ON fo.id = d.folder_id
       WHERE docs_fts MATCH ?
         AND f.project_id = ?
+        AND f.doc_id IN (SELECT doc_id FROM doc_shares WHERE project_id = ? AND user_id = ?)
       ORDER BY rank
       LIMIT 20
-    `).bind(user.userId, ftsQuery, projectId).all<DocSearchResult>();
+    `).bind(ftsQuery, projectId, projectId, user.userId).all<DocSearchResult>();
   } else {
     docsPromise = env.DB.prepare(`
       SELECT f.doc_id, f.title,
         snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
         fo.name AS folder, d.updated_at,
-        bm25(docs_fts, 5.0, 1.0) AS rank
+        bm25(docs_fts, 5.0, 1.0, 0.0) AS rank
       FROM docs_fts f
       JOIN docs d ON d.id = f.doc_id
       LEFT JOIN folders fo ON fo.id = d.folder_id
@@ -220,13 +223,13 @@ export async function handlePublicSearch(
     return okResponse({ docs, files: [], folders: [] } satisfies SearchResponse);
   }
 
-  const ftsQuery = sanitizeFtsQuery(q!);
+  const ftsQuery = siteFtsMatch(project.id, q!);
 
   const results = await env.DB.prepare(`
     SELECT f.doc_id, f.title,
       snippet(docs_fts, 1, '<mark>', '</mark>', '...', 24) AS excerpt,
       fo.name AS folder, d.updated_at,
-      bm25(docs_fts, 5.0, 1.0) AS rank
+      bm25(docs_fts, 5.0, 1.0, 0.0) AS rank
     FROM docs_fts f
     JOIN docs d ON d.id = f.doc_id
     LEFT JOIN folders fo ON fo.id = d.folder_id

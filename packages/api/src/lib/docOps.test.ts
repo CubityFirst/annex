@@ -129,7 +129,9 @@ function setupSqlite(objects: Record<string, string> = {}) {
       "INSERT INTO docs (id, title, project_id, author_id, folder_id, created_at, updated_at) VALUES (?, ?, 'p1', 'author-1', ?, ?, ?)",
       id, title, folderId, T0, T0,
     );
-    exec("INSERT INTO docs_fts (doc_id, project_id, title, body) VALUES (?, 'p1', ?, ?)", id, title, body);
+    // Current (0064) layout: site token + rowid map row.
+    exec("INSERT INTO docs_fts (doc_id, project_id, pid, title, body) VALUES (?, 'p1', hex('p1'), ?, ?)", id, title, body);
+    exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), ?)", id);
     store[`p1/${id}`] = body;
   };
   const seedRevision = (docId: string, revId: string, body: string, createdAt = T0) => {
@@ -218,6 +220,8 @@ describe("applyDocUpdate revision baseline", () => {
     expect(t.revisions().find(r => r.id !== "rev-1")!.title).toBe("Renamed");
     expect(t.ftsRow()).toEqual({ title: "Renamed", body: "new" });
     expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts WHERE doc_id = 'd1'")[0].n).toBe(1);
+    expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts_map m JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id WHERE m.doc_id = 'd1'")[0].n).toBe(1);
+    expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts_map")[0].n).toBe(1);
   });
 
   it("still reindexes FTS on a title-only change, from the live body", async () => {
@@ -471,6 +475,12 @@ describe("createDoc", () => {
       created_at: created.createdAt, updated_at: created.updatedAt, published_at: null,
     });
     expect(t.ftsRow(created.id)).toEqual({ title: "New Doc", body: "hello" });
+    // The FTS row, written in the same batch as the docs INSERT, carries the
+    // site token and its rowid-map entry (last_insert_rowid() of that batch).
+    expect(t.rows(
+      "SELECT f.pid FROM docs_fts_map m JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id WHERE m.doc_id = ?",
+      created.id,
+    )).toEqual([{ pid: t.one("SELECT hex('p1') AS h")!.h }]);
     expect(t.graphIndexedAt()).toBeNull();
   });
 
@@ -492,6 +502,7 @@ describe("createDoc", () => {
 
     expect(t.rows("SELECT id FROM docs")).toEqual([]);
     expect(t.rows("SELECT doc_id FROM docs_fts")).toEqual([]);
+    expect(t.rows("SELECT doc_id FROM docs_fts_map")).toEqual([]);
   });
 });
 

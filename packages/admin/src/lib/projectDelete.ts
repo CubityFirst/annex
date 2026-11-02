@@ -1,4 +1,5 @@
 import { releaseCustomDomain } from "../../../api/src/lib/customDomains";
+import { ftsDeleteProjectStatements } from "../../../api/src/lib/fts";
 import { deleteR2Prefix } from "./r2";
 import type { Env } from "../index";
 
@@ -66,10 +67,11 @@ export async function deleteProjectCascade(
   // Docs go explicitly before the project: left to the project's cascade,
   // the folders cascade would first SET NULL docs.folder_id on every
   // foldered doc (a row update each) only for the docs cascade to delete
-  // them. docs_fts is a standalone FTS table (no triggers), so its order
+  // them. docs_fts (+ its docs_fts_map rowid map) is a standalone FTS table
+  // (no triggers, found by the site's pid token), so its order
   // relative to the docs delete doesn't matter.
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId),
+    ...ftsDeleteProjectStatements(env.DB, projectId),
     env.DB.prepare("DELETE FROM docs WHERE project_id = ?").bind(projectId),
     env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
   ]);

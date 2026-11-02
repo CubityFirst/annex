@@ -118,7 +118,8 @@ describe("DELETE /me", () => {
       exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES ('d1', 'Doc', 'race', 'u1', ?, ?)", T, T);
       exec("INSERT INTO files (id, name, mime_type, size, project_id, uploaded_by, created_at) VALUES ('f1', 'f', 'image/png', 1, 'race', 'u1', ?)", T);
       exec("INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at) VALUES ('r1', 'doc', 'd1', 'race', 'u1', 'U', ?)", T);
-      exec("INSERT INTO docs_fts (title, body, doc_id, project_id) VALUES ('Doc', 'b', 'd1', 'race')");
+      exec("INSERT INTO docs_fts (title, body, pid, doc_id, project_id) VALUES ('Doc', 'b', hex('race'), 'd1', 'race')");
+      exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), 'd1')");
       for (const k of ["race/d1", "race/d1/v/r1", "files/f1", "site-logos/race-square"]) r2.keys.add(k);
       return Response.json({ ok: true });
     });
@@ -130,6 +131,7 @@ describe("DELETE /me", () => {
     expect(count("SELECT COUNT(*) AS n FROM projects WHERE id = 'race'")).toBe(0);
     expect(count("SELECT COUNT(*) AS n FROM asset_revisions WHERE project_id = 'race'")).toBe(0);
     expect(count("SELECT COUNT(*) AS n FROM docs_fts WHERE project_id = 'race'")).toBe(0);
+    expect(count("SELECT COUNT(*) AS n FROM docs_fts_map WHERE doc_id = 'd1'")).toBe(0);
     expect(count("SELECT COUNT(*) AS n FROM project_members WHERE user_id = 'u1'")).toBe(0);
     expect([...r2.keys].sort()).toEqual(["other/d-other"]);
     expect(count("SELECT COUNT(*) AS n FROM asset_revisions WHERE project_id = 'other'")).toBe(1);

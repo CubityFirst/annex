@@ -58,7 +58,8 @@ function seedSite(projectId: string, ownerId: string) {
     exec("INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at) VALUES (?, 'doc', ?, ?, ?, 'Owner', ?)",
       `${projectId}-${rev}`, `${projectId}-${doc}`, projectId, ownerId, T);
   }
-  exec("INSERT INTO docs_fts (title, body, doc_id, project_id) VALUES ('Doc', 'body', ?, ?)", `${projectId}-d1`, projectId);
+  exec("INSERT INTO docs_fts (title, body, pid, doc_id, project_id) VALUES ('Doc', 'body', hex(?), ?, ?)", projectId, `${projectId}-d1`, projectId);
+  exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), ?)", `${projectId}-d1`);
   return [
     `${projectId}/${projectId}-d1`,
     `${projectId}/${projectId}-d1/v/${projectId}-r1`,
@@ -81,10 +82,11 @@ function siteRowCounts(projectId: string) {
     trash: count("SELECT COUNT(*) AS n FROM trash_items WHERE project_id = ?", projectId),
     revisions: count("SELECT COUNT(*) AS n FROM asset_revisions WHERE project_id = ?", projectId),
     fts: count("SELECT COUNT(*) AS n FROM docs_fts WHERE project_id = ?", projectId),
+    ftsMap: count("SELECT COUNT(*) AS n FROM docs_fts_map WHERE doc_id LIKE ? || '-%'", projectId),
   };
 }
 
-const GONE = { projects: 0, docs: 0, files: 0, members: 0, trash: 0, revisions: 0, fts: 0 };
+const GONE = { projects: 0, docs: 0, files: 0, members: 0, trash: 0, revisions: 0, fts: 0, ftsMap: 0 };
 
 let p1Keys: string[];
 let p2Keys: string[];
@@ -103,7 +105,7 @@ describe("deleteProjectCascade", () => {
     expect(siteRowCounts("p1")).toEqual(GONE);
     for (const k of p1Keys) expect(r2.keys.has(k), k).toBe(false);
 
-    expect(siteRowCounts("p2")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1 });
+    expect(siteRowCounts("p2")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1, ftsMap: 1 });
     for (const k of p2Keys) expect(r2.keys.has(k), k).toBe(true);
   });
 
@@ -115,7 +117,7 @@ describe("deleteProjectCascade", () => {
       return realBatch(stmts);
     } } as unknown as D1Database;
     await expect(deleteProjectCascade({ ...env(), DB: failing } as Env, "p1")).rejects.toThrow(/boom/);
-    expect(siteRowCounts("p1")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1 });
+    expect(siteRowCounts("p1")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1, ftsMap: 1 });
 
     api.sqlite.exec("DROP TRIGGER fail_project_delete");
     await deleteProjectCascade(env(), "p1");
@@ -140,7 +142,7 @@ describe("cleanupDeletedAccount", () => {
     for (const k of ["avatars/u1-dark", "avatars/u1-light", "avatars/u1"]) expect(r2.keys.has(k), k).toBe(false);
 
     // u2's site, membership and avatar are untouched.
-    expect(siteRowCounts("p2")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1 });
+    expect(siteRowCounts("p2")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1, ftsMap: 1 });
     for (const k of [...p2Keys, "avatars/u2-dark"]) expect(r2.keys.has(k), k).toBe(true);
   });
 

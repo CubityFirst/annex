@@ -5,6 +5,7 @@ import {
   moveToTrash, restoreFromTrash, purgeTrashEntry, emptyTrash, purgeExpiredTrash, listTrash, TRASH_RETENTION_DAYS,
 } from "./trash";
 import type { Env } from "../index";
+import { siteFtsMatch } from "./fts";
 
 // Runs against real SQLite with every migration applied (see test/sqliteD1.ts):
 // the bin is mostly SQL - FK cascades, recursive subtree CTEs, batch
@@ -46,7 +47,8 @@ function doc(id: string, folderId: string | null, extra: { slug?: string } = {})
     "INSERT INTO docs (id, title, project_id, author_id, folder_id, slug, created_at, updated_at) VALUES (?, ?, 'p1', 'u1', ?, ?, ?, ?)",
     id, `Title ${id}`, folderId, extra.slug ?? null, T0, T0,
   );
-  exec("INSERT INTO docs_fts (doc_id, project_id, title, body) VALUES (?, 'p1', ?, ?)", id, `Title ${id}`, `body of ${id}`);
+  exec("INSERT INTO docs_fts (doc_id, project_id, pid, title, body) VALUES (?, 'p1', hex('p1'), ?, ?)", id, `Title ${id}`, `body of ${id}`);
+  exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), ?)", id);
   r2.objects.add(`p1/${id}`);
 }
 function file(id: string, folderId: string | null, size = 100) {
@@ -86,6 +88,8 @@ describe("moveToTrash", () => {
     expect(rows("SELECT id FROM docs")).toEqual([{ id: "outside" }]);
     expect(count("files")).toBe(0);
     expect(rows("SELECT doc_id FROM docs_fts")).toEqual([{ doc_id: "outside" }]);
+    // The FTS rowid map loses the binned docs' rows with them.
+    expect(rows("SELECT doc_id FROM docs_fts_map")).toEqual([{ doc_id: "outside" }]);
 
     const [entry] = await listTrash(env.DB, "p1");
     expect(entry).toMatchObject({
@@ -140,6 +144,7 @@ describe("restoreFromTrash", () => {
       folders: rows("SELECT * FROM folders ORDER BY id"),
       docs: rows("SELECT * FROM docs"),
       files: rows("SELECT * FROM files"),
+      fts: rows("SELECT title, body, pid, doc_id, project_id FROM docs_fts"),
     };
 
     const { entryId } = (await moveToTrash(env, { projectId: "p1", type: "folder", id: "A", deletedBy: "u1" }))!;
@@ -155,6 +160,13 @@ describe("restoreFromTrash", () => {
     expect(rows("SELECT * FROM files")).toEqual(before.files);
     expect(rows("SELECT id, user_id FROM doc_shares")).toEqual([{ id: "s1", user_id: "u2" }]);
     expect(rows("SELECT doc_id, body FROM docs_fts")).toEqual([{ doc_id: "d1", body: "body of d1" }]);
+    // The FTS row comes back exactly (title, body, site token), with a map row
+    // pointing at it, and is findable by a site-scoped search again.
+    expect(rows("SELECT title, body, pid, doc_id, project_id FROM docs_fts")).toEqual(before.fts);
+    expect(rows("SELECT m.doc_id FROM docs_fts_map m JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id"))
+      .toEqual([{ doc_id: "d1" }]);
+    expect(count("docs_fts_map")).toBe(1);
+    expect(rows("SELECT doc_id FROM docs_fts WHERE docs_fts MATCH ?", siteFtsMatch("p1", "body"))).toEqual([{ doc_id: "d1" }]);
     expect(rows("SELECT doc_id FROM site_reports")).toEqual([{ doc_id: "d1" }]);
     expect(count("trash_entries")).toBe(0);
     expect(count("trash_items")).toBe(0);

@@ -4,12 +4,18 @@ import { createSqliteD1 } from "../test/sqliteD1";
 import { seedContentFixture } from "../test/contentFixture";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
-vi.mock("../lib/fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsForProject: vi.fn() }));
+vi.mock("../lib/fts", async (importOriginal) => ({
+  // The real statement builder for site delete (lib/projectDelete.ts).
+  ftsDeleteProjectStatements: (await importOriginal<typeof import("../lib/fts")>()).ftsDeleteProjectStatements,
+  upsertFtsRow: vi.fn(),
+  ftsUpsertStatements: vi.fn((_db: unknown, docId: string) => [`upsert:${docId}`]),
+  ftsPruneProjectStatements: vi.fn(() => ["prune"]),
+}));
 vi.mock("../lib/customDomains", () => ({ releaseCustomDomain: vi.fn() }));
 
 import { resolveRole } from "../lib/access";
 import { releaseCustomDomain } from "../lib/customDomains";
-import { upsertFtsRow } from "../lib/fts";
+import { ftsUpsertStatements } from "../lib/fts";
 
 const user = { userId: "user-1", email: "a@example.com" } as unknown as Parameters<typeof handleProjects>[2];
 
@@ -522,15 +528,20 @@ describe("handleProjects POST /projects/:id/reindex", () => {
   });
 
   it("reindexes every doc and counts them", async () => {
-    const { env, queueAll, assetsGet } = makeEnv();
+    const { env, queueAll, assetsGet, batch } = makeEnv();
     queueAll({ results: [{ id: "d1", title: "A" }, { id: "d2", title: "B" }, { id: "d3", title: "C" }] }); // docs
     assetsGet.mockResolvedValue({ text: async () => "# body" }); // R2 content per doc
     const res = await call(env, "POST", "/projects/p1/reindex");
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { indexed: number } };
     expect(json.data.indexed).toBe(3);
-    // One FTS upsert per doc - a dropped loop body would not satisfy this.
-    expect(upsertFtsRow).toHaveBeenCalledTimes(3);
+    // One FTS upsert per doc - a dropped loop body would not satisfy this -
+    // written as one batch per chunk, then one prune of stale site rows.
+    expect(ftsUpsertStatements).toHaveBeenCalledTimes(3);
+    expect(ftsUpsertStatements).toHaveBeenCalledWith(expect.anything(), "d1", "p1", "A", "# body");
+    expect(batch).toHaveBeenCalledTimes(2);
+    expect(batch).toHaveBeenNthCalledWith(1, ["upsert:d1", "upsert:d2", "upsert:d3"]);
+    expect(batch).toHaveBeenNthCalledWith(2, ["prune"]);
   });
 });
 
@@ -552,7 +563,10 @@ describe("handleProjects DELETE /projects/:id", () => {
     expect(batch).toHaveBeenCalledTimes(1);
     const sqls = prepare.mock.calls.map(c => c[0] as string);
     expect(sqls).toContain("DELETE FROM projects WHERE id = ?");
-    expect(sqls).toContain("DELETE FROM docs_fts WHERE project_id = ?");
+    // FTS rows + their rowid map, found through the indexed site token.
+    expect(sqls).toContain("DELETE FROM docs_fts WHERE docs_fts MATCH ?");
+    expect(sqls).toContain("DELETE FROM docs_fts_map WHERE rid IN (SELECT rowid FROM docs_fts WHERE docs_fts MATCH ?)");
+    expect(sqls).not.toContain("DELETE FROM docs_fts WHERE project_id = ?");
     const json = (await res.json()) as { data: { deleted: boolean } };
     expect(json.data.deleted).toBe(true);
   });

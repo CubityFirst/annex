@@ -22,6 +22,7 @@
 import type { Env } from "../index";
 import { ProjectFeatures } from "../lib";
 import { invalidateProjectGraphIndex } from "./docLinks";
+import { ftsDeleteStatements, ftsInsertStatements } from "./fts";
 
 export const TRASH_RETENTION_DAYS = 30;
 
@@ -178,7 +179,15 @@ export async function moveToTrash(
       (e.shares ??= []).push(s);
       extras.set(s.doc_id as string, e);
     }
-    for (const f of await selectIn(db, ph => `SELECT doc_id, title, body FROM docs_fts WHERE doc_id IN (${ph})`, docIds)) {
+    // Through docs_fts_map: rowid lookups, not a scan of the whole FTS table.
+    const ftsRows = await selectIn(
+      db,
+      ph => `SELECT m.doc_id, f.title, f.body FROM docs_fts_map m
+             JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id
+             WHERE m.doc_id IN (${ph})`,
+      docIds,
+    );
+    for (const f of ftsRows) {
       const e = extras.get(f.doc_id as string) ?? {};
       e.fts = { title: f.title as string, body: f.body as string };
       extras.set(f.doc_id as string, e);
@@ -233,7 +242,7 @@ export async function moveToTrash(
   }
 
   for (const chunk of chunked(docIds)) {
-    stmts.push(db.prepare(`DELETE FROM docs_fts WHERE doc_id IN (${qs(chunk.length)})`).bind(...chunk));
+    stmts.push(...ftsDeleteStatements(db, chunk));
     stmts.push(db.prepare(`DELETE FROM docs WHERE id IN (${qs(chunk.length)})`).bind(...chunk));
   }
   for (const chunk of chunked(fileIds)) {
@@ -348,8 +357,9 @@ export async function restoreFromTrash(env: Env, projectId: string, entryId: str
         .bind(...keys.map(k => share[k] ?? null)));
     }
     if (extra.fts) {
-      stmts.push(db.prepare("INSERT INTO docs_fts(doc_id, project_id, title, body) VALUES (?, ?, ?, ?)")
-        .bind(row.id as string, projectId, extra.fts.title, extra.fts.body));
+      // The exact snapshotted title/body (not re-derived), as a fresh row +
+      // map entry. The statements must stay adjacent (last_insert_rowid()).
+      stmts.push(...ftsInsertStatements(db, row.id as string, projectId, extra.fts.title, extra.fts.body));
     }
     for (const reportId of extra.reportIds ?? []) {
       stmts.push(db.prepare("UPDATE site_reports SET doc_id = ? WHERE id = ? AND doc_id IS NULL").bind(row.id as string, reportId));

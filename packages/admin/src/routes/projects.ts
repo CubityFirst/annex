@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { upsertFtsRow } from "../../../api/src/lib/fts";
+import { ftsUpsertStatements, ftsPruneProjectStatements } from "../../../api/src/lib/fts";
 import { removeCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
@@ -151,18 +151,22 @@ projectsRouter.post("/:id/reindex", async (c) => {
     }, 409);
   }
 
+  // Each doc's FTS row is replaced by rowid; one D1 batch per chunk (3
+  // statements per doc), then rows of docs no longer in the site are pruned.
   let indexed = 0;
   for (let i = 0; i < docs.results.length; i += REINDEX_CHUNK) {
     const chunk = docs.results.slice(i, i + REINDEX_CHUNK);
-    await Promise.all(
+    const stmts = await Promise.all(
       chunk.map(async (doc) => {
         const obj = await c.env.ASSETS.get(`${projectId}/${doc.id}`);
         const content = obj ? await obj.text() : "";
-        await upsertFtsRow(c.env.DB, doc.id, projectId, doc.title, content);
+        return ftsUpsertStatements(c.env.DB, doc.id, projectId, doc.title, content);
       }),
     );
+    await c.env.DB.batch(stmts.flat());
     indexed += chunk.length;
   }
+  await c.env.DB.batch(ftsPruneProjectStatements(c.env.DB, projectId));
 
   await writeAdminAudit(c.env, session, "project.reindex", "project", projectId, { indexed });
   return c.json({ ok: true, data: { indexed } });

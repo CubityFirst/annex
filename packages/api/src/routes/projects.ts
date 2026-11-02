@@ -1,5 +1,5 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
-import { upsertFtsRow } from "../lib/fts";
+import { upsertFtsRow, ftsUpsertStatements, ftsPruneProjectStatements } from "../lib/fts";
 import { resolveRole } from "../lib/access";
 import { deleteProjectCascade } from "../lib/projectDelete";
 import type { Env } from "../index";
@@ -441,17 +441,24 @@ export async function handleProjects(
     const rows = await env.DB.prepare("SELECT id, title FROM docs WHERE project_id = ?")
       .bind(projectId).all<{ id: string; title: string }>();
 
-    const CHUNK = 50;
+    // Each doc's row is replaced by rowid (3 statements), 16 docs per batch to
+    // keep batches under ~50 statements. Replacing in place rather than
+    // clearing the site first means search never sees a half-empty index;
+    // the prune at the end drops rows of docs no longer in the site.
+    const CHUNK = 16;
     let indexed = 0;
     for (let i = 0; i < rows.results.length; i += CHUNK) {
       const chunk = rows.results.slice(i, i + CHUNK);
+      const stmts: D1PreparedStatement[] = [];
       for (const doc of chunk) {
         const r2 = await env.ASSETS.get(`${projectId}/${doc.id}`);
         const content = r2 ? await r2.text() : "";
-        await upsertFtsRow(env.DB, doc.id, projectId, doc.title, content);
+        stmts.push(...ftsUpsertStatements(env.DB, doc.id, projectId, doc.title, content));
       }
+      await env.DB.batch(stmts);
       indexed += chunk.length;
     }
+    await env.DB.batch(ftsPruneProjectStatements(env.DB, projectId));
     return okResponse({ indexed });
   }
 
