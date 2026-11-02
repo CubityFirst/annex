@@ -10,6 +10,7 @@ import { handleUpdateInkPrefs } from "./routes/update-ink-prefs";
 import { handleUpdateReadingFont } from "./routes/update-reading-font";
 import { handleUpdateTheme } from "./routes/update-theme";
 import { handleUpdateBio } from "./routes/update-bio";
+import { handleUpdateHandle } from "./routes/update-handle";
 import { handleTotpSetup } from "./routes/totp-setup";
 import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
@@ -49,7 +50,7 @@ import { handleSessionsLogout } from "./routes/sessions-logout";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripe-webhook";
 import { handleDevQuickLogin } from "./routes/dev-quick-login";
-import { deleteExpiredWebauthnChallenges } from "./webauthn";
+import { sweepExpiredRows } from "./cleanup";
 
 export interface Env {
   DB: D1Database;
@@ -152,6 +153,8 @@ export default {
         response = await handleUpdateTheme(request, env);
       } else if (url.pathname === "/update-bio" && request.method === "POST") {
         response = await handleUpdateBio(request, env);
+      } else if (url.pathname === "/update-handle" && request.method === "POST") {
+        response = await handleUpdateHandle(request, env);
       } else if (url.pathname === "/totp/setup" && request.method === "POST") {
         response = await handleTotpSetup(request, env);
       } else if (url.pathname === "/totp/enable" && request.method === "POST") {
@@ -291,18 +294,12 @@ export default {
     return addCorsHeaders(response, corsOrigin);
   },
 
-  // Weekly sweep of long-dead session rows. Login does opportunistic GC for
-  // the logging-in user, but inactive accounts never get cleaned up that
-  // way. We keep recently-expired and recently-revoked rows for ~30 days
-  // as an audit cushion before removing them.
+  // Weekly sweep of long-dead rows (sessions, Stripe webhook markers, email
+  // tokens, WebAuthn challenges) - see cleanup.ts. Login does opportunistic
+  // GC for the logging-in user, but inactive accounts never get cleaned up
+  // that way.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    await Promise.all([
-      env.DB.prepare(
-        "DELETE FROM sessions WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
-      ).bind(cutoff, cutoff).run(),
-      deleteExpiredWebauthnChallenges(env),
-    ]);
+    await sweepExpiredRows(env);
   },
 };
 

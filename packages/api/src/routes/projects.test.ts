@@ -3,9 +3,10 @@ import { handleProjects } from "./projects";
 import { createSqliteD1 } from "../test/sqliteD1";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
-vi.mock("../lib/fts", () => ({
+vi.mock("../lib/fts", async (importOriginal) => ({
+  // The real statement builder for site delete (lib/projectDelete.ts).
+  ftsDeleteProjectStatements: (await importOriginal<typeof import("../lib/fts")>()).ftsDeleteProjectStatements,
   upsertFtsRow: vi.fn(),
-  deleteFtsForProject: vi.fn(),
   ftsUpsertStatements: vi.fn((_db: unknown, docId: string) => [`upsert:${docId}`]),
   ftsPruneProjectStatements: vi.fn(() => ["prune"]),
 }));
@@ -171,12 +172,46 @@ describe("handleProjects GET list / POST create", () => {
   });
 
   it("creates a project (201)", async () => {
-    const { env, run } = makeEnv();
+    const { env, run, batch } = makeEnv();
     const res = await call(env, "POST", "/projects", { name: "New Site" });
     expect(res.status).toBe(201);
-    expect(run).toHaveBeenCalledTimes(2); // projects + project_members inserts
+    // projects + project_members inserts go in one batch, never as two runs.
+    expect(run).not.toHaveBeenCalled();
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect((batch.mock.calls[0] as unknown[][])[0]).toHaveLength(2);
     const json = (await res.json()) as { data: { name: string } };
     expect(json.data.name).toBe("New Site");
+  });
+
+  // Real SQLite: the site row and its owner membership land together or not at
+  // all, so a failed member insert can't leave an ownerless site.
+  describe("atomicity (real SQLite)", () => {
+    function sqliteEnv() {
+      const { db, sqlite } = createSqliteD1();
+      const env = {
+        DB: db,
+        AUTH: { fetch: vi.fn(async () => Response.json({ ok: true, data: { name: "Owner Name" } })) },
+      } as unknown as Parameters<typeof handleProjects>[1];
+      return { env, sqlite };
+    }
+    const count = (sqlite: ReturnType<typeof createSqliteD1>["sqlite"], sql: string) =>
+      (sqlite.prepare(sql).get() as { n: number }).n;
+
+    it("writes the site and its owner membership", async () => {
+      const { env, sqlite } = sqliteEnv();
+      const res = await call(env, "POST", "/projects", { name: "New Site" });
+      expect(res.status).toBe(201);
+      const { data } = (await res.json()) as { data: { id: string } };
+      expect(sqlite.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = 'user-1'").get(data.id))
+        .toEqual({ role: "owner", name: "Owner Name" });
+    });
+
+    it("leaves no site row behind when the owner-member insert fails", async () => {
+      const { env, sqlite } = sqliteEnv();
+      sqlite.exec("CREATE TRIGGER fail_member BEFORE INSERT ON project_members BEGIN SELECT RAISE(ABORT, 'boom'); END");
+      await expect(call(env, "POST", "/projects", { name: "New Site" })).rejects.toThrow(/boom/);
+      expect(count(sqlite, "SELECT COUNT(*) AS n FROM projects")).toBe(0);
+    });
   });
 
   // Member-insert bind order: (id, project_id, user_id, email, name, role, invited_by, created_at)
@@ -438,20 +473,25 @@ describe("handleProjects DELETE /projects/:id", () => {
   });
 
   it("deletes the project for the owner", async () => {
-    const { env, queueAll, run } = makeEnv();
-    queueAll({ results: [] }); // docs
+    const { env, queueAll, batch, prepare } = makeEnv();
     queueAll({ results: [] }); // files
     const res = await call(env, "DELETE", "/projects/p1");
     expect(res.status).toBe(200);
     expect(releaseCustomDomain).toHaveBeenCalled();
-    expect(run).toHaveBeenCalled(); // DELETE projects
+    // Revisions, FTS and the project row go in one batch.
+    expect(batch).toHaveBeenCalledTimes(1);
+    const sqls = prepare.mock.calls.map(c => c[0] as string);
+    expect(sqls).toContain("DELETE FROM projects WHERE id = ?");
+    // FTS rows + their rowid map, found through the indexed site token.
+    expect(sqls).toContain("DELETE FROM docs_fts WHERE docs_fts MATCH ?");
+    expect(sqls).toContain("DELETE FROM docs_fts_map WHERE rid IN (SELECT rowid FROM docs_fts WHERE docs_fts MATCH ?)");
+    expect(sqls).not.toContain("DELETE FROM docs_fts WHERE project_id = ?");
     const json = (await res.json()) as { data: { deleted: boolean } };
     expect(json.data.deleted).toBe(true);
   });
 
   it("deletes doc/revision R2 objects via a paged prefix sweep, not per-D1-row", async () => {
     const { env, queueAll, assetsList, assetsDelete } = makeEnv();
-    queueAll({ results: [{ id: "d1" }] }); // docs
     queueAll({ results: [{ id: "f1" }, { id: "f2" }] }); // files
     // Two list pages under the project prefix - the second must be fetched via the cursor.
     assetsList
@@ -471,23 +511,16 @@ describe("handleProjects DELETE /projects/:id", () => {
     ]);
   });
 
-  it("chunks the asset_revisions row delete to 50 doc ids per statement", async () => {
+  it("deletes asset_revisions by project_id in one statement, however many docs", async () => {
     const { env, queueAll, prepare, bindCalls } = makeEnv();
-    const docIds = Array.from({ length: 60 }, (_, i) => `d${i}`);
-    queueAll({ results: docIds.map(id => ({ id })) }); // docs
     queueAll({ results: [] }); // files
     const res = await call(env, "DELETE", "/projects/p1");
     expect(res.status).toBe(200);
-
     const revisionDeletes = prepare.mock.calls
       .map(c => c[0] as string)
       .filter(sql => sql.includes("DELETE FROM asset_revisions"));
-    expect(revisionDeletes).toHaveLength(2);
-    // 50 + 10 placeholders, and the bound ids match the chunks.
-    expect(revisionDeletes[0].match(/\?/g)).toHaveLength(50);
-    expect(revisionDeletes[1].match(/\?/g)).toHaveLength(10);
-    expect(bindCalls).toContainEqual(docIds.slice(0, 50));
-    expect(bindCalls).toContainEqual(docIds.slice(50));
+    expect(revisionDeletes).toEqual(["DELETE FROM asset_revisions WHERE project_id = ?"]);
+    expect(bindCalls).toContainEqual(["p1"]);
   });
 });
 

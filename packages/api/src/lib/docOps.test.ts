@@ -1,11 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
+import { createSqliteD1 } from "../test/sqliteD1";
 
-vi.mock("./docLinks", () => ({ indexDocLinks: vi.fn(), invalidateProjectGraphIndex: vi.fn() }));
-vi.mock("./fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsRow: vi.fn() }));
-
-import { applyDocUpdate, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, pruneDocRevisions, normalizeDocSlug, syncDocSlug, type DocUpdateRow } from "./docOps";
-import { indexDocLinks, invalidateProjectGraphIndex } from "./docLinks";
-import { upsertFtsRow } from "./fts";
+import { applyDocUpdate, createDoc, snapshotDocRevision, latestDocRevisionContent, deleteR2Prefix, pruneDocRevisions, normalizeDocSlug, syncDocSlug, type DocUpdateRow } from "./docOps";
 
 type Env = Parameters<typeof applyDocUpdate>[0];
 
@@ -46,19 +43,6 @@ function makeEnv(objects: Record<string, string> = {}) {
   };
 }
 
-const doc: DocUpdateRow = {
-  id: "d1",
-  title: "Doc Title",
-  project_id: "p1",
-  author_id: "author-1",
-  published_at: null,
-  show_heading: 1,
-  show_last_updated: 1,
-  folder_id: null,
-  created_at: "2026-01-01T00:00:00.000Z",
-  updated_at: "2026-01-01T00:00:00.000Z",
-};
-
 function preparedSql(prepare: ReturnType<typeof makeEnv>["prepare"]): string[] {
   return prepare.mock.calls.map(c => c[0] as string);
 }
@@ -88,131 +72,364 @@ describe("latestDocRevisionContent", () => {
   });
 });
 
+// ── Save path against real SQLite ────────────────────────────────────────────
+//
+// The save path's correctness now lives in batch composition (atomicity, the
+// single merged docs UPDATE, which statements are skipped), so these run the
+// real statements against the real schema (test/sqliteD1.ts, batch = one
+// transaction) with an instrumented DB that records every D1 round trip.
+
+const T0 = "2026-01-01T00:00:00.000Z";
+
+interface D1Call { kind: "single" | "batch"; sql: string[] }
+
+// Wraps the SQLite D1 stand-in so each direct statement execution and each
+// batch() is logged as one round trip.
+function instrument(db: D1Database, calls: D1Call[]): D1Database {
+  type AnyStmt = D1PreparedStatement & { sql: string };
+  const wrap = (s: AnyStmt): AnyStmt => new Proxy(s, {
+    get(target, key, receiver) {
+      if (key === "bind") return (...args: unknown[]) => wrap(target.bind(...args) as AnyStmt);
+      if (key === "first" || key === "all" || key === "run" || key === "raw") {
+        return (...args: unknown[]) => {
+          calls.push({ kind: "single", sql: [target.sql] });
+          return (target[key] as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  return {
+    prepare: (sql: string) => wrap(db.prepare(sql) as AnyStmt),
+    batch: (stmts: AnyStmt[]) => {
+      calls.push({ kind: "batch", sql: stmts.map(s => s.sql) });
+      return db.batch(stmts);
+    },
+  } as unknown as D1Database;
+}
+
+// The two project-structure reads behind doc-link resolution.
+const STRUCTURE_READ = /^SELECT id, (title, folder_id|name, parent_id) FROM (docs|folders) WHERE project_id = \?$/;
+
+function setupSqlite(objects: Record<string, string> = {}) {
+  const { db, sqlite } = createSqliteD1();
+  const calls: D1Call[] = [];
+  const store: Record<string, string> = { ...objects };
+  const assetsPut = vi.fn(async (key: string, content: string) => { store[key] = content; });
+  const assetsGet = vi.fn(async (key: string) => (key in store ? { text: async () => store[key] } : null));
+  const env = { DB: instrument(db, calls), ASSETS: { get: assetsGet, put: assetsPut } } as unknown as Env;
+
+  const exec = (sql: string, ...args: (string | number | null)[]) => { sqlite.prepare(sql).run(...args); };
+  const rows = (sql: string, ...args: (string | number | null)[]) => sqlite.prepare(sql).all(...args).map(r => ({ ...r }));
+  const one = (sql: string, ...args: (string | number | null)[]) => rows(sql, ...args)[0] as Record<string, unknown> | undefined;
+
+  exec("INSERT INTO projects (id, name, owner_id, created_at, graph_indexed_at) VALUES ('p1', 'Site', 'u1', ?, ?)", T0, T0);
+  const seedDoc = (id: string, title: string, body: string, folderId: string | null = null) => {
+    exec(
+      "INSERT INTO docs (id, title, project_id, author_id, folder_id, created_at, updated_at) VALUES (?, ?, 'p1', 'author-1', ?, ?, ?)",
+      id, title, folderId, T0, T0,
+    );
+    // Current (0064) layout: site token + rowid map row.
+    exec("INSERT INTO docs_fts (doc_id, project_id, pid, title, body) VALUES (?, 'p1', hex('p1'), ?, ?)", id, title, body);
+    exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), ?)", id);
+    store[`p1/${id}`] = body;
+  };
+  const seedRevision = (docId: string, revId: string, body: string, createdAt = T0) => {
+    exec(
+      "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, title) VALUES (?, 'doc', ?, 'p1', 'u0', 'User Zero', ?, 'Doc Title')",
+      revId, docId, createdAt,
+    );
+    store[`p1/${docId}/v/${revId}`] = body;
+  };
+  const docRow = (id = "d1") => one("SELECT * FROM docs WHERE id = ?", id) as unknown as DocUpdateRow & { slug: string | null; tags: string | null; sidebar_position: number | null };
+  const ftsRow = (id = "d1") => one("SELECT title, body FROM docs_fts WHERE doc_id = ?", id);
+  const revisions = (docId = "d1") => rows("SELECT * FROM asset_revisions WHERE asset_id = ? ORDER BY created_at, id", docId);
+  const links = (docId = "d1") => rows("SELECT target_doc_id FROM doc_links WHERE source_doc_id = ? ORDER BY target_doc_id", docId).map(r => r.target_doc_id);
+  const graphIndexedAt = () => one("SELECT graph_indexed_at FROM projects WHERE id = 'p1'")!.graph_indexed_at;
+  const sqlMatching = (re: RegExp) => calls.flatMap(c => c.sql).filter(s => re.test(s));
+  const putKeys = () => assetsPut.mock.calls.map(c => c[0] as string);
+
+  return { env, sqlite, calls, store, assetsPut, assetsGet, exec, rows, one, seedDoc, seedRevision, docRow, ftsRow, revisions, links, graphIndexedAt, sqlMatching, putKeys };
+}
+
+// Makes the given table's write fail inside the batch, so atomicity can be
+// observed from what is (not) left behind.
+function failOn(sqlite: DatabaseSync, when: string) {
+  sqlite.exec(`CREATE TRIGGER test_fail ${when} BEGIN SELECT RAISE(ABORT, 'injected failure'); END;`);
+}
+
 describe("applyDocUpdate revision baseline", () => {
   it("creates a revision when content differs from the latest revision even though it equals the live R2 body (collab-mirror case)", async () => {
-    const { env, queueFirst, prepare, bindCalls, assetsPut } = makeEnv({
-      "p1/d1": "mirrored by collab", // live body already equals the incoming save
-      "p1/d1/v/rev-1": "older revision body",
-    });
-    queueFirst({ id: "rev-1" }); // latest-revision lookup
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "mirrored by collab"); // live body already equals the incoming save
+    t.seedRevision("d1", "rev-1", "older revision body");
 
-    const result = await applyDocUpdate(env, doc, "u1", "User One", { content: "mirrored by collab", changelog: "my changelog" });
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "mirrored by collab", changelog: "my changelog" });
 
     expect(result.savedContent).toBe("mirrored by collab");
-    const insertIdx = preparedSql(prepare).findIndex(s => s.includes("INSERT INTO asset_revisions"));
-    expect(insertIdx).toBeGreaterThanOrEqual(0);
-    expect(preparedSql(prepare)[insertIdx]).toContain("title");
-    // (revisionId, docId, projectId, editorId, editorName, now, changelog, contributors, title)
-    const insertBinds = bindCalls.find(b => b[1] === "d1" && b.length === 9)!;
-    expect(insertBinds[6]).toBe("my changelog");
-    expect(insertBinds[8]).toBe("Doc Title");
+    const rev = t.revisions().find(r => r.id !== "rev-1")!;
+    expect(rev).toMatchObject({ editor_id: "u1", editor_name: "User One", changelog: "my changelog", title: "Doc Title", contributors: null });
     // Live body + versioned snapshot both written.
-    const putKeys = assetsPut.mock.calls.map(c => c[0] as string);
-    expect(putKeys).toContain("p1/d1");
-    expect(putKeys.some(k => k.startsWith("p1/d1/v/"))).toBe(true);
+    expect(t.putKeys()).toEqual(expect.arrayContaining(["p1/d1", `p1/d1/v/${rev.id}`]));
+    expect(t.store[`p1/d1/v/${rev.id}`]).toBe("mirrored by collab");
   });
 
   it("skips revision creation when content equals the latest revision's content", async () => {
-    const { env, queueFirst, prepare, assetsPut } = makeEnv({
-      "p1/d1": "something collab mirrored", // live body differs - must NOT be the baseline
-      "p1/d1/v/rev-1": "same content",
-    });
-    queueFirst({ id: "rev-1" });
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "something collab mirrored"); // live body differs - must NOT be the baseline
+    t.seedRevision("d1", "rev-1", "same content");
+    t.exec("INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES ('d1', 'cached', ?)", T0);
+    const gatherContributors = vi.fn(async () => null);
 
-    const result = await applyDocUpdate(env, doc, "u1", "User One", { content: "same content" });
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "same content" }, { gatherContributors });
 
     expect(result.savedContent).toBeUndefined();
-    expect(preparedSql(prepare).some(s => s.includes("INSERT INTO asset_revisions"))).toBe(false);
-    expect(assetsPut).not.toHaveBeenCalled();
-    expect(indexDocLinks).not.toHaveBeenCalled();
-    expect(preparedSql(prepare).some(s => s.includes("DELETE FROM doc_ai_summaries"))).toBe(false);
+    expect(t.revisions()).toHaveLength(1);
+    expect(t.assetsPut).not.toHaveBeenCalled();
+    expect(gatherContributors).not.toHaveBeenCalled();
+    expect(t.one("SELECT summary FROM doc_ai_summaries WHERE doc_id = 'd1'")).toEqual({ summary: "cached" });
   });
 
   it("falls back to comparing against the live R2 body when no revisions exist (no change → skip)", async () => {
-    const { env, queueFirst, prepare } = makeEnv({ "p1/d1": "live body" });
-    queueFirst(null); // no revisions
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "live body");
 
-    const result = await applyDocUpdate(env, doc, "u1", "User One", { content: "live body" });
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "live body" });
 
     expect(result.savedContent).toBeUndefined();
-    expect(preparedSql(prepare).some(s => s.includes("INSERT INTO asset_revisions"))).toBe(false);
+    expect(t.revisions()).toHaveLength(0);
   });
 
   it("falls back to the live R2 body when no revisions exist (changed → revision)", async () => {
-    const { env, queueFirst, prepare } = makeEnv({ "p1/d1": "live body" });
-    queueFirst(null); // no revisions
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "live body");
 
-    const result = await applyDocUpdate(env, doc, "u1", "User One", { content: "brand new body" });
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "brand new body" });
 
     expect(result.savedContent).toBe("brand new body");
-    expect(preparedSql(prepare).some(s => s.includes("INSERT INTO asset_revisions"))).toBe(true);
+    expect(t.revisions()).toHaveLength(1);
   });
 
-  it("records the patched title on the revision when title and content change together", async () => {
-    const { env, queueFirst, bindCalls } = makeEnv({ "p1/d1/v/rev-1": "old" });
-    queueFirst({ id: "rev-1" });
+  it("records the patched title on the revision and in FTS when title and content change together", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old");
+    t.seedRevision("d1", "rev-1", "old");
 
-    await applyDocUpdate(env, doc, "u1", "User One", { content: "new", title: "Renamed" });
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "new", title: "Renamed" });
 
-    const insertBinds = bindCalls.find(b => b[1] === "d1" && b.length === 9)!;
-    expect(insertBinds[8]).toBe("Renamed");
-    expect(upsertFtsRow).toHaveBeenCalledWith(expect.anything(), "d1", "p1", "Renamed", "new");
+    expect(t.revisions().find(r => r.id !== "rev-1")!.title).toBe("Renamed");
+    expect(t.ftsRow()).toEqual({ title: "Renamed", body: "new" });
+    expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts WHERE doc_id = 'd1'")[0].n).toBe(1);
+    expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts_map m JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id WHERE m.doc_id = 'd1'")[0].n).toBe(1);
+    expect(t.rows("SELECT COUNT(*) AS n FROM docs_fts_map")[0].n).toBe(1);
   });
 
-  it("still reindexes FTS on a title-only change", async () => {
-    const { env } = makeEnv({ "p1/d1": "existing body" });
+  it("still reindexes FTS on a title-only change, from the live body", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "existing body");
 
-    await applyDocUpdate(env, doc, "u1", "User One", { title: "Renamed" });
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { title: "Renamed" });
 
-    expect(upsertFtsRow).toHaveBeenCalledWith(expect.anything(), "d1", "p1", "Renamed", "existing body");
-    expect(invalidateProjectGraphIndex).toHaveBeenCalled();
+    expect(t.ftsRow()).toEqual({ title: "Renamed", body: "existing body" });
+    expect(t.docRow().title).toBe("Renamed");
+    expect(t.graphIndexedAt()).toBeNull();
+    // Title-only: one batch, no revision.
+    expect(t.calls).toHaveLength(1);
+    expect(t.revisions()).toHaveLength(0);
+  });
+
+  it("calls gatherContributors exactly once on a change and stores its result", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old");
+    const contributors = JSON.stringify([{ id: "u1", name: "User One" }, { id: "u2", name: "User Two" }]);
+    const gatherContributors = vi.fn(async () => contributors);
+
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "new" }, { gatherContributors });
+
+    expect(gatherContributors).toHaveBeenCalledTimes(1);
+    expect(t.revisions()[0].contributors).toBe(contributors);
+  });
+});
+
+describe("applyDocUpdate save path (batched)", () => {
+  it("writes the whole side-effect chain in ONE batch after at most two reads", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old body");
+    t.seedDoc("d2", "Target", "target body");
+    t.seedRevision("d1", "rev-1", "old body");
+    t.exec("INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES ('d1', 'cached', ?)", T0);
+    const body = "---\nsidebar_position: 4\ntags: [lore]\nslug: My-Page\n---\nSee [[Target]].";
+
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: body, title: "Renamed", changelog: "cl" });
+
+    expect(result.savedContent).toBe(body);
+    // Round trips: latest-revision lookup, link-resolution structure read
+    // (one batch), then one write batch.
+    expect(t.calls.map(c => c.kind)).toEqual(["single", "batch", "batch"]);
+    expect(t.calls[0].sql[0]).toContain("FROM asset_revisions");
+    expect(t.calls[1].sql.every(s => STRUCTURE_READ.test(s))).toBe(true);
+    expect(t.sqlMatching(STRUCTURE_READ)).toHaveLength(2);
+
+    // Exactly one docs UPDATE besides the slug sync (the old path ran two).
+    const write = t.calls[2].sql;
+    expect(write.filter(s => /^UPDATE docs SET (?!slug)/.test(s))).toHaveLength(1);
+    expect(write.filter(s => /^UPDATE docs SET slug/.test(s))).toHaveLength(1);
+
+    const row = t.docRow();
+    expect(row).toMatchObject({ title: "Renamed", sidebar_position: 4, tags: JSON.stringify(["lore"]), slug: "my-page", updated_at: result.updated.updated_at });
+    expect(row.updated_at).not.toBe(T0);
+    const rev = t.revisions().find(r => r.id !== "rev-1")!;
+    expect(rev).toMatchObject({ title: "Renamed", changelog: "cl", created_at: result.updated.updated_at });
+    expect(t.ftsRow()).toMatchObject({ title: "Renamed" });
+    expect(t.links()).toEqual(["d2"]);
+    expect(t.one("SELECT * FROM doc_ai_summaries WHERE doc_id = 'd1'")).toBeUndefined();
+    expect(t.graphIndexedAt()).toBeNull();
+  });
+
+  it("skips the project-structure read for link-free content and clears stale links", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old [[Target]]");
+    t.seedDoc("d2", "Target", "target body");
+    t.exec("INSERT INTO doc_links (source_doc_id, target_doc_id, project_id) VALUES ('d1', 'd2', 'p1')");
+
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "no links any more" });
+
+    expect(t.calls.map(c => c.kind)).toEqual(["single", "batch"]);
+    expect(t.sqlMatching(STRUCTURE_READ)).toHaveLength(0);
+    expect(t.links()).toEqual([]);
+    expect(t.revisions()).toHaveLength(1);
+  });
+
+  it("is atomic: a failing statement leaves nothing half-written", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old body");
+    t.seedDoc("d2", "Target", "target body");
+    t.seedRevision("d1", "rev-1", "old body");
+    t.exec("INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES ('d1', 'cached', ?)", T0);
+    // The graph invalidation is the LAST statement in the batch - everything
+    // before it must roll back.
+    failOn(t.sqlite, "BEFORE UPDATE OF graph_indexed_at ON projects");
+
+    await expect(
+      applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "---\nslug: new-slug\ntags: [x]\n---\n[[Target]] new", title: "Renamed" }),
+    ).rejects.toThrow(/injected failure/);
+
+    expect(t.revisions().map(r => r.id)).toEqual(["rev-1"]);
+    expect(t.ftsRow()).toEqual({ title: "Doc Title", body: "old body" });
+    expect(t.links()).toEqual([]);
+    expect(t.one("SELECT summary FROM doc_ai_summaries WHERE doc_id = 'd1'")).toEqual({ summary: "cached" });
+    expect(t.docRow()).toMatchObject({ title: "Doc Title", slug: null, tags: null, updated_at: T0 });
+    expect(t.graphIndexedAt()).toBe(T0);
+  });
+
+  it("a no-op save (content and title unchanged) writes no FTS, revision, links or R2", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "same body");
+    t.seedRevision("d1", "rev-1", "same body");
+
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "same body", title: "Doc Title" });
+
+    expect(result.savedContent).toBeUndefined();
+    expect(t.sqlMatching(/docs_fts|asset_revisions \(|doc_links|doc_ai_summaries|projects/)).toHaveLength(0);
+    expect(t.assetsPut).not.toHaveBeenCalled();
+    expect(t.revisions()).toHaveLength(1);
+    // Revision lookup + one write batch (docs UPDATE + slug sync).
+    expect(t.calls.map(c => c.kind)).toEqual(["single", "batch"]);
+    expect(t.calls[1].sql).toHaveLength(2);
+    // updated_at still advances, as before.
+    expect(t.docRow().updated_at).toBe(result.updated.updated_at);
+  });
+
+  it("a settings-only patch issues one statement and no FTS", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "body");
+
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { showHeading: false });
+
+    expect(t.calls).toEqual([{ kind: "batch", sql: [expect.stringMatching(/^UPDATE docs SET show_heading = \?, updated_at = \?/)] }]);
+    expect(t.docRow().show_heading).toBe(0);
+  });
+
+  it("an unchanged-content save still resyncs a drifted slug", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "---\nslug: wanted\n---\nbody");
+    t.seedRevision("d1", "rev-1", "---\nslug: wanted\n---\nbody");
+
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "---\nslug: wanted\n---\nbody" });
+
+    expect(t.docRow().slug).toBe("wanted");
+  });
+
+  it("keeps first-claimant-wins slug uniqueness inside the batch", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Doc Title", "old");
+    t.seedDoc("d2", "Other", "other");
+    t.exec("UPDATE docs SET slug = 'mine' WHERE id = 'd1'");
+    t.exec("UPDATE docs SET slug = 'taken' WHERE id = 'd2'");
+
+    const result = await applyDocUpdate(t.env, t.docRow(), "u1", "User One", { content: "---\nslug: taken\n---\nnew" });
+
+    expect(result.savedContent).toBeDefined();
+    expect(t.docRow().slug).toBe("mine");
+    expect(t.docRow("d2").slug).toBe("taken");
+  });
+
+  it("resolves links with the same semantics as before (folder paths, id: refs, self-links dropped)", async () => {
+    const t = setupSqlite();
+    t.exec("INSERT INTO folders (id, name, project_id, parent_id, created_at) VALUES ('f1', 'Lore', 'p1', NULL, ?)", T0);
+    t.seedDoc("d1", "Doc Title", "old");
+    t.seedDoc("d2", "Guide", "g", "f1");
+    t.seedDoc("d3", "Third", "t");
+
+    await applyDocUpdate(t.env, t.docRow(), "u1", "User One", {
+      content: "[[Lore/Guide]] [[id:d3]] [[Doc Title]] [[Missing]] [x](doc://Guide)",
+    });
+
+    expect(t.links()).toEqual(["d2", "d3"]);
   });
 });
 
 describe("snapshotDocRevision", () => {
-  it("runs the full side-effect chain: v/ snapshot, insert, FTS, doc links, AI-summary invalidation, updated_at bump", async () => {
-    const { env, prepare, bindCalls, assetsPut } = makeEnv();
+  it("runs the full side-effect chain in one write batch: v/ snapshot, insert, FTS, doc links, AI-summary invalidation, updated_at bump", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "Checkpoint Title", "old");
+    t.seedDoc("d2", "Target", "target");
+    t.exec("INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES ('d1', 'cached', ?)", T0);
+    const contributors = JSON.stringify([{ id: "u2", name: "User Two" }, { id: "u3", name: "User Three" }]);
 
-    const revisionId = await snapshotDocRevision(env, {
+    const revisionId = await snapshotDocRevision(t.env, {
       projectId: "p1",
       docId: "d1",
-      content: "checkpoint text",
+      content: "checkpoint text [[Target]]",
       title: "Checkpoint Title",
       editorId: "u2",
       editorName: "User Two",
       changelog: null,
-      contributors: JSON.stringify([{ id: "u2", name: "User Two" }, { id: "u3", name: "User Three" }]),
+      contributors,
       now: "2026-07-01T12:00:00.000Z",
     });
 
     expect(revisionId).toMatch(/[0-9a-f-]{36}/);
-    expect(assetsPut).toHaveBeenCalledWith(`p1/d1/v/${revisionId}`, "checkpoint text");
-
-    const sql = preparedSql(prepare);
-    const insertIdx = sql.findIndex(s => s.includes("INSERT INTO asset_revisions"));
-    expect(insertIdx).toBeGreaterThanOrEqual(0);
-    expect(bindCalls[insertIdx]).toEqual([
-      revisionId, "d1", "p1", "u2", "User Two", "2026-07-01T12:00:00.000Z",
-      null, JSON.stringify([{ id: "u2", name: "User Two" }, { id: "u3", name: "User Three" }]), "Checkpoint Title",
-    ]);
-
-    expect(upsertFtsRow).toHaveBeenCalledWith(expect.anything(), "d1", "p1", "Checkpoint Title", "checkpoint text");
-    expect(indexDocLinks).toHaveBeenCalledWith(env, "p1", "d1", "checkpoint text");
-
-    const aiIdx = sql.findIndex(s => s.includes("DELETE FROM doc_ai_summaries"));
-    expect(aiIdx).toBeGreaterThanOrEqual(0);
-    expect(bindCalls[aiIdx]).toEqual(["d1"]);
-
-    const bumpIdx = sql.findIndex(s => s.includes("UPDATE docs SET sidebar_position"));
-    expect(bumpIdx).toBeGreaterThanOrEqual(0);
-    // Plain body → sidebar_position/tags sync to NULL alongside the updated_at bump.
-    expect(bindCalls[bumpIdx]).toEqual([null, null, "2026-07-01T12:00:00.000Z", "d1"]);
+    expect(t.assetsPut).toHaveBeenCalledWith(`p1/d1/v/${revisionId}`, "checkpoint text [[Target]]");
+    // Never writes the live body - the collab DO owns that.
+    expect(t.putKeys()).not.toContain("p1/d1");
+    expect(t.revisions()).toEqual([expect.objectContaining({
+      id: revisionId, asset_type: "doc", asset_id: "d1", project_id: "p1", editor_id: "u2", editor_name: "User Two",
+      created_at: "2026-07-01T12:00:00.000Z", changelog: null, contributors, title: "Checkpoint Title",
+    })]);
+    expect(t.ftsRow()).toEqual({ title: "Checkpoint Title", body: "checkpoint text Target" });
+    expect(t.links()).toEqual(["d2"]);
+    expect(t.one("SELECT * FROM doc_ai_summaries WHERE doc_id = 'd1'")).toBeUndefined();
+    expect(t.docRow()).toMatchObject({ sidebar_position: null, tags: null, updated_at: "2026-07-01T12:00:00.000Z" });
+    // Structure read + one write batch.
+    expect(t.calls.map(c => c.kind)).toEqual(["batch", "batch"]);
   });
 
   it("syncs the frontmatter-derived columns (sidebar_position, tags, slug) from the persisted body", async () => {
-    const { env, prepare, bindCalls } = makeEnv();
+    const t = setupSqlite();
+    t.seedDoc("d1", "T", "old");
 
-    await snapshotDocRevision(env, {
+    await snapshotDocRevision(t.env, {
       projectId: "p1",
       docId: "d1",
       content: "---\nsidebar_position: 3\ntags: [lore]\nslug: My-Page\n---\nbody",
@@ -222,12 +439,70 @@ describe("snapshotDocRevision", () => {
       now: "2026-07-01T12:00:00.000Z",
     });
 
-    const sql = preparedSql(prepare);
-    const colIdx = sql.findIndex(s => s.includes("UPDATE docs SET sidebar_position"));
-    expect(bindCalls[colIdx]).toEqual([3, JSON.stringify(["lore"]), "2026-07-01T12:00:00.000Z", "d1"]);
-    const slugIdx = sql.findIndex(s => s.includes("UPDATE docs SET slug"));
-    expect(slugIdx).toBeGreaterThanOrEqual(0);
-    expect(bindCalls[slugIdx]).toEqual(["d1", "my-page", "p1"]);
+    expect(t.docRow()).toMatchObject({ sidebar_position: 3, tags: JSON.stringify(["lore"]), slug: "my-page", updated_at: "2026-07-01T12:00:00.000Z" });
+    // Link-free body: no structure read, a single write batch.
+    expect(t.calls.map(c => c.kind)).toEqual(["batch"]);
+  });
+
+  it("is atomic: a failing statement leaves no revision row or index changes", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d1", "T", "old");
+    failOn(t.sqlite, "BEFORE UPDATE OF slug ON docs");
+
+    await expect(snapshotDocRevision(t.env, {
+      projectId: "p1", docId: "d1", content: "new body", title: "T", editorId: "u1", editorName: "User One",
+    })).rejects.toThrow(/injected failure/);
+
+    expect(t.revisions()).toHaveLength(0);
+    expect(t.ftsRow()).toEqual({ title: "T", body: "old" });
+    expect(t.docRow().updated_at).toBe(T0);
+  });
+});
+
+describe("createDoc", () => {
+  it("writes the row, slug, FTS and graph invalidation in one batch after the body", async () => {
+    const t = setupSqlite();
+
+    const created = await createDoc(t.env, {
+      projectId: "p1", authorId: "u1", title: "New Doc", folderId: null,
+      content: "---\nsidebar_position: 2\ntags: [a]\nslug: New-Doc\n---\nhello",
+    });
+
+    expect(t.store[`p1/${created.id}`]).toContain("hello");
+    expect(t.calls.map(c => c.kind)).toEqual(["batch"]);
+    expect(t.docRow(created.id)).toMatchObject({
+      title: "New Doc", author_id: "u1", sidebar_position: 2, tags: JSON.stringify(["a"]), slug: "new-doc",
+      created_at: created.createdAt, updated_at: created.updatedAt, published_at: null,
+    });
+    expect(t.ftsRow(created.id)).toEqual({ title: "New Doc", body: "hello" });
+    // The FTS row, written in the same batch as the docs INSERT, carries the
+    // site token and its rowid-map entry (last_insert_rowid() of that batch).
+    expect(t.rows(
+      "SELECT f.pid FROM docs_fts_map m JOIN docs_fts f ON f.rowid = m.rid AND f.doc_id = m.doc_id WHERE m.doc_id = ?",
+      created.id,
+    )).toEqual([{ pid: t.one("SELECT hex('p1') AS h")!.h }]);
+    expect(t.graphIndexedAt()).toBeNull();
+  });
+
+  it("drops a slug another doc already holds", async () => {
+    const t = setupSqlite();
+    t.seedDoc("d2", "Other", "other");
+    t.exec("UPDATE docs SET slug = 'taken' WHERE id = 'd2'");
+
+    const created = await createDoc(t.env, { projectId: "p1", authorId: "u1", title: "New", folderId: null, content: "---\nslug: taken\n---\nx" });
+
+    expect(t.docRow(created.id).slug).toBeNull();
+  });
+
+  it("is atomic: a failing statement leaves no docs row", async () => {
+    const t = setupSqlite();
+    failOn(t.sqlite, "BEFORE UPDATE OF graph_indexed_at ON projects");
+
+    await expect(createDoc(t.env, { projectId: "p1", authorId: "u1", title: "New", folderId: null, content: "x" })).rejects.toThrow(/injected failure/);
+
+    expect(t.rows("SELECT id FROM docs")).toEqual([]);
+    expect(t.rows("SELECT doc_id FROM docs_fts")).toEqual([]);
+    expect(t.rows("SELECT doc_id FROM docs_fts_map")).toEqual([]);
   });
 });
 

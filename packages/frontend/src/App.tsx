@@ -18,6 +18,7 @@ import { SiteSettingsPage } from "./pages/SiteSettingsPage";
 import { GraphPage } from "./pages/GraphPage";
 import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { UserProfilePage } from "./pages/UserProfilePage";
+import { HandleProfilePage } from "./pages/HandleProfilePage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { PendingInvitesPage } from "./pages/PendingInvitesPage";
@@ -31,6 +32,15 @@ import { TestAudioPage } from "./pages/TestAudioPage";
 import { AnimationsTestPage } from "./pages/tests/AnimationsTestPage";
 import { HomeVariantsPage } from "./pages/tests/home/HomeVariantsPage";
 import { Toaster } from "@/components/ui/sonner";
+
+// `/@<handle>` profile links. React Router 6 can't match a literal `@` prefix
+// on a param, so the route is the generic single segment `/:atHandle`: only
+// `@…` paths get the authenticated app shell; every other unknown single
+// segment keeps rendering the plain (logged-out-friendly) 404.
+function AtHandleGate() {
+  const { atHandle = "" } = useParams<{ atHandle: string }>();
+  return atHandle.startsWith("@") ? <DocsLayout /> : <NotFoundPage />;
+}
 
 function TrashRedirect() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -84,6 +94,9 @@ export function App() {
           <Route path="/orgs/:orgId" element={<OrgPage />} />
           <Route path="/orgs/:orgId/settings" element={<OrgSettingsPage />} />
         </Route>
+        <Route path="/:atHandle" element={<AtHandleGate />}>
+          <Route index element={<HandleProfilePage />} />
+        </Route>
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/acknowledgements" element={<AcknowledgementsPage />} />
@@ -98,6 +111,7 @@ export function App() {
       {backgroundLocation && (
         <Routes>
           <Route path="/u/:userId" element={<UserProfilePage />} />
+          <Route path="/:atHandle" element={<HandleProfilePage />} />
         </Routes>
       )}
       <Toaster />

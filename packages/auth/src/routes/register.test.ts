@@ -57,7 +57,7 @@ describe("handleRegister email_verified", () => {
       },
     }));
     const env = {
-      DB: { prepare },
+      DB: { prepare, batch: async (stmts: unknown[]) => stmts.map(() => ({ results: [], meta: {} })) },
       FLAGS: { getBooleanValue },
       TURNSTILE_SECRET: "1x0000000000000000000000000000000AA",
       JWT_SECRET: "test-secret",

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DetailField } from "@/components/DetailField";
 import { InkBillingCard } from "@/components/users/InkBillingCard";
 import { BadgesCard } from "@/components/users/BadgesCard";
+import { ProfileLinkCard } from "@/components/users/ProfileLinkCard";
 import type { AdminUserDetails } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { formatModerationAction, formatModerationUntil } from "@/lib/moderation";
@@ -104,6 +105,13 @@ export function UserDetailsPanel({
       <InkBillingCard userId={userId} userName={userName} details={details} onChanged={onChanged} />
 
       <BadgesCard userId={userId} badges={details.profile.badges} onChanged={onChanged} />
+
+      <ProfileLinkCard
+        userId={userId}
+        handle={details.profile.handle}
+        locked={details.profile.handle_locked}
+        onChanged={onChanged}
+      />
 
       <Card>
         <CardHeader>

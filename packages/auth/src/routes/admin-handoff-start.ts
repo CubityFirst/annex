@@ -23,13 +23,16 @@ export async function handleAdminHandoffStart(request: Request, env: Env): Promi
   const expiresAt = now + HANDOFF_TTL_MS;
   const code = crypto.randomUUID();
 
-  await env.DB.prepare(
-    "DELETE FROM admin_handoffs WHERE expires_at <= ? OR consumed_at IS NOT NULL",
-  ).bind(now).run();
-
-  await env.DB.prepare(
-    "INSERT INTO admin_handoffs (id, user_id, return_to, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, NULL)",
-  ).bind(code, session.userId, normalizedReturnTo, now, expiresAt).run();
+  // Opportunistic GC of expired handoffs, batched with the INSERT. Consumed
+  // rows are left to expire (<= HANDOFF_TTL_MS): the exchange only accepts
+  // `consumed_at IS NULL`, so they're inert, and an `OR consumed_at IS NOT
+  // NULL` arm would turn this index range delete into a full table scan.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM admin_handoffs WHERE expires_at <= ?").bind(now),
+    env.DB.prepare(
+      "INSERT INTO admin_handoffs (id, user_id, return_to, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, NULL)",
+    ).bind(code, session.userId, normalizedReturnTo, now, expiresAt),
+  ]);
 
   // Record that an admin handoff was initiated (the exchange writes its own
   // row when the code is redeemed - a start with no matching exchange is

@@ -68,15 +68,17 @@ export async function createSession(
   const ip = clientIp(request);
 
   // Opportunistic GC: drop expired/revoked rows for this user so the table
-  // doesn't grow unbounded for users who never log out properly.
-  await env.DB.prepare(
-    "DELETE FROM sessions WHERE user_id = ? AND (expires_at <= ? OR revoked_at IS NOT NULL)",
-  ).bind(userId, now).run();
-
-  await env.DB.prepare(
-    `INSERT INTO sessions (id, user_id, created_at, expires_at, last_used_at, device_kind, client_label, ip)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(id, userId, now, expiresAt, now, deviceKind, clientLabel, ip).run();
+  // doesn't grow unbounded for users who never log out properly. Batched
+  // with the INSERT - one round trip on every login.
+  await env.DB.batch([
+    env.DB.prepare(
+      "DELETE FROM sessions WHERE user_id = ? AND (expires_at <= ? OR revoked_at IS NOT NULL)",
+    ).bind(userId, now),
+    env.DB.prepare(
+      `INSERT INTO sessions (id, user_id, created_at, expires_at, last_used_at, device_kind, client_label, ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(id, userId, now, expiresAt, now, deviceKind, clientLabel, ip),
+  ]);
 
   return id;
 }

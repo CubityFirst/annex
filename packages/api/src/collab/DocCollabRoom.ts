@@ -601,15 +601,17 @@ export class DocCollabRoom implements DurableObject {
       // Same baseline as applyDocUpdate: the latest revision's content, falling
       // back to the live R2 body for docs with no revisions yet. Runs BEFORE
       // persist() mirrors the Y text over the live body, so the fallback still
-      // reflects the pre-session content.
-      const baseline = await latestDocRevisionContent(this.env, projectId, docId);
+      // reflects the pre-session content. The (cheap, PK) title lookup runs
+      // concurrently with the baseline read instead of after it.
+      const [baseline, doc] = await Promise.all([
+        latestDocRevisionContent(this.env, projectId, docId),
+        this.env.DB.prepare("SELECT title FROM docs WHERE id = ?").bind(docId).first<{ title: string }>(),
+      ]);
       const oldContent = baseline !== null ? baseline : await (async () => {
         const obj = await this.env.ASSETS.get(docKey);
         return obj ? await obj.text() : "";
       })();
       if (text === oldContent) return;
-
-      const doc = await this.env.DB.prepare("SELECT title FROM docs WHERE id = ?").bind(docId).first<{ title: string }>();
       if (!doc) return; // doc deleted while the room was open
 
       const editors = Array.from(this.editors.entries()).map(([id, name]) => ({ id, name }));

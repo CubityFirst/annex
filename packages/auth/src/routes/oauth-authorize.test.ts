@@ -24,8 +24,9 @@ function makeEnv(client: typeof trustedClient | null, rateLimitSuccess = true) {
   const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
   const bind = vi.fn().mockReturnValue({ first, run });
   const prepare = vi.fn().mockReturnValue({ bind });
+  const batch = vi.fn(async (stmts: unknown[]) => stmts.map(() => ({ results: [], meta: { changes: 1 } })));
   const limit = vi.fn().mockResolvedValue({ success: rateLimitSuccess });
-  return { env: { DB: { prepare }, RATE_LIMITER_OIDC: { limit } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first, limit };
+  return { env: { DB: { prepare, batch }, RATE_LIMITER_OIDC: { limit } } as unknown as Parameters<typeof handleOAuthAuthorize>[1], prepare, bind, run, first, batch, limit };
 }
 
 const base = {
@@ -131,13 +132,18 @@ describe("handleOAuthAuthorize", () => {
   });
 
   it("mints a code and returns redirectTo for a trusted client", async () => {
-    const { env, run } = makeEnv(trustedClient);
+    const { env, run, batch, prepare } = makeEnv(trustedClient);
     const res = await handleOAuthAuthorize(req(base), env);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { redirectTo: string } };
     expect(json.data.redirectTo).toContain("code=");
     expect(json.data.redirectTo).toContain("state=xyz");
-    // GC delete + code INSERT
-    expect(run).toHaveBeenCalledTimes(2);
+    // GC delete + code INSERT in one batch round trip.
+    expect(run).not.toHaveBeenCalled();
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0][0]).toHaveLength(2);
+    // Index-backed GC: expiry only (consumed codes are inert until they expire).
+    expect(prepare).toHaveBeenCalledWith("DELETE FROM oauth_codes WHERE expires_at <= ?");
+    expect(prepare.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO oauth_codes"))).toBe(true);
   });
 });

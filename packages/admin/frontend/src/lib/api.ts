@@ -16,6 +16,8 @@ export interface AdminUser {
   // Set once the cron has begun executing it; from then on it can only be
   // finished (retried), not cancelled.
   deletion_started_at?: number | null;
+  // Opt-in `/@handle` profile link, null when the user has it off.
+  handle?: string | null;
   latest_moderation_action: "disabled" | "suspended" | "re_enabled" | null;
   latest_moderation_reason: string | null;
   latest_moderation_created_at: string | null;
@@ -32,6 +34,8 @@ export interface AdminUserDetails {
     force_password_change: boolean;
     email_verified: boolean;
     badges: number;
+    handle: string | null;
+    handle_locked: boolean;
   };
   moderation: {
     current_status: "active" | "disabled" | "suspended";
@@ -286,6 +290,20 @@ export async function updateUserBadges(id: string, badges: number): Promise<void
     body: JSON.stringify({ badges }),
   });
   await readOk(res, "Failed to update badges");
+}
+
+// Moderate a user's `/@handle` profile link: set/rename/clear the handle
+// (null clears) and/or lock it so the user can't change it themselves.
+export async function updateUserHandle(
+  id: string,
+  patch: { handle?: string | null; locked?: boolean },
+): Promise<{ handle: string | null; handle_locked: boolean }> {
+  const res = await authFetch(`/api/users/${id}/handle`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return readData<{ handle: string | null; handle_locked: boolean }>(res, "Failed to update profile link");
 }
 
 // Re-copies the user's canonical display name over the denormalized
