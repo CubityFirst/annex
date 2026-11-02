@@ -65,7 +65,13 @@ export async function handleDeleteAccount(request: Request, env: Env): Promise<R
     }
   }
 
-  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(session.userId).run();
+  // email_verification_tokens has no FK to users, so it doesn't cascade -
+  // delete the rows explicitly (they can hold a pending change-email address)
+  // in the same transaction as the user row.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM email_verification_tokens WHERE user_id = ?").bind(session.userId),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(session.userId),
+  ]);
 
   return okResponse({});
 }

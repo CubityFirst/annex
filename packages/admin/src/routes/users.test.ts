@@ -226,6 +226,12 @@ describe("audit emission - every mutation writes exactly one row, none on 404 (A
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ badges: 1 }) },
     ],
     [
+      "PATCH /:id/handle",
+      env => env.AUTH_DB.firstQueue.push({ id: "u-1", handle: null, handle_locked: 0 }),
+      "/u-1/handle",
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: null, locked: true }) },
+    ],
+    [
       "POST /:id/force-password-change",
       env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
       "/u-1/force-password-change",
@@ -757,5 +763,83 @@ describe("user search + details against the real schema", () => {
     expect(plain.data.billing).toMatchObject({ resolved_plan: "free", granted: null });
 
     expect((await request("/nope")).status).toBe(404);
+  });
+});
+
+describe("PATCH /:id/handle + handle search (real SQLite)", () => {
+  function setup() {
+    const auth = createSqliteD1(AUTH_MIGRATIONS);
+    const add = auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, 'x', datetime('now'))");
+    add.run("u-1", "one@x.com", "One");
+    add.run("u-2", "two@x.com", "Two");
+    const request = makeUsersApp({ AUTH_DB: auth.db, DB: makeDb() });
+    const patch = (id: string, body: unknown) =>
+      request(`/${id}/handle`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const prefs = (id: string) =>
+      auth.sqlite.prepare("SELECT handle, handle_locked, bio FROM user_preferences WHERE user_id = ?").get(id) as
+        { handle: string | null; handle_locked: number; bio: string | null } | undefined;
+    return { auth, request, patch, prefs };
+  }
+
+  it("sets a normalized handle, allowing reserved names for admins", async () => {
+    const t = setup();
+    const res = await t.patch("u-1", { handle: "@Annex" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data: unknown }).data).toEqual({ handle: "annex", handle_locked: false });
+    expect(t.prefs("u-1")).toMatchObject({ handle: "annex", handle_locked: 0 });
+    expect(writeAdminAudit).toHaveBeenCalledWith(expect.anything(), session, "user.handle.update", "user", "u-1", { from: null, to: "annex" });
+  });
+
+  it("still rejects malformed handles", async () => {
+    const t = setup();
+    expect((await t.patch("u-1", { handle: "no spaces" })).status).toBe(400);
+    expect((await t.patch("u-1", { handle: "ab" })).status).toBe(400);
+    expect((await t.patch("u-1", { handle: 7 })).status).toBe(400);
+    expect((await t.patch("u-1", { locked: "yes" })).status).toBe(400);
+    expect((await t.patch("u-1", {})).status).toBe(400);
+    expect(t.prefs("u-1")).toBeUndefined();
+    expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+
+  it("409s when another user holds the handle", async () => {
+    const t = setup();
+    await t.patch("u-2", { handle: "taken" });
+    vi.mocked(writeAdminAudit).mockClear();
+    const res = await t.patch("u-1", { handle: "TAKEN" });
+    expect(res.status).toBe(409);
+    expect(t.prefs("u-1")).toBeUndefined();
+    expect(writeAdminAudit).not.toHaveBeenCalled();
+  });
+
+  it("clear + lock in one call; lock alone leaves the handle untouched", async () => {
+    const t = setup();
+    t.auth.sqlite.prepare("INSERT INTO user_preferences (user_id, handle, bio) VALUES ('u-1', 'rude', 'keep me')").run();
+
+    // Toggling only the lock must not rewrite the handle.
+    expect((await t.patch("u-1", { locked: true })).status).toBe(200);
+    expect(t.prefs("u-1")).toEqual({ handle: "rude", handle_locked: 1, bio: "keep me" });
+
+    const res = await t.patch("u-1", { handle: null, locked: true });
+    expect(((await res.json()) as { data: unknown }).data).toEqual({ handle: null, handle_locked: true });
+    expect(t.prefs("u-1")).toEqual({ handle: null, handle_locked: 1, bio: "keep me" });
+    expect(writeAdminAudit).toHaveBeenLastCalledWith(expect.anything(), session, "user.handle.update", "user", "u-1", { from: "rude", to: null, locked: true });
+
+    expect((await t.patch("u-1", { locked: false })).status).toBe(200);
+    expect(t.prefs("u-1")?.handle_locked).toBe(0);
+  });
+
+  it("details expose the handle + lock, and search finds a user by @handle", async () => {
+    const t = setup();
+    await t.patch("u-2", { handle: "second", locked: true });
+
+    const details = (await (await t.request("/u-2")).json()) as { data: { profile: { handle: string | null; handle_locked: boolean } } };
+    expect(details.data.profile).toMatchObject({ handle: "second", handle_locked: true });
+
+    const search = (await (await t.request("/search?q=%40Second")).json()) as { data: { users: Array<{ id: string; handle: string | null }> } };
+    expect(search.data.users.map(u => u.id)).toEqual(["u-2"]);
+    expect(search.data.users[0].handle).toBe("second");
+    // Email search still works alongside.
+    const byEmail = (await (await t.request("/search?q=one%40")).json()) as { data: { users: Array<{ id: string }> } };
+    expect(byEmail.data.users.map(u => u.id)).toEqual(["u-1"]);
   });
 });

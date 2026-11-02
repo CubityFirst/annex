@@ -107,32 +107,48 @@ export function computeLinksForDoc(
   return targets;
 }
 
+// One D1 round trip: both reads ride a single batch rather than two
+// concurrent subrequests.
 async function fetchProjectStructure(env: Env, projectId: string): Promise<{ docs: DocRow[]; folders: FolderRow[] }> {
-  const [docsResult, foldersResult] = await Promise.all([
-    env.DB.prepare("SELECT id, title, folder_id FROM docs WHERE project_id = ?").bind(projectId).all<DocRow>(),
-    env.DB.prepare("SELECT id, name, parent_id FROM folders WHERE project_id = ?").bind(projectId).all<FolderRow>(),
+  const [docsResult, foldersResult] = await env.DB.batch([
+    env.DB.prepare("SELECT id, title, folder_id FROM docs WHERE project_id = ?").bind(projectId),
+    env.DB.prepare("SELECT id, name, parent_id FROM folders WHERE project_id = ?").bind(projectId),
   ]);
-  return { docs: docsResult.results, folders: foldersResult.results };
+  return {
+    docs: (docsResult.results ?? []) as DocRow[],
+    folders: (foldersResult.results ?? []) as FolderRow[],
+  };
 }
 
-async function replaceLinksForSource(env: Env, projectId: string, sourceId: string, targets: Set<string>): Promise<void> {
+// Builds (without running) the statements that replace one doc's outgoing
+// links, so callers can fold them into a larger atomic write batch. Content
+// with no link syntax at all resolves to an empty target set no matter what
+// the site contains, so the project-structure read is skipped and only the
+// DELETE is returned.
+export async function docLinkStatements(env: Env, projectId: string, sourceId: string, content: string): Promise<D1PreparedStatement[]> {
   const stmts: D1PreparedStatement[] = [
     env.DB.prepare("DELETE FROM doc_links WHERE source_doc_id = ?").bind(sourceId),
   ];
-  for (const t of targets) {
+  if (extractRefs(content).length === 0) return stmts;
+  const { docs, folders } = await fetchProjectStructure(env, projectId);
+  const ctx = buildResolutionContext(docs, folders);
+  for (const t of computeLinksForDoc(sourceId, content, ctx)) {
     stmts.push(
       env.DB.prepare("INSERT OR IGNORE INTO doc_links (source_doc_id, target_doc_id, project_id) VALUES (?, ?, ?)")
         .bind(sourceId, t, projectId),
     );
   }
-  await env.DB.batch(stmts);
+  return stmts;
 }
 
 export async function indexDocLinks(env: Env, projectId: string, sourceId: string, content: string): Promise<void> {
-  const { docs, folders } = await fetchProjectStructure(env, projectId);
-  const ctx = buildResolutionContext(docs, folders);
-  const targets = computeLinksForDoc(sourceId, content, ctx);
-  await replaceLinksForSource(env, projectId, sourceId, targets);
+  await env.DB.batch(await docLinkStatements(env, projectId, sourceId, content));
+}
+
+// Statement form of invalidateProjectGraphIndex, for callers that fold the
+// invalidation into a larger atomic write batch.
+export function graphInvalidationStatement(env: Env, projectId: string): D1PreparedStatement {
+  return env.DB.prepare("UPDATE projects SET graph_indexed_at = NULL WHERE id = ?").bind(projectId);
 }
 
 export async function reindexProject(env: Env, projectId: string): Promise<void> {

@@ -19,7 +19,8 @@ import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
 import { handleTrash } from "./routes/trash";
-import { releaseCustomDomain } from "./lib/customDomains";
+import { cleanupDeletedAccount } from "./lib/projectDelete";
+import { handleUserByHandle } from "./routes/userHandles";
 import { pruneDocRevisions } from "./lib/docOps";
 import { purgeExpiredTrash } from "./lib/trash";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
@@ -321,7 +322,7 @@ export default {
             : Promise.resolve(true),
         ]);
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         return addCorsHeaders(Response.json({
           ok: true,
@@ -334,6 +335,8 @@ export default {
             userId: session.userId,
             timezone: data.data.timezone,
             bio: data.data.bio,
+            handle: data.data.handle ?? null,
+            handleLocked: data.data.handleLocked ?? false,
             personalPlan: session.personalPlan ?? "free",
             personalPlanSince: session.personalPlanSince ?? null,
             personalPlanStatus: session.personalPlanStatus ?? null,
@@ -369,11 +372,14 @@ export default {
           });
           if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
           const trimmedName = body.name.trim();
-          await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
-            .bind(trimmedName, session.userId).run();
-          // Keep org-membership rows' denormalized name in sync too.
-          await env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ?")
-            .bind(trimmedName, session.userId).run();
+          // Keep the denormalized site- and org-membership name snapshots in
+          // sync; the <> guard skips rows that already match.
+          await env.DB.batch([
+            env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ? AND name <> ?")
+              .bind(trimmedName, session.userId, trimmedName),
+            env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ? AND name <> ?")
+              .bind(trimmedName, session.userId, trimmedName),
+          ]);
           responseData.name = trimmedName;
         }
 
@@ -455,6 +461,22 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
+      // PATCH /me/handle - set or clear the opt-in public profile handle (the
+      // /@<handle> link). The auth worker validates + enforces uniqueness
+      // (409 when taken).
+      if (url.pathname === "/me/handle" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-handle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
+      }
+
       // GET /me/favourite-sites/search?q= - find published sites by name for
       // the picker in user settings. Excludes ones the user has already
       // favourited so the list shows what's *addable*. Capped to 20 results.
@@ -528,7 +550,13 @@ export default {
           // this project isn't already in their list (so re-POST of an existing
           // favourite stays idempotent).
           const countRow = await env.DB.prepare(
-            "SELECT COUNT(*) as n, SUM(CASE WHEN project_id = ? THEN 1 ELSE 0 END) as has FROM user_favourite_projects WHERE user_id = ?",
+            // Count only what GET /me/favourite-sites lists (existing, published
+            // sites) so orphaned/unpublished rows the user can't see or remove
+            // don't hold them at the cap.
+            `SELECT COUNT(*) as n, SUM(CASE WHEN ufp.project_id = ? THEN 1 ELSE 0 END) as has
+             FROM user_favourite_projects ufp
+             JOIN projects p ON p.id = ufp.project_id
+             WHERE ufp.user_id = ? AND p.published_at IS NOT NULL`,
           ).bind(projectId, session.userId).first<{ n: number; has: number }>();
           if (countRow && countRow.has === 0 && countRow.n >= 3) {
             return addCorsHeaders(errorResponse(Errors.CONFLICT));
@@ -651,25 +679,22 @@ export default {
         const authJson = await authRes.json<{ ok: boolean; error?: string }>();
         if (!authJson.ok) return addCorsHeaders(Response.json(authJson, { status: authRes.status }));
 
-        // Delete projects the user owns (cascades to docs, members, etc.)
-        const ownedProjects = await env.DB.prepare(
-          "SELECT id FROM projects WHERE owner_id = ?",
-        ).bind(session.userId).all<{ id: string }>();
-        for (const proj of ownedProjects.results) {
-          // Release each site's Cloudflare custom hostname before its row (and
-          // cascading project_custom_domains row) is deleted.
-          await releaseCustomDomain(env, proj.id);
-          await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(proj.id).run();
-        }
-
-        // Remove user from any remaining project + organization memberships
-        await env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(session.userId).run();
-        await env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(session.userId).run();
-
-        // Delete avatar (both variants + any legacy object)
-        await deleteAllAvatarVariants(env.ASSETS, session.userId);
+        // The account is gone: delete any owned site in full (same cleanup as
+        // DELETE /projects/:id - R2, revisions, FTS, custom domain), then the
+        // remaining memberships and the avatar. Best-effort per step (see
+        // lib/projectDelete.ts) - there is nothing left to roll back to.
+        await cleanupDeletedAccount(env, session.userId);
 
         return addCorsHeaders(Response.json({ ok: true }));
+      }
+
+      // GET /users/by-handle/:handle - authenticated, resolves a /@<handle>
+      // profile link to a user id (routes/userHandles.ts).
+      const userHandleMatch = url.pathname.match(/^\/users\/by-handle\/([^/]+)$/);
+      if (userHandleMatch && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        return addCorsHeaders(await handleUserByHandle(env, userHandleMatch[1]));
       }
 
       // POST /users/:userId/report - authenticated abuse report from the
@@ -696,7 +721,7 @@ export default {
         if (!lookupRes.ok) {
           return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
         }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null } }>();
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null; handle?: string | null } }>();
         if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
 
         const sharedRows = await env.DB.prepare(
@@ -757,6 +782,7 @@ export default {
           badges: lookupData.data.badges ?? 0,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
+        if (lookupData.data.handle) profileData.handle = lookupData.data.handle;
         // Bio is supporter-gated on display: only render if the target user
         // currently holds Ink. The column persists across cancel/resub cycles
         // so a user gets their bio back if they re-subscribe.
@@ -952,10 +978,12 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
 // successful change).
 async function syncMemberEmails(env: Env, userId: string, email: string): Promise<void> {
   try {
-    await env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ?")
-      .bind(email, userId).run();
-    await env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ?")
-      .bind(email, userId).run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ? AND email <> ?")
+        .bind(email, userId, email),
+      env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ? AND email <> ?")
+        .bind(email, userId, email),
+    ]);
   } catch (err) {
     console.error("syncMemberEmails failed", { userId, err });
   }
