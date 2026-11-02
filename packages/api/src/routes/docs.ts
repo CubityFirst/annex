@@ -71,20 +71,30 @@ export async function handleDocs(
 
     type DocWithAuthor = Doc & { author_name: string; author_role: string | null; is_home: number };
 
-    const docWithAuthor = (sharesJoin: boolean) => `
+    // is_home compares against one uncorrelated home_doc_id lookup instead of
+    // joining projects per doc row. Limited members are driven from their
+    // doc_shares rows (idx_doc_shares_project_user) rather than every doc in
+    // the site; d.project_id is still checked so results are unchanged.
+    // docQuery(where, order) -> SELECT ... WHERE <site/share filter> AND <where>
+    // <order>; docBinds(...rest) prepends the binds for the SELECT + filter.
+    const lv = isLimitedViewer;
+    const docQuery = (where: string, order: string) => `
       SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position, d.tags,
         COALESCE(pm.name, d.author_id) AS author_name,
         pm.role AS author_role,
-        CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home
-      FROM docs d
+        CASE WHEN d.id = (SELECT home_doc_id FROM projects WHERE id = ?) THEN 1 ELSE 0 END AS is_home
+      ${lv ? "FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id" : "FROM docs d"}
       LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
-      LEFT JOIN projects p ON p.id = d.project_id
-      ${sharesJoin ? "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?" : ""}
+      WHERE ${lv ? "ds.project_id = ? AND ds.user_id = ? AND " : ""}d.project_id = ?${where ? ` AND ${where}` : ""}
+      ${order}
     `;
-    const lv = isLimitedViewer;
+    const docBinds = (...rest: (string | null)[]) =>
+      lv ? [projectId, projectId, user.userId, projectId, ...rest] : [projectId, projectId, ...rest];
+    const sidebarOrder = "ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC";
 
     if (q) {
       const rootFolderId = params.get("rootFolderId");
+      const match = "(LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?))";
       let rows;
       if (rootFolderId) {
         rows = await env.DB.prepare(`
@@ -93,26 +103,23 @@ export async function handleDocs(
             UNION ALL
             SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
           )
-          ${docWithAuthor(lv)}
-          WHERE d.project_id = ? AND d.folder_id IN (SELECT id FROM subtree)
-            AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?))
-          ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC
-        `).bind(...(lv ? [user.userId] : []), rootFolderId, projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
+          ${docQuery(`d.folder_id IN (SELECT id FROM subtree) AND ${match}`, sidebarOrder)}
+        `).bind(rootFolderId, ...docBinds(`%${q}%`, `%${q}%`)).all<DocWithAuthor>();
       } else {
-        rows = await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?)) ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-          .bind(...(lv ? [user.userId] : []), projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
+        rows = await env.DB.prepare(docQuery(match, sidebarOrder))
+          .bind(...docBinds(`%${q}%`, `%${q}%`)).all<DocWithAuthor>();
       }
       return okResponse(rows.results);
     }
 
     const rows = folderId
-      ? await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-          .bind(...(lv ? [user.userId] : []), projectId, folderId).all<DocWithAuthor>()
+      ? await env.DB.prepare(docQuery("d.folder_id = ?", sidebarOrder))
+          .bind(...docBinds(folderId)).all<DocWithAuthor>()
       : params.has("folderId")
-        ? await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-            .bind(...(lv ? [user.userId] : []), projectId).all<DocWithAuthor>()
-        : await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
-            .bind(...(lv ? [user.userId] : []), projectId).all<DocWithAuthor>();
+        ? await env.DB.prepare(docQuery("d.folder_id IS NULL", sidebarOrder))
+            .bind(...docBinds()).all<DocWithAuthor>()
+        : await env.DB.prepare(docQuery("", "ORDER BY d.created_at DESC"))
+            .bind(...docBinds()).all<DocWithAuthor>();
     return okResponse(rows.results);
   }
 

@@ -49,9 +49,14 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
-interface Project {
+// A row of GET /api/projects. doc_count / member_count are only present when
+// the list was fetched with `?counts=1` (the dashboard cards).
+export interface ProjectListItem {
   id: string;
   name: string;
+  description: string | null;
+  doc_count?: number;
+  member_count?: number;
   role: string;
   published_at: string | null;
   changelog_mode: string;
@@ -65,6 +70,7 @@ interface Project {
   organization_id: string | null;
   organization_name: string | null;
 }
+type Project = ProjectListItem;
 
 // Orgs the current user can create a site under (admin+ only - the API gates
 // site creation in an org at admin rank). Used to populate the New Site picker.
@@ -151,6 +157,11 @@ export interface DocsLayoutContext {
   headerActionSlot: HTMLElement | null;
   openCreateSite: () => void;
   openCreateOrg: () => void;
+  // The caller's site list (GET /api/projects), shared with DashboardPage so
+  // the dashboard doesn't refetch what the sidebar already loaded. Fetched
+  // with doc/member counts whenever the dashboard is entered.
+  projects: ProjectListItem[];
+  setProjects: Dispatch<SetStateAction<ProjectListItem[]>>;
 }
 
 function ProjectSwitcher({
@@ -438,16 +449,28 @@ export function DocsLayout() {
     writeThemePrefsCookie(prefs);
   }, [themeMode, themeCustomColor]);
 
+  // Site list: loaded once on boot, and again (with the dashboard-only doc /
+  // member counts) every time the dashboard is entered - DashboardPage reads
+  // it from the outlet context instead of fetching its own copy. Leaving the
+  // dashboard doesn't refetch. The sequence number drops a slower, older
+  // response that would otherwise overwrite a newer one.
+  const onDashboard = useMatch("/dashboard") !== null;
+  const projectsLoaded = useRef(false);
+  const projectsFetchSeq = useRef(0);
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<Project[]>("/api/projects")
+    if (projectsLoaded.current && !onDashboard) return;
+    projectsLoaded.current = true;
+    const seq = ++projectsFetchSeq.current;
+    apiFetchJson<Project[]>(onDashboard ? "/api/projects?counts=1" : "/api/projects")
       .then(result => {
+        if (seq !== projectsFetchSeq.current) return;
         // 401/403 redirects to /login are handled inside apiFetch; the page is
         // unloading by the time we get here, so just ignore those statuses.
         if (result.ok && result.data) setProjects([...result.data].sort((a, b) => b.is_favourite - a.is_favourite));
       })
       .catch(() => {});
-  }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onDashboard]);
 
   useEffect(() => {
     if (!projectId) { setDocs([]); setFolders([]); return; }
@@ -637,6 +660,8 @@ export function DocsLayout() {
     headerActionSlot: headerActionEl,
     openCreateSite: () => setCreating(true),
     openCreateOrg: () => setCreatingOrg(true),
+    projects,
+    setProjects,
   };
 
   // Shared by the project and overview sidebars so the palette entry looks

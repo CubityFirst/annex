@@ -181,14 +181,15 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
   if (!docId) {
     if (request.method === "GET") {
       const lv = caller.role === "limited";
+      // Limited keys are driven from the caller's doc_shares rows
+      // (idx_doc_shares_project_user), not every doc in the site.
       const sql =
         `SELECT d.id, d.slug, d.title, d.folder_id, d.published_at, d.tags, d.created_at, d.updated_at
-         FROM docs d
-         ${lv ? "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?" : ""}
-         WHERE d.project_id = ?
+         ${lv ? "FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id" : "FROM docs d"}
+         WHERE ${lv ? "ds.project_id = ? AND ds.user_id = ? AND " : ""}d.project_id = ?
          ORDER BY d.created_at DESC`;
       const rows = lv
-        ? await env.DB.prepare(sql).bind(auth.userId, auth.projectId).all<DocRowForApi>()
+        ? await env.DB.prepare(sql).bind(auth.projectId, auth.userId, auth.projectId).all<DocRowForApi>()
         : await env.DB.prepare(sql).bind(auth.projectId).all<DocRowForApi>();
       return okResponse(rows.results.map(serializeDocSummary));
     }

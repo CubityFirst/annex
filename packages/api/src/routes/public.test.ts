@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../auth", () => ({ authenticate: vi.fn() }));
 
@@ -390,6 +390,7 @@ describe("POST /public/projects/:idOrSlug/report", () => {
     expect(ip).toBe("203.0.113.9");
     expect(docId).toBeNull();
     expect(note).toBe("This site hosts spam.");
+    expect(calls[1].binds[6]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     // No Authorization header -> authenticate is never consulted.
     expect(authenticate).not.toHaveBeenCalled();
   });
@@ -465,5 +466,202 @@ describe("POST /public/projects/:idOrSlug/report", () => {
     const { request, url } = reportRequest({ note: "report" });
     const res = await handlePublicReport(request, env, url);
     expect(res.status).toBe(201);
+  });
+
+  it("stores created_at as an ISO timestamp, not the zone-less column default", async () => {
+    // Real SQLite: the column default would write "YYYY-MM-DD HH:MM:SS".
+    const { db, sqlite } = createSqliteD1();
+    sqlite.prepare("INSERT INTO projects (id, name, owner_id, created_at, published_at) VALUES ('p1', 'S', 'u1', ?, ?)")
+      .run("2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+    const env = { DB: db } as unknown as Env;
+    const { request, url } = reportRequest({ note: "spam" });
+    const res = await handlePublicReport(request, env, url);
+    expect(res.status).toBe(201);
+    const row = sqlite.prepare("SELECT created_at FROM site_reports").get() as { created_at: string };
+    expect(row.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /public/docs/:site/:idOrSlug and GET /public/projects/:idOrSlug -
+// real SQLite, so the batched statements (and the published_at filters baked
+// into them) are actually evaluated.
+// ---------------------------------------------------------------------------
+
+describe("public site reads (batched)", () => {
+  const T0 = "2026-01-01T00:00:00.000Z";
+
+  function setup() {
+    const { db, sqlite } = createSqliteD1();
+    const exec = (sql: string, ...args: (string | number | null)[]) => sqlite.prepare(sql).run(...args);
+    const project = (id: string, opts: { published?: boolean; slug?: string; home?: string } = {}) =>
+      exec("INSERT INTO projects (id, name, owner_id, created_at, published_at, vanity_slug, home_doc_id) VALUES (?, ?, 'u1', ?, ?, ?, ?)",
+        id, `Site ${id}`, T0, opts.published ? T0 : null, opts.slug ?? null, opts.home ?? null);
+    const doc = (id: string, projectId: string, opts: { title?: string; slug?: string; published?: boolean; position?: number } = {}) =>
+      exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at, published_at, slug, sidebar_position) VALUES (?, ?, ?, 'u1', ?, ?, ?, ?, ?)",
+        id, opts.title ?? id, projectId, T0, T0, opts.published ? T0 : null, opts.slug ?? null, opts.position ?? null);
+    const folder = (id: string, projectId: string) =>
+      exec("INSERT INTO folders (id, name, project_id, created_at) VALUES (?, ?, ?, ?)", id, `Folder ${id}`, projectId, T0);
+    const file = (id: string, projectId: string) =>
+      exec("INSERT INTO files (id, name, mime_type, size, project_id, uploaded_by, created_at) VALUES (?, ?, 'image/png', 1, ?, 'u1', ?)", id, `${id}.png`, projectId, T0);
+
+    // Published site with an active custom domain, nav, and a home doc.
+    project("pub", { published: true, slug: "pub-slug", home: "home" });
+    exec("INSERT INTO project_custom_domains (project_id, hostname, status) VALUES ('pub', 'docs.example.com', 'active')");
+    doc("home", "pub", { title: "Home", slug: "welcome" });
+    doc("second", "pub", { title: "Second", position: 1 });
+    folder("pub-folder", "pub");
+    file("pub-file", "pub");
+
+    // Unpublished site: one solo-published doc, one private doc, private nav.
+    project("priv");
+    doc("solo", "priv", { title: "Solo", slug: "solo-slug", published: true });
+    doc("secret", "priv", { title: "Secret doc" });
+    folder("secret-folder", "priv");
+    file("secret-file", "priv");
+
+    const ASSETS = { get: vi.fn(async (key: string) => ({ text: async () => `---\ntitle: Display ${key}\n---\nbody of ${key}` })) };
+    const batch = vi.spyOn(db, "batch");
+    // Every Stmt shares one prototype: spying on it catches any read issued
+    // outside the batch (a regression back to sequential round trips).
+    const stmtProto = Object.getPrototypeOf(db.prepare("SELECT 1")) as { first: () => unknown; all: () => unknown };
+    const directFirst = vi.spyOn(stmtProto, "first");
+    const directAll = vi.spyOn(stmtProto, "all");
+    const env = { DB: db, ASSETS } as unknown as Env;
+    const get = async (path: string) => {
+      const url = new URL(`http://localhost/public/${path}`);
+      const res = await handlePublic(new Request(url), env, url);
+      return { res, body: res.status === 200 ? await res.json<{ data: Record<string, unknown> }>() : null };
+    };
+    // Row counts each batched statement returned for the last request - an
+    // unpublished site's nav rows must never leave the DB, not just be dropped.
+    const lastBatchRows = async () => {
+      const results = (await batch.mock.results[batch.mock.results.length - 1].value) as { results: unknown[] }[];
+      return results.map(r => r.results.length);
+    };
+    return { get, batch, directFirst, directAll, ASSETS, lastBatchRows, project, doc };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  describe("GET /public/docs/:site/:idOrSlug", () => {
+    it("serves a published site's doc and nav in one D1 batch", async () => {
+      const { get, batch, directFirst, directAll, ASSETS } = setup();
+      const { res, body } = await get("docs/pub/home");
+      expect(res.status).toBe(200);
+      expect(batch).toHaveBeenCalledTimes(1);
+      expect(directFirst).not.toHaveBeenCalled();
+      expect(directAll).not.toHaveBeenCalled();
+      expect(ASSETS.get).toHaveBeenCalledWith("pub/home");
+
+      const data = body!.data as {
+        doc: { id: string; slug: string; display_title: string };
+        sitePublished: boolean;
+        project: { id: string; custom_domain: string | null; home_doc_id: string };
+        docs: { id: string; is_home: number }[];
+        folders: { id: string }[];
+        files: { id: string }[];
+      };
+      expect(data.sitePublished).toBe(true);
+      expect(data.doc).toMatchObject({ id: "home", slug: "welcome", display_title: "Display pub/home" });
+      expect(data.project).toMatchObject({ id: "pub", custom_domain: "docs.example.com", home_doc_id: "home" });
+      // Sidebar order (positioned first, then by title) and the home flag.
+      expect(data.docs.map(d => [d.id, d.is_home])).toEqual([["second", 0], ["home", 1]]);
+      expect(data.folders.map(f => f.id)).toEqual(["pub-folder"]);
+      expect(data.files.map(f => f.id)).toEqual(["pub-file"]);
+    });
+
+    it("resolves the site by vanity slug and the doc by its custom slug", async () => {
+      const { get, ASSETS } = setup();
+      const { res, body } = await get("docs/pub-slug/welcome");
+      expect(res.status).toBe(200);
+      expect((body!.data.doc as { id: string }).id).toBe("home");
+      // R2 is keyed by the resolved ids, never by the URL segments.
+      expect(ASSETS.get).toHaveBeenCalledWith("pub/home");
+    });
+
+    it("serves a solo-published doc on an unpublished site without any nav data", async () => {
+      const { get, lastBatchRows } = setup();
+      for (const path of ["docs/priv/solo", "docs/priv/solo-slug"]) {
+        const { res, body } = await get(path);
+        expect(res.status).toBe(200);
+        expect(body!.data).toMatchObject({ sitePublished: false, docs: null, folders: null, files: null });
+        // [project, doc, nav docs, nav folders, nav files]
+        expect(await lastBatchRows()).toEqual([1, 1, 0, 0, 0]);
+        expect(JSON.stringify(body)).not.toContain("secret");
+      }
+    });
+
+    it("404s an unpublished doc on an unpublished site, without reading R2", async () => {
+      const { get, ASSETS, lastBatchRows } = setup();
+      const { res } = await get("docs/priv/secret");
+      expect(res.status).toBe(404);
+      expect(ASSETS.get).not.toHaveBeenCalled();
+      expect(await lastBatchRows()).toEqual([1, 1, 0, 0, 0]);
+    });
+
+    it("404s an unknown site, an unknown doc, and another site's doc", async () => {
+      const { get, ASSETS } = setup();
+      expect((await get("docs/nope/home")).res.status).toBe(404);
+      expect((await get("docs/pub/nope")).res.status).toBe(404);
+      // A doc id from a different site never resolves under this one.
+      expect((await get("docs/pub/solo")).res.status).toBe(404);
+      expect(ASSETS.get).not.toHaveBeenCalled();
+    });
+
+    it("prefers an exact site id over another site's identical vanity slug, in every statement", async () => {
+      const { get, project, doc } = setup();
+      // Vanity slugs may be uuid-shaped, so an id and a slug can collide.
+      project("shared", { published: true });
+      doc("shared-doc", "shared", { title: "Shared", slug: "intro" });
+      project("other", { published: true, slug: "shared" });
+      doc("other-doc", "other", { title: "Other", slug: "intro" });
+      const { res, body } = await get("docs/shared/intro");
+      expect(res.status).toBe(200);
+      const data = body!.data as { doc: { id: string }; project: { id: string }; docs: { id: string }[] };
+      expect(data.doc.id).toBe("shared-doc");
+      expect(data.project.id).toBe("shared");
+      expect(data.docs.map(d => d.id)).toEqual(["shared-doc"]);
+    });
+  });
+
+  describe("GET /public/projects/:idOrSlug", () => {
+    it("returns a published site with its nav in one D1 batch", async () => {
+      const { get, batch, directFirst, directAll } = setup();
+      for (const key of ["pub", "pub-slug"]) {
+        const { res, body } = await get(`projects/${key}`);
+        expect(res.status).toBe(200);
+        const data = body!.data as { id: string; docs: { id: string; is_home: number }[]; folders: { id: string }[]; files: { id: string }[] };
+        expect(data.id).toBe("pub");
+        expect(data.docs.map(d => [d.id, d.is_home])).toEqual([["second", 0], ["home", 1]]);
+        expect(data.folders.map(f => f.id)).toEqual(["pub-folder"]);
+        expect(data.files.map(f => f.id)).toEqual(["pub-file"]);
+      }
+      expect(batch).toHaveBeenCalledTimes(2);
+      expect(directFirst).not.toHaveBeenCalled();
+      expect(directAll).not.toHaveBeenCalled();
+    });
+
+    it("404s an unpublished site and never reads its nav rows", async () => {
+      const { get, lastBatchRows } = setup();
+      const { res } = await get("projects/priv");
+      expect(res.status).toBe(404);
+      // [project, nav docs, nav folders, nav files]
+      expect(await lastBatchRows()).toEqual([0, 0, 0, 0]);
+    });
+
+    it("falls through to a published vanity-slug match when the id match is unpublished", async () => {
+      // Same outcome as the old `(id = ? OR vanity_slug = ?) AND published_at IS NOT NULL`.
+      const { get, project, doc } = setup();
+      project("shared");
+      doc("hidden-doc", "shared");
+      project("other", { published: true, slug: "shared" });
+      doc("other-doc", "other");
+      const { res, body } = await get("projects/shared");
+      expect(res.status).toBe(200);
+      const data = body!.data as { id: string; docs: { id: string }[] };
+      expect(data.id).toBe("other");
+      expect(data.docs.map(d => d.id)).toEqual(["other-doc"]);
+    });
   });
 });

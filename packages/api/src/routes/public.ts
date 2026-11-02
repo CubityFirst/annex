@@ -58,9 +58,11 @@ export async function handlePublicReport(
     if (session !== null && !(session instanceof Response)) reporterUserId = session.userId;
   }
 
+  // Explicit ISO created_at like every other content table (the column's
+  // datetime('now') default writes the zone-less "YYYY-MM-DD HH:MM:SS" form).
   await env.DB.prepare(
-    "INSERT INTO site_reports (id, project_id, reporter_user_id, reporter_ip, doc_id, note) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), project.id, reporterUserId, ip, docId, note).run();
+    "INSERT INTO site_reports (id, project_id, reporter_user_id, reporter_ip, doc_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).bind(crypto.randomUUID(), project.id, reporterUserId, ip, docId, note, new Date().toISOString()).run();
 
   return okResponse({ submitted: true }, 201);
 }
@@ -101,6 +103,47 @@ interface PublicFile {
   size: number;
   folder_id: string | null;
   content_stream_url?: string | null;
+}
+
+type PublicNavDoc = Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sidebar_position" | "is_home">;
+
+// Resolve a URL's :idOrSlug segment to a single project id inside SQL, so a
+// public read can go out as one db.batch with every statement keyed off the
+// same project. An exact id match wins over a vanity slug (the slug regex
+// doesn't forbid uuid-shaped slugs). Binds (idOrSlug, idOrSlug); both branches
+// are index seeks (projects PK / idx_projects_vanity_slug).
+const PROJECT_KEY_SQL =
+  "COALESCE((SELECT id FROM projects WHERE id = ?), (SELECT id FROM projects WHERE vanity_slug = ?))";
+// Same, but only ever resolves to a published site: when the id match is
+// unpublished, a published vanity-slug match is used instead - the outcome of
+// the old `(id = ? OR vanity_slug = ?) AND published_at IS NOT NULL` lookup.
+const PUBLISHED_PROJECT_KEY_SQL =
+  "COALESCE((SELECT id FROM projects WHERE id = ? AND published_at IS NOT NULL), (SELECT id FROM projects WHERE vanity_slug = ? AND published_at IS NOT NULL))";
+
+// The public site's nav lists (docs, folders, files) for the project `keySql`
+// resolves to. Each statement re-checks published_at itself, so it returns no
+// rows for an unpublished site whichever key expression is passed in.
+function publishedNavStatements(db: D1Database, keySql: string, idOrSlug: string): D1PreparedStatement[] {
+  return [
+    db.prepare(
+      `SELECT d.id, d.slug, d.title, d.folder_id, d.sidebar_position, CASE WHEN d.id = p.home_doc_id THEN 1 ELSE 0 END AS is_home
+         FROM projects p JOIN docs d ON d.project_id = p.id
+        WHERE p.id = ${keySql} AND p.published_at IS NOT NULL
+        ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`,
+    ).bind(idOrSlug, idOrSlug),
+    db.prepare(
+      `SELECT f.id, f.name, f.parent_id
+         FROM projects p JOIN folders f ON f.project_id = p.id
+        WHERE p.id = ${keySql} AND p.published_at IS NOT NULL
+        ORDER BY f.name ASC`,
+    ).bind(idOrSlug, idOrSlug),
+    db.prepare(
+      `SELECT f.id, f.name, f.mime_type, f.size, f.folder_id
+         FROM projects p JOIN files f ON f.project_id = p.id
+        WHERE p.id = ${keySql} AND p.published_at IS NOT NULL
+        ORDER BY f.name ASC`,
+    ).bind(idOrSlug, idOrSlug),
+  ];
 }
 
 // Enrich a list of published-site file rows with a presigned direct-from-R2
@@ -221,28 +264,23 @@ export async function handlePublic(
     });
   }
 
-  // /public/projects/:id
+  // /public/projects/:id - one D1 round trip. The project row and the nav
+  // lists all key off the same published-only resolution of :idOrSlug, so an
+  // unpublished site yields no project row (404) and empty nav statements.
   if (parts[0] === "projects" && parts[1]) {
-    const projectId = parts[1];
-    const project = await env.DB.prepare(
-      "SELECT id, name, description, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_square_updated_at, logo_wide_updated_at FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
-    ).bind(projectId, projectId).first<PublicProject>();
+    const key = parts[1];
+    const [projectRes, docsRes, foldersRes, filesRes] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT id, name, description, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_square_updated_at, logo_wide_updated_at
+           FROM projects WHERE id = ${PUBLISHED_PROJECT_KEY_SQL}`,
+      ).bind(key, key),
+      ...publishedNavStatements(env.DB, PUBLISHED_PROJECT_KEY_SQL, key),
+    ]);
+    const project = (projectRes.results as PublicProject[])[0];
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
-    const docs = await env.DB.prepare(
-      "SELECT id, slug, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
-    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
-
-    const folders = await env.DB.prepare(
-      "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
-    ).bind(project.id).all<PublicFolder>();
-
-    const files = await env.DB.prepare(
-      "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
-    ).bind(project.id).all<PublicFile>();
-    const enrichedFiles = await enrichFilesWithStreamUrls(env, files.results);
-
-    return okResponse({ ...project, docs: docs.results, folders: folders.results, files: enrichedFiles });
+    const enrichedFiles = await enrichFilesWithStreamUrls(env, filesRes.results as PublicFile[]);
+    return okResponse({ ...project, docs: docsRes.results as PublicNavDoc[], folders: foldersRes.results as PublicFolder[], files: enrichedFiles });
   }
 
   // /public/docs/:projectId/:docIdOrSlug - the doc segment is either the doc's
@@ -252,18 +290,33 @@ export async function handlePublic(
     const projectIdOrSlug = parts[1];
     const docId = decodeURIComponent(parts[2]);
 
-    const project = await env.DB.prepare(
-      `SELECT p.id, p.name, p.published_at, p.vanity_slug, p.home_doc_id, p.graph_enabled, p.published_graph_enabled, p.logo_square_updated_at, p.logo_wide_updated_at,
-              CASE WHEN cd.status = 'active' THEN cd.hostname END AS custom_domain
-         FROM projects p LEFT JOIN project_custom_domains cd ON cd.project_id = p.id
-        WHERE p.id = ? OR p.vanity_slug = ?`,
-    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_square_updated_at" | "logo_wide_updated_at"> & { custom_domain: string | null }>();
+    // One D1 round trip for the project, the doc and (published sites only)
+    // the nav lists. Every statement keys off the same SQL resolution of
+    // :idOrSlug, so they can't disagree about which project they read.
+    const [projectRes, docRes, docsRes, foldersRes, filesRes] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT p.id, p.name, p.published_at, p.vanity_slug, p.home_doc_id, p.graph_enabled, p.published_graph_enabled, p.logo_square_updated_at, p.logo_wide_updated_at,
+                CASE WHEN cd.status = 'active' THEN cd.hostname END AS custom_domain
+           FROM projects p LEFT JOIN project_custom_domains cd ON cd.project_id = p.id
+          WHERE p.id = ${PROJECT_KEY_SQL}`,
+      ).bind(projectIdOrSlug, projectIdOrSlug),
+      // JOIN form (not `project_id = <key>` in the WHERE) so both OR branches
+      // stay index seeks - the subquery form degrades the slug branch to a scan.
+      env.DB.prepare(
+        `SELECT d.id, d.slug, d.title, d.published_at, d.show_last_updated, d.show_heading, d.updated_at
+           FROM projects p JOIN docs d ON d.project_id = p.id
+          WHERE p.id = ${PROJECT_KEY_SQL} AND (d.id = ? OR d.slug = ?)`,
+      ).bind(projectIdOrSlug, projectIdOrSlug, docId, docId),
+      // Nav lists return no rows unless the SITE is published (the filter is in
+      // the SQL, not only in the sitePublished branch below), so a solo-published
+      // doc on an unpublished site never ships the site's nav.
+      ...publishedNavStatements(env.DB, PROJECT_KEY_SQL, projectIdOrSlug),
+    ]);
+    const project = (projectRes.results as (Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_square_updated_at" | "logo_wide_updated_at"> & { custom_domain: string | null })[])[0];
     if (!project) return errorResponse(Errors.NOT_FOUND);
     const projectId = project.id;
 
-    const doc = await env.DB.prepare(
-      "SELECT id, slug, title, published_at, show_last_updated, show_heading, updated_at FROM docs WHERE (id = ? OR slug = ?) AND project_id = ?",
-    ).bind(docId, docId, projectId).first<PublicDoc & { show_last_updated: number; show_heading: number; updated_at: string }>();
+    const doc = (docRes.results as (PublicDoc & { show_last_updated: number; show_heading: number; updated_at: string })[])[0];
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
     const sitePublished = project.published_at !== null;
@@ -279,25 +332,9 @@ export async function handlePublic(
     const content = r2Object ? await r2Object.text() : "";
     const fm = parseFrontmatter(content);
 
-    let docs: Pick<PublicDoc, "id" | "slug" | "title" | "folder_id">[] | null = null;
-    let folders: PublicFolder[] | null = null;
-    let files: PublicFile[] | null = null;
-    if (sitePublished) {
-      const docsResult = await env.DB.prepare(
-        "SELECT id, slug, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
-      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "slug" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
-      docs = docsResult.results;
-
-      const foldersResult = await env.DB.prepare(
-        "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
-      ).bind(projectId).all<PublicFolder>();
-      folders = foldersResult.results;
-
-      const filesResult = await env.DB.prepare(
-        "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
-      ).bind(projectId).all<PublicFile>();
-      files = await enrichFilesWithStreamUrls(env, filesResult.results);
-    }
+    const docs = sitePublished ? (docsRes.results as PublicNavDoc[]) : null;
+    const folders = sitePublished ? (foldersRes.results as PublicFolder[]) : null;
+    const files = sitePublished ? await enrichFilesWithStreamUrls(env, filesRes.results as PublicFile[]) : null;
 
     return okResponse({
       doc: { id: doc.id, slug: doc.slug ?? null, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },

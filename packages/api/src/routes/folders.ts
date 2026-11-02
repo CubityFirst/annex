@@ -28,13 +28,15 @@ export async function handleFolders(
     const all = params.get("all") === "1";
 
     if (role === "limited") {
+      // Driven from doc_shares (idx_doc_shares_project_user) so a limited
+      // member's cost scales with their shares, not with every doc in the
+      // site. d.project_id is still checked so a stray share row can't leak.
       const rows = await env.DB.prepare(
         all
           ? `WITH accessible_folder_ids AS (
                SELECT DISTINCT d.folder_id
-               FROM docs d
-               JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
-               WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+               FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id
+               WHERE ds.project_id = ? AND ds.user_id = ? AND d.project_id = ? AND d.folder_id IS NOT NULL
              ),
              ancestors(id, parent_id) AS (
                SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
@@ -47,9 +49,8 @@ export async function handleFolders(
              ORDER BY f.name ASC`
           : `WITH accessible_folder_ids AS (
                SELECT DISTINCT d.folder_id
-               FROM docs d
-               JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
-               WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+               FROM doc_shares ds CROSS JOIN docs d ON d.id = ds.doc_id
+               WHERE ds.project_id = ? AND ds.user_id = ? AND d.project_id = ? AND d.folder_id IS NOT NULL
              ),
              ancestors(id, parent_id) AS (
                SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
@@ -63,8 +64,8 @@ export async function handleFolders(
              ORDER BY f.name ASC`,
       ).bind(
         ...(all
-          ? [user.userId, projectId, projectId, type]
-          : [user.userId, projectId, projectId, type, parentId ?? null]),
+          ? [projectId, user.userId, projectId, projectId, type]
+          : [projectId, user.userId, projectId, projectId, type, parentId ?? null]),
       ).all<Folder>();
       return okResponse(rows.results);
     }
@@ -98,45 +99,6 @@ export async function handleFolders(
     return okResponse(rows.results);
   }
 
-  // GET /folders/counts?projectId=xxx
-  // Returns { [folderId]: { docs: number; folders: number } } with recursive subtree counts.
-  if (folderId === "counts" && request.method === "GET") {
-    const projectId = params.get("projectId");
-    if (!projectId) return errorResponse(Errors.BAD_REQUEST);
-
-    const role = await resolveRole(env.DB, projectId, user.userId);
-    if (role === null) return errorResponse(Errors.FORBIDDEN);
-    if (role === "limited") return okResponse({});
-
-    const type = params.get("type") ?? "docs";
-    const itemTable = "docs";
-
-    // Build a (ancestor_id, folder_id) mapping for every folder in the project, then
-    // aggregate: distinct non-self folder_ids = recursive subfolder count,
-    // joined item rows = recursive doc count.
-    const rows = await env.DB.prepare(`
-      WITH RECURSIVE subtree(ancestor_id, folder_id) AS (
-        SELECT id, id FROM folders WHERE project_id = ? AND type = ?
-        UNION ALL
-        SELECT s.ancestor_id, f.id
-          FROM folders f JOIN subtree s ON f.parent_id = s.folder_id
-         WHERE f.project_id = ? AND f.type = ?
-      )
-      SELECT
-        s.ancestor_id AS folder_id,
-        COUNT(DISTINCT CASE WHEN s.folder_id != s.ancestor_id THEN s.folder_id END) AS folders,
-        COUNT(i.id) AS docs
-      FROM subtree s
-      LEFT JOIN ${itemTable} i ON i.folder_id = s.folder_id AND i.project_id = ?
-      GROUP BY s.ancestor_id
-    `).bind(projectId, type, projectId, type, projectId)
-      .all<{ folder_id: string; folders: number; docs: number }>();
-
-    const counts: Record<string, { docs: number; folders: number }> = {};
-    for (const r of rows.results) counts[r.folder_id] = { docs: r.docs, folders: r.folders };
-    return okResponse(counts);
-  }
-
   // POST /folders - editor or above
   if (!folderId && request.method === "POST") {
     const body = await request.json<{ name: string; projectId: string; parentId?: string | null; type?: string }>();
@@ -163,7 +125,7 @@ export async function handleFolders(
   }
 
   // PUT /folders/:id - editor or above (rename or move)
-  if (folderId && folderId !== "counts" && request.method === "PUT") {
+  if (folderId && request.method === "PUT") {
     const folder = await env.DB.prepare("SELECT * FROM folders WHERE id = ?")
       .bind(folderId).first<Folder & { type: string }>();
     if (!folder) return errorResponse(Errors.NOT_FOUND);
@@ -203,7 +165,7 @@ export async function handleFolders(
   }
 
   // DELETE /folders/:id - editor or above; bins the folder and its contents
-  if (folderId && folderId !== "counts" && request.method === "DELETE") {
+  if (folderId && request.method === "DELETE") {
     const folder = await env.DB.prepare("SELECT project_id FROM folders WHERE id = ?")
       .bind(folderId).first<{ project_id: string }>();
     if (!folder) return errorResponse(Errors.NOT_FOUND);

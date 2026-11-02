@@ -45,7 +45,13 @@ export function buildAuditListQuery(
     where.push(keyset.sql);
     binds.push(...keyset.binds);
   }
-  if (filters.actions.length > 0) {
+  // A single action is an equality so it seeks the (action, created_at, id)
+  // index straight to the cursor position. Several stay one IN(...): exact,
+  // cursor-safe, and bounded by how many rows match the chosen actions.
+  if (filters.actions.length === 1) {
+    where.push("action = ?");
+    binds.push(filters.actions[0]);
+  } else if (filters.actions.length > 1) {
     const placeholders = filters.actions.map(() => "?").join(", ");
     where.push(`action IN (${placeholders})`);
     binds.push(...filters.actions);
@@ -64,6 +70,19 @@ export function buildAuditListQuery(
      LIMIT ?`;
   return { sql, binds };
 }
+
+// Distinct actions, ascending, as a skip-scan over the action index
+// (auth 0035): each step seeks to the next action greater than the last, so
+// the cost is one index probe per distinct action instead of reading the
+// whole ever-growing log as SELECT DISTINCT does. `action` is NOT NULL, so a
+// NULL from MIN() only ever means "no further actions".
+export const AUDIT_ACTIONS_SQL = `WITH RECURSIVE a(action) AS (
+       SELECT MIN(action) FROM admin_audit_log
+       UNION ALL
+       SELECT (SELECT MIN(action) FROM admin_audit_log WHERE action > a.action)
+       FROM a WHERE a.action IS NOT NULL
+     )
+     SELECT action FROM a WHERE action IS NOT NULL`;
 
 const auditRouter = new Hono<AppEnv>();
 
@@ -110,13 +129,11 @@ auditRouter.get("/", async (c) => {
 // GET /api/audit/actions
 //
 // Distinct action values present in the log, sorted, for populating the
-// filter dropdown. Cheap (small, slow-growing table) and re-derived on
-// each load so newly introduced action types appear without code changes.
+// filter dropdown. Re-derived on each load so newly introduced action types
+// appear without code changes.
 auditRouter.get("/actions", async (c) => {
   const rows = (
-    await c.env.AUTH_DB.prepare(
-      `SELECT DISTINCT action FROM admin_audit_log ORDER BY action ASC`,
-    ).all<{ action: string }>()
+    await c.env.AUTH_DB.prepare(AUDIT_ACTIONS_SQL).all<{ action: string }>()
   ).results;
   return c.json({ ok: true, data: { actions: rows.map((r) => r.action) } });
 });

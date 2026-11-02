@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleProjects } from "./projects";
 import { createSqliteD1 } from "../test/sqliteD1";
+import { seedContentFixture } from "../test/contentFixture";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
 vi.mock("../lib/fts", async (importOriginal) => ({
@@ -158,6 +159,39 @@ describe("handleProjects GET list / POST create", () => {
     expect(json.data).toHaveLength(1);
   });
 
+  it("only computes doc/member counts when asked with ?counts=1", async () => {
+    // Real SQLite so the conditional SQL actually runs against the schema.
+    const { db, sqlite } = createSqliteD1();
+    const T0 = "2026-01-01T00:00:00.000Z";
+    const exec = (sql: string, ...args: (string | number)[]) => sqlite.prepare(sql).run(...args);
+    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p1', 'Site', 'user-1', ?)", T0);
+    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p2', 'Not mine', 'user-2', ?)", T0);
+    const member = (id: string, projectId: string, userId: string, role: string, accepted: number) =>
+      exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, 'e', 'n', ?, 'user-1', ?, ?)",
+        id, projectId, userId, role, T0, accepted);
+    member("m1", "p1", "user-1", "owner", 1);
+    member("m2", "p1", "user-3", "viewer", 1);
+    member("m3", "p1", "user-4", "viewer", 0); // pending - not counted
+    member("m4", "p2", "user-2", "owner", 1);
+    for (const id of ["d1", "d2"]) {
+      exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES (?, 'D', 'p1', 'user-1', ?, ?)", id, T0, T0);
+    }
+    const { env: mockEnv } = makeEnv();
+    const env = { ...mockEnv, DB: db } as typeof mockEnv;
+
+    const plain = await call(env, "GET", "/projects");
+    const plainRows = ((await plain.json()) as { data: Record<string, unknown>[] }).data;
+    expect(plainRows.map(r => r.id)).toEqual(["p1"]);
+    expect(plainRows[0]).toMatchObject({ id: "p1", name: "Site", role: "owner" });
+    expect(plainRows[0]).not.toHaveProperty("doc_count");
+    expect(plainRows[0]).not.toHaveProperty("member_count");
+
+    const counted = await call(env, "GET", "/projects?counts=1");
+    const countedRows = ((await counted.json()) as { data: Record<string, unknown>[] }).data;
+    expect(countedRows).toHaveLength(1);
+    expect(countedRows[0]).toMatchObject({ id: "p1", role: "owner", doc_count: 2, member_count: 2 });
+  });
+
   it("400s POST without a name", async () => {
     const { env } = makeEnv();
     const res = await call(env, "POST", "/projects", { description: "x" });
@@ -296,6 +330,53 @@ describe("handleProjects GET /projects/:id/contents", () => {
     expect(json.data.folderCounts).toEqual({ fl1: { docs: 3, files: 4, folders: 1 } });
     // FM-L1: the file listing carries updated_at.
     expect(json.data.files).toEqual([expect.objectContaining({ id: "root", updated_at: "2026-02-02T00:00:00.000Z" })]);
+  });
+});
+
+describe("handleProjects GET /projects/:id/contents (real SQLite, nested + limited)", () => {
+  type Contents = {
+    folders: { id: string }[];
+    docs: { id: string; is_home: number }[];
+    files: unknown[];
+    folderCounts: Record<string, { docs: number; files: number; folders: number }>;
+    ancestors: { id: string }[];
+  };
+  async function contents(path: string): Promise<Contents> {
+    const { db, sqlite } = createSqliteD1();
+    seedContentFixture(sqlite);
+    const { env } = makeEnv();
+    const res = await call({ ...env, DB: db }, "GET", path);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: Contents }).data;
+  }
+
+  it("counts whole subtrees (grandchildren included) and flags the home doc", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("editor");
+    const root = await contents("/projects/p1/contents");
+    // fa holds d1, fa/fb d2, fa/fb/fg d6: 3 docs and 2 descendant folders.
+    expect(root.folderCounts).toEqual({
+      fa: { docs: 3, files: 0, folders: 2 },
+      fc: { docs: 1, files: 0, folders: 0 },
+    });
+    expect(root.docs.map(d => [d.id, d.is_home]).sort()).toEqual([["d-home", 1], ["d4", 0], ["d5", 0]]);
+    const inFa = await contents("/projects/p1/contents?folderId=fa");
+    expect(inFa.folderCounts).toEqual({ fb: { docs: 2, files: 0, folders: 1 } });
+    expect(inFa.ancestors.map(a => a.id)).toEqual(["fa"]);
+  });
+
+  it("gives a limited member only their in-site shares and the folders leading to them", async () => {
+    vi.mocked(resolveRole).mockResolvedValue("limited");
+    const root = await contents("/projects/p1/contents");
+    expect(root.folders.map(f => f.id)).toEqual(["fa"]);
+    expect(root.docs.map(d => d.id)).toEqual(["d4"]);
+    expect(root.files).toEqual([]);
+    expect(root.folderCounts).toEqual({});
+    const inFa = await contents("/projects/p1/contents?folderId=fa");
+    expect(inFa.folders.map(f => f.id)).toEqual(["fb"]);
+    expect(inFa.docs.map(d => d.id)).toEqual(["d1"]);
+    const inFc = await contents("/projects/p1/contents?folderId=fc");
+    expect(inFc.docs).toEqual([]);
+    expect(inFc.folders).toEqual([]);
   });
 });
 
