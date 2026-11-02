@@ -3,12 +3,17 @@ import { handleProjects } from "./projects";
 import { createSqliteD1 } from "../test/sqliteD1";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
-vi.mock("../lib/fts", () => ({ upsertFtsRow: vi.fn(), deleteFtsForProject: vi.fn() }));
+vi.mock("../lib/fts", () => ({
+  upsertFtsRow: vi.fn(),
+  deleteFtsForProject: vi.fn(),
+  ftsUpsertStatements: vi.fn((_db: unknown, docId: string) => [`upsert:${docId}`]),
+  ftsPruneProjectStatements: vi.fn(() => ["prune"]),
+}));
 vi.mock("../lib/customDomains", () => ({ releaseCustomDomain: vi.fn() }));
 
 import { resolveRole } from "../lib/access";
 import { releaseCustomDomain } from "../lib/customDomains";
-import { upsertFtsRow } from "../lib/fts";
+import { ftsUpsertStatements } from "../lib/fts";
 
 const user = { userId: "user-1", email: "a@example.com" } as unknown as Parameters<typeof handleProjects>[2];
 
@@ -407,15 +412,20 @@ describe("handleProjects POST /projects/:id/reindex", () => {
   });
 
   it("reindexes every doc and counts them", async () => {
-    const { env, queueAll, assetsGet } = makeEnv();
+    const { env, queueAll, assetsGet, batch } = makeEnv();
     queueAll({ results: [{ id: "d1", title: "A" }, { id: "d2", title: "B" }, { id: "d3", title: "C" }] }); // docs
     assetsGet.mockResolvedValue({ text: async () => "# body" }); // R2 content per doc
     const res = await call(env, "POST", "/projects/p1/reindex");
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { indexed: number } };
     expect(json.data.indexed).toBe(3);
-    // One FTS upsert per doc - a dropped loop body would not satisfy this.
-    expect(upsertFtsRow).toHaveBeenCalledTimes(3);
+    // One FTS upsert per doc - a dropped loop body would not satisfy this -
+    // written as one batch per chunk, then one prune of stale site rows.
+    expect(ftsUpsertStatements).toHaveBeenCalledTimes(3);
+    expect(ftsUpsertStatements).toHaveBeenCalledWith(expect.anything(), "d1", "p1", "A", "# body");
+    expect(batch).toHaveBeenCalledTimes(2);
+    expect(batch).toHaveBeenNthCalledWith(1, ["upsert:d1", "upsert:d2", "upsert:d3"]);
+    expect(batch).toHaveBeenNthCalledWith(2, ["prune"]);
   });
 });
 

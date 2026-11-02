@@ -1,4 +1,5 @@
 import { releaseCustomDomain } from "../../../api/src/lib/customDomains";
+import { ftsDeleteProjectStatements } from "../../../api/src/lib/fts";
 import { deleteR2Prefix } from "./r2";
 import type { Env } from "../index";
 
@@ -65,7 +66,7 @@ export async function deleteProjectCascade(
   await releaseCustomDomain(env, projectId);
 
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId),
+    ...ftsDeleteProjectStatements(env.DB, projectId),
     env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
   ]);
 
