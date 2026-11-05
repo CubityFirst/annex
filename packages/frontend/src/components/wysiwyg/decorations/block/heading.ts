@@ -35,7 +35,16 @@ export const visitHeading: Visitor = ({ node, state, sel, reveal, decos, pass })
   decos.push(Decoration.line(spec).range(line.from));
 
   const cursorOnLine = reveal && cursorTouches(sel, line.from, line.to);
-  if (cursorOnLine) return;
+  if (cursorOnLine) {
+    // Revealed for editing: keep the `#` markup visible but muted, so it reads
+    // as syntax rather than as part of the heading text.
+    for (let cur = node.node.firstChild; cur; cur = cur.nextSibling) {
+      if (cur.name === "HeaderMark" && cur.to > cur.from) {
+        decos.push(Decoration.mark({ class: "cm-md-syntax" }).range(cur.from, cur.to));
+      }
+    }
+    return;
+  }
 
   // In reading mode, append a click-to-copy heading-link icon at the end of
   // the line. Hidden by default; CSS reveals it on line hover.

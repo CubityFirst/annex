@@ -671,3 +671,10 @@
   color: var(--muted-foreground);
   font-style: normal;
 }
+
+/* Revealed markdown syntax (e.g. the `#` of the heading being edited). */
+.cm-wysiwyg .cm-content .cm-md-syntax {
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  font-weight: 400;
+}
