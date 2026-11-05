@@ -49,8 +49,10 @@ export class AnnexApiError extends Error {
 function describeStatus(status: number, serverMessage: string): string {
   switch (status) {
     case 401: return "The API key was rejected (invalid, revoked or expired).";
-    case 403: return "Forbidden: the key's scope, or its owner's current role on the site, does not allow this.";
-    case 404: return "Not found (or not visible to this key).";
+    case 400: return "Invalid request: check the arguments (e.g. folderId must be an existing docs folder in this site).";
+    case 403: return serverMessage && serverMessage !== "Forbidden" ? serverMessage : "Forbidden: the key's scope or its owner's current role doesn't allow this.";
+    // Prefer a specific server message (e.g. "No user found with that email address.").
+    case 404: return serverMessage && serverMessage !== "Not found" ? serverMessage : "Not found (or not visible to this key).";
     case 409: return "Conflict: " + serverMessage;
     case 429: return "Rate limited by Annex (120 requests/minute per key). Try again shortly.";
     case 503: return "The Annex public API is temporarily disabled.";
