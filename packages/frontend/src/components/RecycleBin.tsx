@@ -122,9 +122,9 @@ export function RecycleBin({ projectId }: { projectId: string }) {
       </div>
 
       {loadError ? (
-        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
-          <p className="text-sm font-medium text-muted-foreground">Couldn't load the recycle bin.</p>
-          <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <p className="text-sm font-medium">Couldn't load the recycle bin.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{loadError}</p>
           <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => load()}>
             <RefreshCw className="h-3.5 w-3.5" />
             Retry
@@ -135,13 +135,14 @@ export function RecycleBin({ projectId }: { projectId: string }) {
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
         </div>
       ) : entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
-          <Trash2 className="mb-2 h-8 w-8 text-muted-foreground/30" aria-hidden="true" />
-          <p className="text-sm text-muted-foreground">The recycle bin is empty</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <Trash2 className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-medium">The recycle bin is empty</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Deleted docs, files and folders will show up here.</p>
         </div>
       ) : (
         // Capped height so a full bin doesn't push the rest of Settings away.
-        <ul className="max-h-[28rem] overflow-y-auto rounded-md border bg-background" aria-label="Deleted items">
+        <ul className="max-h-[28rem] overflow-y-auto rounded-lg border border-border bg-card" aria-label="Deleted items">
           {entries.map(entry => {
             const contents = trashContentsLabel(entry);
             const daysLeft = daysUntilPurge(entry.deleted_at, retentionDays);
@@ -153,7 +154,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
               `deleted ${formatRelativeTime(entry.deleted_at).toLowerCase()}${entry.deleted_by_name ? ` by ${entry.deleted_by_name}` : ""}`,
             ].filter(Boolean).join(" · ");
             return (
-              <li key={entry.id} className="flex items-center gap-3 min-h-14 px-3 py-2.5 border-b last:border-b-0">
+              <li key={entry.id} className="flex items-center gap-3 min-h-14 px-4 py-2.5 border-b border-border last:border-b-0">
                 <EntryIcon entry={entry} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{entry.name}</div>

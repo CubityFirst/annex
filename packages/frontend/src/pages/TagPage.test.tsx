@@ -4,11 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { TagPage } from "./TagPage";
 
-type Doc = { id: string; title: string; display_title?: string | null; tags: string | null; folder_id: string | null };
+type Doc = { id: string; title: string; display_title?: string | null; tags: string | null; folder_id: string | null; updated_at?: string };
 
 function renderTagPage(docs: Doc[], folders: { id: string; name: string; parent_id: string | null }[] = [], path = "/projects/p1/tags/alpha") {
   const setBreadcrumbs = vi.fn();
-  const ctx = { docs, folders, setBreadcrumbs };
+  const ctx = { docs, folders, setBreadcrumbs, projectName: "Demo Site" };
   const { unmount } = render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -54,6 +54,12 @@ describe("TagPage", () => {
     expect(screen.getByText("Root / Child")).toBeInTheDocument();
   });
 
+  it("shows a relative updated date when the doc carries updated_at", () => {
+    const updated_at = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    renderTagPage([{ ...taggedDoc, updated_at }]);
+    expect(screen.getByText("3h ago")).toBeInTheDocument();
+  });
+
   it("navigates to the doc when a result is clicked", async () => {
     renderTagPage([taggedDoc]);
     await userEvent.click(screen.getByText("Alpha Doc"));
@@ -62,7 +68,11 @@ describe("TagPage", () => {
 
   it("sets and clears breadcrumbs", () => {
     const { setBreadcrumbs, unmount } = renderTagPage([taggedDoc]);
-    expect(setBreadcrumbs).toHaveBeenCalledWith([{ id: null, name: "alpha" }]);
+    expect(setBreadcrumbs).toHaveBeenCalledWith([
+      { id: null, name: "Demo Site", onClick: expect.any(Function) },
+      { id: null, name: "Tags" },
+      { id: null, name: "alpha" },
+    ]);
     // Unmount must run the effect cleanup, which clears the breadcrumbs.
     unmount();
     expect(setBreadcrumbs).toHaveBeenLastCalledWith([]);

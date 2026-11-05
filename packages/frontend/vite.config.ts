@@ -39,8 +39,8 @@ export default defineConfig(({ mode }) => {
           description: "A place to keep anything.",
           start_url: "/dashboard",
           display: "standalone",
-          background_color: "#09090b",
-          theme_color: "#09090b",
+          background_color: "#151413",
+          theme_color: "#151413",
           icons: isDev
             ? [
                 { src: "/icon-192-dev.png", sizes: "192x192", type: "image/png" },

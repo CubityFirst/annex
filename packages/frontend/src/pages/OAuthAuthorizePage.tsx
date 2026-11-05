@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { clearToken, getToken } from "@/lib/auth";
@@ -170,8 +170,8 @@ export function OAuthAuthorizePage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground">
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center gap-2 text-center">
-          <KeyRound className="h-8 w-8 text-primary" />
-          <CardTitle className="text-2xl">Sign in with Annex</CardTitle>
+          <img src="/annexwordmark.svg" alt="" aria-hidden="true" className="mb-4 h-7 w-auto dark:invert" />
+          <CardTitle className="text-2xl tracking-tight">Sign in with Annex</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {status === "loading" && (
@@ -184,10 +184,10 @@ export function OAuthAuthorizePage() {
                 <span className="font-medium text-foreground">{consent.clientName}</span> wants to sign you
                 in{consent.email ? <> as <span className="font-medium text-foreground">{consent.email}</span></> : null}.
               </p>
-              <ul className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-sm">
+              <ul className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
                 {consent.scope.split(/\s+/).filter(Boolean).map((s) => (
                   <li key={s} className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
                     {SCOPE_LABELS[s] ?? s}
                   </li>
                 ))}

@@ -8,8 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetchJson } from "@/lib/apiFetch";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
+
+const ROLE_LABELS: Record<Role, string> = { viewer: "Viewer", editor: "Editor", admin: "Admin", owner: "Owner" };
 
 interface OrgDetail {
   id: string;
@@ -80,7 +83,7 @@ export function OrgPage() {
 
   if (notFound) {
     return (
-      <div className="px-4 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
         <p className="text-sm text-muted-foreground">Organization not found, or you don't have access.</p>
         <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/dashboard")}>Back to dashboard</Button>
       </div>
@@ -88,8 +91,9 @@ export function OrgPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-8 sm:py-10">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
       <button
+        type="button"
         onClick={() => navigate("/dashboard")}
         className="mb-6 flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
@@ -98,14 +102,19 @@ export function OrgPage() {
 
       <div className="mb-8 flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Building2 className="h-5 w-5 text-primary" />
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+            <Building2 className="size-5 text-muted-foreground" aria-hidden />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{org?.name ?? "…"}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Sites in this organization{org && <> · <span className="capitalize">{org.role}</span></>}
-            </p>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <h1 className="truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{org?.name ?? "…"}</h1>
+              {org && (
+                <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[org.role]}`}>
+                  {ROLE_LABELS[org.role]}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Sites in this organization</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -123,14 +132,14 @@ export function OrgPage() {
       </div>
 
       {sites.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
-          <BookOpen className="mb-3 h-10 w-10 text-muted-foreground/40" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <BookOpen className="mb-2 size-5 text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium">No sites in this organization yet</p>
-          {canManage && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Create a new site here, or attach an existing one from Settings.
-            </p>
-          )}
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {canManage
+              ? "Create a new site here, or attach an existing one from Settings."
+              : "Sites added to this organization will show up here."}
+          </p>
         </div>
       ) : (
         <>
@@ -148,16 +157,16 @@ export function OrgPage() {
                   navigate(`/projects/${site.id}`);
                 }
               }}
-              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="group flex cursor-pointer flex-col transition-colors hover:border-foreground/20 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                    <BookOpen className="h-4 w-4 text-primary" />
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40">
+                    <BookOpen className="size-4 text-muted-foreground" aria-hidden />
                   </div>
-                  <CardTitle>{site.name}</CardTitle>
+                  <CardTitle className="truncate">{site.name}</CardTitle>
                 </div>
-                <Badge variant="outline" className="shrink-0">
+                <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
                   {site.doc_count} {site.doc_count === 1 ? "doc" : "docs"}
                 </Badge>
               </CardHeader>
@@ -171,7 +180,7 @@ export function OrgPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="-ml-2 h-9 gap-1.5 px-2 text-xs text-green-600 hover:text-green-500"
+                    className="-ml-2 h-9 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
                     onClick={(e) => { e.stopPropagation(); navigate(`/s/${site.id}`); }}
                   >
                     <Globe className="h-[18px] w-[18px]" strokeWidth={1.5} /> View public site
@@ -182,8 +191,8 @@ export function OrgPage() {
                   </span>
                 )}
                 <div className="ml-auto flex items-center gap-1 text-muted-foreground">
-                  <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
-                  <span className="text-xs">{site.member_count}</span>
+                  <Users className="h-[18px] w-[18px]" strokeWidth={1.5} aria-hidden />
+                  <span className="text-xs" aria-label={`${site.member_count} ${site.member_count === 1 ? "member" : "members"}`}>{site.member_count}</span>
                 </div>
               </CardFooter>
             </Card>
@@ -193,7 +202,7 @@ export function OrgPage() {
       )}
 
       <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); } }}>
-        <DialogContent className="sm:max-w-md" hideClose>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader className="pb-2">
             <DialogTitle>New site in {org?.name}</DialogTitle>
           </DialogHeader>

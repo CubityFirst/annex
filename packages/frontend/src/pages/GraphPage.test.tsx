@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 
 // The real GraphView pulls in react-force-graph-2d / canvas-heavy rendering that
 // jsdom can't drive. Mock it to a marker and a node-click trigger so we can
@@ -20,7 +20,9 @@ function renderAt(path = "/projects/p1/graph") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/projects/:projectId/graph" element={<GraphPage />} />
+        <Route element={<Outlet context={{ projectName: "Proj", setBreadcrumbs: vi.fn() }} />}>
+          <Route path="/projects/:projectId/graph" element={<GraphPage />} />
+        </Route>
         <Route path="/projects/:projectId/docs/:docId" element={<div>DOC PAGE</div>} />
       </Routes>
     </MemoryRouter>,

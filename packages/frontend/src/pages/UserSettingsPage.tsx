@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, Mail } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, Mail, RotateCcw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -64,7 +64,7 @@ const USER_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "profile", label: "Profile" },
   { id: "appearance", label: "Appearance" },
   { id: "security", label: "Security" },
-  { id: "danger", label: "Danger Zone" },
+  { id: "danger", label: "Danger zone" },
 ];
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
@@ -114,6 +114,25 @@ function formatRelative(timestampMs: number): string {
   const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(timestampMs).toLocaleDateString();
+}
+
+// Labelled status chip for the security headings - colour plus words, so an
+// unconfigured method reads as "not set up" rather than as an error.
+function SecurityStatus({ ok, on, off, title }: { ok: boolean; on: string; off: string; title: string }) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+        ok
+          ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+          : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300",
+      )}
+    >
+      {ok ? <LockKeyhole className="size-3" aria-hidden="true" /> : <LockOpen className="size-3" aria-hidden="true" />}
+      {ok ? on : off}
+    </span>
+  );
 }
 
 export function UserSettingsPage() {
@@ -1344,7 +1363,7 @@ export function UserSettingsPage() {
     { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
     { id: "two-factor", label: "Security", group: "security" },
     { id: "sessions", label: "Sessions", group: "security" },
-    { id: "danger", label: "Danger Zone", group: "danger", danger: true },
+    { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
 
   return (
@@ -1360,7 +1379,7 @@ export function UserSettingsPage() {
             <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
 
             <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
-              <div className="flex items-center gap-5">
+              <div className="flex items-start gap-6">
                 {userId && (
                   <>
                     <input
@@ -1374,7 +1393,7 @@ export function UserSettingsPage() {
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
-                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
+                          <UserAvatar userId={userId} name={name || "?"} className="size-24 [&_[data-slot=avatar-fallback]]:text-[2.375rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
                           <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             {avatarUploading
                               ? <Loader2 className="size-6 text-white animate-spin" />
@@ -1408,23 +1427,41 @@ export function UserSettingsPage() {
                       </PopoverContent>
                     </Popover>
 
-                      <div className="flex flex-col items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-9 gap-1.5 px-2 text-xs text-muted-foreground"
-                          onClick={() => setAvatarVariant(avatarVariant === "dark" ? "light" : "dark")}
-                          title="Switch which avatar variant you view and edit (dark vs light backgrounds)"
-                        >
-                          {avatarVariant === "dark"
-                            ? <Moon className="size-3.5" />
-                            : <Sun className="size-3.5" />}
-                          {avatarVariant === "dark" ? "Dark" : "Light"}
-                        </Button>
-                        <span className="text-[11px] leading-tight text-muted-foreground">
-                          Editing {avatarVariant} variant
+                      {/* Which avatar slot the preview shows and Upload/Remove
+                          target: one image for dark backgrounds, one for light. */}
+                      <div className="mt-1 flex flex-col items-center gap-1.5">
+                        <span id="avatar-variant-label" className="text-[11px] leading-tight text-muted-foreground">
+                          Avatar for background
                         </span>
+                        <div
+                          role="radiogroup"
+                          aria-labelledby="avatar-variant-label"
+                          title="You can use a different avatar on dark and light backgrounds"
+                          className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
+                        >
+                          {(["dark", "light"] as const).map(v => {
+                            const selected = avatarVariant === v;
+                            const Icon = v === "dark" ? Moon : Sun;
+                            return (
+                              <button
+                                key={v}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                onClick={() => setAvatarVariant(v)}
+                                className={cn(
+                                  "inline-flex h-9 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7",
+                                  selected
+                                    ? "bg-background font-medium text-foreground shadow-xs"
+                                    : "text-muted-foreground hover:text-foreground",
+                                )}
+                              >
+                                <Icon className="size-3.5" aria-hidden />
+                                {v === "dark" ? "Dark" : "Light"}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 
@@ -1438,7 +1475,7 @@ export function UserSettingsPage() {
                   </>
                 )}
 
-                <div className="flex flex-col gap-3 min-w-0 max-w-xs flex-1">
+                <div className="flex flex-col gap-3 min-w-0 flex-1">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
@@ -1571,7 +1608,7 @@ export function UserSettingsPage() {
                   {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
                   {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
                 </div>
-                <div className="flex items-center gap-2 max-w-sm">
+                <div className="flex items-center gap-2">
                   <Select
                     value={timezonePrivate ? "" : (timezone ?? "")}
                     onValueChange={async val => {
@@ -1599,8 +1636,7 @@ export function UserSettingsPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="shrink-0"
+                    className="h-9 shrink-0 font-normal"
                     disabled={timezonePrivate || timezoneSaving}
                     onClick={async () => {
                       const g = detectTimezoneGroup();
@@ -1654,8 +1690,8 @@ export function UserSettingsPage() {
                 <p className="text-xs text-muted-foreground pl-6">When enabled, your timezone won't appear on your profile card.</p>
               </div>
 
-              <div className="flex flex-col gap-2 max-w-sm">
-                <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <Label htmlFor="profile-link-toggle">Profile link</Label>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1960,7 +1996,7 @@ export function UserSettingsPage() {
 
           {/* Billing section - Annex Ink supporter tier */}
           <section id="billing">
-            <h2 className="text-base font-semibold flex items-center gap-1.5">
+            <h2 className="text-base font-semibold flex items-center gap-2">
               Billing
               {personalPlan === "ink" && <Sparkles className="size-3.5 text-amber-500" />}
             </h2>
@@ -2189,9 +2225,9 @@ export function UserSettingsPage() {
               Choose the font used for document prose and app chrome. Hover the column headers below for where each one applies. Inline code always stays monospaced.
             </p>
 
-            <div className="mt-5 overflow-x-auto rounded-md border border-border">
-              <table className="w-full min-w-[28rem] text-sm">
-                <thead className="bg-muted/50">
+            <div className="mt-5 overflow-x-auto rounded-lg border border-border bg-card">
+              <table className="w-full table-fixed min-w-[26rem] text-sm">
+                <thead className="bg-muted/40">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Font</th>
                     {([
@@ -2199,7 +2235,7 @@ export function UserSettingsPage() {
                       { label: "Editing", help: "Used when you're editing a document." },
                       { label: "Other", help: "Used everywhere else - sidebar, settings, outline, and the rest of the app." },
                     ] as const).map(col => (
-                      <th key={col.label} className="w-20 whitespace-nowrap px-2 py-2 text-center font-medium">
+                      <th key={col.label} className="w-[5.5rem] whitespace-nowrap px-1 py-2 text-center font-medium">
                         <span className="inline-flex items-center gap-1">
                           {col.label}
                           <Tooltip>
@@ -2224,9 +2260,9 @@ export function UserSettingsPage() {
                     ];
                     return (
                       <tr key={choice} className="border-t border-border">
-                        <td className="whitespace-nowrap px-4 py-3">
+                        <td className="px-4 py-3">
                           <div className="font-medium">{FONT_LABELS[choice]}</div>
-                          <div className="mt-0.5 text-xs text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
+                          <div className="mt-0.5 text-[13px] leading-snug text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
                             The quick brown fox jumps over the lazy dog.
                           </div>
                         </td>
@@ -2267,10 +2303,11 @@ export function UserSettingsPage() {
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                className="font-normal disabled:opacity-60"
                 disabled={fontPrefsBusy || (readingFont === DEFAULT_READING_FONT && editingFont === DEFAULT_EDITING_FONT && uiFont === DEFAULT_UI_FONT)}
                 onClick={resetFontPrefs}
               >
+                <RotateCcw className="size-3.5" aria-hidden />
                 Reset to defaults
               </Button>
             </div>
@@ -2335,21 +2372,10 @@ export function UserSettingsPage() {
 
           {/* Security section */}
           <section id="two-factor">
-            <h2 className="text-base font-semibold flex items-center gap-1.5">
+            <h2 className="text-base font-semibold flex items-center gap-2">
               Security
               {!totpLoading && !webauthnLoading && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button type="button" aria-label={twoFactorProtected ? "2FA is enabled" : "2FA is disabled"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {twoFactorProtected
-                        ? <LockKeyhole className="size-3.5 text-green-500" />
-                        : <LockOpen className="size-3.5 text-red-500" />}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                    {twoFactorProtected ? "2FA is Enabled" : "2FA is Disabled"}
-                  </PopoverContent>
-                </Popover>
+                <SecurityStatus ok={twoFactorProtected} on="2FA on" off="2FA off" title={twoFactorProtected ? "2FA is enabled" : "2FA is disabled"} />
               )}
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">Manage your account security settings.</p>
@@ -2359,18 +2385,7 @@ export function UserSettingsPage() {
               <h3 className="text-sm font-semibold flex items-center gap-1.5">
                 Authenticator app
                 {!totpLoading && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button type="button" aria-label={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        {totpEnabled
-                          ? <LockKeyhole className="size-3.5 text-green-500" />
-                          : <LockOpen className="size-3.5 text-red-500" />}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                      {totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"}
-                    </PopoverContent>
-                  </Popover>
+                  <SecurityStatus ok={totpEnabled} on="Enabled" off="Not set up" title={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} />
                 )}
               </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
@@ -2471,20 +2486,9 @@ export function UserSettingsPage() {
             {/* WebAuthn subsection */}
             <div className="mt-6 pt-5 border-t">
               <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                Passkeys / Security keys
+                Passkeys / security keys
                 {!webauthnLoading && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button type="button" aria-label={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} className="inline-flex cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        {webauthnCredentials.length > 0
-                          ? <LockKeyhole className="size-3.5 text-green-500" />
-                          : <LockOpen className="size-3.5 text-red-500" />}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                      {webauthnCredentials.length > 0 ? "Passkey / security key registered" : "No passkeys registered"}
-                    </PopoverContent>
-                  </Popover>
+                  <SecurityStatus ok={webauthnCredentials.length > 0} on="Enabled" off="Not set up" title={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} />
                 )}
               </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
@@ -2615,11 +2619,15 @@ export function UserSettingsPage() {
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
             ) : sessions.length === 0 ? (
-              <p className="mt-4 text-sm text-muted-foreground">No active sessions.</p>
+              <div className="mt-4 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
+                <Monitor className="mb-2 size-5 text-muted-foreground" aria-hidden />
+                <p className="text-sm font-medium">No active sessions</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">Devices you sign in on will appear here.</p>
+              </div>
             ) : (
               <ul className="mt-4 space-y-2">
                 {sessions.map(s => (
-                  <li key={s.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                  <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <DeviceIcon kind={s.deviceKind} />
                       <div className="min-w-0 flex-1">
@@ -2666,8 +2674,8 @@ export function UserSettingsPage() {
           <Separator className="my-6" />
 
           {/* Danger zone */}
-          <section id="danger">
-            <h2 className="text-base font-semibold text-destructive">Danger Zone</h2>
+          <section id="danger" className="rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+            <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Permanently delete your account. You must transfer or delete any sites you own first.
             </p>
@@ -2953,7 +2961,7 @@ export function UserSettingsPage() {
       <Dialog open={backupCodesOpen} onOpenChange={setBackupCodesOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Backup Codes</DialogTitle>
+            <DialogTitle>Backup codes</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Use these codes if your TOTP device is lost. Each code can only be used once. Generating new codes invalidates all previous ones.

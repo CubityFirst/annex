@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -42,7 +43,8 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2 } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2, ExternalLink, NotebookPen, Sparkles, Wand2 } from "lucide-react";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { RecycleBin } from "@/components/RecycleBin";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
@@ -72,14 +74,14 @@ const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 // per-role visibility live in the per-render `settingsSections` array. Order
 // here is the accordion order and matches DOM order. Features/People collapse
 // away for non-admins (their only sections are admin-gated); Site (General)
-// and Danger Zone remain for every member.
+// and Danger zone remain for every member.
 const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "site", label: "Site" },
   { id: "features", label: "Features" },
   { id: "people", label: "People" },
   { id: "content", label: "Content" },
   { id: "developer", label: "Developer" },
-  { id: "danger", label: "Danger Zone" },
+  { id: "danger", label: "Danger zone" },
 ];
 
 interface Project {
@@ -1223,7 +1225,7 @@ export function SiteSettingsPage() {
         {loadError ? (
           <div className="flex flex-col items-center gap-4 text-center">
             <p className="text-sm text-muted-foreground">{loadError}</p>
-            <Button onClick={() => navigate("/dashboard")}>Back to Dashboard</Button>
+            <Button onClick={() => navigate("/dashboard")}>Back to dashboard</Button>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -1236,13 +1238,14 @@ export function SiteSettingsPage() {
     { id: "general", label: "General", group: "site" },
     { id: "publishing", label: "Publishing", group: "site", visible: isAdminOrOwner },
     { id: "branding", label: "Branding", group: "site", visible: isAdminOrOwner },
-    { id: "custom-link", label: "Custom Link", group: "site", visible: isAdminOrOwner && customLinkEnabled },
-    { id: "custom-domain", label: "Custom Domain", group: "site", visible: isAdminOrOwner && customLinkEnabled },
+    { id: "custom-link", label: "Custom link", group: "site", visible: isAdminOrOwner && customLinkEnabled },
+    { id: "custom-domain", label: "Custom domain", group: "site", visible: isAdminOrOwner && customLinkEnabled },
     { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
     { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
     { id: "recycle-bin", label: "Recycle bin", group: "content", visible: canEditContent },
-    { id: "api-keys", label: "API Keys", group: "developer", visible: myRole !== null },
-    { id: "danger", label: "Danger Zone", group: "danger", visible: myRole !== null, danger: true },
+    { id: "export", label: "Export", group: "content", visible: isAdminOrOwner },
+    { id: "api-keys", label: "API keys", group: "developer", visible: myRole !== null },
+    { id: "danger", label: "Danger zone", group: "danger", visible: myRole !== null, danger: true },
   ];
 
   // A key is only ever a ceiling on the owner's live access: a read-write key
@@ -1254,7 +1257,7 @@ export function SiteSettingsPage() {
 
   return (
     <SettingsShell
-      title="Site Settings"
+      title="Site settings"
       description={<>Manage settings for <span className="font-medium text-foreground">{project.name}</span>.</>}
       maxWidth="4xl"
       groups={SITE_SETTINGS_GROUPS}
@@ -1296,11 +1299,19 @@ export function SiteSettingsPage() {
               resetLabel="Reset description"
               saveLabel="Save description"
             >
-              <Input
+              <Textarea
                 id="settings-description"
                 placeholder="A short description of this site"
+                rows={3}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
+                onKeyDown={e => {
+                  // Enter saves (as the old single-line input did); Shift+Enter adds a line.
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
                 disabled={!isAdminOrOwner}
                 className="flex-1 pr-9"
               />
@@ -1317,7 +1328,7 @@ export function SiteSettingsPage() {
         {project.organization_id && (
           <div className="flex flex-col gap-1.5">
             <Label>Organization</Label>
-            <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <Building2 className="h-4 w-4 shrink-0 text-primary" />
                 <p className="truncate text-sm">
@@ -1361,44 +1372,38 @@ export function SiteSettingsPage() {
                 Control public access to this site. When published, anyone with the link can view all documents.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex items-center gap-3">
-                {project.published_at ? (
-                  <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
-                ) : (
-                  <Lock className="h-4 w-4 text-muted-foreground" />
-                )}
-                <div>
-                  <p className="text-sm font-medium">
-                    {project.published_at ? "Published" : "Private"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {project.published_at
-                      ? "This site is publicly accessible."
-                      : "Only members can view this site."}
-                  </p>
+            <div className="rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {project.published_at ? (
+                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      {project.published_at ? "Published" : "Private"}
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+                          project.published_at
+                            ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+                            : "bg-muted text-muted-foreground ring-border"
+                        }`}
+                      >
+                        {project.published_at ? "Public" : "Members only"}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {project.published_at
+                        ? "This site is publicly accessible."
+                        : "Only members can view this site."}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {project.published_at && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 sm:h-8 sm:w-8"
-                    aria-label="Copy public link"
-                    onClick={() => {
-                      const slug = project.vanity_slug ?? projectId;
-                      const url = `${window.location.origin}/s/${slug}`;
-                      navigator.clipboard.writeText(url);
-                      toast({ title: "Link copied to clipboard." });
-                    }}
-                  >
-                    <Link className="h-4 w-4" />
-                  </Button>
-                )}
                 <Button
                   variant={project.published_at ? "outline" : "default"}
                   size="sm"
+                  className="shrink-0"
                   disabled={togglingPublish}
                   onClick={handleTogglePublish}
                 >
@@ -1409,6 +1414,39 @@ export function SiteSettingsPage() {
                     : "Publish site"}
                 </Button>
               </div>
+              {project.published_at && (() => {
+                const publicUrl = `${window.location.origin}/s/${project.vanity_slug ?? projectId}`;
+                return (
+                  <div className="flex items-center gap-1 border-t border-border py-1.5 pl-11 pr-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={publicUrl}>
+                      {publicUrl}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground sm:h-8 sm:w-8"
+                      aria-label="Copy public link"
+                      title="Copy public link"
+                      onClick={() => {
+                        navigator.clipboard.writeText(publicUrl);
+                        toast({ title: "Link copied to clipboard." });
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground sm:h-8 sm:w-8"
+                      asChild
+                    >
+                      <a href={publicUrl} target="_blank" rel="noopener noreferrer" aria-label="Open public site in a new tab" title="Open in new tab">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                );
+              })()}
             </div>
             {project.published_at && unpublishedDocCount > 0 && (
               <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
@@ -1444,13 +1482,15 @@ export function SiteSettingsPage() {
             </div>
             {/* Square icon - used in the projects sidebar, favourites, profile cards.
                 Cropped client-side to 512×512 via AvatarCropDialog. */}
-            <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
+              <div className="flex h-16 w-32 shrink-0 items-center justify-center">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                 {project.logo_square_updated_at && logoPreviewUrls.square ? (
                   <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
                 ) : (
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
                 )}
+                </div>
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <p className="text-sm font-medium">Square icon</p>
@@ -1502,7 +1542,7 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
               <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                 {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
                   <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
@@ -1572,9 +1612,11 @@ export function SiteSettingsPage() {
             {/* Custom Link & Domain - both gated by the CUSTOM_LINK flag */}
             {!!(project.features & 1) && (
               <>
-              <div id="custom-link" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
+              <div id="custom-link" className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium flex items-center gap-2">Custom Link <PremiumBadge /></p>
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Link className="h-4 w-4 text-muted-foreground" /> Custom link <PremiumBadge />
+                  </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     Set a custom URL so your public site can be shared at a memorable address.
                   </p>
@@ -1631,10 +1673,10 @@ export function SiteSettingsPage() {
               </div>
 
               {/* Custom Domain - map the site to the owner's own domain (Cloudflare for SaaS) */}
-              <div id="custom-domain" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
+              <div id="custom-domain" className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3">
                 <div>
                   <p className="text-sm font-medium flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-muted-foreground" /> Custom Domain <PremiumBadge />
+                    <Globe className="h-4 w-4 text-muted-foreground" /> Custom domain <PremiumBadge />
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     Serve your published site from a domain you own, e.g. <span className="font-mono">docs.example.com</span>.
@@ -1691,9 +1733,17 @@ export function SiteSettingsPage() {
                             <Copy className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        <Badge variant={domain.status === "active" ? "default" : domain.status === "error" ? "destructive" : "secondary"}>
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                            domain.status === "active"
+                              ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+                              : domain.status === "error"
+                                ? "bg-destructive/10 text-destructive ring-destructive/20"
+                                : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300"
+                          }`}
+                        >
                           {domain.status === "active" ? "Active" : domain.status === "error" ? "Error" : "Pending"}
-                        </Badge>
+                        </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRefreshDomain} disabled={refreshingDomain}>
@@ -1829,10 +1879,13 @@ export function SiteSettingsPage() {
             </div>
             {!!(project.features & 2) && (
               <>
-                <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                  <div className="flex flex-col gap-0.5">
-                    <p id="ai-features-label" className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
-                    <p className="text-xs text-muted-foreground">
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <p id="ai-features-label" className="text-sm font-medium flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      AI features <PremiumBadge />
+                    </p>
+                    <p className="pl-6 text-xs text-muted-foreground">
                       Enable AI-powered document summarization.
                     </p>
                   </div>
@@ -1844,10 +1897,13 @@ export function SiteSettingsPage() {
                   />
                 </div>
                 {project.ai_enabled === 1 && (
-                  <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-sm font-medium">AI Summarization Type</p>
-                      <p className="text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        AI summarization type
+                      </p>
+                      <p className="pl-6 text-xs text-muted-foreground">
                         Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed.
                       </p>
                     </div>
@@ -1856,7 +1912,7 @@ export function SiteSettingsPage() {
                       onValueChange={handleAiSummarizationTypeChange}
                       disabled={togglingAiType}
                     >
-                      <SelectTrigger className="w-36" aria-label="AI summarization type">
+                      <SelectTrigger className="w-32 shrink-0" aria-label="AI summarization type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1868,10 +1924,13 @@ export function SiteSettingsPage() {
                 )}
               </>
             )}
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">Save Changelog</p>
-                <p className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  Save changelog
+                </p>
+                <p className="pl-6 text-xs text-muted-foreground">
                   Prompt editors to leave a note describing their changes when saving a document.
                 </p>
               </div>
@@ -1880,7 +1939,7 @@ export function SiteSettingsPage() {
                 onValueChange={handleChangelogModeChange}
                 disabled={togglingChangelog}
               >
-                <SelectTrigger className="w-32" aria-label="Save changelog mode">
+                <SelectTrigger className="w-32 shrink-0" aria-label="Save changelog mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1890,13 +1949,13 @@ export function SiteSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
+              <div className="flex min-w-0 flex-col gap-0.5">
                 <p className="text-sm font-medium flex items-center gap-2">
-                  <House className="h-4 w-4 text-muted-foreground" />
-                  Home Document
+                  <House className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  Home document
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="pl-6 text-xs text-muted-foreground">
                   Pin a home document that visitors land on when the site URL has no document specified.
                 </p>
               </div>
@@ -1904,17 +1963,17 @@ export function SiteSettingsPage() {
                 checked={!!project.home_doc_id}
                 onCheckedChange={handleToggleHomeDoc}
                 disabled={togglingHomeDoc}
-                aria-label="Home Document"
+                aria-label="Home document"
               />
             </div>
-            <div className="rounded-md border border-border">
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="flex flex-col gap-0.5">
+            <div className="rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium flex items-center gap-2">
-                    <Network className="h-4 w-4 text-muted-foreground" />
-                    Graph View
+                    <Network className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    Graph view
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="pl-6 text-xs text-muted-foreground">
                     Show an interactive graph of how documents link to each other.
                   </p>
                 </div>
@@ -1931,6 +1990,7 @@ export function SiteSettingsPage() {
                         className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
                         disabled={locked || reindexing}
                         onClick={handleReindex}
+                        aria-label="Reindex graph"
                         title={locked ? `Reindex available in ${minsLeft} min` : "Reindex graph"}
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
@@ -1941,15 +2001,15 @@ export function SiteSettingsPage() {
                     checked={project.graph_enabled === 1}
                     onCheckedChange={handleToggleGraph}
                     disabled={togglingGraph}
-                    aria-label="Graph View"
+                    aria-label="Graph view"
                   />
                 </div>
               </div>
               {project.graph_enabled === 1 && (
                 <>
-                  <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                  <div className="flex items-center justify-between gap-4 border-t border-border py-3 pl-10 pr-4">
                     <div className="flex flex-col gap-0.5">
-                      <p className="text-sm font-medium">Show on Published Site</p>
+                      <p className="text-sm font-medium">Show on published site</p>
                       <p className="text-xs text-muted-foreground">
                         Make the graph view available to visitors of the public share page.
                       </p>
@@ -1964,15 +2024,16 @@ export function SiteSettingsPage() {
                   <div className="border-t border-border">
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex w-full items-center justify-between py-2.5 pl-10 pr-4 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setTagColorsOpen(o => !o)}
+                      aria-expanded={tagColorsOpen}
                     >
-                      Tag Colors
+                      Tag colors
                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${tagColorsOpen ? "rotate-180" : ""}`} />
                     </button>
                   </div>
                   {tagColorsOpen && (
-                    <div className="border-t border-border px-4 py-3 flex flex-col gap-2.5">
+                    <div className="border-t border-border py-3 pl-10 pr-4 flex flex-col gap-2.5">
                       <p className="text-xs text-muted-foreground">
                         Color graph nodes by frontmatter tag. The first matching tag wins.
                       </p>
@@ -2062,23 +2123,24 @@ export function SiteSettingsPage() {
             </div>
 
             {/* Role legend */}
-            <div className="rounded-md border border-border bg-muted/40 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Permission levels</p>
-              <div className="flex flex-col gap-1.5">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Permission levels</p>
+              {/* Fixed badge column so every description starts at the same x. */}
+              <dl className="grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 text-sm">
                 {(["limited", "viewer", "editor", "admin", "owner"] as Role[]).map(role => (
-                  <div key={role} className="flex items-center gap-2 text-sm">
-                    <RoleBadge role={role} />
-                    <span className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
+                  <div key={role} className="contents">
+                    <dt><RoleBadge role={role} /></dt>
+                    <dd className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
                   </div>
                 ))}
-              </div>
+              </dl>
             </div>
 
             {/* Member list */}
             {loadingMembers ? (
               <p className="text-sm text-muted-foreground">Loading members…</p>
             ) : (
-              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+              <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                 {members.map(member => {
                   const isMe = member.userId === currentUser?.userId;
                   const isPending = !member.accepted;
@@ -2103,7 +2165,7 @@ export function SiteSettingsPage() {
 
                       <div className="flex shrink-0 items-center gap-3">
                         {isPending ? (
-                          <Badge variant="outline" className="text-xs font-medium bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
+                          <Badge variant="outline" className="border-transparent text-xs font-medium bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
                             Pending
                           </Badge>
                         ) : canChangeRole ? (
@@ -2211,9 +2273,13 @@ export function SiteSettingsPage() {
               {loadingLinks ? (
                 <p className="text-sm text-muted-foreground">Loading…</p>
               ) : inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No invite links yet.</p>
+                <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
+                  <Link className="mb-2 size-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm font-medium">No invite links yet.</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">Create a link anyone can use to join with a set role.</p>
+                </div>
               ) : (
-                <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                   {inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).map(link => (
                     <div key={link.id} className="flex items-center gap-3 px-4 py-3">
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -2303,6 +2369,32 @@ export function SiteSettingsPage() {
         </>
       )}
 
+      {/* Export - a safe, read-only action, so it lives with Content rather
+          than under the red Danger zone heading. */}
+      {isAdminOrOwner && (
+        <>
+          <Separator className="my-10" />
+
+          <div id="export" className="flex flex-col gap-4">
+            <div>
+              <h3 className="text-base font-semibold">Export</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Take a full copy of this site with you.</p>
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium">Download as .zip</p>
+                <p className="text-xs text-muted-foreground">
+                  Every document and uploaded file in this site, with folders preserved.
+                </p>
+              </div>
+              <Button variant="outline" onClick={handleExport} disabled={exporting} className="shrink-0">
+                {exporting ? "Exporting…" : "Export site"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* API keys - any member; scope is a ceiling enforced live on every request */}
       {myRole !== null && (
         <>
@@ -2311,7 +2403,7 @@ export function SiteSettingsPage() {
           <div id="api-keys" className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-base font-semibold">API Keys</h3>
+                <h3 className="text-base font-semibold">API keys</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Scoped keys for the <span className="font-medium text-foreground">/v1</span> REST API. Each key is
                   bound to this site and can never do more than your own role allows. Keep them secret - treat a key
@@ -2390,9 +2482,13 @@ export function SiteSettingsPage() {
             {loadingKeys ? (
               <p className="text-sm text-muted-foreground">Loading keys…</p>
             ) : apiKeys.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No API keys yet. Create one to use the /v1 API.</p>
+              <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
+                <KeyRound className="mb-2 size-5 text-muted-foreground" aria-hidden />
+                <p className="text-sm font-medium">No API keys yet</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">Create one to use the /v1 API.</p>
+              </div>
             ) : (
-              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+              <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                 {apiKeys.map(key => (
                   <div key={key.id} className="flex items-center gap-3 px-4 py-3">
                     <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -2407,7 +2503,7 @@ export function SiteSettingsPage() {
                         {key.scope === "readwrite" ? "Read & write" : "Read"}
                       </Badge>
                       {key.canInvite && (
-                        <Badge variant="outline" className="text-xs font-medium bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
+                        <Badge variant="outline" className="border-transparent text-xs font-medium bg-sky-500/10 text-sky-700 ring-1 ring-inset ring-sky-500/20 dark:text-sky-300">
                           Members
                         </Badge>
                       )}
@@ -2448,7 +2544,7 @@ export function SiteSettingsPage() {
 
             {/* Usage hint */}
             <div className="rounded-md border border-border bg-muted/40 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Using your key</p>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Using your key</p>
               <pre className="overflow-x-auto rounded bg-background p-3 text-xs leading-relaxed text-muted-foreground">
 {`curl ${window.location.origin}/api/v1/docs \\
   -H "Authorization: Bearer annx_your_key_here"`}
@@ -2489,22 +2585,8 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
 
-          <div id="danger" className="flex flex-col gap-3">
-            <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
-
-            {isAdminOrOwner && (
-              <div className="flex items-start justify-between gap-4 rounded-md border border-border px-4 py-3">
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-sm font-medium">Export site</p>
-                  <p className="text-xs text-muted-foreground">
-                    Download a .zip of every document and uploaded file in this site, with folders preserved.
-                  </p>
-                </div>
-                <Button variant="outline" onClick={handleExport} disabled={exporting} className="shrink-0">
-                  {exporting ? "Exporting…" : "Export site"}
-                </Button>
-              </div>
-            )}
+          <div id="danger" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+            <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
 
             {isOwner ? (
               <>
@@ -2615,22 +2697,15 @@ export function SiteSettingsPage() {
 
 function PremiumBadge() {
   return (
-    <Badge variant="outline" className="text-[10px] font-semibold px-1.5 py-0 bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
-      PREMIUM
+    <Badge variant="outline" className="border-transparent px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
+      Premium
     </Badge>
   );
 }
 
 function RoleBadge({ role }: { role: Role }) {
-  const variants: Record<Role, string> = {
-    owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-    admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-    editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-    viewer: "bg-muted text-muted-foreground",
-    limited: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  };
   return (
-    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${variants[role]}`}>
+    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[role]}`}>
       {ROLE_LABELS[role]}
     </Badge>
   );

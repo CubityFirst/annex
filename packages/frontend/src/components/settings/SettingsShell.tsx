@@ -90,18 +90,45 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
   }, [location.hash, idsKey]);
 
   const activeGroupId = resolved.find(group => group.sections.some(s => s.id === active))?.id ?? null;
-  const maxWidthClass = maxWidth === "4xl" ? "max-w-4xl" : "max-w-3xl";
+  // Shared settings grid: a 12rem outline + a ~46rem form column. Both pages
+  // use the same geometry now; `maxWidth` only widens the form column.
+  const maxWidthClass = maxWidth === "4xl" ? "max-w-[66rem]" : "max-w-[62rem]";
 
   return (
-    <div className={cn("mx-auto px-6 py-10", maxWidthClass)}>
-      <div className="flex gap-12">
+    <div className={cn("mx-auto px-6 py-10 sm:px-10", maxWidthClass)}>
+      <div className="flex gap-14">
         {/* Grouped accordion outline - desktop only, mirrors DocsLayout's own
             mobile sidebar gesture by staying out of the way on small screens. */}
-        <aside className="hidden md:block w-44 shrink-0">
+        <aside className="hidden md:block w-48 shrink-0">
           <nav className="sticky top-10 flex flex-col">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
             {resolved.map(group => {
               const isActiveGroup = group.id === activeGroupId;
+              // A group holding a single section would just repeat itself
+              // ("Danger zone › Danger zone"), so render it as one plain link.
+              if (group.sections.length === 1) {
+                const section = group.sections[0];
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => scrollTo(section.id)}
+                    aria-current={isActiveGroup ? "true" : undefined}
+                    className={cn(
+                      "py-1 text-left text-sm transition-colors",
+                      section.danger
+                        ? isActiveGroup
+                          ? "font-medium text-destructive"
+                          : "text-destructive/70 hover:text-destructive"
+                        : isActiveGroup
+                          ? "font-medium text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {group.label}
+                  </button>
+                );
+              }
               return (
                 <Collapsible key={group.id} open={isActiveGroup}>
                   <CollapsibleTrigger
@@ -150,10 +177,11 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
         </aside>
 
         {/* Content column - the page's existing sections, unchanged. */}
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-          <Separator className="my-6" />
+        {/* pb-32 leaves room for the scroll-spy to settle on the last sections. */}
+        <div className="flex-1 min-w-0 pb-32">
+          <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">{title}</h1>
+          {description && <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>}
+          <Separator className="mb-8 mt-7" />
           {children}
         </div>
       </div>

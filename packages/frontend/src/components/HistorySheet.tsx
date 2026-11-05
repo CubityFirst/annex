@@ -57,7 +57,8 @@ function timeAgo(iso: string): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-// Date bucket for the section headers: Today / Yesterday / "June 2026".
+// Date bucket for the section headers: Today / Yesterday / weekday (this
+// week) / Earlier this month / "June 2026".
 function groupLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -65,6 +66,10 @@ function groupLabel(iso: string): string {
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
   if (diffDays <= 0) return "Today";
   if (diffDays === 1) return "Yesterday";
+  // Within the last week: name the day ("Monday") rather than a month header
+  // that would visually overlap with "Today".
+  if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return "Earlier this month";
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 

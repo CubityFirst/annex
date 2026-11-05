@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { SiteFooter, SiteNav } from "@/components/SiteFooter";
+import "./LandingPage.css";
 import "./NotFound404.css";
 
 interface SecondaryLink {
@@ -18,6 +20,12 @@ interface Props {
   secondary?: SecondaryLink;
   /** Status code, used only for the screen-reader label (defaults to "404"). */
   status?: string;
+  /**
+   * "site" wraps the page in the marketing nav + footer (the app's global
+   * catch-all). "bare" (default) is the standalone page, for contexts where
+   * Annex's own nav doesn't belong - custom-domain sites, public readers.
+   */
+  chrome?: "site" | "bare";
 }
 
 function CtaLink({ href, className, children }: { href: string; className: string; children: React.ReactNode }) {
@@ -37,17 +45,19 @@ function CtaLink({ href, className, children }: { href: string; className: strin
 }
 
 /**
- * Terminal-style 404, ported from the Claude Design handoff. Used for the
- * global catch-all route and the public-reader "no published document" state -
- * same shell, swappable subtitle + CTA target (per the design's content slots).
+ * Terminal-style 404 in the marketing family's look (same tokens as
+ * LandingPage.css). Used for the global catch-all route and the public-reader
+ * "no published document" state - same shell, swappable subtitle + CTA target.
  */
-export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, status = "404" }: Props) {
+export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, status = "404", chrome = "bare" }: Props) {
+  const withChrome = chrome === "site";
   return (
-    <div className="v404">
-      <div className="v404-stage">
+    <div className={`landing v404${withChrome ? " v404-site" : ""}`}>
+      {withChrome && <SiteNav />}
+      <main className="v404-stage">
         <div className="v404-grid" aria-hidden="true" />
 
-        <div className="v404-content">
+        <div className="site-wrap v404-content">
           <div className="v404-numeral" role="heading" aria-level={1} aria-label={`${status} - page not found`}>
             <span aria-hidden="true">4</span>
             <span aria-hidden="true">0</span>
@@ -58,7 +68,7 @@ export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, st
           <div className="v404-subtitle">{subtitle}</div>
 
           <div className="v404-cta">
-            <CtaLink href={primaryHref} className="v404-btn">
+            <CtaLink href={primaryHref} className="l-btn-primary v404-btn">
               {primaryLabel} <span className="v404-btn-arrow" aria-hidden="true">→</span>
             </CtaLink>
             {secondary && (
@@ -68,7 +78,8 @@ export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, st
             )}
           </div>
         </div>
-      </div>
+      </main>
+      {withChrome && <SiteFooter />}
     </div>
   );
 }

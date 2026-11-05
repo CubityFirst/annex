@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import { EditorState, Prec, type Text } from "@codemirror/state";
 import { defaultKeymap, historyKeymap, history, indentWithTab, undo, redo } from "@codemirror/commands";
 import { search, searchKeymap, openSearchPanel, closeSearchPanel, searchPanelOpen } from "@codemirror/search";
@@ -100,6 +100,8 @@ interface Props {
   onCollabFatal?: (reason: string) => void;
   rendererCtx?: RendererCtx;
   onPasteImage?: (file: File) => Promise<{ url: string; alt: string }>;
+  /** Hint shown while the document is empty (editing modes only). */
+  placeholder?: string;
 }
 
 /** Keeps a ref pointing at the latest render's value (O3) - for callback props
@@ -143,6 +145,7 @@ export function WysiwygEditor({
   onCollabFatal,
   rendererCtx,
   onPasteImage,
+  placeholder,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -292,6 +295,7 @@ export function WysiwygEditor({
         { key: "Backspace", run: deleteMarkupBackward },
       ])),
       editorTheme,
+      ...(placeholder && mode !== "reading" ? [cmPlaceholder(placeholder)] : []),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ "aria-label": "Document content" }),
       keymap.of([

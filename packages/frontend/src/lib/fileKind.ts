@@ -96,3 +96,25 @@ export function fileKind(mimeType: string | null | undefined, name = ""): FileKi
 export function guessLanguage(name: string): string {
   return EXT_TO_LANG[extensionOf(baseName(name))] ?? "text";
 }
+
+const KIND_LABELS: Record<FileKind, string> = {
+  image: "image",
+  audio: "audio",
+  video: "video",
+  pdf: "PDF document",
+  text: "text file",
+  archive: "archive",
+  drawing: "Excalidraw drawing",
+  other: "file",
+};
+
+// Human label for a file's type ("SVG image", "TXT text file", "PDF document")
+// - shown in place of the raw MIME string, which stays available as a detail.
+export function describeFileType(mimeType: string | null | undefined, name = ""): string {
+  const kind = fileKind(mimeType, name);
+  if (kind === "pdf" || kind === "drawing") return KIND_LABELS[kind];
+  const ext = extensionOf(baseName(name));
+  const label = KIND_LABELS[kind];
+  const sentence = label.charAt(0).toUpperCase() + label.slice(1);
+  return ext && ext.length <= 5 ? `${ext.toUpperCase()} ${label}` : sentence;
+}

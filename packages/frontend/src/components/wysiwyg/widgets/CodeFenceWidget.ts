@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 // Mermaid blocks still need React (async render, heavy lazy lib) and go through
 // MermaidWidget instead - see decorations/block/codeFence.ts.
 
-const THEME = "github-dark-dimmed";
+const THEME = "vitesse-dark";
 
 // Lucide Copy/Check, inlined so the button needs no React. Classes match
 // lucide-react's output (`<Copy className="h-3.5 w-3.5" />`) exactly.
@@ -116,7 +116,7 @@ export class CodeFenceWidget extends WidgetType {
       // Plain fallback shown only before Shiki is ready on the very first load.
       outer.className = "not-prose relative my-4";
       const pre = document.createElement("pre");
-      pre.className = "overflow-x-auto rounded-md bg-[#22272e] p-4 text-sm text-[#adbac7]";
+      pre.className = "overflow-x-auto rounded-md border border-border bg-card p-4 text-sm text-foreground/85";
       const codeEl = document.createElement("code");
       codeEl.textContent = this.code;
       pre.appendChild(codeEl);

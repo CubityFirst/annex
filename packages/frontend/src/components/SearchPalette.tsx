@@ -366,7 +366,14 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
           </div>
         )}
         {showEmpty && (
-          <p className="py-6 text-center text-sm text-muted-foreground">No results found.</p>
+          <div className="px-6 py-8 text-center">
+            <p className="text-sm font-medium">No results found.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isDashboard
+                ? "This searches site names. Open a site to search its docs and files."
+                : "Try a different word, or type # to filter by tag."}
+            </p>
+          </div>
         )}
         {isDashboard && siteHits.length > 0 && (
           <CommandGroup heading="Sites">

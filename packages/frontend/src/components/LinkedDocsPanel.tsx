@@ -28,10 +28,10 @@ export function LinkedDocsPanel({ data, currentDocId, onExpand, onNodeClick }: L
 
   return (
     <div className="mb-6">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Linked Documents
+      <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
+        Linked docs
       </p>
-      <div className="relative aspect-square w-full overflow-hidden rounded-md border border-border bg-muted/20">
+      <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-border bg-card">
         <GraphView data={subgraph} onNodeClick={onNodeClick} />
         <button
           type="button"

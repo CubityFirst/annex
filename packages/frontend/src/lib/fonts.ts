@@ -10,8 +10,8 @@
 export const FONT_CHOICES = ["mono", "sans", "dyslexic"] as const;
 export type FontChoice = typeof FONT_CHOICES[number];
 
-const SANS_STACK = `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-const MONO_STACK = `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+const SANS_STACK = `"DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+const MONO_STACK = `"DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
 const DYSLEXIC_STACK = `"OpenDyslexic", ${SANS_STACK}`;
 
 export const FONT_STACKS: Record<FontChoice, string> = {
@@ -27,7 +27,7 @@ export const FONT_LABELS: Record<FontChoice, string> = {
 };
 
 export const DEFAULT_READING_FONT: FontChoice = "sans";
-export const DEFAULT_EDITING_FONT: FontChoice = "mono";
+export const DEFAULT_EDITING_FONT: FontChoice = "sans";
 export const DEFAULT_UI_FONT: FontChoice = "sans";
 
 export function resolveFontChoice(value: string | null | undefined, fallback: FontChoice): FontChoice {

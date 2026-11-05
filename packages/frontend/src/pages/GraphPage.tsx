@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { GraphView, type GraphData } from "@/components/GraphView";
 
@@ -9,6 +10,17 @@ export function GraphPage() {
   const [data, setData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { projectName, setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+
+  // Give the graph the same top bar as every other site page so it doesn't
+  // render as a bare canvas with no title or way back.
+  useEffect(() => {
+    setBreadcrumbs([
+      { id: null, name: projectName, onClick: () => navigate(`/projects/${projectId}`) },
+      { id: "graph", name: "Graph" },
+    ]);
+    return () => setBreadcrumbs([]);
+  }, [projectId, projectName, navigate, setBreadcrumbs]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -53,6 +65,7 @@ export function GraphPage() {
   return (
     <div className="h-full w-full">
       <GraphView
+        showControls
         data={data}
         onNodeClick={id => navigate(`/projects/${projectId}/docs/${id}`)}
       />

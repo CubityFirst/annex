@@ -1,33 +1,18 @@
-import { Link } from "react-router-dom";
-import { getToken } from "@/lib/auth";
-import { AnnexLogo } from "@/components/AnnexLogo";
-import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooter, SiteNav } from "@/components/SiteFooter";
 import { ACKNOWLEDGEMENTS } from "@/lib/acknowledgements";
 import "./LandingPage.css";
 
 export function AcknowledgementsPage() {
-  const isLoggedIn = !!getToken();
-
   return (
     <div className="landing">
-      <nav className="l-nav">
-        <div className="l-nav-inner">
-          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
-          <div className="l-nav-links">
-            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
-            {isLoggedIn
-              ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
-              : <Link className="l-nav-cta" to="/register">get started</Link>}
-          </div>
-        </div>
-      </nav>
+      <SiteNav />
 
       <section className="l-legal">
         <div className="site-wrap">
           <div className="l-legal-inner">
-            <div className="l-legal-label">Open Source</div>
+            <div className="l-legal-label">Open source</div>
             <h1 className="l-legal-title">Acknowledgements</h1>
-            <p className="l-legal-meta">
+            <p className="l-legal-intro">
               Annex is built on the work of many open-source projects. With thanks to
               their authors and maintainers.
             </p>

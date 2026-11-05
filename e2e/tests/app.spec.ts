@@ -120,7 +120,7 @@ test("registers a new account", async () => {
 
 test("shows the dashboard with no projects", async () => {
   await page.goto("/dashboard");
-  await expect(page.getByText("Your Sites")).toBeVisible();
+  await expect(page.getByText("Your sites")).toBeVisible();
   await expect(page.getByText("New site")).toBeVisible();
 });
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
-import { BookOpen, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
+import { AuthShell } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -29,12 +30,14 @@ export function CheckEmailPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
+    <AuthShell>
         <div className="w-full max-w-sm space-y-6">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold">Check your email</h1>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <a href="/" aria-label="Annex home" className="mb-4"><img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" /></a>
+            <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
+              <Mail className="size-5 text-foreground" aria-hidden="true" />
+            </span>
+            <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
             <p className="text-sm text-muted-foreground">
               {email
                 ? <>We sent a verification link to <strong>{email}</strong>.</>
@@ -43,10 +46,12 @@ export function CheckEmailPage() {
             </p>
           </div>
 
-          <div className="flex flex-col items-center gap-1 rounded-lg border p-6">
-            <Mail className="h-10 w-10 text-muted-foreground mb-2" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground text-center">
-              Didn't receive the email? Check your spam folder, or request a new link.
+          <div className="rounded-lg border border-border bg-card px-5 py-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Didn&rsquo;t get it?</p>
+            <p className="mt-1">
+              {email
+                ? "Check your spam folder, or send a fresh link below."
+                : "Check your spam folder. Signing in with an unverified account also lets you request a fresh link."}
             </p>
           </div>
 
@@ -66,7 +71,6 @@ export function CheckEmailPage() {
               <Button
                 onClick={handleResend}
                 disabled={resendState === "sending" || cooldown}
-                variant="outline"
                 className="w-full"
               >
                 {resendState === "sending" ? "Sending…" : cooldown ? "Email sent" : "Resend verification email"}
@@ -74,13 +78,12 @@ export function CheckEmailPage() {
             )}
             <a
               href="/login"
-              className="text-center text-sm text-primary underline-offset-4 hover:underline"
+              className="text-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
             >
               Back to sign in
             </a>
           </div>
         </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

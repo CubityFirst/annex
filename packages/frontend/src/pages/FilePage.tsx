@@ -2,14 +2,13 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import { Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Spinner } from "@/components/ui/spinner";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
-import { fileKind, guessLanguage } from "@/lib/fileKind";
+import { describeFileType, fileKind, guessLanguage } from "@/lib/fileKind";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { fileContentEtag } from "@/lib/excalidraw";
 import { formatBytes } from "@/lib/fileManager";
@@ -90,21 +89,6 @@ export function FilePage() {
         if (result.ok && result.data) {
           setFile(result.data);
           if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.name, kind: "file", mime: result.data.mime_type });
-          const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
-          const basePath = location.state?.basePath ?? `/projects/${projectId}`;
-          // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
-          const folderAncestry = rawPath.length > 0 && rawPath[0].id === null ? rawPath.slice(1) : rawPath;
-          const projectCrumb: BreadcrumbItem = {
-            id: null,
-            name: projectName,
-            onClick: () => navigate(basePath),
-          };
-          const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
-            id: crumb.id,
-            name: crumb.name,
-            onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
-          }));
-          setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
           // Media (audio/video/pdf) streams directly from the content URL via a
           // capability token - no blob fetch. Text is fetched + decoded here so
           // we can render it inline (and cap the preview size).
@@ -128,6 +112,28 @@ export function FilePage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Breadcrumbs live in their own effect (not the fetch above) so they rebuild
+  // once the layout's project list resolves - on a direct load the file meta
+  // can land before `projectName`, which left an empty leading crumb.
+  useEffect(() => {
+    if (!file || file.id !== fileId) return;
+    const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
+    const basePath = location.state?.basePath ?? `/projects/${projectId}`;
+    // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
+    const folderAncestry = rawPath.length > 0 && rawPath[0].id === null ? rawPath.slice(1) : rawPath;
+    const projectCrumb: BreadcrumbItem = {
+      id: null,
+      name: projectName,
+      onClick: () => navigate(basePath),
+    };
+    const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
+      id: crumb.id,
+      name: crumb.name,
+      onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
+    }));
+    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: file.name }]);
+  }, [file, fileId, projectId, projectName, location.state, navigate, setBreadcrumbs]);
 
   // Warn before the tab/window closes while the drawing has unsaved edits.
   // In-app route changes can't be blocked this way: react-router's useBlocker
@@ -215,48 +221,72 @@ export function FilePage() {
     );
   }
 
+  // Images get a wider stage (~960px); everything else keeps the prose width.
+  // The header shares the container so its edges line up with the preview.
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <div className="flex items-center gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-6 w-6 text-muted-foreground" />
+    <div className={`mx-auto px-4 py-10 sm:px-6 ${kind === "image" ? "max-w-[60rem]" : "max-w-3xl"}`}>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
+          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 text-muted-foreground" />
         </div>
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold">{file.name}</h1>
-          <p className="text-sm text-muted-foreground">{file.mime_type}</p>
+        {/* min width lets the actions wrap onto their own line on phones
+            instead of squeezing the title to a sliver. */}
+        <div className="min-w-[12rem] flex-1">
+          <h1 className="truncate text-xl font-semibold tracking-tight">{file.name}</h1>
+          {/* Each item carries a leading "·" in its left padding; the row is
+              pulled left by that padding and clipped, so the first item on
+              every line (including after a wrap) shows no stray separator. */}
+          <div className="mt-0.5 overflow-hidden">
+            <p className="-ml-4 flex flex-wrap text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
+              <span title={file.mime_type}>{describeFileType(file.mime_type, file.name)}</span>
+              <span>{formatBytes(file.size)}</span>
+              <span>Uploaded {formatDate(file.created_at)}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            aria-label={copiedLink ? "Copied" : "Copy markdown"}
+            onClick={() => {
+              navigator.clipboard.writeText(fileEmbedMarkdown(file));
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+          >
+            {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
+            {copiedLink ? "Copied!" : "Copy markdown"}
+          </Button>
+          <Button size="sm" onClick={handleDownload} disabled={downloading} className="gap-2">
+            <Download className="h-4 w-4" />
+            {downloading ? "Downloading…" : "Download"}
+          </Button>
         </div>
       </div>
 
-      <Separator className="my-6" />
-
-      <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
-        <dt className="text-muted-foreground">Size</dt>
-        <dd>{formatBytes(file.size)}</dd>
-        <dt className="text-muted-foreground">Uploaded</dt>
-        <dd>{formatDate(file.created_at)}</dd>
-      </dl>
-
       {kind === "image" && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}
             projectId={projectId}
             mimeType={file.mime_type}
-            className="max-h-[60vh] w-full object-contain"
+            className="max-h-[70vh] w-full object-contain"
           />
         </div>
       )}
 
       {kind === "audio" && contentUrl && (
-        <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
+        <div className="mt-8 rounded-xl border border-border bg-card p-4">
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
         </div>
       )}
 
       {kind === "video" && videoSrc && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-black">
           <video
             controls
             preload="metadata"
@@ -276,7 +306,7 @@ export function FilePage() {
       )}
 
       {kind === "pdf" && contentUrl && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
           {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
               origin, so the browser's PDF script can't touch the app origin;
               allow-scripts keeps the viewer itself functional. */}
@@ -292,11 +322,13 @@ export function FilePage() {
       )}
 
       {kind === "text" && textContent !== null && (
-        <div className="mt-6">
+        <div className="mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6">
+          {/* Plain-file preview sits on the warm card surface (never the
+              highlighter theme's own background), framed like the other previews. */}
           <CodeBlock
             lang={guessLanguage(file.name)}
             code={textContent}
-            className="[&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto"
+            className="!my-0 [&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto [&_pre]:!rounded-xl [&_pre]:!border [&_pre]:!border-border [&_pre]:!bg-card [&_pre]:!p-5"
           />
           {textTruncated && (
             <p className="mt-2 text-xs text-muted-foreground">
@@ -306,25 +338,6 @@ export function FilePage() {
         </div>
       )}
 
-      <div className="mt-8 flex flex-wrap items-center gap-2">
-        <Button onClick={handleDownload} disabled={downloading} className="gap-2">
-          <Download className="h-4 w-4" />
-          {downloading ? "Downloading…" : "Download"}
-        </Button>
-        <Button
-          variant="outline"
-          className="gap-2"
-          aria-label={copiedLink ? "Copied" : "Copy markdown"}
-          onClick={() => {
-            navigator.clipboard.writeText(fileEmbedMarkdown(file));
-            setCopiedLink(true);
-            setTimeout(() => setCopiedLink(false), 2000);
-          }}
-        >
-          {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
-          {copiedLink ? "Copied!" : "Copy markdown"}
-        </Button>
-      </div>
       {/* Announce the transient copy confirmation to assistive tech (the button
           text swap alone isn't reliably announced). */}
       <div role="status" aria-live="polite" className="sr-only">

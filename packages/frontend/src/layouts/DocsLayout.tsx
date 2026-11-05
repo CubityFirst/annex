@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
 import { isDemoMode, exitDemoMode } from "@/lib/demo";
@@ -32,17 +31,15 @@ import {
   Network,
   Search,
   Image,
-  Music,
-  FileCode,
-  FileArchive,
-  File,
   Plus,
   Upload,
   Building2,
   Menu,
   LayoutGrid,
+  X,
 } from "lucide-react";
 import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -101,13 +98,9 @@ const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 
 function RecentItemIcon({ item, className }: { item: RecentItem; className?: string }) {
   if (item.kind === "doc") return <FileText className={className} />;
-  const mime = item.mime ?? "";
-  if (mime.startsWith("image/")) return <Image className={className} />;
-  if (mime.startsWith("audio/")) return <Music className={className} />;
-  if (mime === "application/pdf") return <FileText className={className} />;
-  if (mime === "application/json" || mime.startsWith("text/")) return <FileCode className={className} />;
-  if (mime.includes("zip") || mime.includes("tar") || mime.includes("gzip") || mime.includes("archive")) return <FileArchive className={className} />;
-  return <File className={className} />;
+  // Same classifier as the file manager / public tree, so e.g. a drawing gets
+  // the pen icon everywhere (name-based detection needs the title).
+  return <FileTypeIcon mimeType={item.mime ?? ""} name={item.title} className={className} />;
 }
 
 export interface BreadcrumbItem {
@@ -681,10 +674,30 @@ export function DocsLayout() {
     </button>
   );
 
+  // Pages that don't publish their own breadcrumbs still get a titled top bar,
+  // so every app route shares the same header (and the sidebar's header rule
+  // lines up with something on the right).
+  const fallbackCrumbs = ((): BreadcrumbItem[] => {
+    const path = location.pathname;
+    if (path === "/dashboard") return [{ id: null, name: "Dashboard" }];
+    if (path === "/settings") return [{ id: null, name: "Settings" }];
+    if (path === "/invites/pending") return [{ id: null, name: "Pending invites" }];
+    if (/^\/u\//.test(path)) return [{ id: null, name: "Profile" }];
+    const siteSettings = path.match(/^\/projects\/([^/]+)\/settings$/);
+    if (siteSettings && currentProject) {
+      return [
+        { id: null, name: currentProject.name, onClick: () => navigate(`/projects/${siteSettings[1]}`) },
+        { id: "settings", name: "Settings" },
+      ];
+    }
+    return [];
+  })();
+  const displayCrumbs = breadcrumbs.length > 0 ? breadcrumbs : fallbackCrumbs;
+
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
           <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
           <button
             type="button"
@@ -693,19 +706,19 @@ export function DocsLayout() {
               // Full reload so the demo fetch patch and in-memory data are dropped.
               window.location.replace("/");
             }}
-            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
           >
             Exit demo
           </button>
         </div>
       )}
       {emailUnverified && location.pathname !== "/settings" && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
           <span>Your email address hasn't been verified.</span>
           <button
             type="button"
             onClick={() => navigate("/settings")}
-            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
           >
             Update or verify email
           </button>
@@ -715,12 +728,12 @@ export function DocsLayout() {
       {/* Backdrop - mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
-          className="absolute inset-0 z-10 md:hidden"
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
       <aside className={cn(
-        "z-20 flex flex-col shrink-0 border-r border-border bg-background w-64",
+        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 shadow-2xl shadow-black/40 md:shadow-none",
         // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
         "fixed inset-y-0 left-0 transition-transform duration-200",
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
@@ -756,7 +769,7 @@ export function DocsLayout() {
                     isActive ? "bg-accent text-foreground" : "text-muted-foreground"
                   }`
                 }
-                title="Site Settings"
+                title="Site settings"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
               </NavLink>
@@ -773,6 +786,14 @@ export function DocsLayout() {
               <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto dark:invert" />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation"
+            className="ml-auto -mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {projectId ? (
@@ -786,7 +807,12 @@ export function DocsLayout() {
                   to={`/projects/${projectId}`}
                   end
                   className={({ isActive }) =>
-                    cn(buttonVariants({ variant: "ghost", size: "sm" }), "flex-1 justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "flex-1 justify-start",
+                      // Folder views are still the File Manager - keep it lit.
+                      isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
+                    )
                   }
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -808,7 +834,7 @@ export function DocsLayout() {
 
             {recentItems.length > 0 && (
               <div className="mt-4">
-                <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
                   Recently accessed
                 </p>
                 <nav className="flex flex-col gap-0.5">
@@ -865,9 +891,12 @@ export function DocsLayout() {
                   title={userName}
                   className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <UserAvatar userId={userId} name={userName} className="size-7 shrink-0 text-xs" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
-                  <span className="flex-1 truncate text-left text-sm font-medium">
-                    {userName}
+                  <UserAvatar userId={userId} name={userName} className="size-8 shrink-0 text-xs" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
+                  <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
+                    <span className="truncate text-sm font-medium">{userName}</span>
+                    {currentProject && (
+                      <span className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"}</span>
+                    )}
                   </span>
                 </button>
               </UserProfileCard>
@@ -877,9 +906,6 @@ export function DocsLayout() {
                 <span className="flex-1 truncate text-sm font-medium">-</span>
               </>
             )}
-            <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "hidden")}>
-              {currentProject?.role ?? "owner"}
-            </Badge>
             <button
               onClick={() => navigate("/settings")}
               title="Settings"
@@ -916,22 +942,28 @@ export function DocsLayout() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors before:absolute before:inset-y-0 before:-right-3 before:left-0 before:content-['']"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-[color,background-color,opacity] before:absolute before:inset-y-0 before:-right-3 before:left-0 before:content-['']",
+            // While open, the tab only appears when the sidebar is hovered or
+            // the tab is focused; collapsed, it stays visible as the way back.
+            sidebarOpen && "md:opacity-0 md:group-hover/sidebar:opacity-100 md:hover:opacity-100 md:focus-visible:opacity-100",
+          )}
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
       </aside>
 
       {/* Main content - full-width and static; the sidebar overlays it on mobile */}
+
       <main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top bar: holds the mobile menu opener and the breadcrumbs. Rendered on
             mobile whenever the sidebar is closed (so the opener sits in the bar
             instead of floating over content); on desktop only when there are
             crumbs. The opener itself is md:hidden. */}
-        {(breadcrumbs.length > 0 || !sidebarOpen) && (
+        {(displayCrumbs.length > 0 || !sidebarOpen) && (
           <div className={cn(
             "shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap px-2 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]",
-            breadcrumbs.length === 0 && "md:hidden",
+            displayCrumbs.length === 0 && "md:hidden",
           )}>
             {!sidebarOpen && (
               <button
@@ -945,8 +977,8 @@ export function DocsLayout() {
             )}
             <nav aria-label="Breadcrumb" className="flex items-center">
               <ol className="flex items-center gap-1">
-                {breadcrumbs.map((crumb, i) => {
-                  const isLast = i === breadcrumbs.length - 1;
+                {displayCrumbs.map((crumb, i) => {
+                  const isLast = i === displayCrumbs.length - 1;
                   const clickable = !isLast && !!crumb.onClick;
                   return (
                     <li key={i} className="flex items-center gap-1 shrink-0">
@@ -1002,7 +1034,7 @@ export function DocsLayout() {
         onCreateOrg={() => setCreatingOrg(true)}
       />
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
-        <DialogContent className="sm:max-w-lg" hideClose>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <div className="flex items-center gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -1010,7 +1042,7 @@ export function DocsLayout() {
               </span>
               <div className="flex flex-col gap-0.5">
                 <DialogTitle>Create a new site</DialogTitle>
-                <DialogDescription>You can change any of this later in Site Settings.</DialogDescription>
+                <DialogDescription>You can change any of this later in Site settings.</DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -1070,25 +1102,25 @@ export function DocsLayout() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Branding <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <div className="flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-start">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {/* Square icon - cropped to 512×512 via AvatarCropDialog. */}
-                <div className="flex flex-1 items-center gap-3">
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                   <button
                     type="button"
                     onClick={() => squareInputRef.current?.click()}
                     aria-label="Upload square icon"
-                    className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
+                    className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
                   >
                     {squarePreviewUrl
                       ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
                       : <Image className="size-5 text-muted-foreground" />}
                   </button>
-                  <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-0.5">
                     <p className="text-sm font-medium">Square icon</p>
-                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => squareInputRef.current?.click()}>
-                      {squareBlob ? "Change" : "Upload"}
+                    <p className="text-xs text-muted-foreground">Sidebar &amp; favourites</p>
+                    <button type="button" className="mt-0.5 self-start text-xs font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline" onClick={() => squareInputRef.current?.click()}>
+                      {squareBlob ? "Change image" : "Upload image"}
                     </button>
-                    <p className="text-xs text-muted-foreground">Sidebar &amp; favourites.</p>
                   </div>
                   <input
                     ref={squareInputRef}
@@ -1106,23 +1138,23 @@ export function DocsLayout() {
                   />
                 </div>
                 {/* Wide wordmark - native aspect, no crop. */}
-                <div className="flex flex-1 items-center gap-3">
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                   <button
                     type="button"
                     onClick={() => wideInputRef.current?.click()}
                     aria-label="Upload wordmark"
-                    className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
+                    className="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
                   >
                     {widePreviewUrl
                       ? <img src={widePreviewUrl} alt="" className="max-h-full max-w-full object-contain" />
                       : <Image className="size-5 text-muted-foreground" />}
                   </button>
-                  <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-0.5">
                     <p className="text-sm font-medium">Wordmark</p>
-                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => wideInputRef.current?.click()}>
-                      {wideFile ? "Change" : "Upload"}
+                    <p className="text-xs text-muted-foreground">Published site header</p>
+                    <button type="button" className="mt-0.5 self-start text-xs font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline" onClick={() => wideInputRef.current?.click()}>
+                      {wideFile ? "Change image" : "Upload image"}
                     </button>
-                    <p className="text-xs text-muted-foreground">Published header.</p>
                   </div>
                   <input
                     ref={wideInputRef}
@@ -1172,7 +1204,7 @@ export function DocsLayout() {
         />
       )}
       <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); setOrgFromSite(false); } }}>
-        <DialogContent className="sm:max-w-md" hideClose>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader className="pb-2">
             <DialogTitle>New organization</DialogTitle>
           </DialogHeader>

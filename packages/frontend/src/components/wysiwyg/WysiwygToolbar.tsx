@@ -104,13 +104,13 @@ interface WysiwygToolbarProps {
 }
 
 const HEADING_OPTIONS: { label: string; display: string }[] = [
-  { label: "Paragraph", display: "¶" },
-  { label: "Heading 1",  display: "H1" },
-  { label: "Heading 2",  display: "H2" },
-  { label: "Heading 3",  display: "H3" },
-  { label: "Heading 4",  display: "H4" },
-  { label: "Heading 5",  display: "H5" },
-  { label: "Heading 6",  display: "H6" },
+  { label: "Paragraph", display: "Text" },
+  { label: "Heading 1",  display: "Heading 1" },
+  { label: "Heading 2",  display: "Heading 2" },
+  { label: "Heading 3",  display: "Heading 3" },
+  { label: "Heading 4",  display: "Heading 4" },
+  { label: "Heading 5",  display: "Heading 5" },
+  { label: "Heading 6",  display: "Heading 6" },
 ];
 
 const TABLE_COLS = 6;
@@ -269,7 +269,7 @@ export function WysiwygToolbar({
   onRedo,
   onFind,
 }: WysiwygToolbarProps) {
-  const currentDisplay = HEADING_OPTIONS[active.headingLevel]?.display ?? "¶";
+  const currentDisplay = HEADING_OPTIONS[active.headingLevel]?.display ?? "Text";
   const [tableOpen, setTableOpen] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -347,7 +347,7 @@ export function WysiwygToolbar({
               size="sm"
               aria-label="Heading level"
               className={cn(
-                "h-9 sm:h-7 gap-1 px-2 text-xs font-medium w-[4.5rem] justify-between shrink-0",
+                "h-9 sm:h-7 gap-1 px-2 text-xs font-medium w-[6.25rem] justify-between shrink-0",
                 active.headingLevel > 0 && "bg-accent text-accent-foreground",
               )}
             >

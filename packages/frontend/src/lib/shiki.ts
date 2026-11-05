@@ -15,7 +15,7 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 let _highlighter: Highlighter | null = null;
 
 export const highlighterReady: Promise<Highlighter> = createHighlighter({
-  themes: ["github-dark-dimmed"],
+  themes: ["vitesse-dark"],
   langs: [
     "typescript", "tsx", "javascript", "jsx",
     "python", "rust", "go", "java", "c", "cpp", "csharp",

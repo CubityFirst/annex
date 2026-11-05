@@ -40,6 +40,9 @@ import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
+import { cn } from "@/lib/utils";
+import { useActiveHeading } from "@/hooks/useActiveHeading";
+import { DocOutline } from "@/components/DocOutline";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
@@ -386,6 +389,10 @@ export function DocPage() {
   // CodeMirror virtualises off-screen lines. Fed the *displayed* content so
   // it stays correct while previewing a historical revision.
   const scrollToHash = useScrollToHeading(viewingRevision ? viewingRevision.content : doc?.content);
+  const activeHeadingId = useActiveHeading(
+    editing ? undefined : doc?.content,
+    doc ? extractHeadings(doc.content).map(h => h.id) : [],
+  );
 
   // Scroll to the URL-hash anchor once the doc is rendered. Keyed by
   // doc + hash so re-renders (saves, revision loads) don't re-yank the
@@ -946,18 +953,21 @@ export function DocPage() {
   }
 
   if (editing) {
+    // Reserve the reading view's outline rail (xl, w-60) so the writing column
+    // keeps the same left edge when switching between reading and editing.
+    const reserveOutline = extractHeadings(doc.content).length > 0;
     return (
       <div className="flex h-full flex-col">
         {/* Title + toolbar - inner row matches the editor's max-w-3xl column so
             the title aligns with the document content below. */}
-        <div className="border-b border-border px-3 py-2 sm:px-6 sm:py-3">
+        <div className={cn("border-b border-border px-3 py-2 sm:px-6 sm:py-3", reserveOutline && "xl:pr-[16.5rem]")}>
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 sm:gap-4">
           <Input
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
             placeholder="Document title"
             aria-label="Document title"
-            className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none"
+            className="h-10 min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-md border-0 bg-transparent px-0 text-xl md:text-xl font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:border-transparent"
             autoFocus={isNewDoc}
           />
           <div className="ml-auto flex items-center gap-2">
@@ -1006,7 +1016,7 @@ export function DocPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 justify-center overflow-hidden px-6">
+        <div className={cn("flex flex-1 justify-center overflow-hidden px-6", reserveOutline && "xl:pr-[16.5rem]")}>
           <div className="relative w-full max-w-3xl overflow-hidden">
             <WysiwygEditor
               key={collabFatal ? "fallback" : "collab"}
@@ -1024,6 +1034,7 @@ export function DocPage() {
               }}
               rendererCtx={wysiwygCtx}
               onPasteImage={handlePasteImage}
+              placeholder="Start writing… Markdown works, or use the toolbar above."
             />
           </div>
         </div>
@@ -1056,17 +1067,8 @@ export function DocPage() {
               <DialogTitle>Markdown reference</DialogTitle>
               <DialogDescription>Supported syntax in this editor.</DialogDescription>
             </DialogHeader>
-            <div className="overflow-y-auto max-h-[60vh] mt-3 pr-4">
-              <div className="flex flex-col gap-6 pb-2 text-sm">
-                <MajorSection title="Frontmatter">
-                  <Section title="YAML metadata block">
-                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
-                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
-                  </Section>
-                </MajorSection>
-
-                <Separator />
-
+            <div className="overflow-y-auto max-h-[62vh] -mx-6 px-6 [&_p.text-xs]:text-[13px] [&_p.text-xs]:leading-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]">
+              <div className="flex flex-col gap-6 pb-8 text-sm">
                 <MajorSection title="Markdown">
                 <Section title="Headings">
                   <Code>{`# H1\n## H2\n### H3`}</Code>
@@ -1117,6 +1119,15 @@ export function DocPage() {
                   <Code>{`\`dice: 1d20\`             standard roll\n\`dice: 2d6+1d4+3\`       compound expression\n\`dice: 4d6kh3\`          keep highest 3\n\`dice: 4d6kl3\`          keep lowest 3\n\`dice: 2d8r1\`           reroll 1s (unlimited)\n\`dice: 2d8r<3\`          reroll less than 3\n\`dice: 2d8r>5\`          reroll greater than 5\n\`dice: 2d8r1r3\`         reroll 1s and 3s\n\`dice: 4d6kh3r1\`        keep highest 3, reroll 1s\n\`dice: 2d10ro<2\`        reroll once if less than 2\n\`dice: 2dF\`             fate/fudge dice (-1, 0, +1)\n\`dice: 1d[2,4,6,8]\`    custom numeric faces\n\`dice: 1d[fire,ice]\`   random string table\n\`dice: 2d6[Fire]\`      inline label\n\`dice: 2d6%4\`          modulus\n\`dice: 2d6**2\`         exponentiation\n\`dice: floor(2d6/3)\`   math function\n\`dice: (2d6+1d4)*2\`    grouping with parentheses\n\`dice: 1d20 Attack Roll\`         overall label\n\`dice: 1d20+5 \\ +5 for initiative\` label with separator`}</Code>
                   <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
                 </Section>
+                </MajorSection>
+
+                <Separator />
+
+                <MajorSection title="Advanced: frontmatter">
+                  <Section title="YAML metadata block">
+                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
+                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
+                  </Section>
                 </MajorSection>
               </div>
             </div>
@@ -1178,7 +1189,7 @@ export function DocPage() {
   return (
     <div className="flex min-h-full">
       {/* Article */}
-      <div className="flex-1 min-w-0 px-6 py-10">
+      <div className="flex-1 min-w-0 px-5 py-6 sm:px-6 sm:py-10">
         {isEditor && (
           <input
             ref={coverInputRef}
@@ -1231,7 +1242,7 @@ export function DocPage() {
         )}
         <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
-          <div className="flex flex-wrap justify-end gap-1.5 mb-2 md:flex-nowrap md:gap-1 md:absolute md:top-0 md:right-0 md:mb-0">
+          <div className="flex flex-wrap justify-end gap-1 mb-3 md:flex-nowrap md:gap-0.5 md:absolute md:-top-[9px] md:right-0 md:mb-0 md:rounded-lg md:border md:border-border md:bg-card md:p-0.5 md:shadow-xs [&>button]:size-10 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
             {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
               <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
                 <Sparkles className="h-4 w-4 text-violet-500" />
@@ -1279,7 +1290,7 @@ export function DocPage() {
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Document Access</DialogTitle>
+                        <DialogTitle>Document access</DialogTitle>
                         <DialogDescription>
                           Grant per-document access to limited members, or uplift viewers to edit this document.
                         </DialogDescription>
@@ -1416,7 +1427,7 @@ export function DocPage() {
                             </div>
                           )}
                           {!sharesLoading && shareableMembers.length === 0 && (
-                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site Settings.</p>
+                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site settings.</p>
                           )}
                         </div>
                     </DialogContent>
@@ -1431,26 +1442,31 @@ export function DocPage() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Document Settings</DialogTitle>
+                    <DialogTitle>Document settings</DialogTitle>
                   </DialogHeader>
                   <div className="flex flex-col gap-6 py-2">
                     <div className="flex flex-col gap-2">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col gap-1">
+                          {/* Lead with the EFFECTIVE visibility: when the whole
+                              site is published the doc is public regardless of
+                              its own flag, so say that first. */}
                           <div className="flex items-center gap-2">
-                            {doc.published_at ? (
-                              <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            {doc.published_at || projectPublishedAt ? (
+                              <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             ) : (
                               <Lock className="h-4 w-4 text-muted-foreground" />
                             )}
                             <Label className="text-sm font-medium">
-                              {doc.published_at ? "Published" : "Unpublished"}
+                              {projectPublishedAt ? "Public via published site" : doc.published_at ? "Published" : "Private"}
                             </Label>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {doc.published_at
-                              ? "This document is marked as published."
-                              : "This document is marked as unpublished."}
+                            {projectPublishedAt
+                              ? `Anyone with the link can read it. Its own setting (${doc.published_at ? "published" : "unpublished"}) applies only if the site is unpublished.`
+                              : doc.published_at
+                                ? "Anyone with the link can read this document."
+                                : "Only site members can see this document."}
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
@@ -1478,11 +1494,6 @@ export function DocPage() {
                           </Button>
                         </div>
                       </div>
-                      {projectPublishedAt && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400">
-                          The site is currently published - individual document publish status has no effect until the site is unpublished.
-                        </p>
-                      )}
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between gap-3">
@@ -1678,31 +1689,24 @@ export function DocPage() {
 
       {/* Outline */}
       {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
+        <aside className="hidden xl:block w-60 shrink-0 py-10 pl-2 pr-6">
           <div className="sticky top-6">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               Outline
             </p>
             {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
             <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
-              <nav className="flex flex-col gap-0.5">
-                {headings.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      // Pre-set the guard so the hash effect doesn't double-fire;
-                      // scroll directly so re-clicking the same heading still jumps.
-                      lastHashScrollRef.current = `${docId ?? ""}#${h.id}`;
-                      navigate(`#${h.id}`, { replace: true });
-                      scrollToHash(h.id);
-                    }}
-                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {h.text}
-                  </button>
-                ))}
-              </nav>
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                onSelect={id => {
+                  // Pre-set the guard so the hash effect doesn't double-fire;
+                  // scroll directly so re-clicking the same heading still jumps.
+                  lastHashScrollRef.current = `${docId ?? ""}#${id}`;
+                  navigate(`#${id}`, { replace: true });
+                  scrollToHash(id);
+                }}
+              />
             </ScrollArea>
           </div>
         </aside>

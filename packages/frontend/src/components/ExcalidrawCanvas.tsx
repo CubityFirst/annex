@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/index.css";
 import { Excalidraw, serializeAsJSON, getSceneVersion } from "@excalidraw/excalidraw";
 import { fileContentEtag } from "@/lib/excalidraw";
-import { Check } from "lucide-react";
+import { Check, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +62,66 @@ interface Props {
   saveSlot?: HTMLElement | null;
 }
 
+// Re-skin Excalidraw's UI chrome (not the drawing itself) with the app's warm
+// neutral tokens so its default purple accent doesn't clash with the brand.
+// Scoped under our wrapper class, which out-specifies Excalidraw's own
+// `.excalidraw.theme--dark` blocks. Light mode gets the same treatment.
+const EXCALIDRAW_THEME_CSS = `
+.annex-excalidraw .excalidraw {
+  --color-primary: var(--primary);
+  --color-primary-darker: color-mix(in oklch, var(--primary) 88%, black);
+  --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, black);
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --color-primary-light: var(--accent);
+  --color-primary-light-darker: color-mix(in oklch, var(--accent) 85%, var(--foreground));
+  --color-brand-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --color-brand-active: color-mix(in oklch, var(--primary) 76%, black);
+  --color-selection: color-mix(in oklch, var(--primary) 70%, transparent);
+  --color-slider-track: var(--border);
+  --color-logo-icon: var(--primary);
+  --color-logo-text: var(--foreground);
+  --color-on-primary-container: var(--foreground);
+  --color-surface-primary-container: var(--accent);
+  --color-surface-high: var(--accent);
+  --color-surface-mid: var(--muted);
+  --color-surface-low: var(--muted);
+  --color-surface-lowest: var(--background);
+  --color-on-surface: var(--foreground);
+  --color-border-outline-variant: var(--border);
+  --island-bg-color: var(--card);
+  --popup-bg-color: var(--popover);
+  --default-bg-color: var(--background);
+  --input-bg-color: var(--background);
+  --input-border-color: var(--input);
+  --input-hover-bg-color: var(--muted);
+  --sidebar-bg-color: var(--card);
+  --sidebar-border-color: var(--border);
+  --default-border-color: var(--border);
+  --select-highlight-color: var(--ring);
+  --focus-highlight-color: var(--ring);
+  --link-color: var(--foreground);
+}
+.annex-excalidraw .excalidraw.theme--dark {
+  /* In dark the "darker" accent steps get lighter, as in Excalidraw's own palette. */
+  --color-primary-darker: color-mix(in oklch, var(--primary) 88%, white);
+  --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, white);
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, white);
+  --color-brand-hover: color-mix(in oklch, var(--primary) 88%, white);
+  --color-brand-active: color-mix(in oklch, var(--primary) 76%, white);
+}
+/* Text that Excalidraw paints white on a --color-primary fill: use the
+   app's on-primary colour so it stays legible on the cream accent. */
+.annex-excalidraw .excalidraw .Dialog__action-button--primary,
+.annex-excalidraw .excalidraw .ttd-dialog-panel-button.excalidraw-button,
+.annex-excalidraw .excalidraw .library-actions-counter {
+  color: var(--primary-foreground);
+}
+.annex-excalidraw .excalidraw .App-toolbar .eraser.active {
+  --icon-fill-color: var(--primary-foreground);
+  --keybinding-color: var(--primary-foreground);
+}
+`;
+
 function serialize(api: ExcalidrawApi): string {
   return serializeAsJSON(
     api.getSceneElements() as never,
@@ -92,7 +152,6 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const [justSaved, setJustSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   // Concurrency guard (server returns 412 when the content changed since we
@@ -256,10 +315,6 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
         const clean = sceneContentKey(serialize(api)) === savedKeyRef.current;
         if (clean) savedVersionRef.current = getSceneVersion(api.getSceneElements() as never);
         setDirtyState(!clean);
-        if (clean) {
-          setJustSaved(true);
-          setTimeout(() => setJustSaved(false), 2000);
-        }
         if (meta) onSaved?.(meta);
         return true;
       } catch (e) {
@@ -361,7 +416,11 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
     files: scene.files ?? undefined,
   };
 
-  const saveLabel = saving ? "Saving…" : dirty ? "Save" : justSaved ? "Saved" : "Save";
+  // Mirrors DocPage's Save button: primary + Save icon while there are
+  // unsaved edits; a quiet "Saved" (check) state once everything is persisted.
+  // A parked 412 conflict keeps the "Save" label but stays disabled.
+  const clean = !saving && !dirty && !conflict;
+  const saveLabel = saving ? "Saving…" : clean ? "Saved" : "Save";
 
   // When a slot is provided we portal the button there (e.g. the page top bar);
   // otherwise it floats over the canvas. The floating placement keeps clear of
@@ -370,19 +429,30 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   const saveButton = (
     <Button
       size="sm"
+      variant={clean ? (inHeader ? "ghost" : "outline") : "default"}
       onClick={() => void handleSave()}
       disabled={saving || !dirty || conflict}
-      className={inHeader
-        ? "h-8 gap-1.5"
-        : "absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"}
+      className={[
+        "gap-1.5",
+        clean && "text-muted-foreground disabled:opacity-100",
+        clean && !inHeader && "bg-card",
+        inHeader
+          ? ""
+          : "absolute right-3 top-3 z-20 h-10 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3",
+      ].filter(Boolean).join(" ")}
     >
-      {saving ? <Spinner className="h-3.5 w-3.5 text-current" /> : (!dirty && justSaved) ? <Check className="h-3.5 w-3.5" /> : null}
+      {saving
+        ? <Spinner className="h-3.5 w-3.5 text-current" />
+        : clean
+          ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
       {saveLabel}
     </Button>
   );
 
   return (
-    <div className="relative h-full w-full">
+    <div className="annex-excalidraw relative h-full w-full">
+      <style>{EXCALIDRAW_THEME_CSS}</style>
       {/* 412 conflict: a newer version exists on the server. Reload swaps in
           the latest scene (discarding the local unsaved edits it refused to
           save over); until then every save path stays parked. */}

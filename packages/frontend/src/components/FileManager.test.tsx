@@ -335,4 +335,36 @@ describe("FileManager", () => {
     );
     await waitFor(() => expect(contentLoads()).toBeGreaterThan(loadsBefore));
   });
+
+  // Touch widths: the card list hides row checkboxes until a selection starts
+  // (from a row's "Select" menu item), and choosing a menu item must not also
+  // trigger the row's own open action.
+  it("shows mobile row checkboxes only once a selection starts", async () => {
+    vi.mocked(apiFetchJson).mockImplementation(async (url: string) => {
+      if (String(url).includes("/contents")) {
+        return { ok: true, status: 200, data: { ...emptyContents, docs: [doc("d1", "Doc A"), doc("d2", "Doc B")] } };
+      }
+      return { ok: true, status: 200, data: emptyContents };
+    });
+    renderManager(null);
+    // Desktop table only - the mobile card list renders no checkboxes yet.
+    expect(await screen.findAllByLabelText("Select Doc A")).toHaveLength(1);
+
+    fireEvent.keyDown(screen.getAllByLabelText("Document actions")[0], { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Select" }));
+
+    await waitFor(() => expect(screen.getAllByLabelText("Select Doc A")).toHaveLength(2));
+    expect(screen.getAllByLabelText("Select Doc B")).toHaveLength(2);
+    expect(screen.getByLabelText("Delete 1 selected")).toBeTruthy();
+  });
+
+  it("cancels the new-folder dialog without creating anything", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
+    renderManager(null);
+    fireEvent.click(await screen.findByLabelText("New folder"));
+    fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "Specs" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByLabelText("Folder name")).toBeNull());
+    expect(vi.mocked(apiFetchJson).mock.calls.some(([u]) => u === "/api/folders")).toBe(false);
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BookOpen } from "lucide-react";
+import { AuthShell } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,12 +65,13 @@ export function VerifyEmailPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
+    <AuthShell>
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold">Email verification</h1>
+            <a href="/" aria-label="Annex home" className="mb-6 rounded-sm">
+              <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />
+            </a>
+            <h1 className="text-2xl font-semibold tracking-tight">Email verification</h1>
           </div>
 
           {state === "loading" && (
@@ -117,7 +118,7 @@ export function VerifyEmailPage() {
                 </AlertDescription>
               </Alert>
               <p className="text-center text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
                   Back to sign in
                 </a>
               </p>
@@ -132,7 +133,7 @@ export function VerifyEmailPage() {
                 </AlertDescription>
               </Alert>
               <p className="text-center text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
                   Back to sign in
                 </a>
               </p>
@@ -175,7 +176,7 @@ export function VerifyEmailPage() {
                   {resendState === "sending" ? "Sending…" : "Resend verification email"}
                 </Button>
                 <p className="text-center text-sm text-muted-foreground">
-                  <a href="/login" className="text-primary underline-offset-4 hover:underline">
+                  <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
                     Back to sign in
                   </a>
                 </p>
@@ -183,7 +184,6 @@ export function VerifyEmailPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

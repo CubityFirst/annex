@@ -73,12 +73,12 @@ async function putDoc(p: Page, id: string, title: string, content: string) {
 
 async function openDocSettings(p: Page) {
   await p.getByRole("button", { name: "Document settings" }).click();
-  await expect(p.getByRole("dialog", { name: "Document Settings" })).toBeVisible({ timeout: 5000 });
+  await expect(p.getByRole("dialog", { name: "Document settings" })).toBeVisible({ timeout: 5000 });
 }
 
 async function closeDocSettings(p: Page) {
   await p.keyboard.press("Escape");
-  await expect(p.getByRole("dialog", { name: "Document Settings" })).not.toBeVisible({ timeout: 5000 });
+  await expect(p.getByRole("dialog", { name: "Document settings" })).not.toBeVisible({ timeout: 5000 });
 }
 
 test.describe.configure({ mode: "serial" });

@@ -51,8 +51,8 @@ export function pathUsesUserTheme(pathname: string): boolean {
 
 // Backdrop colours used for <html> itself so overscroll / pre-paint matches
 // the active theme (index.html hard-codes the dark one as the static default).
-const DARK_HTML_BG = "oklch(0.141 0.005 285.823)";
-const LIGHT_HTML_BG = "oklch(1 0 0)";
+const DARK_HTML_BG = "oklch(0.182 0.004 75)";
+const LIGHT_HTML_BG = "oklch(0.99 0.002 75)";
 const NEAR_WHITE = "oklch(0.985 0 0)";
 const NEAR_BLACK = "oklch(0.21 0.006 285.885)";
 // destructive stays a stock red, never tinted toward the base - recolouring
@@ -72,7 +72,7 @@ const toOklch = converter("oklch");
 // as a constant so non-custom modes can reliably clear every one and let the
 // stylesheet (:root / .dark) reapply.
 export const MANAGED_VARS = [
-  "--background", "--foreground", "--card", "--card-foreground",
+  "--background", "--foreground", "--sidebar", "--card", "--card-foreground",
   "--popover", "--popover-foreground", "--primary", "--primary-foreground",
   "--secondary", "--secondary-foreground", "--muted", "--muted-foreground",
   "--accent", "--accent-foreground", "--destructive", "--destructive-foreground",
@@ -127,6 +127,7 @@ export function derivePalette(baseHex: string): Record<string, string> {
   return {
     "--background": fmt(bgL, surfaceC, h),
     "--foreground": fg,
+    "--sidebar": fmt(dark ? bgL - 0.02 : 0.96, surfaceC, h),
     "--card": fmt(cardL, surfaceC, h),
     "--card-foreground": fg,
     "--popover": fmt(cardL, surfaceC, h),

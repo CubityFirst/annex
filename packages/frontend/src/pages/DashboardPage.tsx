@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
-import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Mail, Plus, Radio, Sparkles, Star, Users } from "lucide-react";
+import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Lock, Mail, Plus, Radio, Sparkles, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ const REALTIME_FEATURE = 4;
 
 // Shared square slot so every footer item (clickable button or static info icon)
 // occupies the same footprint - uniform touch/visual regions across the row.
-const FOOTER_SLOT = "flex h-11 w-11 shrink-0 items-center justify-center sm:h-9 sm:w-9";
+const FOOTER_SLOT = "flex h-11 w-11 shrink-0 items-center justify-center sm:h-8 sm:w-8";
 
 interface Org {
   id: string;
@@ -102,7 +102,7 @@ export function DashboardPage() {
             navigate(`/projects/${project.id}`);
           }
         }}
-        className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex cursor-pointer flex-col transition-[border-color,background-color,box-shadow] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
           <div className="flex items-center gap-2.5">
@@ -128,80 +128,33 @@ export function DashboardPage() {
           )}
         </CardContent>
 
-        <CardFooter className="flex flex-wrap items-center gap-x-1 gap-y-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={FOOTER_SLOT}
-                aria-label={project.is_favourite ? "Remove from favourites" : "Add to favourites"}
-                onClick={(e) => handleToggleFavourite(e, project.id)}
-              >
-                <Star
-                  className={`h-[18px] w-[18px] transition-colors ${project.is_favourite ? "fill-amber-400 text-amber-400 hover:fill-amber-300 hover:text-amber-300" : "text-muted-foreground/40 hover:text-amber-400"}`}
-                  strokeWidth={1.5}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {project.is_favourite ? "Remove from favourites" : "Add to favourites"}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={FOOTER_SLOT}
-                aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
-                onClick={(e) => handleToggleHidden(e, project.id)}
-              >
-                {project.is_hidden ? (
-                  <EyeOff
-                    className="h-[18px] w-[18px] text-muted-foreground/40 transition-colors hover:text-foreground"
-                    strokeWidth={1.5}
-                  />
-                ) : (
-                  <Eye
-                    className="h-[18px] w-[18px] text-muted-foreground/40 transition-colors hover:text-foreground"
-                    strokeWidth={1.5}
-                  />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {project.is_hidden ? "Unhide site" : "Hide site"}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={FOOTER_SLOT}
-                aria-label={project.published_at ? "View public site" : "Site is private"}
-                disabled={!project.published_at}
-                onClick={project.published_at ? (e) => { e.stopPropagation(); navigate(`/s/${project.id}`); } : undefined}
-              >
-                <Globe
-                  className={`h-[18px] w-[18px] ${project.published_at ? "text-green-500 hover:text-green-400" : "text-muted-foreground/40"}`}
-                  strokeWidth={1.5}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {project.published_at ? "View public site" : "Site is private"}
-            </TooltipContent>
-          </Tooltip>
+        {/* Footer: a labelled visibility status on the left (colour + words,
+            not a lone green globe), feature hints as quiet glyphs, and the
+            personal actions (favourite / hide) grouped on the right. */}
+        <CardFooter className="flex items-center gap-1 pt-1">
+          {project.published_at ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); navigate(`/s/${project.id}`); }}
+              className="inline-flex h-7 items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-500/20 transition-colors hover:bg-emerald-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-emerald-300"
+              aria-label="View public site"
+              title="View public site"
+            >
+              <Globe className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Published
+            </button>
+          ) : (
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border" aria-label="Site is private">
+              <Lock className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Private
+            </span>
+          )}
 
           {!!project.ai_enabled && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
-                  <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} role="img" aria-label="AI features enabled" />
+                  <Sparkles className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label="AI features enabled" />
                 </span>
               </TooltipTrigger>
               <TooltipContent>AI features enabled</TooltipContent>
@@ -212,7 +165,7 @@ export function DashboardPage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
-                  <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} role="img" aria-label="Real-time collaboration enabled" />
+                  <Radio className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label="Real-time collaboration enabled" />
                 </span>
               </TooltipTrigger>
               <TooltipContent>Real-time collaboration enabled</TooltipContent>
@@ -223,7 +176,7 @@ export function DashboardPage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
-                  <Building2 className="h-[18px] w-[18px] text-primary/70" strokeWidth={1.5} role="img" aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
+                  <Building2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
                 </span>
               </TooltipTrigger>
               <TooltipContent>
@@ -232,23 +185,66 @@ export function DashboardPage() {
             </Tooltip>
           )}
 
-          {project.member_count != null && (
+          <div className="ml-auto flex items-center gap-0.5">
+            {project.member_count != null && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="mr-1.5 flex items-center gap-1 text-xs text-muted-foreground"
+                    aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                    title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                  >
+                    <Users className="h-4 w-4" strokeWidth={1.5} />
+                    <span className="tabular-nums">{project.member_count}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {project.member_count} {project.member_count === 1 ? "member" : "members"}
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             <Tooltip>
               <TooltipTrigger asChild>
-                <div
-                  className="ml-auto flex items-center gap-1 text-muted-foreground/60"
-                  aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
-                  title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={FOOTER_SLOT}
+                  aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
+                  onClick={(e) => handleToggleHidden(e, project.id)}
                 >
-                  <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
-                  <span className="text-xs">{project.member_count}</span>
-                </div>
+                  {project.is_hidden ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  )}
+                </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {project.member_count} {project.member_count === 1 ? "member" : "members"}
+                {project.is_hidden ? "Unhide site" : "Hide site"}
               </TooltipContent>
             </Tooltip>
-          )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={FOOTER_SLOT}
+                  aria-label={project.is_favourite ? "Remove from favourites" : "Add to favourites"}
+                  onClick={(e) => handleToggleFavourite(e, project.id)}
+                >
+                  <Star
+                    className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
+                    strokeWidth={1.5}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {project.is_favourite ? "Remove from favourites" : "Add to favourites"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </CardFooter>
 
       </Card>
@@ -260,7 +256,7 @@ export function DashboardPage() {
       <h1 className="sr-only">Dashboard</h1>
       {orgs.length > 0 && (
         <div className="mb-10">
-          <h2 className="text-2xl font-bold tracking-tight">Your Orgs</h2>
+          <h2 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Your organizations</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Organizations group sites and share access across them.
           </p>
@@ -310,7 +306,7 @@ export function DashboardPage() {
 
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Your Sites</h2>
+          <h2 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Your sites</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Select a site to browse its documentation.
           </p>
@@ -335,7 +331,7 @@ export function DashboardPage() {
                     <Mail className="h-4 w-4 text-amber-500" />
                   </div>
                   <div>
-                    <CardTitle as="h3">{pendingCount === 1 ? "Pending Invite" : "Pending Invites"}</CardTitle>
+                    <CardTitle as="h3">{pendingCount === 1 ? "Pending invite" : "Pending invites"}</CardTitle>
                   </div>
                 </div>
                 <Badge variant="outline" className="shrink-0">

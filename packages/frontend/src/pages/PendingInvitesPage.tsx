@@ -2,19 +2,12 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen, Building2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
-
-const ROLE_COLORS: Record<Role, string> = {
-  owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-  admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-foreground",
-  limited: "bg-muted text-foreground",
-};
 
 // Invites span both sites (projects) and orgs; `type` discriminates which.
 interface PendingInvite {
@@ -105,10 +98,10 @@ export function PendingInvitesPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-8 sm:py-10">
+    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-8 sm:py-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Pending Invites</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pending invites</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Accept or decline invitations to sites and organizations.
         </p>
       </div>
@@ -116,72 +109,67 @@ export function PendingInvitesPage() {
       <div aria-live="polite" className="sr-only">{statusMessage}</div>
 
       {loadError ? (
-        <div role="alert" className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
-          <Mail className="mb-3 h-10 w-10 text-muted-foreground/40" aria-hidden="true" />
+        <div role="alert" className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <Mail className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
           <p className="text-sm font-medium">Couldn&apos;t load invites</p>
-          <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{loadError}</p>
         </div>
       ) : invites.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
-          <Mail className="mb-3 h-10 w-10 text-muted-foreground/40" aria-hidden="true" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <Mail className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
           <p className="text-sm font-medium">No pending invites</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            You're all caught up.
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            You&apos;re all caught up.
           </p>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="divide-y divide-border rounded-lg border border-border bg-card">
           {invites.map(invite => {
             const isOrg = invite.type === "org";
             const title = isOrg ? invite.organizationName : invite.projectName;
             return (
-              <Card key={invite.id} asChild className="flex flex-col">
-              <li>
-                <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                      {isOrg ? <Building2 className="h-4 w-4 text-primary" aria-hidden="true" /> : <BookOpen className="h-4 w-4 text-primary" aria-hidden="true" />}
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="truncate">{title}</CardTitle>
-                      <p className="text-[11px] uppercase tracking-wide text-secondary-foreground">
-                        {isOrg ? "Organization" : "Site"}
-                      </p>
-                    </div>
+              <li key={invite.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40">
+                    {isOrg
+                      ? <Building2 className="size-4 text-muted-foreground" aria-hidden="true" />
+                      : <BookOpen className="size-4 text-muted-foreground" aria-hidden="true" />}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[invite.role]}`}>
-                    {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)}
-                  </span>
-                </CardHeader>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-medium">{title}</p>
+                      <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[invite.role]}`}>
+                        {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)}
+                      </Badge>
+                    </div>
+                    {!isOrg && invite.projectDescription && (
+                      <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{invite.projectDescription}</p>
+                    )}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {isOrg ? "Organization" : "Site"} · Invited by{" "}
+                      <span className="font-medium text-foreground">{invite.inviterName}</span>
+                    </p>
+                  </div>
+                </div>
 
-                <CardContent className="flex-1">
-                  {!isOrg && invite.projectDescription && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">{invite.projectDescription}</p>
-                  )}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Invited by <span className="font-medium text-foreground">{invite.inviterName}</span>
-                  </p>
-                </CardContent>
-
-                <CardFooter className="flex gap-2">
+                <div className="flex shrink-0 gap-2 sm:pl-0 pl-12">
                   <Button
-                    className="flex-1 min-h-11 sm:min-h-9"
-                    onClick={() => handleAccept(invite)}
-                    disabled={acting === invite.id}
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    className="flex-1 min-h-11 sm:min-h-9"
                     variant="outline"
+                    className="min-h-10 flex-1 sm:min-h-9 sm:flex-none"
                     onClick={() => handleDecline(invite)}
                     disabled={acting === invite.id}
                   >
                     Decline
                   </Button>
-                </CardFooter>
+                  <Button
+                    className="min-h-10 flex-1 sm:min-h-9 sm:flex-none"
+                    onClick={() => handleAccept(invite)}
+                    disabled={acting === invite.id}
+                  >
+                    Accept
+                  </Button>
+                </div>
               </li>
-              </Card>
             );
           })}
         </ul>

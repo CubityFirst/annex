@@ -1,66 +1,61 @@
-/* Terminal 404 - ported from the Claude Design handoff (CubeDocs 404.html,
-   "option 3 · Terminal / dark"). All selectors are scoped under .v404 so the
-   bespoke dark/terminal styling can't leak into the rest of the (Tailwind) app.
-   The prototype shipped separate desktop + mobile components inside a design
-   canvas; here it's one full-bleed responsive page (no phone bezel / canvas
-   chrome) collapsing to the mobile layout at <=720px, which is the behavior
-   the user landed on in the transcript. */
+/* Terminal 404 - originally ported from the Claude Design handoff ("option 3 ·
+   Terminal / dark"), now aligned with the marketing family: it sits inside
+   `.landing` (LandingPage.css tokens, nav, footer, .site-wrap gutter and
+   .l-btn-primary), so only the 404-specific pieces live here, scoped under
+   .v404. With chrome="site" it gets the shared SiteNav + SiteFooter. */
 
 .v404 {
-  width: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
-  overflow: hidden;
-  position: relative;
-  font-family: "DM Sans", sans-serif;
-  background: #0e0e0e;
-  color: #f0ede8;
 }
 
 /* ── stage / content ── */
 .v404-stage {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  padding: 0 120px;
   overflow: hidden;
+  padding: clamp(56px, 8vw, 96px) 0;
+}
+.v404-site .v404-stage {
+  padding-top: calc(var(--nav-h) + clamp(48px, 7vw, 88px));
 }
 .v404-content {
   position: relative;
-  max-width: 760px;
   z-index: 2;
 }
 
-/* grid background */
+/* grid background, fading out toward the edges */
 .v404-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    linear-gradient(rgba(232, 228, 222, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 228, 222, 0.025) 1px, transparent 1px);
   background-size: 60px 60px;
   background-position: center;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 30% 50%, #000 40%, transparent 100%);
+          mask-image: radial-gradient(ellipse 80% 70% at 30% 50%, #000 40%, transparent 100%);
   pointer-events: none;
 }
 
-/* the numeral. 360px at the 1920 target; clamped so common laptop widths
-   scale down instead of clipping under the .v404 overflow:hidden. */
 .v404-numeral {
   font-family: "DM Mono", monospace;
   font-weight: 400;
-  font-size: clamp(160px, 19vw, 360px);
+  font-size: clamp(120px, 16vw, 280px);
   line-height: 0.9;
   letter-spacing: -0.04em;
-  color: #f0ede8;
+  color: var(--text);
   display: flex;
   align-items: baseline;
   margin-bottom: 36px;
 }
 .v404-cursor {
   display: inline-block;
-  color: #d94a3d;
+  color: var(--accent);
   margin-left: 0.08em;
   animation: v404-blink 1.1s steps(1) infinite;
 }
@@ -72,11 +67,10 @@
 }
 
 .v404-subtitle {
-  font-family: "DM Sans", sans-serif;
-  font-size: 19px;
-  color: rgba(240, 237, 232, 0.7);
+  font-size: clamp(17px, 1.5vw, 19px);
+  color: var(--text2);
   font-weight: 300;
-  line-height: 1.5;
+  line-height: 1.6;
   max-width: 560px;
   margin-bottom: 40px;
   text-wrap: pretty;
@@ -85,64 +79,35 @@
 /* CTA row */
 .v404-cta {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   align-items: center;
 }
-.v404-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: "DM Sans", sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  background: #f0ede8;
-  color: #111;
-  padding: 13px 22px;
-  border: none;
-  border-radius: 2px;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.v404-btn:hover { background: #fff; }
 .v404-btn-arrow {
   font-family: "DM Mono", monospace;
   font-size: 15px;
   transform: translateY(-1px);
 }
 .v404-link {
-  font-size: 13px;
-  color: rgba(240, 237, 232, 0.45);
+  font-size: 15px;
+  color: var(--text3);
   text-decoration: underline;
   text-underline-offset: 4px;
-  text-decoration-color: rgba(255, 255, 255, 0.18);
-  transition: color 0.12s;
+  text-decoration-color: var(--border2);
+  transition: color 0.15s;
 }
-.v404-link:hover { color: rgba(240, 237, 232, 0.85); }
+.v404-link:hover { color: var(--text); }
 
 /* ══ Mobile - same language, stacked (<=720px) ══ */
 @media (max-width: 720px) {
-  .v404-stage {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 64px 28px 32px;
-  }
   .v404-grid { background-size: 40px 40px; }
-  .v404-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    max-width: none;
-  }
   .v404-numeral {
-    font-size: 150px;
+    font-size: clamp(96px, 34vw, 150px);
     line-height: 0.95;
     margin-bottom: 28px;
   }
   .v404-subtitle {
     font-size: 16px;
-    max-width: none;
     margin-bottom: 32px;
   }
   .v404-cta {
@@ -150,10 +115,6 @@
     gap: 18px;
     align-items: stretch;
   }
-  .v404-cta .v404-btn {
-    width: 100%;
-    justify-content: center;
-    padding: 15px 22px;
-  }
+  .v404-cta .l-btn-primary { width: 100%; }
   .v404-cta .v404-link { text-align: center; }
 }

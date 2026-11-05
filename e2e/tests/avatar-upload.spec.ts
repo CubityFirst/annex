@@ -199,15 +199,16 @@ test("a light request falls back to the dark variant when no light exists", asyn
 test("uploading with the toggle on Light stores an independent light variant", async () => {
   await page.goto("/settings");
 
-  // The sun/moon toggle sits directly below the avatar. It starts on "Dark"
-  // (Moon); clicking it switches the slot that Upload/Remove targets to Light.
-  // Locate by title, not accessible name - the theme picker on the same page
-  // also has buttons named "Dark"/"Light".
-  const toggle = page.getByTitle("Switch which avatar variant you view and edit (dark vs light backgrounds)");
-  await expect(toggle).toBeVisible({ timeout: 5000 });
-  await expect(toggle).toHaveText(/Dark/);
-  await toggle.click();
-  await expect(toggle).toHaveText(/Light/);
+  // The "Avatar for background" segmented control sits directly below the
+  // avatar. It starts on Dark; picking Light switches the slot that
+  // Upload/Remove targets. Scope to the radiogroup - the theme picker on the
+  // same page also has buttons named "Dark"/"Light".
+  const variantGroup = page.getByRole("radiogroup", { name: "Avatar for background" });
+  await expect(variantGroup).toBeVisible({ timeout: 5000 });
+  await expect(variantGroup.getByRole("radio", { name: "Dark" })).toHaveAttribute("aria-checked", "true");
+  const lightOption = variantGroup.getByRole("radio", { name: "Light" });
+  await lightOption.click();
+  await expect(lightOption).toHaveAttribute("aria-checked", "true");
 
   const fileInput = page.locator('input[type="file"][accept*="image/gif"]');
   await fileInput.setInputFiles({

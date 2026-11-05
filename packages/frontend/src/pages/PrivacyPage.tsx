@@ -1,35 +1,20 @@
-import { Link } from "react-router-dom";
-import { getToken } from "@/lib/auth";
-import { AnnexLogo } from "@/components/AnnexLogo";
-import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooter, SiteNav } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 export function PrivacyPage() {
-  const isLoggedIn = !!getToken();
-
   return (
     <div className="landing">
-      <nav className="l-nav">
-        <div className="l-nav-inner">
-          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
-          <div className="l-nav-links">
-            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
-            {isLoggedIn
-              ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
-              : <Link className="l-nav-cta" to="/register">get started</Link>}
-          </div>
-        </div>
-      </nav>
+      <SiteNav />
 
       <section className="l-legal">
         <div className="site-wrap">
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
-            <h1 className="l-legal-title">Privacy Policy</h1>
+            <h1 className="l-legal-title">Privacy policy</h1>
             <p className="l-legal-meta">Effective date: May 29, 2026</p>
 
             <div className="l-legal-body">
-              <h2>1. What We Collect</h2>
+              <h2>1. What we collect</h2>
               <p>
                 When you create an account, we collect your email address and a hashed password.
                 If you add a display name or avatar, we store those too.
@@ -59,7 +44,7 @@ export function PrivacyPage() {
                 expired records are then permanently deleted within about 30 days.
               </p>
 
-              <h2>2. Content You Create</h2>
+              <h2>2. Content you create</h2>
               <p>
                 Documents, files, and workspaces you create are stored on our servers and belong to
                 you. We do not sell your content or share it with third parties except as required
@@ -87,7 +72,7 @@ export function PrivacyPage() {
                 machine-learning models.
               </p>
 
-              <h2>3. How We Use Your Data</h2>
+              <h2>3. How we use your data</h2>
               <p>We use the information we collect to:</p>
               <ul>
                 <li>Provide, maintain, and improve Annex</li>
@@ -100,7 +85,7 @@ export function PrivacyPage() {
                 we do not serve advertising.
               </p>
 
-              <h2>4. Data Sharing</h2>
+              <h2>4. Data sharing</h2>
               <p>
                 We do not sell your personal data. We share data only with service providers that
                 help us operate Annex (cloud infrastructure, email delivery, error monitoring,
@@ -149,7 +134,7 @@ export function PrivacyPage() {
                 users.
               </p>
 
-              <h2>5. Cookies and Tracking</h2>
+              <h2>5. Cookies and tracking</h2>
               <p>
                 We use a session token stored in localStorage to keep you logged in. We do not use
                 third-party tracking cookies or analytics pixels. Basic aggregate usage metrics
@@ -163,7 +148,7 @@ export function PrivacyPage() {
                 than ours.
               </p>
 
-              <h2>6. Data Retention and Deletion</h2>
+              <h2>6. Data retention and deletion</h2>
               <p>
                 Your account and all associated data remain on our servers until you delete your
                 account, which you can do at any time from your account settings. Because workspaces
@@ -194,7 +179,7 @@ export function PrivacyPage() {
                 contact us and we will delete it.
               </p>
 
-              <h2>9. Changes to This Policy</h2>
+              <h2>9. Changes to this policy</h2>
               <p>
                 We may update this policy from time to time. If we make material changes we will
                 notify registered users by email or via an in-app notice. The effective date at the

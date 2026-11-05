@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import { useActiveHeading } from "@/hooks/useActiveHeading";
+import { DocOutline } from "@/components/DocOutline";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { fileKind } from "@/lib/fileKind";
 import { formatBytes } from "@/lib/fileManager";
 import { SearchPalette } from "@/components/SearchPalette";
-import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
+import { useParams, useNavigate, NavLink, Link, useLocation } from "react-router-dom";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { toHeadingId } from "@/lib/headingSlug";
 import { useScrollToHeading } from "@/hooks/useScrollToHeading";
@@ -24,7 +26,7 @@ import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List } from "lucide-react";
+import { BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List, PanelLeftOpen } from "lucide-react";
 import { ReportSiteDialog } from "@/components/ReportSiteDialog";
 
 // Heavy chunk - only loaded when a published drawing is opened.
@@ -112,8 +114,8 @@ function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], 
 // item's midpoint so the vertical line terminates rather than running past the last item.
 // For folders, the midpoint is top-4 (16px = half of the 32px button row height).
 // For docs, it's top-1/2 (50% of the single-row element height).
-const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-1px] after:top-4 after:bottom-0 after:w-[2px] after:bg-background";
-const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:top-1/2 after:bottom-0 after:w-[2px] after:bg-background";
+const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-1px] after:top-4 after:bottom-0 after:w-[2px] after:bg-sidebar";
+const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:top-1/2 after:bottom-0 after:w-[2px] after:bg-sidebar";
 
 function FolderNode({
   folder,
@@ -147,7 +149,7 @@ function FolderNode({
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         aria-controls={childrenId}
-        className={`relative w-full flex items-center gap-1.5 rounded-md py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
+        className={`relative w-full flex h-8 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
       >
         {depth > 0 && (
           <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
@@ -223,7 +225,7 @@ function NavTree({
             to={href(doc.id)}
             onClick={onDocClick}
             className={({ isActive }) =>
-              `relative flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
+              `relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
                 depth > 0 ? "pl-3" : "pl-2"
               } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
             }
@@ -245,7 +247,7 @@ function NavTree({
           <button
             key={file.id}
             onClick={() => onFileClick(file)}
-            className={`relative w-full flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
+            className={`relative w-full flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
               depth > 0 ? "pl-3" : "pl-2"
             } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
           >
@@ -398,7 +400,9 @@ export function PublicDocPage() {
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
-  const [hasToken, setHasToken] = useState(false);
+  // Only signed-in *members* get the back-to-project shortcut; a signed-in
+  // visitor who isn't on the site would just hit a 404 in the app.
+  const [isMember, setIsMember] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [reportOpen, setReportOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -463,9 +467,19 @@ export function PublicDocPage() {
     buildUrl: (id: string, anchor?: string) => href(id, anchor),
   }), [docId, data, href]);
 
+  const memberCheckId = hostMode ? null : data?.project.id ?? null;
   useEffect(() => {
-    setHasToken(!!getToken());
-  }, []);
+    setIsMember(false);
+    const token = getToken();
+    if (!token || !memberCheckId) return;
+    let cancelled = false;
+    // Plain fetch, not apiFetch: a stale token on a public page must not
+    // bounce the reader to /login - it just means no back button.
+    fetch(`/api/projects/${encodeURIComponent(memberCheckId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (!cancelled && r.ok) setIsMember(true); })
+      .catch(() => { /* not a member / offline - keep it hidden */ });
+    return () => { cancelled = true; };
+  }, [memberCheckId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -580,6 +594,10 @@ export function PublicDocPage() {
   // the outline buttons. See useScrollToHeading for why this resolves the
   // heading's line position from the markdown source instead of the DOM.
   const scrollToHash = useScrollToHeading(data?.doc.content);
+  const activeHeadingId = useActiveHeading(
+    data?.doc.content,
+    data?.doc.content ? extractHeadings(data.doc.content).map(h => h.id) : [],
+  );
 
   // Scroll to #heading anchor when one is present in the URL.
   useEffect(() => {
@@ -617,7 +635,7 @@ export function PublicDocPage() {
         subtitle="No published document exists at this location. The document may be unpublished, moved, or the link mistyped."
         primaryLabel="Go home"
         primaryHref="/"
-        secondary={{ label: "report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
+        secondary={{ label: "Report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
       />
     );
   }
@@ -642,13 +660,14 @@ export function PublicDocPage() {
           "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}>
-        <aside className={cn("flex h-full flex-col border-r border-border bg-background overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
-          <div className="flex h-20 items-center gap-2 px-4">
-            {hasToken && (
+        <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
+          <div className="flex h-16 shrink-0 items-center gap-2 px-4">
+            {isMember && (
               <button
                 onClick={() => navigate(`/projects/${data.project.id}`)}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="Back to project"
+                className="-ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Back to site"
+                aria-label="Back to site"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -686,15 +705,16 @@ export function PublicDocPage() {
             </Button>
           </div>
           <Separator />
-          <div className="px-3 py-2 flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 aria-label="Filter titles"
-                placeholder={
+                placeholder="Filter pages…"
+                title={
                   typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
-                    ? "Filter titles…"
-                    : `Filter titles… (${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full search)`
+                    ? undefined
+                    : `Press ${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full-text search`
                 }
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -724,7 +744,7 @@ export function PublicDocPage() {
               </NavLink>
             )}
           </div>
-          <ScrollArea className="flex-1 px-2 py-1">
+          <ScrollArea className="flex-1 px-2 pb-2">
             <nav className="flex flex-col gap-0.5">
               {filteredDocs !== null ? (
                 filteredDocs.length === 0 ? (
@@ -736,7 +756,7 @@ export function PublicDocPage() {
                       to={href(doc.id)}
                       onClick={() => setSelectedFile(null)}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                        `flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                           isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
                         }`
                       }
@@ -759,7 +779,7 @@ export function PublicDocPage() {
                         to={href(homeDoc.id)}
                         onClick={() => setSelectedFile(null)}
                         className={({ isActive }) =>
-                          `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                          `flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                             isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
                           }`
                         }
@@ -784,20 +804,20 @@ export function PublicDocPage() {
           </ScrollArea>
           <div className="border-t border-border px-3 py-2">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="w-full justify-start gap-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={() => setReportOpen(true)}
             >
               <Flag className="h-3.5 w-3.5" />
-              Report Site
+              Report this site
             </Button>
           </div>
         </aside>
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0"
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-colors after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0"
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -868,8 +888,32 @@ export function PublicDocPage() {
             )}
           </header>
         )}
+        {showNav && !sidebarOpen && (
+          <header className="hidden md:flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+            <span className="truncate text-sm font-medium text-muted-foreground">{data.project.name}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-8 gap-2 text-muted-foreground"
+              onClick={openSearch}
+            >
+              <Search className="h-3.5 w-3.5" />
+              Search
+            </Button>
+          </header>
+        )}
         {!showNav && (
-          <header className="flex h-14 items-center border-b border-border px-6 gap-2">
+          <header className="flex h-14 shrink-0 items-center border-b border-border px-6 gap-2">
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -898,6 +942,7 @@ export function PublicDocPage() {
           <div className="flex-1 min-h-0">
             {graphData && graphData.nodes.length > 0 ? (
               <GraphView
+                showControls
                 data={graphData}
                 onNodeClick={id => navigate(href(id))}
               />
@@ -930,7 +975,7 @@ export function PublicDocPage() {
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
-              <div className="flex-1 min-w-0 px-6 py-10">
+              <div className="flex-1 min-w-0 px-6 pt-8 pb-12 md:px-10 md:pt-16">
                 {(() => {
                   const cover = parseFrontmatter(data.doc.content).cover;
                   return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;
@@ -944,12 +989,16 @@ export function PublicDocPage() {
                       return showHeading && <h1>{headingTitle}</h1>;
                     })()}
                     {data.doc.showLastUpdated && (
-                      <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+                      <p className="not-prose -mt-2 mb-3 text-sm text-muted-foreground sm:mb-6">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
                       </p>
                     )}
                     {data.doc.content.trim() ? (
-                      <div className="not-prose">
+                      <div className={cn(
+                        "not-prose",
+                        "max-sm:[&_.cm-line.cm-h1]:!pt-[0.2em]",
+                        "max-sm:[&_.cm-line:is(.cm-h1,.cm-h2,.cm-h3)+.cm-line:has(>br:only-child)]:!h-[0.5em]",
+                      )}>
                         <WysiwygEditor
                           mode="reading"
                           value={data.doc.content}
@@ -1006,6 +1055,23 @@ export function PublicDocPage() {
                       </div>
                     );
                   })()}
+
+                  <footer className="not-prose mt-16 border-t border-border pt-6 text-xs text-muted-foreground">
+                    {hostMode ? (
+                      <a
+                        href="https://docs.cubityfir.st/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="transition-colors hover:text-foreground"
+                      >
+                        Published with Annex
+                      </a>
+                    ) : (
+                      <Link to="/" className="transition-colors hover:text-foreground">
+                        Published with Annex
+                      </Link>
+                    )}
+                  </footer>
                 </div>
               </div>
 
@@ -1014,8 +1080,8 @@ export function PublicDocPage() {
                 const showLinkedDocs = data.project.published_graph_enabled === 1 && !!currentDocId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
                 return (
-                  <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
-                    <div className="sticky top-6">
+                  <aside className="hidden xl:block w-56 shrink-0 pt-16 pb-10 pl-4 pr-6">
+                    <div className="sticky top-8">
                       {showLinkedDocs && currentDocId && graphData && (
                         <LinkedDocsPanel
                           data={graphData}
@@ -1026,38 +1092,19 @@ export function PublicDocPage() {
                       )}
                       {headings.length > 0 && (
                         <>
-                          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
                             Outline
                           </p>
                           {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
                           <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
-                            <nav className="flex flex-col gap-0.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
-                                  const scroller = document.querySelector(".public-doc-scroller");
-                                  const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-                                  if (vp) vp.scrollTop = 0;
-                                }}
-                                className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                              >
-                                Top
-                              </button>
-                              {headings.map((h, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => {
-                                    try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
-                                    scrollToHash(h.id);
-                                  }}
-                                  style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                                  className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                >
-                                  {h.text}
-                                </button>
-                              ))}
-                            </nav>
+                            <DocOutline
+                              headings={headings}
+                              activeId={activeHeadingId}
+                              onSelect={id => {
+                                try { window.history.replaceState(null, "", `#${id}`); } catch { /* */ }
+                                scrollToHash(id);
+                              }}
+                            />
                           </ScrollArea>
                         </>
                       )}
@@ -1081,39 +1128,20 @@ export function PublicDocPage() {
       {headings.length > 0 && (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="bottom" className="lg:hidden max-h-[70vh] p-0">
-            <SheetTitle className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <SheetTitle className="px-4 pt-5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               Outline
             </SheetTitle>
-            <ScrollArea className="max-h-[calc(70vh-3rem)] pl-2 pr-3 pb-4">
-              <nav className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
-                    const scroller = document.querySelector(".public-doc-scroller");
-                    const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-                    if (vp) vp.scrollTop = 0;
-                    setSheetOpen(false);
-                  }}
-                  className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  Top
-                </button>
-                {headings.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
-                      scrollToHash(h.id);
-                      setSheetOpen(false);
-                    }}
-                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {h.text}
-                  </button>
-                ))}
-              </nav>
+            <ScrollArea className="max-h-[calc(70vh-3rem)] pl-4 pr-3 pb-6">
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                className="[&>button]:min-h-10 [&>button]:text-sm"
+                onSelect={id => {
+                  try { window.history.replaceState(null, "", `#${id}`); } catch { /* */ }
+                  scrollToHash(id);
+                  setSheetOpen(false);
+                }}
+              />
             </ScrollArea>
           </SheetContent>
         </Sheet>
@@ -1124,6 +1152,7 @@ export function PublicDocPage() {
           <div className="h-full w-full">
             {graphData && data && graphData.nodes.length > 0 && (
               <GraphView
+                showControls
                 data={graphData}
                 onNodeClick={id => {
                   setGraphExpanded(false);

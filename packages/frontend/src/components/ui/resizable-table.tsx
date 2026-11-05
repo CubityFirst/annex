@@ -40,6 +40,13 @@ interface ResizableTableProps {
    * constrained (minWidth) column - e.g. a join of that column's cell text.
    */
   measureKey?: string | number;
+  /**
+   * Width (px) of a fixed trailing actions column (row buttons / kebab). When
+   * set, the header reserves it and each row renders its `actionsCell` there,
+   * so actions sit right after the last data column instead of being pushed to
+   * the far edge of a stretched cell.
+   */
+  actionsColumn?: number;
   children: React.ReactNode;
 }
 
@@ -100,6 +107,8 @@ interface ResizableTableRowProps {
   columns: ColumnDef[];
   cells: CellDef[];
   checkboxCell?: React.ReactNode;
+  /** Content for the table's trailing actions column (see `actionsColumn`). */
+  actionsCell?: React.ReactNode;
   className?: string;
   draggable?: boolean;
   onDragStart?: React.DragEventHandler;
@@ -181,7 +190,7 @@ function buildSegments(columns: ColumnDef[]): Segment[] {
 
 // ── ResizableTable ────────────────────────────────────────────────────────────
 
-export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, measureKey, children }: ResizableTableProps) {
+export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, measureKey, actionsColumn, children }: ResizableTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = useMemo(() => buildSegments(columns), [columns]);
   // Segments the user has manually dragged this session. The auto-fit effect
@@ -233,8 +242,11 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
       }
     }
 
+    // Rows read the actions column width from here so header and rows match.
+    if (actionsColumn != null) style["--actions-col-width"] = `${actionsColumn}px`;
+
     return style as React.CSSProperties;
-  }, [columns, segments, saved]);
+  }, [columns, segments, saved, actionsColumn]);
 
   const segDefaultLayout = useCallback((seg: ResizableSegment): Layout => {
     const layout: Layout = {};
@@ -321,9 +333,9 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
   const colOffset = checkboxColumn ? 1 : 0;
 
   return (
-    <div ref={containerRef} role="grid" className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
+    <div ref={containerRef} role="grid" className="rounded-lg border border-border overflow-x-auto bg-background" style={initialStyle}>
     <div className="min-w-0 md:min-w-[700px]">
-      <div role="row" className="flex items-center bg-muted/50 border-b h-10">
+      <div role="row" className="group/thead flex items-center bg-muted/40 border-b h-10">
         {checkboxColumn && <div role="columnheader" aria-colindex={1} className="w-10 shrink-0" />}
 
         {segments.map((seg, i) => {
@@ -347,7 +359,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                     onLayoutChange={makeLayoutHandler(seg)}
                   >
                     {seg.cols.flatMap(({ col, idx }, j) => [
-                      j > 0 ? <ResizableHandle key={`h${idx}`} withHandle className="bg-transparent" /> : null,
+                      j > 0 ? <ResizableHandle key={`h${idx}`} withHandle className="bg-transparent [&>div]:opacity-0 [&>div]:transition-opacity group-hover/thead:[&>div]:opacity-100 focus-visible:[&>div]:opacity-100" /> : null,
                       <ResizablePanel
                         key={`p${idx}`}
                         id={`col-${idx}`}
@@ -365,7 +377,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                   className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2"
                   onMouseDown={e => startSegDrag(seg, e)}
                 >
-                  <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border">
+                  <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border opacity-0 transition-opacity group-hover/thead:opacity-100">
                     <GripVerticalIcon className="size-2.5" />
                   </div>
                 </div>
@@ -373,6 +385,12 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
             </React.Fragment>
           );
         })}
+
+        {actionsColumn != null && (
+          <div role="columnheader" aria-colindex={columns.length + 1 + colOffset} className="h-full shrink-0" style={{ width: actionsColumn }}>
+            <span className="sr-only">Actions</span>
+          </div>
+        )}
       </div>
 
       {children}
@@ -387,6 +405,7 @@ export function ResizableTableRow({
   columns,
   cells,
   checkboxCell,
+  actionsCell,
   className,
   draggable,
   onDragStart,
@@ -461,6 +480,17 @@ export function ResizableTableRow({
           </div>
         );
       })}
+
+      {actionsCell !== undefined && (
+        <div
+          role="gridcell"
+          aria-colindex={columns.length + 1 + colOffset}
+          className="flex h-full shrink-0 items-center justify-end gap-1 pr-2"
+          style={{ width: "var(--actions-col-width)" }}
+        >
+          {actionsCell}
+        </div>
+      )}
     </div>
   );
 }

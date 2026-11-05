@@ -23,6 +23,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
+import { Building2 } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -47,7 +49,7 @@ const ORG_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "org", label: "Organization" },
   { id: "people", label: "People" },
   { id: "sites", label: "Sites" },
-  { id: "danger", label: "Danger Zone" },
+  { id: "danger", label: "Danger zone" },
 ];
 
 interface OrgDetail {
@@ -80,7 +82,11 @@ interface OwnedSite {
 }
 
 function RoleBadge({ role }: { role: Role }) {
-  return <Badge variant="secondary" className="capitalize">{ROLE_LABELS[role]}</Badge>;
+  return (
+    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[role]}`}>
+      {ROLE_LABELS[role]}
+    </Badge>
+  );
 }
 
 export function OrgSettingsPage() {
@@ -279,12 +285,12 @@ export function OrgSettingsPage() {
     { id: "general", label: "General", group: "org" },
     { id: "members", label: "Members", group: "people", visible: isAdmin },
     { id: "sites", label: "Sites", group: "sites", visible: isAdmin },
-    { id: "danger", label: "Danger Zone", group: "danger", danger: true },
+    { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
 
   return (
     <SettingsShell
-      title="Organization Settings"
+      title="Organization settings"
       description={org ? org.name : undefined}
       groups={ORG_SETTINGS_GROUPS}
       sections={settingsSections}
@@ -304,7 +310,7 @@ export function OrgSettingsPage() {
                 value={nameDraft}
                 onChange={e => setNameDraft(e.target.value)}
                 disabled={!isAdmin}
-                className="max-w-sm"
+                className="flex-1"
               />
               {isAdmin && (
                 <Button
@@ -330,16 +336,17 @@ export function OrgSettingsPage() {
                 </p>
               </div>
 
-              <div className="rounded-md border border-border bg-muted/40 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Permission levels</p>
-                <div className="flex flex-col gap-1.5">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Permission levels</p>
+                {/* Fixed badge column so every description starts at the same x. */}
+                <dl className="grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 text-sm">
                   {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
-                    <div key={role} className="flex items-center gap-2 text-sm">
-                      <RoleBadge role={role} />
-                      <span className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
+                    <div key={role} className="contents">
+                      <dt><RoleBadge role={role} /></dt>
+                      <dd className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
                     </div>
                   ))}
-                </div>
+                </dl>
               </div>
 
               {/* Invite */}
@@ -371,7 +378,7 @@ export function OrgSettingsPage() {
               {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
 
               {/* Member list */}
-              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+              <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                 {members.map(member => {
                   const isMe = member.userId === currentUser?.id;
                   const isPending = !member.accepted;
@@ -396,7 +403,7 @@ export function OrgSettingsPage() {
 
                       <div className="flex shrink-0 items-center gap-3">
                         {isPending ? (
-                          <Badge variant="outline" className="text-xs font-medium bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
+                          <Badge variant="outline" className="border-transparent text-xs font-medium bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
                             Pending
                           </Badge>
                         ) : canChangeRole ? (
@@ -449,7 +456,7 @@ export function OrgSettingsPage() {
                 <Label>Attach a site you own</Label>
                 <div className="flex gap-2">
                   <Select value={attachId} onValueChange={setAttachId}>
-                    <SelectTrigger className="max-w-sm" aria-label="Attach a site you own">
+                    <SelectTrigger className="flex-1" aria-label="Attach a site you own">
                       <SelectValue placeholder={attachable.length ? "Choose a site…" : "No eligible sites"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -469,9 +476,13 @@ export function OrgSettingsPage() {
 
               {/* Attached list */}
               {sites.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sites attached yet.</p>
+                <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
+                  <Building2 className="mb-2 size-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm font-medium">No sites attached yet</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">Attach a site you own to share it with every member.</p>
+                </div>
               ) : (
-                <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                   {sites.map(site => (
                     <div key={site.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <button
@@ -518,12 +529,12 @@ export function OrgSettingsPage() {
           </>
         )}
 
-        {/* Danger Zone */}
+        {/* Danger zone */}
         {myRole !== null && (
           <>
             <Separator className="my-10" />
-            <div id="danger" className="flex flex-col gap-3">
-              <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
+            <div id="danger" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+              <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
 
               {isOwner ? (
                 <>

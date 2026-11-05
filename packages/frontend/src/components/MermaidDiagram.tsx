@@ -12,7 +12,7 @@ function loadMermaid(): Promise<Mermaid> {
   _loading = import("mermaid").then(({ default: m }) => {
     m.initialize({
       startOnLoad: false,
-      // App is dark-only (matches Shiki's github-dark-dimmed code blocks).
+      // App is dark-only (matches the Shiki code-block surface).
       theme: "dark",
       // User-authored diagram source - keep mermaid's DOMPurify sanitization
       // and block inline event handlers / foreignObject script vectors.
@@ -64,7 +64,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
         <div className="rounded-t-md border border-b-0 border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
           Mermaid diagram error: {error}
         </div>
-        <pre className="overflow-x-auto rounded-b-md bg-[#22272e] p-4 text-sm text-[#adbac7]">
+        <pre className="overflow-x-auto rounded-b-md border border-border bg-card p-4 text-sm text-foreground/85">
           <code>{code}</code>
         </pre>
       </div>
@@ -74,7 +74,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
   if (svg === null) {
     // First-paint placeholder while the mermaid chunk loads / renders.
     return (
-      <div className="not-prose my-4 rounded-md bg-[#22272e] px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="not-prose my-4 rounded-md border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
         Rendering diagram…
       </div>
     );
@@ -82,7 +82,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
 
   return (
     <div
-      className="cm-mermaid not-prose my-4 flex justify-center overflow-x-auto rounded-md bg-[#22272e] p-4"
+      className="cm-mermaid not-prose my-4 flex justify-center overflow-x-auto rounded-md border border-border bg-card p-4"
       // mermaid sanitizes its own output via DOMPurify (securityLevel: strict).
       dangerouslySetInnerHTML={{ __html: svg }}
     />

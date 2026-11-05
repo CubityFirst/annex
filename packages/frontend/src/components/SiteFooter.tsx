@@ -1,16 +1,43 @@
 import { Link } from "react-router-dom";
+import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
 
 /**
+ * Shared top nav for the public marketing / legal pages (landing, privacy,
+ * terms, acknowledgements, 404). `links` adds page-specific anchors (the
+ * landing's in-page sections) ahead of the sign-in / CTA pair, which stay
+ * identical everywhere. Sentence case throughout, matching the app.
+ */
+export function SiteNav({ links = [] }: { links?: { href: string; label: string }[] }) {
+  const isLoggedIn = !!getToken();
+  return (
+    <nav className="l-nav" aria-label="Main">
+      <div className="l-nav-inner">
+        <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
+        <div className="l-nav-links">
+          {links.map((l) => (
+            <a key={l.href} className="l-nav-link" href={l.href}>{l.label}</a>
+          ))}
+          {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">Sign in</Link>}
+          {isLoggedIn
+            ? <Link className="l-nav-cta" to="/dashboard">Go to dashboard</Link>
+            : <Link className="l-nav-cta" to="/register">Get started</Link>}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+/**
  * Shared footer for the public marketing / legal pages (landing, privacy,
- * terms, acknowledgements, and any future page in that family). Keep the link
- * set here so it stays identical everywhere.
+ * terms, acknowledgements, 404, and any future page in that family). Keep the
+ * link set here so it stays identical everywhere.
  */
 export function SiteFooter() {
   return (
     <footer className="l-footer">
       <div className="l-footer-inner">
-        <AnnexLogo height={18} fill="#383430" />
+        <AnnexLogo height={18} fill="rgba(232, 228, 222, 0.45)" />
         <div className="l-footer-links">
           <Link className="l-footer-link" to="/">Home</Link>
           <a

@@ -14,9 +14,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getToken } from "@/lib/auth";
-import { AnnexLogo } from "@/components/AnnexLogo";
 import { InkSparkle } from "@/components/InkSparkle";
-import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooter, SiteNav } from "@/components/SiteFooter";
 import shotRead from "@/assets/landing/write.webp";
 import shotEdit from "@/assets/landing/editor.webp";
 import shotFiles from "@/assets/landing/files.webp";
@@ -25,6 +24,13 @@ import shotPublish from "@/assets/landing/publish.webp";
 import "./LandingPage.css";
 
 const HELP_URL = "https://docs.cubityfir.st/s/help/";
+
+// In-page anchors shown in the shared marketing nav (hidden on phones).
+const NAV_LINKS = [
+  { href: "#features", label: "Features" },
+  { href: "#publishing", label: "Publishing" },
+  { href: "#pricing", label: "Pricing" },
+];
 
 // Hero product viewer. Screenshots are untouched captures of the /demo
 // sandbox (demo banner hidden) - regenerate them from the demo, not by hand.
@@ -254,21 +260,7 @@ export function LandingPage() {
 
   return (
     <div className="landing">
-      {/* NAV */}
-      <nav className="l-nav" aria-label="Main">
-        <div className="l-nav-inner">
-          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
-          <div className="l-nav-links">
-            <a className="l-nav-link" href="#features">features</a>
-            <a className="l-nav-link" href="#publishing">publishing</a>
-            <a className="l-nav-link" href="#pricing">pricing</a>
-            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
-            {isLoggedIn
-              ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
-              : <Link className="l-nav-cta" to="/register">get started</Link>}
-          </div>
-        </div>
-      </nav>
+      <SiteNav links={NAV_LINKS} />
 
       <main>
         {/* HERO */}
@@ -332,7 +324,10 @@ export function LandingPage() {
                 </ul>
               </div>
               <div className="l-show-media">
-                <img src={s.src} alt={s.alt} width={1920} height={1200} loading="lazy" decoding="async" />
+                {/* Eager: three small webps, and a lazy one left an empty frame on
+                    fast scrolls / full-page captures. The frame also carries a
+                    skeleton background + fixed ratio so it never reads as broken. */}
+                <img src={s.src} alt={s.alt} width={1920} height={1200} loading="eager" decoding="async" />
               </div>
             </div>
           ))}

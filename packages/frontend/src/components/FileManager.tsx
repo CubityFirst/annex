@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,54 +41,58 @@ const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
 };
 
-function RoleBadge({ role }: { role: Role }) {
-  const variants: Record<Role, string> = {
-    owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-    admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-    editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-    viewer: "bg-muted text-muted-foreground",
-  };
-  return (
-    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${variants[role]}`}>
-      {ROLE_LABELS[role]}
-    </Badge>
-  );
-}
 
-// "Created by" cell - the author/uploader name plus an optional role badge,
-// linking to the user's profile card when we have an id. The name truncates in
-// its own span while the badge stays `shrink-0`, so a long name never pushes
-// the badge out of the (overflow-hidden) cell.
+// The default avatar fallback (bg-accent) nearly vanishes against the table
+// surface - give the initials a visible disc and hairline ring here.
+const AUTHOR_AVATAR_CLASS =
+  "h-6 w-6 shrink-0 ring-1 ring-border [&_[data-slot=avatar-fallback]]:bg-muted [&_[data-slot=avatar-fallback]]:text-[10px] [&_[data-slot=avatar-fallback]]:text-foreground/80";
+
+// "Created by" cell - the author/uploader avatar and name (role in the
+// tooltip), linking to the user's profile card when we have an id. The name
+// truncates in its own span so it never overflows the cell.
 function AuthorCell({ userId, name, role }: { userId?: string; name?: string; role?: Role | null }) {
   if (userId && name) {
     return (
       <UserProfileCard userId={userId} name={name}>
         <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-          <UserAvatar userId={userId} name={name} className="h-5 w-5 shrink-0 text-[10px]" />
-          <span className="truncate">{name}</span>
-          {role && <RoleBadge role={role} />}
+          <UserAvatar userId={userId} name={name} className={AUTHOR_AVATAR_CLASS} />
+          <span className="truncate" title={role ? `${name} · ${ROLE_LABELS[role]}` : name}>{name}</span>
         </div>
       </UserProfileCard>
     );
   }
   return (
     <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
-      <span className="truncate">{name ?? ""}</span>
-      {role && <RoleBadge role={role} />}
+      <span className="truncate" title={role && name ? `${name} · ${ROLE_LABELS[role]}` : undefined}>{name ?? ""}</span>
     </div>
   );
 }
 
 // Module-scope so the array identity is stable across renders - the table keys
-// its segment memo and auto-fit effect off this reference. "Name" and
-// "Created by" are constrained (minWidth/maxWidth) so they auto-fit to content;
-// "Size"/"Last updated" share the remaining resizable space.
+// its segment memo off this reference. Every column is a proportional share of
+// the table width (no content auto-fit), so the columns sit in the same place
+// in every folder; row actions live in a fixed trailing column.
 const FILE_COLUMNS = [
-  { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500, sortable: true },
-  { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400, sortable: true },
-  { label: "Size", defaultSize: 15, minSize: 8, sortable: true },
-  { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
+  { label: "Name", defaultSize: 42, minSize: 20, sortable: true },
+  { label: "Created by", defaultSize: 22, minSize: 12, sortable: true },
+  { label: "Size", defaultSize: 14, minSize: 8, sortable: true },
+  { label: "Last updated", defaultSize: 22, minSize: 10, sortable: true },
 ];
+// Bumped from "file-columns" when the layout above changed, so stale persisted
+// px widths from the old auto-fit columns don't carry over.
+const FILE_COLUMNS_STORAGE_KEY = "file-columns-v2";
+
+// Higher-contrast checkbox border for the listing (the shared default is too
+// faint against the table surface). Marked important because index.css sets an
+// unlayered `* { border-color }`, which outranks plain layered border utilities.
+const ROW_CHECKBOX_CLASS = "!border-foreground/30 data-[state=checked]:!border-primary";
+
+// Shared sizing for the per-row menus (context menu + kebabs).
+const ROW_MENU_CLASS = "min-w-[200px] [&_[role=menuitem]]:pr-4";
+
+// Small square icon button for the desktop row actions column.
+const ROW_ICON_BUTTON_CLASS =
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 // The same five actions repeat across the desktop context menu, the desktop
 // kebab, and the mobile kebab - render them once from a "kit" of menu-item
@@ -732,6 +736,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             Move to folder…
           </M.Item>
         )}
+        {canEdit && !isHome && <M.Separator />}
         {canEdit && !isHome && (
           <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: title })}>
             <Trash2 />
@@ -769,6 +774,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           Move to folder…
         </M.Item>
       )}
+      {canEdit && <M.Separator />}
       {canEdit && (
         <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
           <Trash2 />
@@ -797,14 +803,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const sortedDocs = useMemo(() => sortDocs(displayDocs, sort), [displayDocs, sort]);
   const sortedFiles = useMemo(() => sortFiles(displayFiles, sort), [displayFiles, sort]);
 
-  // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
-  // shown in them changes - folder/doc/file names plus author/uploader names.
-  // Deliberately excludes selection state, so checkbox toggles don't re-measure.
-  const measureKey = useMemo(() => [
-    ...sortedFolders.map(f => f.name),
-    ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
-    ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
-  ].join("|"), [sortedFolders, sortedDocs, sortedFiles]);
+  const selectedCount = selectedDocs.size + selectedFiles.size;
 
   function renderTable() {
     // Mobile card helpers. The kebab mirrors the desktop ContextMenu exactly;
@@ -823,21 +822,43 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             title={label}
             onClick={e => e.stopPropagation()}
             className={compact
-              ? "inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-              : "inline-flex items-center justify-center h-9 w-9 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"}
+              ? ROW_ICON_BUTTON_CLASS
+              : "inline-flex items-center justify-center h-10 w-10 -mr-1.5 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
             <MoreVertical className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">{items}</DropdownMenuContent>
+        {/* Menu items render in a portal, but React still bubbles their clicks
+            through the component tree - stop them before they reach the row's
+            own onClick (which would also open the item). */}
+        <DropdownMenuContent align="end" className={ROW_MENU_CLASS} onClick={e => e.stopPropagation()}>{items}</DropdownMenuContent>
       </DropdownMenu>
+    );
+
+    // Mobile: row checkboxes stay hidden until a selection is started from a
+    // row's "Select" menu item; then every row reserves the checkbox slot so
+    // the icons stay in one column.
+    const mobileSelecting = canEdit && selectedCount > 0;
+    const mobileCheckSlot = (control?: React.ReactNode) => mobileSelecting ? (
+      <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+        {control}
+      </div>
+    ) : null;
+    const selectItem = (onSelect: () => void) => (
+      <>
+        <DropdownMenuItem onClick={onSelect}>
+          <SquareCheck />
+          Select
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </>
     );
 
     return (
       <>
       {/* Desktop: resizable table (md+) */}
       <div className="hidden md:block">
-      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort} measureKey={measureKey}>
+      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey={FILE_COLUMNS_STORAGE_KEY} sort={sort} onSort={handleSort} actionsColumn={aiEnabled ? 104 : 72}>
         <>
           {sortedFolders.map(folder => {
             const isDropTarget = dropTarget === folder.id;
@@ -903,21 +924,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     },
                     { content: null },
                     { content: null },
-                    {
-                      content: canEdit ? (
-                        <div className="flex items-center justify-end w-full">
-                          {renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true)}
-                        </div>
-                      ) : null,
-                    },
+                    { content: null },
                   ]}
+                  actionsCell={canEdit ? renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true) : null}
                 />
             );
             if (!canEdit) return <div key={folder.id}>{folderRow}</div>;
             return (
               <ContextMenu key={folder.id}>
                 <ContextMenuTrigger asChild><div>{folderRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{folderActionItems(contextKit, folder)}</ContextMenuContent>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{folderActionItems(contextKit, folder)}</ContextMenuContent>
               </ContextMenu>
             );
             })}
@@ -934,6 +950,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   checkboxCell={!canEdit ? undefined : isHome ? null : (
                     <Checkbox
                       aria-label={`Select ${doc.title || "Untitled"}`}
+                      className={ROW_CHECKBOX_CLASS}
                       checked={selectedDocs.has(doc.id)}
                       onClick={(e) => {
                         const willBeChecked = !selectedDocs.has(doc.id);
@@ -996,44 +1013,42 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     {
                       content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
-                    { content: null },
+                    { content: <span className="text-sm text-muted-foreground/50" aria-label="No size">&mdash;</span> },
                     {
-                      content: (
-                        <div className="flex items-center justify-between gap-2 w-full">
-                          <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>
-                          <div className="flex items-center gap-3.5">
-                            {aiEnabled && (
-                              <button
-                                type="button"
-                                aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
-                                onClick={e => handleSummarize(e, doc)}
-                                className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
-                                title="Summarise with AI"
-                              >
-                                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              aria-label={`Download ${doc.title || "Untitled"} as markdown`}
-                              onClick={e => handleDownloadDoc(e, doc)}
-                              className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                              title="Download as markdown"
-                            >
-                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
-                          </div>
-                        </div>
-                      ),
+                      content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
                     },
                   ]}
+                  actionsCell={
+                    <>
+                      {aiEnabled && (
+                        <button
+                          type="button"
+                          aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
+                          onClick={e => handleSummarize(e, doc)}
+                          className={ROW_ICON_BUTTON_CLASS}
+                          title="Summarise with AI"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Download ${doc.title || "Untitled"} as markdown`}
+                        onClick={e => handleDownloadDoc(e, doc)}
+                        className={ROW_ICON_BUTTON_CLASS}
+                        title="Download as markdown"
+                      >
+                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                      {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
+                    </>
+                  }
                 />
             );
             return (
               <ContextMenu key={doc.id}>
                 <ContextMenuTrigger asChild><div>{docRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{docActionItems(contextKit, doc)}</ContextMenuContent>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{docActionItems(contextKit, doc)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -1047,6 +1062,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 checkboxCell={canEdit ? (
                   <Checkbox
                     aria-label={`Select ${file.name}`}
+                    className={ROW_CHECKBOX_CLASS}
                     checked={selectedFiles.has(file.id)}
                     onClick={(e) => {
                       const willBeChecked = !selectedFiles.has(file.id);
@@ -1109,31 +1125,29 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
                   },
                   {
-                    content: (
-                      <div className="flex items-center justify-between gap-2 w-full">
-                        <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>
-                        <div className="flex items-center gap-3.5">
-                          <button
-                            type="button"
-                            aria-label={`Download ${file.name}`}
-                            onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                            className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                            title="Download"
-                          >
-                            <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
-                        </div>
-                      </div>
-                    ),
+                    content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>,
                   },
                 ]}
+                actionsCell={
+                  <>
+                    <button
+                      type="button"
+                      aria-label={`Download ${file.name}`}
+                      onClick={e => { e.stopPropagation(); downloadFile(file); }}
+                      className={ROW_ICON_BUTTON_CLASS}
+                      title="Download"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
+                  </>
+                }
               />
             );
             return (
               <ContextMenu key={file.id}>
                 <ContextMenuTrigger asChild><div>{fileRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{fileActionItems(contextKit, file)}</ContextMenuContent>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{fileActionItems(contextKit, file)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -1142,7 +1156,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       </div>
 
       {/* Mobile: card list (below md) - same data, tappable rows + kebab actions */}
-      <div className="md:hidden rounded-md border bg-background overflow-hidden">
+      <div className="md:hidden rounded-lg border border-border bg-background overflow-hidden">
         {sortedFolders.map(folder => {
           const countLabel = folderCountLabel(folderCounts.get(folder.id));
           return (
@@ -1155,6 +1169,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={() => enterFolder(folder)}
             >
+              {mobileCheckSlot()}
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
@@ -1179,11 +1194,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={navToDoc}
             >
-              {canEdit && !isHome && (
-                <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                  <Checkbox aria-label={`Select ${doc.title || "Untitled"}`} checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
-                </div>
-              )}
+              {mobileCheckSlot(isHome ? undefined : (
+                <Checkbox aria-label={`Select ${doc.title || "Untitled"}`} className={ROW_CHECKBOX_CLASS} checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
+              ))}
               {isHome
                 ? <House className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
                 : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
@@ -1194,7 +1207,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
                 </div>
               </div>
-              {renderKebab("Document actions", docActionItems(dropdownKit, doc))}
+              {renderKebab("Document actions", (
+                <>
+                  {canEdit && !isHome && !selectedDocs.has(doc.id) && selectItem(() => toggleDocSel(doc.id))}
+                  {docActionItems(dropdownKit, doc)}
+                </>
+              ))}
             </div>
           );
         })}
@@ -1208,10 +1226,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={() => openFile(file)}
           >
-            {canEdit && (
-              <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                <Checkbox aria-label={`Select ${file.name}`} checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
-              </div>
+            {mobileCheckSlot(
+              <Checkbox aria-label={`Select ${file.name}`} className={ROW_CHECKBOX_CLASS} checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
             <div className="min-w-0 flex-1">
@@ -1220,7 +1236,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 {formatBytes(file.size)} · {formatRelativeTime(file.updated_at ?? file.created_at)}
               </div>
             </div>
-            {renderKebab("File actions", fileActionItems(dropdownKit, file))}
+            {renderKebab("File actions", (
+              <>
+                {canEdit && !selectedFiles.has(file.id) && selectItem(() => toggleFileSel(file.id))}
+                {fileActionItems(dropdownKit, file)}
+              </>
+            ))}
           </div>
         ))}
       </div>
@@ -1318,42 +1339,43 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap">
           {canEdit && (
-            <Button size="sm" variant="outline" aria-label="New folder" title="New folder" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setShowNewFolder(true)}>
+            <Button size="sm" variant="outline" aria-label="New folder" title="New folder" className="gap-1.5 h-10 min-w-10 sm:h-9 sm:min-w-9 sm:w-auto" onClick={() => setShowNewFolder(true)}>
               <FolderPlus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">New folder</span>
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" variant="outline" aria-label="Upload files" title="Upload files" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => fileInputRef.current?.click()}>
+            <Button size="sm" variant="outline" aria-label="Upload files" title="Upload files" className="gap-1.5 h-10 min-w-10 sm:h-9 sm:min-w-9 sm:w-auto" onClick={() => fileInputRef.current?.click()}>
               <Upload className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Upload</span>
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" variant="outline" aria-label="New drawing" title="New drawing" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDrawing} disabled={creatingDrawing}>
+            <Button size="sm" variant="outline" aria-label="New drawing" title="New drawing" className="gap-1.5 h-10 min-w-10 sm:h-9 sm:min-w-9 sm:w-auto" onClick={handleNewDrawing} disabled={creatingDrawing}>
               <PenTool className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{creatingDrawing ? "Creating…" : "New drawing"}</span>
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" aria-label="New document" title="New document" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDoc}>
+            <Button size="sm" aria-label="New document" title="New document" className="ml-auto gap-1.5 h-10 px-4 sm:ml-0 sm:h-9 sm:px-3" onClick={handleNewDoc}>
               <Plus className="h-3.5 w-3.5" />
+              <span className="sm:hidden">New doc</span>
               <span className="hidden sm:inline">New document</span>
             </Button>
           )}
-          {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
-            <Button size="sm" variant="destructive" aria-label={`Delete ${selectedDocs.size + selectedFiles.size} selected`} title="Delete selected" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+          {canEdit && selectedCount > 0 && (
+            <Button size="sm" variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="gap-1.5 h-10 min-w-10 sm:h-9 sm:min-w-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
               <Trash2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}</span>
+              <span className="hidden sm:inline">{deleting ? "Deleting…" : `Delete (${selectedCount})`}</span>
             </Button>
           )}
         </div>
       </div>
 
-      {/* Table */}
-      <div className="px-6 pb-6">
+      {/* Table - same 16px mobile gutter as the toolbar above */}
+      <div className="px-4 pb-6 sm:px-6">
         {loading ? (
           <div className="flex flex-col gap-1.5 pt-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -1361,35 +1383,41 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             ))}
           </div>
         ) : loadError && !inSearch ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">Couldn't load this folder.</p>
-            <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Folder className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">Couldn't load this folder.</p>
+            <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
             <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => reload()}>
               <RefreshCw className="h-3.5 w-3.5" />
               Retry
             </Button>
           </div>
         ) : inSearch && sortedDocs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">No documents found</p>
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Search className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">No documents found</p>
+            <p className="mt-1 text-sm text-muted-foreground">Nothing matches “{searchQuery.trim()}”. Try a different search.</p>
           </div>
         ) : !inSearch && folders.length === 0 && docs.length === 0 && files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">This folder is empty</p>
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Folder className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">This folder is empty</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {canEdit
+                ? "Create a document, add a folder, or drop files here to upload."
+                : "Nothing has been added here yet."}
+            </p>
           </div>
         ) : renderTable()}
       </div>
 
       {/* New folder dialog */}
       <Dialog open={showNewFolder} onOpenChange={setShowNewFolder}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreateFolder} className="flex flex-col gap-3">
+          <form onSubmit={handleCreateFolder} className="flex flex-col">
             <Label htmlFor="new-folder-name" className="sr-only">Folder name</Label>
             <Input
               id="new-folder-name"
@@ -1400,20 +1428,25 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               autoFocus
               required
             />
-            <Button type="submit" disabled={creatingFolder || !newFolderName.trim()}>
-              {creatingFolder ? "Creating…" : "Create"}
-            </Button>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowNewFolder(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingFolder || !newFolderName.trim()}>
+                {creatingFolder ? "Creating…" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Rename</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleRename} className="flex flex-col gap-3">
+          <form onSubmit={handleRename} className="flex flex-col">
             <Label htmlFor="rename-name" className="sr-only">New name</Label>
             <Input
               id="rename-name"
@@ -1423,9 +1456,14 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               autoFocus
               required
             />
-            <Button type="submit" disabled={renaming || !renameName.trim()}>
-              {renaming ? "Renaming…" : "Rename"}
-            </Button>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renaming || !renameName.trim()}>
+                {renaming ? "Renaming…" : "Rename"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

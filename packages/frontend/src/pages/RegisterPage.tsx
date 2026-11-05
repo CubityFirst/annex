@@ -8,7 +8,7 @@ import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
-const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto dark:invert" />;
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />;
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
@@ -97,7 +97,7 @@ export function RegisterPage() {
       footer={
         <>
           Already have an account?{" "}
-          <a href="/login" className="text-primary underline-offset-4 hover:underline">
+          <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
             Sign in
           </a>
         </>

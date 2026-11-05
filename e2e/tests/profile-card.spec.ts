@@ -124,8 +124,8 @@ test("registers, grants Ink, and writes a bio + timezone", async () => {
 
 test("public profile page /u/:userId shows the saved bio and member-since date", async () => {
   await page.goto(`/u/${userId}`);
-  // The public profile uses UserProfileCard with forceViewAsPublic, so the
-  // dialog opens automatically and renders the public sections.
+  // Opened directly, /u/:userId renders the full profile page (the card
+  // modal is only used when opened over another in-app page).
   await expect(page.getByText(NAME).first()).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Tester from the e2e suite.")).toBeVisible({ timeout: 5000 });
   await expect(page.getByText(/Member since/)).toBeVisible({ timeout: 5000 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from "react-force-graph-2d";
-import { X } from "lucide-react";
+import { Maximize2, Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface GraphData {
@@ -27,7 +27,7 @@ function readCssVar(name: string): string {
 }
 
 function useThemeTokens() {
-  const [tokens, setTokens] = useState({ fg: "", muted: "", border: "", accent: "", uiFont: "" });
+  const [tokens, setTokens] = useState({ fg: "", muted: "", border: "", accent: "", uiFont: "", bg: "" });
   useEffect(() => {
     const update = () => setTokens({
       fg: readCssVar("--foreground"),
@@ -35,6 +35,7 @@ function useThemeTokens() {
       border: readCssVar("--border"),
       accent: readCssVar("--primary"),
       uiFont: readCssVar("--ui-font"),
+      bg: readCssVar("--background"),
     });
     update();
     // Watch class (theme) and style (font-var) on <html>; main.tsx/DocsLayout
@@ -67,9 +68,11 @@ function useContainerSize<T extends HTMLElement>() {
 export interface GraphViewProps {
   data: GraphData;
   onNodeClick: (id: string) => void;
+  /** Full-size views (graph page, expanded dialog): zoom/fit controls, labels always on. */
+  showControls?: boolean;
 }
 
-export function GraphView({ data, onNodeClick }: GraphViewProps) {
+export function GraphView({ data, onNodeClick, showControls = false }: GraphViewProps) {
   const { ref, width, height } = useContainerSize<HTMLDivElement>();
   const tokens = useThemeTokens();
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
@@ -188,7 +191,21 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     fg.d3ReheatSimulation();
   }, [graph, width, height]);
 
-  const showLabels = zoom > 1.6;
+  const showLabels = showControls || zoom > 1.6;
+  const fittedRef = useRef(false);
+  useEffect(() => { fittedRef.current = false; }, [graph]);
+  const fitPadding = showControls ? Math.min(width, height) * 0.18 : 24;
+  // zoomToFit, but never past a comfortable max: a 3-node graph would
+  // otherwise be blown up until the nodes are the size of buttons.
+  const fitGraph = () => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.zoomToFit(400, fitPadding);
+    setTimeout(() => {
+      const maxZoom = showControls ? 2.4 : 4;
+      if (fgRef.current && fgRef.current.zoom() > maxZoom) fgRef.current.zoom(maxZoom, 250);
+    }, 420);
+  };
   const fgColor = tokens.fg || "#111";
   const mutedColor = tokens.muted || "#888";
   const accentColor = tokens.accent || "#3b82f6";
@@ -255,7 +272,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
           cooldownTicks={120}
           warmupTicks={20}
           d3VelocityDecay={0.3}
-          linkCanvasObject={(link, ctx) => {
+          linkCanvasObject={(link, ctx, globalScale) => {
             const src = link.source as GraphNode;
             const tgt = link.target as GraphNode;
             ctx.save();
@@ -266,11 +283,19 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             ctx.moveTo(src.x ?? 0, src.y ?? 0);
             ctx.lineTo(tgt.x ?? 0, tgt.y ?? 0);
             ctx.strokeStyle = mutedColor;
-            ctx.lineWidth = 1.5;
+            // Constant ~1.5px on screen regardless of zoom.
+            ctx.lineWidth = 1.5 / Math.max(globalScale, 1);
             ctx.stroke();
             ctx.restore();
           }}
           onZoom={t => setZoom(t.k)}
+          // Frame the settled layout once, so a small graph fills a sensible
+          // share of the stage instead of floating tiny in the middle.
+          onEngineStop={() => {
+            if (fittedRef.current) return;
+            fittedRef.current = true;
+            fitGraph();
+          }}
           onNodeHover={(node) => {
             setHoverId(node?.id != null ? String(node.id) : null);
             if (typeof document !== "undefined") {
@@ -311,12 +336,19 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             ctx.fill();
 
             if (showLabels || isHover) {
-              const fontSize = Math.max(10 / globalScale, 2);
-              ctx.font = `${fontSize}px ${uiFontStack}`;
+              const fontSize = Math.max((showControls ? 13 : 10) / globalScale, 2);
+              ctx.font = `500 ${fontSize}px ${uiFontStack}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               const label = n.title;
-              const padY = r + 2;
+              const padY = r + 4 / globalScale;
+              // Halo in the page colour so labels stay legible over links.
+              if (tokens.bg) {
+                ctx.lineJoin = "round";
+                ctx.lineWidth = 4 / globalScale;
+                ctx.strokeStyle = tokens.bg;
+                ctx.strokeText(label, n.x ?? 0, (n.y ?? 0) + padY);
+              }
               ctx.fillStyle = isHover ? accentColor : fgColor;
               ctx.fillText(label, n.x ?? 0, (n.y ?? 0) + padY);
             }
@@ -333,6 +365,27 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             ctx.fill();
           }}
         />
+      )}
+      {showControls && (
+        <div className="absolute bottom-4 right-4 flex flex-col overflow-hidden rounded-lg border border-border bg-popover/90 shadow-lg shadow-black/20 backdrop-blur">
+          <Button variant="ghost" size="icon" className="size-9 rounded-none" aria-label="Zoom in" title="Zoom in"
+            onClick={() => fgRef.current?.zoom(zoom * 1.3, 250)}>
+            <Plus className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="size-9 rounded-none border-t border-border" aria-label="Zoom out" title="Zoom out"
+            onClick={() => fgRef.current?.zoom(zoom / 1.3, 250)}>
+            <Minus className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="size-9 rounded-none border-t border-border" aria-label="Fit graph" title="Fit graph"
+            onClick={() => fitGraph()}>
+            <Maximize2 className="size-3.5" />
+          </Button>
+        </div>
+      )}
+      {showControls && !coarse && (
+        <p className="pointer-events-none absolute bottom-4 left-4 text-xs text-muted-foreground/80">
+          Scroll to zoom &middot; drag to pan &middot; click a page to open it
+        </p>
       )}
       {(data.tagColors?.length ?? 0) > 0 && (
         <ul

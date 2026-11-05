@@ -143,7 +143,7 @@ test.describe("demo sandbox", () => {
 
     // Client-side navigation only from here: a full reload reseeds the demo store.
     // The bin is a section of Site Settings.
-    await page.getByTitle("Site Settings").click();
+    await page.getByTitle("Site settings").click();
     await expect(page.getByRole("heading", { name: "Recycle bin" })).toBeVisible();
     await expect(page.getByText("Guides", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Restore Guides" }).click();
@@ -172,7 +172,8 @@ test.describe("demo sandbox", () => {
     await page.getByRole("link", { name: /\/@demo-person$/ }).click();
     await page.waitForURL("**/@demo-person");
     await expect(page.getByRole("heading", { level: 1, name: "Demo User" })).toBeVisible();
-    await expect(page.getByRole("dialog").getByText("@demo-person", { exact: true })).toBeVisible();
+    // Opened directly (no background page), the profile renders as a full page.
+    await expect(page.getByText("@demo-person", { exact: true })).toBeVisible();
 
     await page.goBack();
     await page.getByRole("switch", { name: "Profile link" }).click();

@@ -87,24 +87,25 @@ export function ExportPdfDialog({ trigger, documentName }: Props) {
             </div>
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="pdf-include-title" className="text-sm font-medium cursor-pointer">Include document name at top of page</Label>
-                <p className="text-xs text-muted-foreground">Renders the document title as a heading on the first page.</p>
+                <Label htmlFor="pdf-include-title" className="text-sm font-medium cursor-pointer">Document name</Label>
+                <p className="text-xs text-muted-foreground">The title as a heading at the top of the first page.</p>
               </div>
               <Switch id="pdf-include-title" checked={includeTitle} onCheckedChange={setIncludeTitle} />
             </div>
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="pdf-hide-ai-summary" className="text-sm font-medium cursor-pointer">Hide AI summary</Label>
-                <p className="text-xs text-muted-foreground">Omits the AI-generated summary block from the PDF.</p>
+                <Label htmlFor="pdf-hide-ai-summary" className="text-sm font-medium cursor-pointer">AI summary</Label>
+                <p className="text-xs text-muted-foreground">The AI-generated summary block, if the document has one.</p>
               </div>
-              <Switch id="pdf-hide-ai-summary" checked={hideAiSummary} onCheckedChange={setHideAiSummary} />
+              {/* Positive phrasing (on = included); state stays "hide" internally. */}
+              <Switch id="pdf-hide-ai-summary" checked={!hideAiSummary} onCheckedChange={v => setHideAiSummary(!v)} />
             </div>
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="pdf-hide-last-updated" className="text-sm font-medium cursor-pointer">Hide last updated &amp; reading time</Label>
-                <p className="text-xs text-muted-foreground">Omits the &ldquo;Last updated&hellip; · X min read&rdquo; line.</p>
+                <Label htmlFor="pdf-hide-last-updated" className="text-sm font-medium cursor-pointer">Last updated &amp; reading time</Label>
+                <p className="text-xs text-muted-foreground">The &ldquo;Last updated&hellip; · X min read&rdquo; line.</p>
               </div>
-              <Switch id="pdf-hide-last-updated" checked={hideLastUpdated} onCheckedChange={setHideLastUpdated} />
+              <Switch id="pdf-hide-last-updated" checked={!hideLastUpdated} onCheckedChange={v => setHideLastUpdated(!v)} />
             </div>
           </div>
           <p className="text-xs text-muted-foreground">

@@ -24,7 +24,7 @@ describe("TermsPage", () => {
 
   it("shows the logged-out nav when no token is present", () => {
     renderPage();
-    expect(screen.getByRole("link", { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /get started/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /go to dashboard/i })).not.toBeInTheDocument();
   });

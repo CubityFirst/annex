@@ -127,7 +127,7 @@ export function ReportSiteDialog({
                 onClick={() => void handleSubmit()}
                 disabled={submitting || !note.trim()}
               >
-                {submitting ? "Submitting..." : "Submit report"}
+                {submitting ? "Submitting…" : "Submit report"}
               </Button>
             </DialogFooter>
           </>
