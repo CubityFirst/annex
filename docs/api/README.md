@@ -212,7 +212,7 @@ curl -X PATCH https://docs.cubityfir.st/api/v1/docs/DOC_ID \
 DELETE /v1/docs/:id
 ```
 Requires: `readwrite` scope **and** owner is editor+. The site's designated home
-document cannot be deleted (`403`).
+document cannot be deleted (`403`, `error: "The site's home document can't be deleted."`).
 
 The document is moved to the site's **recycle bin**, not destroyed: a site editor
 can restore it from the app for 30 days, after which it is permanently deleted.

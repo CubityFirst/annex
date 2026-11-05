@@ -29,8 +29,6 @@ export interface SiteView {
   status: SiteStatus;
   key: string;
   name?: string;
-  siteId?: string;
-  vanitySlug?: string | null;
   scope?: "read" | "readwrite";
   canInvite?: boolean;
   role?: string;
@@ -118,8 +116,6 @@ export class SiteRegistry {
       ...(e.info
         ? {
             name: e.info.site.name,
-            siteId: e.info.site.id,
-            vanitySlug: e.info.site.vanitySlug,
             scope: e.info.scope,
             canInvite: e.info.canInvite,
             role: e.info.role,

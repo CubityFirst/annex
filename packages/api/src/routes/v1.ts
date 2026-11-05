@@ -309,7 +309,10 @@ async function handleV1Docs(request: Request, env: Env, auth: ApiKeyAuth, rest: 
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
     const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?")
       .bind(auth.projectId).first<{ home_doc_id: string | null }>();
-    if (proj?.home_doc_id === docId) return errorResponse(Errors.FORBIDDEN);
+    if (proj?.home_doc_id === docId) {
+      // Specific message: a generic 403 reads as a scope/role failure.
+      return Response.json({ ok: false, error: "The site's home document can't be deleted.", status: 403 }, { status: 403 });
+    }
     // Same as the app: the doc goes to the site's recycle bin.
     const trashed = await moveToTrash(env, { projectId: auth.projectId, type: "doc", id: docId, deletedBy: auth.userId });
     if (!trashed) return errorResponse(Errors.NOT_FOUND);

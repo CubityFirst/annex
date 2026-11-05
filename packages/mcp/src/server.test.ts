@@ -17,7 +17,7 @@ const WIKI_RW = "annx_wikiReadWrite00000000000000000000000000000";
 const DEAD = "annx_deadKey000000000000000000000000000000000000";
 
 interface FakeKey { id: string; site: string; scope: "read" | "readwrite"; canInvite: boolean; revoked: boolean; role?: string }
-interface FakeSite { id: string; name: string; vanitySlug: string | null; docs: Map<string, { title: string; content: string }> }
+interface FakeSite { id: string; name: string; vanitySlug: string | null; docs: Map<string, { title: string; content: string; meta?: Record<string, unknown> }> }
 
 let keys: Map<string, FakeKey>;
 let sites: Map<string, FakeSite>;
@@ -66,7 +66,7 @@ const fakeFetch: FetchLike = async (input, init) => {
     });
   }
   if (path === "/v1/docs" && method === "GET") {
-    return ok([...site.docs].map(([id, d]) => ({ id, title: d.title, slug: null, folderId: null, publishedAt: null, tags: [], createdAt: "", updatedAt: "" })));
+    return ok([...site.docs].map(([id, d]) => ({ id, title: d.title, slug: null, folderId: null, publishedAt: null, tags: [], createdAt: "", updatedAt: "", ...d.meta })));
   }
   if (path === "/v1/docs" && method === "POST") {
     if (k.scope !== "readwrite") return err(403, "Forbidden");
@@ -89,7 +89,14 @@ const fakeFetch: FetchLike = async (input, init) => {
   }
   if (path === "/v1/members" && method === "GET") {
     if (!k.canInvite) return err(403, "Forbidden");
-    return ok([{ userId: "u1", email: "a@x.io", name: "A", role: "owner", accepted: true, createdAt: "" }]);
+    return ok([
+      { userId: "u1", email: "a@x.io", name: "A", role: "owner", accepted: true, createdAt: "" },
+      { userId: "u2", email: "b@x.io", name: "B", role: "viewer", accepted: false, createdAt: "" },
+    ]);
+  }
+  if (path === "/v1/members" && method === "POST") {
+    if (!k.canInvite) return err(403, "Forbidden");
+    return err(404, "No user found with that email address.");
   }
   return err(404, "Not found");
 };
@@ -161,6 +168,42 @@ describe("multi-key site registry", () => {
     const res = await call("get_doc", { site: "team-handbook", docId: "d9" });
     expect(res.isError).toBe(true);
     expect(textOf(res)).toMatch(/Not found/);
+  });
+
+  it("returns compact doc metadata: no nulls, empty tags or createdAt, and a published flag", async () => {
+    sites.get("s-handbook")!.docs.set("d2", {
+      title: "Pub", content: "",
+      meta: { slug: "pub", folderId: "f1", publishedAt: "2026-10-01", tags: ["lore"], updatedAt: "y" },
+    });
+    const { call } = await connect(HANDBOOK_RW);
+    const res = await call("list_docs");
+    expect(textOf(res)).not.toMatch(/\n|null|createdAt|"tags":\[\]/);
+    expect(dataOf(res).docs).toEqual([
+      { id: "d1", title: "Onboarding", published: false, updatedAt: "" },
+      { id: "d2", title: "Pub", folderId: "f1", slug: "pub", tags: ["lore"], published: true, updatedAt: "y" },
+    ]);
+  });
+
+  it("single-doc results spell out folderId: null for the site root", async () => {
+    const { call } = await connect(HANDBOOK_RW);
+    const res = await call("update_doc", { docId: "d1", folderId: null });
+    expect(dataOf(res).updated.folderId).toBeNull();
+    expect(dataOf(await call("get_doc", { docId: "d1" })).folderId).toBeNull();
+  });
+
+  it("lists members compactly, flagging only pending invites", async () => {
+    const { call } = await connect(HANDBOOK_RW);
+    expect(dataOf(await call("list_members")).members).toEqual([
+      { userId: "u1", name: "A", email: "a@x.io", role: "owner" },
+      { userId: "u2", name: "B", email: "b@x.io", role: "viewer", pending: true },
+    ]);
+  });
+
+  it("surfaces a specific 404 message from Annex instead of the generic one", async () => {
+    const { call } = await connect(HANDBOOK_RW);
+    const res = await call("invite_member", { email: "nobody@x.io", role: "viewer" });
+    expect(res.isError).toBe(true);
+    expect(textOf(res)).toMatch(/No user found with that email address/);
   });
 
   it("marks doc bodies as untrusted data", async () => {

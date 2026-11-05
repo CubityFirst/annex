@@ -79,6 +79,14 @@ unreachable) is reported there and never blocks the others.
 | `remove_member` | `canInvite`, owner admin+ | Remove a member / revoke an invite |
 | `revoke_key` | the key itself | Permanently revokes that site's key (`DELETE /v1/key`). Requires an explicit `site` and `confirm: true` |
 
+Results are compact JSON, kept small because they all land in the model's
+context. Fields left out mean the default: in `list_docs` a doc with no
+`folderId` is at the site root (single-doc results say `folderId: null`), and
+only unaccepted invites carry `pending: true`. `published` is always a boolean,
+because models in evals distrusted an absent flag. Tool descriptions are also kept short. Server `instructions`
+hold only the site/key model and the prompt-injection rule, because some
+clients drop them, so each tool's own text has to be enough to use it.
+
 Write and member tools are only listed if at least one configured key could use
 them. This is re-evaluated whenever the keys are re-checked (`list_sites`, a
 retry after an unresolved key, a revoked key), and the client is sent a
