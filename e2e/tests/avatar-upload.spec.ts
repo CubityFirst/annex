@@ -199,11 +199,11 @@ test("a light request falls back to the dark variant when no light exists", asyn
 test("uploading with the toggle on Light stores an independent light variant", async () => {
   await page.goto("/settings");
 
-  // The "Avatar for background" segmented control sits directly below the
+  // The "Avatar preview" segmented control sits directly below the
   // avatar. It starts on Dark; picking Light switches the slot that
   // Upload/Remove targets. Scope to the radiogroup - the theme picker on the
   // same page also has buttons named "Dark"/"Light".
-  const variantGroup = page.getByRole("radiogroup", { name: "Avatar for background" });
+  const variantGroup = page.getByRole("radiogroup", { name: "Avatar preview" });
   await expect(variantGroup).toBeVisible({ timeout: 5000 });
   await expect(variantGroup.getByRole("radio", { name: "Dark" })).toHaveAttribute("aria-checked", "true");
   const lightOption = variantGroup.getByRole("radio", { name: "Light" });

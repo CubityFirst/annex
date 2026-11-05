@@ -178,7 +178,7 @@ describe("FileManager", () => {
 
     renderManager(null);
     await screen.findAllByText("Alpha");
-    fireEvent.change(screen.getByLabelText("Search documents"), { target: { value: "alp" } });
+    fireEvent.change(screen.getByLabelText("Search files and documents"), { target: { value: "alp" } });
     // Debounced search (250ms) - wait for the search-mode list.
     await waitFor(() => expect(vi.mocked(apiFetchJson).mock.calls.some(([u]) => String(u).startsWith("/api/docs?"))).toBe(true));
 
@@ -366,5 +366,78 @@ describe("FileManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByLabelText("Folder name")).toBeNull());
     expect(vi.mocked(apiFetchJson).mock.calls.some(([u]) => u === "/api/folders")).toBe(false);
+  });
+
+  // Folder rows take part in bulk selection like docs/files: checking one
+  // counts toward "Delete (N)" and the bulk delete bins it via the folder route.
+  it("bulk-deletes a checked folder alongside docs", async () => {
+    vi.mocked(apiFetchJson).mockImplementation(async (url: string, opts?: RequestInit) => {
+      if (String(url).includes("/contents")) {
+        return { ok: true, status: 200, data: { ...emptyContents, folders: [folder("f1", "Specs")], docs: [doc("d1", "Doc A")] } };
+      }
+      if (url === "/api/folders/f1" && opts?.method === "DELETE") {
+        return { ok: true, status: 200, data: { deleted: true, trashEntryId: "t1", homeDocMoved: false } };
+      }
+      return { ok: true, status: 200, data: {} };
+    });
+    const { apiFetch } = await import("@/lib/apiFetch");
+    vi.mocked(apiFetch).mockResolvedValue(new Response(null, { status: 200 }));
+    renderManager(null);
+    fireEvent.click((await screen.findAllByLabelText("Select folder Specs"))[0]);
+    fireEvent.click(screen.getAllByLabelText("Select Doc A")[0]);
+    fireEvent.click(screen.getByLabelText("Delete 2 selected"));
+    expect(await screen.findByText(/Folders go with everything in them/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(apiFetchJson).mock.calls.some(([u, o]) => u === "/api/folders/f1" && (o as RequestInit)?.method === "DELETE")).toBe(true),
+    );
+    expect(vi.mocked(apiFetch).mock.calls.some(([u, o]) => u === "/api/docs/d1" && (o as RequestInit)?.method === "DELETE")).toBe(true);
+    await waitFor(() => expect(screen.queryAllByLabelText("Open folder Specs")).toHaveLength(0));
+    expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
+  });
+
+  // Folders have no author/updated time of their own - every cell still
+  // shows something (count in Size, a muted dash elsewhere), never a blank.
+  it("fills every folder cell", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...emptyContents, folders: [folder("f1", "Specs"), folder("f2", "Blank")], folderCounts: { f1: { docs: 1, files: 0, folders: 0 } } },
+    });
+    renderManager(null);
+    await screen.findAllByLabelText("Open folder Specs");
+    const cellText = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!.textContent;
+    expect(cellText("Open folder Specs", 2)).toBe("1 doc");
+    expect(cellText("Open folder Blank", 2)).toBe("Empty");
+    expect(cellText("Open folder Specs", 1)).toContain("—");
+    expect(cellText("Open folder Specs", 3)).toContain("—");
+  });
+
+  // The search box also matches this folder's own folders and files by name
+  // (the server search covers docs only).
+  it("includes name-matching files in search results", async () => {
+    vi.mocked(apiFetchJson).mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/contents")) {
+        return {
+          ok: true, status: 200,
+          data: {
+            ...emptyContents,
+            files: [
+              { id: "x1", name: "alpha-notes.txt", mime_type: "text/plain", size: 10, folder_id: null, uploaded_by: "u1", created_at: "2026-01-01T00:00:00Z" },
+              { id: "x2", name: "beta.png", mime_type: "image/png", size: 10, folder_id: null, uploaded_by: "u1", created_at: "2026-01-01T00:00:00Z" },
+            ],
+          },
+        };
+      }
+      if (u.startsWith("/api/docs?")) return { ok: true, status: 200, data: [] };
+      return { ok: true, status: 200, data: emptyContents };
+    });
+    renderManager(null);
+    await screen.findAllByText("beta.png");
+    fireEvent.change(screen.getByLabelText("Search files and documents"), { target: { value: "ALPHA" } });
+    await waitFor(() => expect(screen.queryByText("beta.png")).toBeNull());
+    expect(screen.getAllByText("alpha-notes.txt").length).toBeGreaterThan(0);
+    expect(screen.queryByText("No results")).toBeNull();
   });
 });

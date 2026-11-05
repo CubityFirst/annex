@@ -175,7 +175,7 @@ export function FilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-2xl items-center gap-2 px-6 py-10 text-sm text-muted-foreground">
+      <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-10 text-sm text-muted-foreground sm:px-6">
         <Spinner /> Loading…
       </div>
     );
@@ -183,7 +183,7 @@ export function FilePage() {
 
   if (!file) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <p className="text-sm text-destructive">File not found.</p>
       </div>
     );
@@ -221,10 +221,11 @@ export function FilePage() {
     );
   }
 
-  // Images get a wider stage (~960px); everything else keeps the prose width.
-  // The header shares the container so its edges line up with the preview.
+  // One viewer width for every kind (image/text/PDF/media) so the header -
+  // icon tile, title, actions - sits in exactly the same place from file to
+  // file. The header shares the container so its edges line up with the preview.
   return (
-    <div className={`mx-auto px-4 py-10 sm:px-6 ${kind === "image" ? "max-w-[60rem]" : "max-w-3xl"}`}>
+    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
           <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 text-muted-foreground" />
@@ -247,7 +248,6 @@ export function FilePage() {
         <div className="flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
             className="gap-2"
             aria-label={copiedLink ? "Copied" : "Copy markdown"}
             onClick={() => {
@@ -256,18 +256,20 @@ export function FilePage() {
               setTimeout(() => setCopiedLink(false), 2000);
             }}
           >
-            {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
+            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
             {copiedLink ? "Copied!" : "Copy markdown"}
           </Button>
-          <Button size="sm" onClick={handleDownload} disabled={downloading} className="gap-2">
+          <Button onClick={handleDownload} disabled={downloading} className="gap-2">
             <Download className="h-4 w-4" />
             {downloading ? "Downloading…" : "Download"}
           </Button>
         </div>
       </div>
 
+      {/* The image sits on a padded card "mat" so dark-edged images don't
+          merge into the frame or the page. */}
       {kind === "image" && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
+        <div className="mt-8 rounded-xl border border-border bg-card p-4 sm:p-6">
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}

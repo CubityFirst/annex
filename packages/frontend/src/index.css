@@ -113,7 +113,9 @@
   --destructive-foreground: oklch(0.985 0 0);
 
   --border: oklch(0.29 0.005 75);
-  --input: oklch(0.32 0.005 75);
+  /* Control outlines (inputs, checkboxes, radios, off switches) need ≥3:1
+     against the surface, so --input is much lighter than the hairline. */
+  --input: oklch(0.44 0.008 75);
   --ring: oklch(0.62 0.012 75);
 }
 

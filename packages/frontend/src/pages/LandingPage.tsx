@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   ArrowRight,
   Check,
@@ -21,25 +21,34 @@ import shotEdit from "@/assets/landing/editor.webp";
 import shotFiles from "@/assets/landing/files.webp";
 import shotDraw from "@/assets/landing/draw.webp";
 import shotPublish from "@/assets/landing/publish.webp";
+import detailEdit from "@/assets/landing/editor-detail.webp";
+import detailDraw from "@/assets/landing/draw-detail.webp";
+import detailPublish from "@/assets/landing/publish-detail.webp";
+import mobileRead from "@/assets/landing/write-mobile.webp";
+import mobileEdit from "@/assets/landing/editor-mobile.webp";
+import mobileFiles from "@/assets/landing/files-mobile.webp";
+import mobileDraw from "@/assets/landing/draw-mobile.webp";
+import mobilePublish from "@/assets/landing/publish-mobile.webp";
 import "./LandingPage.css";
 
 const HELP_URL = "https://docs.cubityfir.st/s/help/";
 
-// In-page anchors shown in the shared marketing nav (hidden on phones).
-const NAV_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#publishing", label: "Publishing" },
-  { href: "#pricing", label: "Pricing" },
-];
+// Phone-width shots (390px app captures, 4:5) replace the desktop ones at and
+// below these widths so the UI text stays legible. Keep in sync with
+// LandingPage.css (.l-viewer-stage / .l-show-media aspect ratios).
+const VIEWER_MOBILE_MQ = "(max-width: 700px)";
+const SHOWCASE_MOBILE_MQ = "(max-width: 560px)";
 
 // Hero product viewer. Screenshots are untouched captures of the /demo
-// sandbox (demo banner hidden) - regenerate them from the demo, not by hand.
+// sandbox (demo banner hidden) - regenerate them with
+// `node .ui-review/landing-shots.mjs`, not by hand. Hero shots are the whole
+// app at 1152x720 (shown ~1:1), mobile shots the top of a 390px phone.
 const SHOTS = [
-  { key: "read", label: "Read", src: shotRead, path: "demo-site/coffee-brewing-guide", caption: "A calm reading view with an outline, tables, checklists and inline dice." },
-  { key: "write", label: "Write", src: shotEdit, path: "demo-site/editor-tour", caption: "Markdown underneath, rendered as you type - callouts, code, wikilinks and more." },
-  { key: "organise", label: "Organise", src: shotFiles, path: "demo-site/files", caption: "Docs, uploads and drawings side by side, in folders that make sense to you." },
-  { key: "draw", label: "Draw", src: shotDraw, path: "demo-site/roadmap.excalidraw", caption: "A built-in Excalidraw canvas for diagrams, maps and whiteboard thinking." },
-  { key: "publish", label: "Publish", src: shotPublish, path: "s/demo-site", caption: "Turn any site into a public, searchable website in one click." },
+  { key: "read", label: "Read", src: shotRead, mobile: mobileRead, path: "demo-site/coffee-brewing-guide", caption: "A calm reading view with an outline, tables, checklists and inline dice." },
+  { key: "write", label: "Write", src: shotEdit, mobile: mobileEdit, path: "demo-site/editor-tour", caption: "Markdown underneath, rendered as you type - callouts, code, wikilinks and more." },
+  { key: "organise", label: "Organise", src: shotFiles, mobile: mobileFiles, path: "demo-site/files", caption: "Docs, uploads and drawings side by side, in folders that make sense to you." },
+  { key: "draw", label: "Draw", src: shotDraw, mobile: mobileDraw, path: "demo-site/roadmap.excalidraw", caption: "A built-in Excalidraw canvas for diagrams, maps and whiteboard thinking." },
+  { key: "publish", label: "Publish", src: shotPublish, mobile: mobilePublish, path: "s/demo-site", caption: "Turn any site into a public, searchable website in one click." },
 ] as const;
 
 // Auto-advance cadence. The active tab's progress bar is a CSS animation of
@@ -129,22 +138,26 @@ function ProductViewer() {
       >
         <div className="l-viewer-chrome" aria-hidden="true">
           <span className="l-viewer-dots"><i /><i /><i /></span>
-          <span className="l-viewer-url">docs.cubityfir.st/{SHOTS[active].path}</span>
+          <span className="l-viewer-url">
+            <span className="l-viewer-host">docs.cubityfir.st/</span>{SHOTS[active].path}
+          </span>
         </div>
         <div className="l-viewer-stage">
           {SHOTS.map((s, i) => (
-            <img
-              key={s.key}
-              src={s.src}
-              alt={i === active ? `Annex - ${s.caption}` : ""}
-              aria-hidden={i !== active}
-              width={1920}
-              height={1200}
-              decoding="async"
-              loading={i === 0 ? "eager" : "lazy"}
-              fetchPriority={i === 0 ? "high" : "low"}
-              className={i === active ? "is-active" : undefined}
-            />
+            <picture key={s.key}>
+              <source media={VIEWER_MOBILE_MQ} srcSet={s.mobile} width={780} height={976} />
+              <img
+                src={s.src}
+                alt={i === active ? `Annex - ${s.caption}` : ""}
+                aria-hidden={i !== active}
+                width={2304}
+                height={1440}
+                decoding="async"
+                loading={i === 0 ? "eager" : "lazy"}
+                fetchPriority={i === 0 ? "high" : "low"}
+                className={i === active ? "is-active" : undefined}
+              />
+            </picture>
           ))}
         </div>
       </div>
@@ -167,6 +180,7 @@ const SHOWCASE: {
   body: string;
   points: string[];
   src: string;
+  mobile: string;
   alt: string;
 }[] = [
   {
@@ -178,7 +192,8 @@ const SHOWCASE: {
       "Wikilinks, tags and a live outline for long docs",
       "Inline dice rolls like 2d6+1d4, right in the text",
     ],
-    src: shotEdit,
+    src: detailEdit,
+    mobile: mobileEdit,
     alt: "The Annex editor showing formatting, callouts and a code block",
   },
   {
@@ -190,7 +205,8 @@ const SHOWCASE: {
       "Uploads up to 50 MB with in-browser previews",
       "Drawings save alongside everything else",
     ],
-    src: shotDraw,
+    src: detailDraw,
+    mobile: mobileDraw,
     alt: "An Excalidraw drawing open inside Annex",
   },
   {
@@ -203,7 +219,8 @@ const SHOWCASE: {
       "Friendly doc URLs from a slug: in the frontmatter",
       "Your own domain for published sites (early access)",
     ],
-    src: shotPublish,
+    src: detailPublish,
+    mobile: mobilePublish,
     alt: "A published Annex site in its public reading view",
   },
 ];
@@ -258,9 +275,18 @@ export function LandingPage() {
     ? { to: "/dashboard", label: "Open your Annex" }
     : { to: "/register", label: "Create your Annex" };
 
+  // The shared nav links here as /#features etc. from the other marketing
+  // pages; a client-side navigation doesn't scroll to the hash, so do it once
+  // the sections exist.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView();
+  }, [hash]);
+
   return (
     <div className="landing">
-      <SiteNav links={NAV_LINKS} />
+      <SiteNav />
 
       <main>
         {/* HERO */}
@@ -327,7 +353,10 @@ export function LandingPage() {
                 {/* Eager: three small webps, and a lazy one left an empty frame on
                     fast scrolls / full-page captures. The frame also carries a
                     skeleton background + fixed ratio so it never reads as broken. */}
-                <img src={s.src} alt={s.alt} width={1920} height={1200} loading="eager" decoding="async" />
+                <picture>
+                  <source media={SHOWCASE_MOBILE_MQ} srcSet={s.mobile} width={780} height={976} />
+                  <img src={s.src} alt={s.alt} width={1600} height={1000} loading="eager" decoding="async" />
+                </picture>
               </div>
             </div>
           ))}
@@ -421,7 +450,7 @@ export function LandingPage() {
               <Link className="l-btn-primary" to={primary.to}>
                 {primary.label} <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link className="l-btn-secondary" to="/demo">Try the demo</Link>
+              <Link className="l-btn-secondary" to="/demo">See a demo</Link>
             </div>
           </div>
         </section>

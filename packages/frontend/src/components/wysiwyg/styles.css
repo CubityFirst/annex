@@ -310,9 +310,17 @@
   display: inline-block;
   padding: 0;
 }
-.cm-wysiwyg .cm-content .cm-wysiwyg-image img {
+.cm-wysiwyg .cm-content .cm-wysiwyg-image img,
+.cm-wysiwyg .cm-content img.cm-wysiwyg-image {
   max-width: 100%;
   border-radius: 10px;
+}
+/* Block images: the class (and its vertical padding, which must stay inside
+   the measured box for CM's heightmap) is on the <img> itself, so round the
+   visible picture with clip-path rather than border-radius. */
+.cm-wysiwyg .cm-content img.cm-wysiwyg-image--block {
+  border-radius: 0;
+  clip-path: inset(0.25em 0 round 10px);
 }
 
 /* Wikilink + standard link - inherit foreground color (white in dark mode),
@@ -661,6 +669,5 @@
 /* Empty-document hint (CodeMirror placeholder extension). */
 .cm-wysiwyg .cm-placeholder {
   color: var(--muted-foreground);
-  opacity: 0.6;
   font-style: normal;
 }

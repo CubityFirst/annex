@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
 import { SiteFooter, SiteNav } from "@/components/SiteFooter";
 import "./LandingPage.css";
 import "./NotFound404.css";
@@ -69,7 +70,7 @@ export function NotFound404({ subtitle, primaryLabel, primaryHref, secondary, st
 
           <div className="v404-cta">
             <CtaLink href={primaryHref} className="l-btn-primary v404-btn">
-              {primaryLabel} <span className="v404-btn-arrow" aria-hidden="true">→</span>
+              {primaryLabel} <ArrowRight size={16} aria-hidden="true" />
             </CtaLink>
             {secondary && (
               <CtaLink href={secondary.href} className="v404-link">

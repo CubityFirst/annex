@@ -29,6 +29,15 @@ export function useActiveHeading(docContent: string | undefined, ids: string[]):
       // A heading counts as "current" once it scrolls within ~25% of the
       // viewport from the top, so the marker moves as a section starts.
       const threshold = Math.max(96, window.innerHeight * 0.25);
+      // Scrolled to the very bottom: a short final section can never reach
+      // the threshold, so pin the last heading.
+      let scroller: HTMLElement | null = view.scrollDOM.parentElement;
+      while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+      if (scroller && scroller.scrollHeight - scroller.clientHeight > 4
+        && scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 2) {
+        setActive(lines[lines.length - 1]?.id ?? null);
+        return;
+      }
       let current: string | null = lines[0]?.id ?? null;
       for (const h of lines) {
         if (h.line > view.state.doc.lines) continue;

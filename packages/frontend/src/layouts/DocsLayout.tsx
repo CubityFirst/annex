@@ -1036,15 +1036,8 @@ export function DocsLayout() {
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <BookOpen className="size-5" />
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <DialogTitle>Create a new site</DialogTitle>
-                <DialogDescription>You can change any of this later in Site settings.</DialogDescription>
-              </div>
-            </div>
+            <DialogTitle>Create a new site</DialogTitle>
+            <DialogDescription>You can change any of this later in Site settings.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="flex flex-col gap-5 py-1">
             <div className="flex flex-col gap-2">
@@ -1205,8 +1198,9 @@ export function DocsLayout() {
       )}
       <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); setOrgFromSite(false); } }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader className="pb-2">
+          <DialogHeader>
             <DialogTitle>New organization</DialogTitle>
+            <DialogDescription>Group sites so members&rsquo; roles apply to all of them.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateOrg} className="flex flex-col gap-5 py-2">
             <div className="flex flex-col gap-2">

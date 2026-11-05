@@ -1,23 +1,36 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
 
+// Landing-page sections linked from the shared nav (hidden on phones).
+const NAV_SECTIONS = [
+  { id: "features", label: "Features" },
+  { id: "publishing", label: "Publishing" },
+  { id: "pricing", label: "Pricing" },
+];
+
 /**
  * Shared top nav for the public marketing / legal pages (landing, privacy,
- * terms, acknowledgements, 404). `links` adds page-specific anchors (the
- * landing's in-page sections) ahead of the sign-in / CTA pair, which stay
- * identical everywhere. Sentence case throughout, matching the app.
+ * terms, acknowledgements, 404). Identical everywhere: the landing's section
+ * links (in-page anchors on the landing, `/#section` elsewhere - LandingPage
+ * scrolls to the hash on arrival), then the sign-in / CTA pair. Sentence case
+ * throughout, matching the app.
  */
-export function SiteNav({ links = [] }: { links?: { href: string; label: string }[] }) {
+export function SiteNav() {
   const isLoggedIn = !!getToken();
+  const onLanding = useLocation().pathname === "/";
   return (
     <nav className="l-nav" aria-label="Main">
       <div className="l-nav-inner">
         <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
         <div className="l-nav-links">
-          {links.map((l) => (
-            <a key={l.href} className="l-nav-link" href={l.href}>{l.label}</a>
-          ))}
+          {NAV_SECTIONS.map((s) =>
+            onLanding ? (
+              <a key={s.id} className="l-nav-link" href={`#${s.id}`}>{s.label}</a>
+            ) : (
+              <Link key={s.id} className="l-nav-link" to={`/#${s.id}`}>{s.label}</Link>
+            ),
+          )}
           {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">Sign in</Link>}
           {isLoggedIn
             ? <Link className="l-nav-cta" to="/dashboard">Go to dashboard</Link>

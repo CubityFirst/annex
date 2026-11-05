@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
@@ -110,12 +111,19 @@ function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], 
     .some(child => folderHasItems(child.id, folders, docs, files));
 }
 
-// When a folder or doc is the last child, we erase the parent's border-l below the
-// item's midpoint so the vertical line terminates rather than running past the last item.
+// Nested rows sit 4px (ml-1) right of their parent's guide line (the children
+// wrapper's border-l), so an active row's rounded highlight never touches or
+// overlaps the line; the elbow connector bridges that gap.
+// When a folder or doc is the last child, we erase the guide below the item's
+// midpoint so the vertical line terminates rather than running past the last
+// item. The eraser covers exactly the guide's 1px column (inset + border = 5px
+// left of the row), so it never notches the row's highlight.
 // For folders, the midpoint is top-4 (16px = half of the 32px button row height).
 // For docs, it's top-1/2 (50% of the single-row element height).
-const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-1px] after:top-4 after:bottom-0 after:w-[2px] after:bg-sidebar";
-const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:top-1/2 after:bottom-0 after:w-[2px] after:bg-sidebar";
+const NESTED_INSET = "ml-1";
+const NESTED_ELBOW = "absolute -left-1 top-1/2 -translate-y-1/2 h-px w-3 bg-border";
+const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-5px] after:top-4 after:bottom-0 after:w-px after:bg-sidebar";
+const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-5px] after:top-1/2 after:bottom-0 after:w-px after:bg-sidebar";
 
 function FolderNode({
   folder,
@@ -144,7 +152,7 @@ function FolderNode({
   const childrenId = `folder-children-${folder.id}`;
 
   return (
-    <div className={`relative ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
+    <div className={`relative ${depth > 0 ? NESTED_INSET : ""} ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
@@ -152,7 +160,7 @@ function FolderNode({
         className={`relative w-full flex h-8 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
       >
         {depth > 0 && (
-          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+          <span aria-hidden className={NESTED_ELBOW} />
         )}
         <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
         <Folder className="h-3.5 w-3.5 shrink-0" />
@@ -226,12 +234,12 @@ function NavTree({
             onClick={onDocClick}
             className={({ isActive }) =>
               `relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-                depth > 0 ? "pl-3" : "pl-2"
+                depth > 0 ? `pl-3 ${NESTED_INSET}` : "pl-2"
               } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
             }
           >
             {depth > 0 && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+              <span aria-hidden className={NESTED_ELBOW} />
             )}
             {doc.is_home === 1
               ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -247,12 +255,12 @@ function NavTree({
           <button
             key={file.id}
             onClick={() => onFileClick(file)}
-            className={`relative w-full flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-              depth > 0 ? "pl-3" : "pl-2"
+            className={`relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
+              depth > 0 ? `pl-3 ${NESTED_INSET} w-[calc(100%-0.25rem)]` : "pl-2 w-full"
             } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
           >
             {depth > 0 && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+              <span aria-hidden className={NESTED_ELBOW} />
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{file.name}</span>
@@ -643,6 +651,16 @@ export function PublicDocPage() {
   const headings = extractHeadings(data.doc.content);
   const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
 
+  // Desktop top bar breadcrumb: site name (links to the home doc) › current page.
+  const homeDocId = data.docs?.find(d => d.is_home === 1)?.id ?? null;
+  const currentNavDoc = data.docs?.find(d => d.id === data.doc.id);
+  const pageTitle = isGraph
+    ? "Graph"
+    : selectedFile
+      ? selectedFile.name
+      : (currentNavDoc?.display_title ?? currentNavDoc?.title ?? data.doc.display_title ?? data.doc.title) || null;
+  const searchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
+
   const filteredDocs = searchQuery.trim()
     ? (data.docs ?? []).filter(d => (d.display_title ?? d.title).toLowerCase().includes(searchQuery.toLowerCase()))
     : null;
@@ -714,7 +732,7 @@ export function PublicDocPage() {
                 title={
                   typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
                     ? undefined
-                    : `Press ${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full-text search`
+                    : `Press ${searchShortcut} for full-text search`
                 }
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -888,27 +906,52 @@ export function PublicDocPage() {
             )}
           </header>
         )}
-        {showNav && !sidebarOpen && (
-          <header className="hidden md:flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        {showNav && (
+          // Desktop top bar. box-content h-16 + border-b puts its rule at
+          // 64px, level with the sidebar header's Separator.
+          <header className="hidden md:flex box-content h-16 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-ml-1 h-8 w-8"
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            )}
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+              {homeDocId && pageTitle ? (
+                <Link
+                  to={href(homeDocId)}
+                  onClick={() => setSelectedFile(null)}
+                  className="shrink-0 truncate text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {data.project.name}
+                </Link>
+              ) : (
+                <span className={cn("truncate", pageTitle ? "shrink-0 text-muted-foreground" : "font-medium text-foreground")}>
+                  {data.project.name}
+                </span>
+              )}
+              {pageTitle && (
+                <>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                  <span aria-current="page" className="truncate font-medium text-foreground">{pageTitle}</span>
+                </>
+              )}
+            </nav>
             <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </Button>
-            <span className="truncate text-sm font-medium text-muted-foreground">{data.project.name}</span>
-            <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="ml-auto h-8 gap-2 text-muted-foreground"
+              className="ml-auto h-8 shrink-0 gap-2 pr-1.5 text-muted-foreground hover:text-foreground"
               onClick={openSearch}
             >
-              <Search className="h-3.5 w-3.5" />
+              <Search className="h-3.5 w-3.5" aria-hidden />
               Search
+              <Kbd className="ml-2 text-muted-foreground">{searchShortcut}</Kbd>
             </Button>
           </header>
         )}
@@ -969,13 +1012,14 @@ export function PublicDocPage() {
             </Suspense>
           </div>
         ) : (
-        <ScrollArea className="flex-1 public-doc-scroller">
+        // Thin, low-contrast reading scrollbar (the Radix bar replaces the native one).
+        <ScrollArea className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-muted-foreground/35 [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/50">
           {selectedFile ? (
             <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
-              <div className="flex-1 min-w-0 px-6 pt-8 pb-12 md:px-10 md:pt-16">
+              <div className="flex-1 min-w-0 px-6 pt-8 pb-12 md:px-10 md:pt-12">
                 {(() => {
                   const cover = parseFrontmatter(data.doc.content).cover;
                   return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;
@@ -1080,7 +1124,7 @@ export function PublicDocPage() {
                 const showLinkedDocs = data.project.published_graph_enabled === 1 && !!currentDocId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
                 return (
-                  <aside className="hidden xl:block w-56 shrink-0 pt-16 pb-10 pl-4 pr-6">
+                  <aside className="hidden xl:block w-56 shrink-0 pt-12 pb-10 pl-4 pr-6">
                     <div className="sticky top-8">
                       {showLinkedDocs && currentDocId && graphData && (
                         <LinkedDocsPanel

@@ -35,11 +35,12 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
 import { DocOutline } from "@/components/DocOutline";
@@ -131,7 +132,7 @@ function timeAgo(iso: string): string {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">{title}</p>
       {children}
     </div>
   );
@@ -148,7 +149,7 @@ function MajorSection({ title, children }: { title: string; children: React.Reac
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed overflow-x-auto whitespace-pre">{children}</pre>
+    <pre className="rounded-md border border-border bg-card px-3 py-2 font-mono text-xs font-normal leading-relaxed text-foreground/90 overflow-x-auto whitespace-pre">{children}</pre>
   );
 }
 
@@ -337,6 +338,7 @@ export function DocPage() {
   const [myPermission, setMyPermission] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [outlineSheetOpen, setOutlineSheetOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -967,7 +969,7 @@ export function DocPage() {
             onChange={e => setTitleDraft(e.target.value)}
             placeholder="Document title"
             aria-label="Document title"
-            className="h-10 min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-md border-0 bg-transparent px-0 text-xl md:text-xl font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:border-transparent"
+            className="h-10 min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-md border-0 bg-transparent px-0 sm:px-4 text-2xl md:text-2xl font-medium tracking-tight shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:border-transparent"
             autoFocus={isNewDoc}
           />
           <div className="ml-auto flex items-center gap-2">
@@ -1004,7 +1006,7 @@ export function DocPage() {
             >
               <Code2 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Cancel</span>
             </Button>
@@ -1060,16 +1062,17 @@ export function DocPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Markdown reference dialog */}
-        <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Markdown reference</DialogTitle>
-              <DialogDescription>Supported syntax in this editor.</DialogDescription>
-            </DialogHeader>
-            <div className="overflow-y-auto max-h-[62vh] -mx-6 px-6 [&_p.text-xs]:text-[13px] [&_p.text-xs]:leading-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]">
+        {/* Markdown reference - a side sheet so the document stays visible
+            next to it while you look something up. */}
+        <Sheet open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
+          <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+            <SheetHeader className="border-b border-border px-6 py-5">
+              <SheetTitle>Markdown reference</SheetTitle>
+              <SheetDescription>Supported syntax in this editor.</SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-6 pt-5 [&_p.text-xs]:text-[13px] [&_p.text-xs]:leading-5">
               <div className="flex flex-col gap-6 pb-8 text-sm">
-                <MajorSection title="Markdown">
+                <MajorSection title="Everyday syntax">
                 <Section title="Headings">
                   <Code>{`# H1\n## H2\n### H3`}</Code>
                 </Section>
@@ -1131,8 +1134,8 @@ export function DocPage() {
                 </MajorSection>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          </SheetContent>
+        </Sheet>
 
         <Dialog open={changelogDialogOpen} onOpenChange={open => { if (!saving) setChangelogDialogOpen(open); }}>
           <DialogContent className="sm:max-w-md">
@@ -1242,7 +1245,15 @@ export function DocPage() {
         )}
         <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
-          <div className="flex flex-wrap justify-end gap-1 mb-3 md:flex-nowrap md:gap-0.5 md:absolute md:-top-[9px] md:right-0 md:mb-0 md:rounded-lg md:border md:border-border md:bg-card md:p-0.5 md:shadow-xs [&>button]:size-10 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
+          <div className="mb-3 flex items-center justify-end gap-2 md:absolute md:-top-[9px] md:right-0 md:mb-0">
+          {/* Secondary tools: one quiet grouped strip. Edit (below) is the
+              labelled primary action so authors don't have to decode glyphs. */}
+          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-xs [&>button]:size-10 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
+            {headings.length > 0 && (
+              <Button variant="ghost" size="icon" className="xl:hidden" title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
+                <ListTree className="h-4 w-4" />
+              </Button>
+            )}
             {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
               <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
                 <Sparkles className="h-4 w-4 text-violet-500" />
@@ -1258,9 +1269,6 @@ export function DocPage() {
             />
           {isEditor && (
             <>
-              <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
-                <Pencil className="h-4 w-4" />
-              </Button>
               {!viewingRevision && !parseFrontmatter(doc.content).cover && (
                 <Button variant="ghost" size="icon" title="Add header image" onClick={() => coverInputRef.current?.click()} disabled={coverBusy}>
                   <ImagePlus className="h-4 w-4" />
@@ -1443,56 +1451,66 @@ export function DocPage() {
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>Document settings</DialogTitle>
+                    <DialogDescription>Who can read this document, and how its page is displayed.</DialogDescription>
                   </DialogHeader>
                   <div className="flex flex-col gap-6 py-2">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1">
-                          {/* Lead with the EFFECTIVE visibility: when the whole
-                              site is published the doc is public regardless of
-                              its own flag, so say that first. */}
-                          <div className="flex items-center gap-2">
-                            {doc.published_at || projectPublishedAt ? (
-                              <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            ) : (
-                              <Lock className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <Label className="text-sm font-medium">
-                              {projectPublishedAt ? "Public via published site" : doc.published_at ? "Published" : "Private"}
-                            </Label>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {projectPublishedAt
-                              ? `Anyone with the link can read it. Its own setting (${doc.published_at ? "published" : "unpublished"}) applies only if the site is unpublished.`
-                              : doc.published_at
+                    {/* Effective visibility first (what readers actually get),
+                        then the document's own override as a separate row. */}
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3.5 py-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className={cn(
+                            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
+                            doc.published_at || projectPublishedAt
+                              ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+                              : "bg-muted text-muted-foreground ring-border",
+                          )}>
+                            {doc.published_at || projectPublishedAt ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                          </span>
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <p className="text-sm font-medium">
+                              {projectPublishedAt ? "Public — inherited from site" : doc.published_at ? "Public" : "Private"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {doc.published_at || projectPublishedAt
                                 ? "Anyone with the link can read this document."
                                 : "Only site members can see this document."}
+                            </p>
+                          </div>
+                        </div>
+                        {(doc.published_at || projectPublishedAt) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
+                              toast({ title: "Link copied to clipboard." });
+                            }}
+                            title="Copy share link"
+                          >
+                            <Link className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-col gap-0.5">
+                          <Label className="text-sm font-medium">Publish this document</Label>
+                          <p className="text-xs text-muted-foreground">
+                            {projectPublishedAt
+                              ? "Only takes effect if the site is unpublished."
+                              : "Make just this document public while the rest of the site stays private."}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {(doc.published_at || projectPublishedAt) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
-                                toast({ title: "Link copied to clipboard." });
-                              }}
-                              title="Copy share link"
-                            >
-                              <Link className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            variant={doc.published_at ? "outline" : "default"}
-                            size="sm"
-                            disabled={togglingPublish}
-                            onClick={handleTogglePublish}
-                          >
-                            {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
-                          </Button>
-                        </div>
+                        <Button
+                          variant={doc.published_at || projectPublishedAt ? "outline" : "default"}
+                          size="sm"
+                          className="shrink-0"
+                          disabled={togglingPublish}
+                          onClick={handleTogglePublish}
+                        >
+                          {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
+                        </Button>
                       </div>
                     </div>
                     <Separator />
@@ -1531,6 +1549,13 @@ export function DocPage() {
                 </DialogContent>
               </Dialog>
             </>
+          )}
+          </div>
+          {isEditor && (
+            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3.5 md:h-9">
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
           )}
           </div>
 
@@ -1686,6 +1711,30 @@ export function DocPage() {
 
         </div>
       </div>
+
+      {headings.length > 0 && (
+        <Sheet open={outlineSheetOpen} onOpenChange={setOutlineSheetOpen}>
+          <SheetContent side="bottom" className="max-h-[70vh] gap-0 p-0 xl:hidden">
+            <SheetHeader className="px-5 pb-2 pt-5">
+              <SheetTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Outline</SheetTitle>
+              <SheetDescription className="sr-only">Jump to a section of this document.</SheetDescription>
+            </SheetHeader>
+            <div className="overflow-y-auto px-5 pb-6">
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                className="[&>button]:min-h-10 [&>button]:text-sm"
+                onSelect={id => {
+                  lastHashScrollRef.current = `${docId ?? ""}#${id}`;
+                  navigate(`#${id}`, { replace: true });
+                  scrollToHash(id);
+                  setOutlineSheetOpen(false);
+                }}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Outline */}
       {headings.length > 0 && (

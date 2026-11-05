@@ -8,9 +8,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default:     "bg-primary text-primary-foreground shadow-sm hover:bg-primary/88",
+        // Semibold: dark-on-cream renders optically lighter than cream-on-ink,
+        // so the primary needs the extra weight to read as the stronger action.
+        default:     "bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/88",
         destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
-        outline:     "border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground",
+        outline:     "border border-input/60 bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground",
         secondary:   "bg-secondary text-secondary-foreground shadow-xs hover:bg-accent",
         ghost:       "hover:bg-accent hover:text-accent-foreground",
         link:        "text-primary underline-offset-4 hover:underline",

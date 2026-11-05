@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -29,12 +29,11 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon, SquarePen, Mail, RotateCcw } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, SquarePen, Mail, RotateCcw, Check } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
@@ -177,6 +176,7 @@ export function UserSettingsPage() {
   // the user can edit the opposite variant without changing their theme.
   const [avatarVariant, setAvatarVariant] = useState<AvatarVariant>(getAvatarVariant);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const changePhotoButtonRef = useRef<HTMLButtonElement>(null);
   const { toast } = useToast();
 
   // TOTP state
@@ -1361,7 +1361,7 @@ export function UserSettingsPage() {
     { id: "billing", label: "Billing", group: "profile" },
     { id: "reading-font", label: "Fonts", group: "appearance" },
     { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
-    { id: "two-factor", label: "Security", group: "security" },
+    { id: "two-factor", label: "Two-factor & password", group: "security" },
     { id: "sessions", label: "Sessions", group: "security" },
     { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
@@ -1376,10 +1376,12 @@ export function UserSettingsPage() {
           {/* Account section */}
           <section id="account">
             <h2 className="text-base font-semibold">Account</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Update your personal information.</p>
 
-            <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
-              <div className="flex items-start gap-6">
+            <form onSubmit={handleSaveName} className="mt-5 flex flex-col gap-4">
+              {/* Below sm the avatar stacks above full-width fields so the
+                  email never clips; side by side from sm up. */}
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 {userId && (
                   <>
                     <input
@@ -1389,7 +1391,7 @@ export function UserSettingsPage() {
                       className="hidden"
                       onChange={handleAvatarChange}
                     />
-                    <div className="flex flex-col items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
@@ -1401,7 +1403,16 @@ export function UserSettingsPage() {
                           </div>
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-40 p-1" align="start">
+                      <PopoverContent
+                        className="w-40 p-1"
+                        align="center"
+                        // The visible "Change photo" button toggles this same
+                        // popover; don't let its press count as an outside
+                        // click (which would close and instantly reopen it).
+                        onInteractOutside={e => {
+                          if (changePhotoButtonRef.current?.contains(e.target as Node)) e.preventDefault();
+                        }}
+                      >
                         <Button
                           type="button"
                           variant="ghost"
@@ -1425,13 +1436,32 @@ export function UserSettingsPage() {
                           Remove photo
                         </Button>
                       </PopoverContent>
+                      {/* Visible entry point to the same Upload/Remove popover
+                          (the avatar itself is the hidden-affordance trigger);
+                          the popover anchors here so it never covers it. */}
+                      <PopoverAnchor asChild>
+                        <Button
+                          ref={changePhotoButtonRef}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-10 sm:h-8"
+                          aria-haspopup="dialog"
+                          aria-expanded={avatarPopoverOpen}
+                          disabled={avatarUploading}
+                          onClick={() => setAvatarPopoverOpen(open => !open)}
+                        >
+                          <Camera className="size-3.5" aria-hidden />
+                          Change photo
+                        </Button>
+                      </PopoverAnchor>
                     </Popover>
 
                       {/* Which avatar slot the preview shows and Upload/Remove
                           target: one image for dark backgrounds, one for light. */}
                       <div className="mt-1 flex flex-col items-center gap-1.5">
-                        <span id="avatar-variant-label" className="text-[11px] leading-tight text-muted-foreground">
-                          Avatar for background
+                        <span id="avatar-variant-label" className="text-xs leading-tight text-muted-foreground">
+                          Avatar preview
                         </span>
                         <div
                           role="radiogroup"
@@ -1475,22 +1505,22 @@ export function UserSettingsPage() {
                   </>
                 )}
 
-                <div className="flex flex-col gap-3 min-w-0 flex-1">
+                <div className="flex w-full min-w-0 flex-1 flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
                       {/* The edit icon lives inside the field (mirroring the
                           InlineSaveControls affordance on the display-name input);
                           resend + verification status sit outside to its right. */}
-                      <div className="relative flex-1">
-                        <Input id="email" value={email} disabled className="pr-9" />
+                      <div className="relative min-w-0 flex-1">
+                        <Input id="email" value={email} disabled className="pr-11 sm:pr-9" />
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
                               onClick={() => setChangeEmailOpen(true)}
                               aria-label="Change email address"
-                              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-9"
                             >
                               <SquarePen className="size-4" />
                             </button>
@@ -1608,7 +1638,7 @@ export function UserSettingsPage() {
                   {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
                   {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Select
                     value={timezonePrivate ? "" : (timezone ?? "")}
                     onValueChange={async val => {
@@ -1619,7 +1649,7 @@ export function UserSettingsPage() {
                     }}
                     disabled={timezonePrivate || timezoneSaving}
                   >
-                    <SelectTrigger id="timezone" className="flex-1">
+                    <SelectTrigger id="timezone" className="h-10 flex-1 sm:h-9">
                       <SelectValue placeholder="Select timezone…">
                         {!timezonePrivate && timezone && (() => {
                           const g = getTimezoneGroup(timezone);
@@ -1636,7 +1666,7 @@ export function UserSettingsPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-9 shrink-0 font-normal"
+                    className="h-10 shrink-0 self-start font-normal sm:h-9 sm:self-auto"
                     disabled={timezonePrivate || timezoneSaving}
                     onClick={async () => {
                       const g = detectTimezoneGroup();
@@ -1660,34 +1690,34 @@ export function UserSettingsPage() {
                 })()}
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="tz-private"
-                    checked={timezonePrivate}
-                    disabled={timezoneSaving}
-                    onCheckedChange={async checked => {
-                      if (checked) {
-                        setTimezonePrivate(true);
-                        setTimezone(null);
-                        await saveTimezone(null);
-                      } else {
-                        const g = detectTimezoneGroup();
-                        if (g) {
-                          setTimezone(g.iana);
-                          setTimezonePrivate(false);
-                          await saveTimezone(g.iana);
-                        } else {
-                          setTimezonePrivate(false);
-                        }
-                      }
-                    }}
-                  />
-                  <Label htmlFor="tz-private" className="font-normal text-sm cursor-pointer">
-                    Do not share my timezone
-                  </Label>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label htmlFor="tz-visible">Show my timezone on my profile card</Label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    People who open your card see your local time.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground pl-6">When enabled, your timezone won't appear on your profile card.</p>
+                <Switch
+                  id="tz-visible"
+                  checked={!timezonePrivate}
+                  disabled={timezoneSaving}
+                  onCheckedChange={async visible => {
+                    if (!visible) {
+                      setTimezonePrivate(true);
+                      setTimezone(null);
+                      await saveTimezone(null);
+                    } else {
+                      const g = detectTimezoneGroup();
+                      if (g) {
+                        setTimezone(g.iana);
+                        setTimezonePrivate(false);
+                        await saveTimezone(g.iana);
+                      } else {
+                        setTimezonePrivate(false);
+                      }
+                    }
+                  }}
+                />
               </div>
 
               <div className="flex flex-col gap-2">
@@ -1794,13 +1824,13 @@ export function UserSettingsPage() {
             </AlertDialog>
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
           {/* Favourite sites - published projects the user has bookmarked.
               Surfaces on their profile card; managed here. */}
           <section id="favourites">
             <h2 className="text-base font-semibold">Favourite sites</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Up to 3 published sites you've added. They appear on your profile card.
             </p>
 
@@ -1992,7 +2022,7 @@ export function UserSettingsPage() {
             )}
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
           {/* Billing section - Annex Ink supporter tier */}
           <section id="billing">
@@ -2000,7 +2030,7 @@ export function UserSettingsPage() {
               Billing
               {personalPlan === "ink" && <Sparkles className="size-3.5 text-amber-500" />}
             </h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">Your supporter subscription.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Your supporter subscription.</p>
 
             {personalPlanStatus === "past_due" && (
               <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
@@ -2010,33 +2040,40 @@ export function UserSettingsPage() {
             )}
 
             {personalPlan === "free" ? (
-              <div className="mt-4 rounded-lg border bg-card p-5">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex items-start gap-5">
-                    <div className="shrink-0 text-center">
-                      <div className="text-3xl font-bold tracking-tight leading-none">$5</div>
-                      <div className="mt-1 text-xs text-muted-foreground">/month</div>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                        <InkSparkle className="size-3.5 ink-icon" />
-                        Annex Ink
-                      </h3>
-                      <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5 space-y-0.5">
-                        <li>A short supporter bio on your profile</li>
-                        <li>An animated coloured ring around your avatar</li>
-                        <li>A custom presence colour in realtime collaboration</li>
-                      </ul>
-                      <p className="mt-2 text-sm text-muted-foreground">Helps keep the lights on.</p>
-                    </div>
+              <div className="mt-5 rounded-lg border border-border bg-card p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                      <InkSparkle className="size-3.5 ink-icon" />
+                      Annex Ink
+                    </h3>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">Helps keep the lights on.</p>
                   </div>
-                  <Button onClick={() => startCheckoutOrPortal("/api/billing/checkout")} disabled={billingBusy}>
+                  <p className="shrink-0 whitespace-nowrap leading-none">
+                    <span className="text-2xl font-semibold tracking-tight">$5</span>
+                    <span className="ml-1 text-sm text-muted-foreground">/ month</span>
+                  </p>
+                </div>
+                <ul className="mt-4 flex flex-col gap-2 text-sm">
+                  {[
+                    "A short supporter bio on your profile",
+                    "An animated coloured ring around your avatar",
+                    "A custom presence colour in realtime collaboration",
+                  ].map(perk => (
+                    <li key={perk} className="flex items-start gap-2.5">
+                      <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span>{perk}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-5 flex justify-end border-t border-border pt-4">
+                  <Button className="w-full sm:w-auto" onClick={() => startCheckoutOrPortal("/api/billing/checkout")} disabled={billingBusy}>
                     {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Become a supporter</>}
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="mt-4 rounded-lg border bg-card p-5">
+              <div className="mt-5 rounded-lg border border-border bg-card p-5">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-4">
                     {userId && (
@@ -2213,40 +2250,31 @@ export function UserSettingsPage() {
             )}
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
-          {/* Reading font - picks the prose font used in document reading and
+          {/* Fonts - picks the prose font used in document reading and
               editing views. Free for all users (not Ink-gated); OpenDyslexic
               is an accessibility option. Each column is a radio across the
               three font rows; code lines stay monospace either way. */}
           <section id="reading-font">
-            <h2 className="text-base font-semibold">Reading font</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Choose the font used for document prose and app chrome. Hover the column headers below for where each one applies. Inline code always stays monospaced.
+            <h2 className="text-base font-semibold">Fonts</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Pick a font for each part of the app. Inline code always stays monospaced.
             </p>
 
             <div className="mt-5 overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full table-fixed min-w-[26rem] text-sm">
+              <table className="w-full table-fixed min-w-[30rem] text-sm">
                 <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Font</th>
+                    <th className="px-4 py-2.5 text-left align-top font-medium">Font</th>
                     {([
-                      { label: "Reading", help: "Used when you're viewing a document, including the document title." },
-                      { label: "Editing", help: "Used when you're editing a document." },
-                      { label: "Other", help: "Used everywhere else - sidebar, settings, outline, and the rest of the app." },
+                      { label: "Reading", caption: "Docs you read" },
+                      { label: "Editing", caption: "While editing" },
+                      { label: "Interface", caption: "Menus & UI" },
                     ] as const).map(col => (
-                      <th key={col.label} className="w-[5.5rem] whitespace-nowrap px-1 py-2 text-center font-medium">
-                        <span className="inline-flex items-center gap-1">
-                          {col.label}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button type="button" aria-label={`Where does the ${col.label} font apply?`} className="inline-flex text-muted-foreground transition-colors hover:text-foreground">
-                                <Info className="size-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[220px]">{col.help}</TooltipContent>
-                          </Tooltip>
-                        </span>
+                      <th key={col.label} scope="col" className="w-[6.5rem] px-1 py-2.5 text-center align-top">
+                        <span className="block font-medium">{col.label}</span>
+                        <span className="mt-0.5 block text-[11px] font-normal leading-tight text-muted-foreground">{col.caption}</span>
                       </th>
                     ))}
                   </tr>
@@ -2283,11 +2311,11 @@ export function UserSettingsPage() {
                                 className="peer sr-only"
                               />
                               <span className={cn(
-                                "flex size-4 items-center justify-center rounded-full border transition-colors",
-                                col.checked ? "border-foreground" : "border-input bg-background",
-                                "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2",
+                                "flex size-[18px] items-center justify-center rounded-full border-[1.5px] transition-colors",
+                                col.checked ? "border-foreground" : "border-foreground/45 hover:border-foreground/70",
+                                "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-card",
                               )}>
-                                {col.checked && <span className="size-2 rounded-full bg-foreground" />}
+                                {col.checked && <span className="size-2.5 rounded-full bg-foreground" />}
                               </span>
                             </label>
                           </td>
@@ -2302,8 +2330,9 @@ export function UserSettingsPage() {
             <div className="mt-3 flex justify-end">
               <Button
                 type="button"
-                variant="ghost"
-                className="font-normal disabled:opacity-60"
+                variant="outline"
+                size="sm"
+                className="disabled:opacity-60"
                 disabled={fontPrefsBusy || (readingFont === DEFAULT_READING_FONT && editingFont === DEFAULT_EDITING_FONT && uiFont === DEFAULT_UI_FONT)}
                 onClick={resetFontPrefs}
               >
@@ -2313,7 +2342,7 @@ export function UserSettingsPage() {
             </div>
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
           {/* Theme - admins always see this; other users see it when the
               custom-theming Flagship flag is enabled for them. Dark is the
@@ -2323,7 +2352,7 @@ export function UserSettingsPage() {
             <>
               <section id="theme">
                 <h2 className="text-base font-semibold">Theme</h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Choose how the app looks. Custom derives a full palette - surfaces, borders and accents - from a single colour.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -2366,7 +2395,7 @@ export function UserSettingsPage() {
                 )}
               </section>
 
-              <Separator className="my-6" />
+              <Separator className="my-10" />
             </>
           )}
 
@@ -2378,7 +2407,7 @@ export function UserSettingsPage() {
                 <SecurityStatus ok={twoFactorProtected} on="2FA on" off="2FA off" title={twoFactorProtected ? "2FA is enabled" : "2FA is disabled"} />
               )}
             </h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">Manage your account security settings.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Two-factor authentication and your password.</p>
 
             {/* TOTP subsection */}
             <div className="mt-5">
@@ -2605,12 +2634,12 @@ export function UserSettingsPage() {
             </div>
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
           {/* Active sessions */}
           <section id="sessions">
             <h2 className="text-base font-semibold">Active sessions</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Devices currently signed in to your account. Revoke any you don&apos;t recognize.
             </p>
 
@@ -2671,12 +2700,12 @@ export function UserSettingsPage() {
             )}
           </section>
 
-          <Separator className="my-6" />
+          <Separator className="my-10" />
 
           {/* Danger zone */}
           <section id="danger" className="rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
             <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               Permanently delete your account. You must transfer or delete any sites you own first.
             </p>
             <Button

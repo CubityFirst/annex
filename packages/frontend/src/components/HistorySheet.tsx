@@ -77,12 +77,12 @@ function groupLabel(iso: string): string {
 // sidebar's recent-docs list) rather than full-width bands, which read as
 // stacked horizontal lines next to the header/section borders.
 function rowClass(selected: boolean): string {
-  return `mx-3 flex items-center gap-3 rounded-md px-3 py-2.5 text-left disabled:opacity-50 ${selected ? "bg-accent" : "hover:bg-accent/60"}`;
+  return `mx-3 flex items-start gap-3 rounded-md px-3 py-2.5 text-left disabled:opacity-50 [&>svg:last-child]:self-center ${selected ? "bg-accent" : "hover:bg-accent/60"}`;
 }
 
 function ViewingBadge() {
   return (
-    <span className="shrink-0 rounded-sm bg-primary px-1 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">Viewing</span>
+    <span className="shrink-0 rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium leading-none text-foreground ring-1 ring-inset ring-foreground/20">Viewing</span>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Bell,
+  MessageSquareQuote,
   Bold,
   ChevronDown,
   Code,
@@ -117,7 +117,7 @@ const TABLE_COLS = 6;
 const TABLE_ROWS = 5;
 
 function ToolbarSeparator() {
-  return <Separator orientation="vertical" className="h-4 mx-0.5" />;
+  return <Separator orientation="vertical" className="h-5 mx-1" />;
 }
 
 // Buttons run their action on `click`, NOT on mousedown, so keyboard
@@ -147,7 +147,7 @@ function ToolToggle({
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
-          className="shrink-0"
+          className="shrink-0 text-muted-foreground hover:text-foreground data-[state=on]:text-foreground [&_svg]:size-4"
         >
           {children}
         </Toggle>
@@ -177,7 +177,7 @@ function ToolButton({
         <Button
           type="button"
           variant="ghost"
-          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-8 sm:px-1.5 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
+          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-8 sm:px-1.5 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
@@ -323,7 +323,7 @@ export function WysiwygToolbar({
         role="toolbar"
         aria-label="Formatting"
         aria-orientation="horizontal"
-        className="flex items-center gap-1 px-2 h-11 sm:h-9 sm:gap-0.5 border-b border-border shrink-0 overflow-x-auto"
+        className="mt-3 mb-1 flex h-11 shrink-0 items-center gap-1 overflow-x-auto rounded-lg border border-border bg-card px-1.5 shadow-xs sm:gap-0.5"
         onFocusCapture={handleToolbarFocus}
         onKeyDown={handleToolbarKeyDown}
       >
@@ -490,9 +490,9 @@ export function WysiwygToolbar({
                   type="button"
                   variant="ghost"
                   aria-label="Insert callout"
-                  className="h-8 px-1.5 min-w-8 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
+                  className="h-8 px-1.5 min-w-8 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
                 >
-                  <Bell />
+                  <MessageSquareQuote />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

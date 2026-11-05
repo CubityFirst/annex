@@ -1,10 +1,12 @@
-// Shared role-badge colours. Tinted text on a faint same-hue wash with an
-// inset hairline - legible in both themes without the saturated solid fills
-// that made every "Owner" chip shout in dense tables.
+// Shared role-badge styles. Roles are information, not status, so they stay
+// neutral (no rainbow of hues on the calm ink palette); only Owner gets a
+// slightly stronger, cream-tinted treatment so the top role is findable.
+const NEUTRAL = "border-transparent bg-muted text-muted-foreground ring-1 ring-inset ring-border";
+
 export const ROLE_BADGE_CLASSES = {
-  owner: "border-transparent bg-violet-500/10 text-violet-700 ring-1 ring-inset ring-violet-500/20 dark:text-violet-300",
-  admin: "border-transparent bg-sky-500/10 text-sky-700 ring-1 ring-inset ring-sky-500/20 dark:text-sky-300",
-  editor: "border-transparent bg-emerald-500/10 text-emerald-700 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-300",
-  viewer: "border-transparent bg-muted text-muted-foreground ring-1 ring-inset ring-border",
-  limited: "border-transparent bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300",
+  owner: "border-transparent bg-foreground/[0.08] text-foreground ring-1 ring-inset ring-foreground/20",
+  admin: NEUTRAL,
+  editor: NEUTRAL,
+  viewer: NEUTRAL,
+  limited: NEUTRAL,
 } as const;

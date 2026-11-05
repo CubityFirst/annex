@@ -3,41 +3,45 @@ import { pickActiveSection } from "./useScrollSpy";
 import { resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
 
 describe("pickActiveSection", () => {
-  const ids = ["account", "favourites", "billing"];
-
-  it("returns the topmost (first in order) intersecting section", () => {
-    const ratios = new Map([
-      ["account", 0],
-      ["favourites", 0.4],
-      ["billing", 0.9],
-    ]);
-    expect(pickActiveSection(ids, ratios)).toBe("favourites");
+  const ids = ["account", "favourites", "billing", "sessions", "danger"];
+  // 1000px viewport -> reading line at 350px; sweep zone is the last 650px.
+  const geo = (tops: Record<string, number>, scrollTop: number, maxScroll = 3000) => ({
+    tops: new Map(Object.entries(tops)),
+    viewportHeight: 1000,
+    maxScroll,
+    scrollTop,
   });
 
-  it("ignores order in the map and respects the supplied id order", () => {
-    const ratios = new Map([
-      ["billing", 1],
-      ["account", 0.2],
-    ]);
-    expect(pickActiveSection(ids, ratios)).toBe("account");
+  it("returns the last section whose top has crossed the reading line", () => {
+    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 300, sessions: 900, danger: 1300 }, 900))).toBe("billing");
+    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 400, sessions: 900, danger: 1300 }, 900))).toBe("favourites");
   });
 
-  it("treats missing ids as ratio 0", () => {
-    const ratios = new Map([["billing", 0.5]]);
-    expect(pickActiveSection(ids, ratios)).toBe("billing");
+  it("falls back to the first present section before anything crosses the line", () => {
+    expect(pickActiveSection(ids, geo({ account: 500, favourites: 1200 }, 0))).toBe("account");
   });
 
-  it("returns null when nothing is intersecting", () => {
-    const ratios = new Map([
-      ["account", 0],
-      ["favourites", 0],
-      ["billing", 0],
-    ]);
-    expect(pickActiveSection(ids, ratios)).toBeNull();
+  it("respects the supplied id order and skips missing ids", () => {
+    expect(pickActiveSection(["billing", "account"], geo({ account: 0 }, 0))).toBe("account");
+  });
+
+  it("pins the last section when the container is clamped at the bottom", () => {
+    // Danger zone's top never reaches the line - it's short and the page ends.
+    expect(pickActiveSection(ids, geo({ account: -2400, favourites: -1600, billing: -900, sessions: 200, danger: 700 }, 3000))).toBe("danger");
+  });
+
+  it("sweeps the line down near the end so short trailing sections activate in order", () => {
+    // 300px of scroll left: line = 350 + (650 - 300) = 700. Sessions (top 500)
+    // has crossed it, Danger (top 1000) hasn't.
+    expect(pickActiveSection(ids, geo({ account: -2100, favourites: -1300, billing: -600, sessions: 500, danger: 1000 }, 2700))).toBe("sessions");
+  });
+
+  it("keeps the fixed line (first section) when the container doesn't scroll", () => {
+    expect(pickActiveSection(ids, geo({ account: 0, favourites: 400, billing: 700 }, 0, 0))).toBe("account");
   });
 
   it("returns null for an empty id list", () => {
-    expect(pickActiveSection([], new Map())).toBeNull();
+    expect(pickActiveSection([], geo({}, 0))).toBeNull();
   });
 });
 

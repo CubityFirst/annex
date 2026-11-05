@@ -327,7 +327,9 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
           }}
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;
-            const r = n.radius;
+            // On full-size views cap the on-screen size (~26px diameter) so a
+            // zoomed-in small graph stays navigation, not a diagram of blobs.
+            const r = showControls ? Math.min(n.radius, 13 / globalScale) : n.radius;
             const isHover = hoverId === n.id || selectedId === n.id;
             const nodeColor = isHover ? accentColor : (n.tagColor ?? mutedColor);
             ctx.beginPath();
@@ -336,12 +338,12 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
             ctx.fill();
 
             if (showLabels || isHover) {
-              const fontSize = Math.max((showControls ? 13 : 10) / globalScale, 2);
+              const fontSize = Math.max((showControls ? 14 : 10) / globalScale, 2);
               ctx.font = `500 ${fontSize}px ${uiFontStack}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               const label = n.title;
-              const padY = r + 4 / globalScale;
+              const padY = r + (showControls ? 8 : 4) / globalScale;
               // Halo in the page colour so labels stay legible over links.
               if (tokens.bg) {
                 ctx.lineJoin = "round";

@@ -43,9 +43,10 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2, ExternalLink, NotebookPen, Sparkles, Wand2 } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, ChevronRight, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2, ExternalLink, NotebookPen, Sparkles, Wand2 } from "lucide-react";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { RecycleBin } from "@/components/RecycleBin";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -1259,11 +1260,9 @@ export function SiteSettingsPage() {
     <SettingsShell
       title="Site settings"
       description={<>Manage settings for <span className="font-medium text-foreground">{project.name}</span>.</>}
-      maxWidth="4xl"
       groups={SITE_SETTINGS_GROUPS}
       sections={settingsSections}
     >
-      <div className="max-w-xl">
       {/* General settings */}
       <div id="general" className="flex flex-col gap-5">
         <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
@@ -1374,31 +1373,24 @@ export function SiteSettingsPage() {
             </div>
             <div className="rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  {project.published_at ? (
-                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      {project.published_at ? "Published" : "Private"}
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-                          project.published_at
-                            ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
-                            : "bg-muted text-muted-foreground ring-border"
-                        }`}
-                      >
-                        {project.published_at ? "Public" : "Members only"}
-                      </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {project.published_at
-                        ? "This site is publicly accessible."
-                        : "Only members can view this site."}
-                    </p>
-                  </div>
+                <div className="flex min-w-0 flex-col items-start gap-1.5">
+                  <span
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ring-1 ring-inset ${
+                      project.published_at
+                        ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+                        : "bg-muted text-muted-foreground ring-border"
+                    }`}
+                  >
+                    {project.published_at
+                      ? <Globe className="h-3.5 w-3.5" aria-hidden />
+                      : <Lock className="h-3.5 w-3.5" aria-hidden />}
+                    {project.published_at ? "Published" : "Private"}
+                  </span>
+                  <p className="text-[13px] leading-snug text-muted-foreground">
+                    {project.published_at
+                      ? "Anyone with the link can view this site."
+                      : "Only members can view this site."}
+                  </p>
                 </div>
                 <Button
                   variant={project.published_at ? "outline" : "default"}
@@ -1417,7 +1409,7 @@ export function SiteSettingsPage() {
               {project.published_at && (() => {
                 const publicUrl = `${window.location.origin}/s/${project.vanity_slug ?? projectId}`;
                 return (
-                  <div className="flex items-center gap-1 border-t border-border py-1.5 pl-11 pr-2">
+                  <div className="flex items-center gap-1 border-t border-border py-1.5 pl-4 pr-2">
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={publicUrl}>
                       {publicUrl}
                     </span>
@@ -1482,22 +1474,22 @@ export function SiteSettingsPage() {
             </div>
             {/* Square icon - used in the projects sidebar, favourites, profile cards.
                 Cropped client-side to 512×512 via AvatarCropDialog. */}
-            <div className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
-              <div className="flex h-16 w-32 shrink-0 items-center justify-center">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
+              <div className="flex h-16 w-32 shrink-0 items-center justify-start">
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-                {project.logo_square_updated_at && logoPreviewUrls.square ? (
-                  <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
-                ) : (
-                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                )}
+                  {project.logo_square_updated_at && logoPreviewUrls.square ? (
+                    <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
+                  ) : (
+                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                  )}
                 </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <p className="text-sm font-medium">Square icon</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] leading-snug text-muted-foreground">
                   Shown in the projects sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-2">
                   <input
                     ref={squareLogoInputRef}
                     type="file"
@@ -1542,7 +1534,7 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
               <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                 {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
                   <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
@@ -1550,12 +1542,12 @@ export function SiteSettingsPage() {
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
                 )}
               </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <p className="text-sm font-medium">Wordmark</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] leading-snug text-muted-foreground">
                   Shown in the top-left of your published site. PNG, JPG, WebP, or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-2">
                   <input
                     ref={wideLogoInputRef}
                     type="file"
@@ -1617,7 +1609,7 @@ export function SiteSettingsPage() {
                   <p className="text-sm font-medium flex items-center gap-2">
                     <Link className="h-4 w-4 text-muted-foreground" /> Custom link <PremiumBadge />
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
                     Set a custom URL so your public site can be shared at a memorable address.
                   </p>
                 </div>
@@ -1678,7 +1670,7 @@ export function SiteSettingsPage() {
                   <p className="text-sm font-medium flex items-center gap-2">
                     <Globe className="h-4 w-4 text-muted-foreground" /> Custom domain <PremiumBadge />
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
                     Serve your published site from a domain you own, e.g. <span className="font-mono">docs.example.com</span>.
                   </p>
                 </div>
@@ -1885,7 +1877,7 @@ export function SiteSettingsPage() {
                       <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
                       AI features <PremiumBadge />
                     </p>
-                    <p className="pl-6 text-xs text-muted-foreground">
+                    <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
                       Enable AI-powered document summarization.
                     </p>
                   </div>
@@ -1903,7 +1895,7 @@ export function SiteSettingsPage() {
                         <Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         AI summarization type
                       </p>
-                      <p className="pl-6 text-xs text-muted-foreground">
+                      <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
                         Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed.
                       </p>
                     </div>
@@ -1930,7 +1922,7 @@ export function SiteSettingsPage() {
                   <NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />
                   Save changelog
                 </p>
-                <p className="pl-6 text-xs text-muted-foreground">
+                <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
                   Prompt editors to leave a note describing their changes when saving a document.
                 </p>
               </div>
@@ -1955,7 +1947,7 @@ export function SiteSettingsPage() {
                   <House className="h-4 w-4 shrink-0 text-muted-foreground" />
                   Home document
                 </p>
-                <p className="pl-6 text-xs text-muted-foreground">
+                <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
                   Pin a home document that visitors land on when the site URL has no document specified.
                 </p>
               </div>
@@ -1973,7 +1965,7 @@ export function SiteSettingsPage() {
                     <Network className="h-4 w-4 shrink-0 text-muted-foreground" />
                     Graph view
                   </p>
-                  <p className="pl-6 text-xs text-muted-foreground">
+                  <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
                     Show an interactive graph of how documents link to each other.
                   </p>
                 </div>
@@ -1987,7 +1979,7 @@ export function SiteSettingsPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
+                        className="h-9 w-9 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground"
                         disabled={locked || reindexing}
                         onClick={handleReindex}
                         aria-label="Reindex graph"
@@ -2010,7 +2002,7 @@ export function SiteSettingsPage() {
                   <div className="flex items-center justify-between gap-4 border-t border-border py-3 pl-10 pr-4">
                     <div className="flex flex-col gap-0.5">
                       <p className="text-sm font-medium">Show on published site</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[13px] leading-snug text-muted-foreground">
                         Make the graph view available to visitors of the public share page.
                       </p>
                     </div>
@@ -2084,7 +2076,7 @@ export function SiteSettingsPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="gap-1.5 h-9 sm:h-7 text-xs"
+                          className="gap-1.5 h-9 sm:h-8"
                           onClick={addTagRule}
                         >
                           <Plus className="h-3 w-3" />
@@ -2093,7 +2085,7 @@ export function SiteSettingsPage() {
                         <Button
                           type="button"
                           size="sm"
-                          className="h-9 sm:h-7 text-xs"
+                          className="h-9 sm:h-8"
                           disabled={savingTagColors}
                           onClick={saveTagColors}
                         >
@@ -2120,20 +2112,6 @@ export function SiteSettingsPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Manage who has access to this site.
               </p>
-            </div>
-
-            {/* Role legend */}
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Permission levels</p>
-              {/* Fixed badge column so every description starts at the same x. */}
-              <dl className="grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 text-sm">
-                {(["limited", "viewer", "editor", "admin", "owner"] as Role[]).map(role => (
-                  <div key={role} className="contents">
-                    <dt><RoleBadge role={role} /></dt>
-                    <dd className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
-                  </div>
-                ))}
-              </dl>
             </div>
 
             {/* Member list */}
@@ -2173,7 +2151,7 @@ export function SiteSettingsPage() {
                             value={member.role}
                             onValueChange={val => handleRoleChange(member, val as Role)}
                           >
-                            <SelectTrigger className="h-9 sm:h-7 w-28 text-xs" aria-label={`Role for ${member.name}`}>
+                            <SelectTrigger className="h-9 sm:h-8 w-28 text-xs" aria-label={`Role for ${member.name}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -2192,7 +2170,7 @@ export function SiteSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
                             disabled={removingId === member.userId}
                             onClick={() => handleRemove(member)}
                           >
@@ -2205,6 +2183,45 @@ export function SiteSettingsPage() {
                 })}
               </div>
             )}
+
+            {/* Invite form */}
+            <form onSubmit={handleInvite} className="flex flex-col gap-3">
+              <h4 className="text-sm font-medium">Invite a member</h4>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  type="email"
+                  aria-label="Member email"
+                  placeholder="user@example.com"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  required
+                  className="flex-1"
+                />
+                <div className="flex gap-2">
+                  <Select value={inviteRole} onValueChange={val => setInviteRole(val as Role)}>
+                    <SelectTrigger className="w-full sm:w-28" aria-label="Member role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
+                        <SelectItem key={role} value={role}>
+                          {ROLE_LABELS[role]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="submit" disabled={inviting}>
+                    {inviting ? "Adding…" : "Add"}
+                  </Button>
+                </div>
+              </div>
+              {inviteError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{inviteError}</AlertDescription>
+                </Alert>
+              )}
+              <RolePermissions roles={["limited", "viewer", "editor", "admin", "owner"]} />
+            </form>
 
             {/* Invite links */}
             <div className="flex flex-col gap-3">
@@ -2295,7 +2312,7 @@ export function SiteSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-9 sm:h-7 px-2 text-xs gap-1.5"
+                        className="h-9 sm:h-8 px-2.5 gap-1.5"
                         onClick={() => handleCopyLink(link)}
                       >
                         {copiedLinkId === link.id ? <Check className="size-3" /> : <Copy className="size-3" />}
@@ -2304,7 +2321,7 @@ export function SiteSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5"
+                        className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive gap-1.5"
                         disabled={revokingLinkId === link.id}
                         onClick={() => handleRevokeLink(link.id)}
                       >
@@ -2316,44 +2333,6 @@ export function SiteSettingsPage() {
                 </div>
               )}
             </div>
-
-            {/* Invite form */}
-            <form onSubmit={handleInvite} className="flex flex-col gap-3">
-              <h4 className="text-sm font-medium">Invite a member</h4>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  type="email"
-                  aria-label="Member email"
-                  placeholder="user@example.com"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  required
-                  className="flex-1"
-                />
-                <div className="flex gap-2">
-                  <Select value={inviteRole} onValueChange={val => setInviteRole(val as Role)}>
-                    <SelectTrigger className="w-full sm:w-28" aria-label="Member role">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
-                        <SelectItem key={role} value={role}>
-                          {ROLE_LABELS[role]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="submit" disabled={inviting}>
-                    {inviting ? "Adding…" : "Add"}
-                  </Button>
-                </div>
-              </div>
-              {inviteError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{inviteError}</AlertDescription>
-                </Alert>
-              )}
-            </form>
           </div>
         </>
       )}
@@ -2383,11 +2362,11 @@ export function SiteSettingsPage() {
             <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
               <div className="flex flex-col gap-0.5">
                 <p className="text-sm font-medium">Download as .zip</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] leading-snug text-muted-foreground">
                   Every document and uploaded file in this site, with folders preserved.
                 </p>
               </div>
-              <Button variant="outline" onClick={handleExport} disabled={exporting} className="shrink-0">
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="shrink-0">
                 {exporting ? "Exporting…" : "Export site"}
               </Button>
             </div>
@@ -2412,7 +2391,7 @@ export function SiteSettingsPage() {
               </div>
               <Dialog open={createKeyOpen} onOpenChange={open => { setCreateKeyOpen(open); if (!open) setCreateKeyError(null); }}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="shrink-0"><Plus className="size-4" /> New key</Button>
+                  <Button variant="outline" size="sm" className="shrink-0 gap-1.5"><Plus className="h-3.5 w-3.5" /> New key</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <form onSubmit={handleCreateKey}>
@@ -2512,7 +2491,7 @@ export function SiteSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-9 sm:h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
                             disabled={revokingKeyId === key.id}
                           >
                             {revokingKeyId === key.id ? "Revoking…" : "Revoke"}
@@ -2585,7 +2564,7 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
 
-          <div id="danger" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+          <div id="danger" className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
             <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
 
             {isOwner ? (
@@ -2596,7 +2575,7 @@ export function SiteSettingsPage() {
 
                 <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) { setDeleteError(null); setDeleteConfirm(""); setCopiedDeleteName(false); } }}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="self-start">Delete site</Button>
+                    <Button variant="destructive" className="mt-3 self-start">Delete site</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -2659,7 +2638,7 @@ export function SiteSettingsPage() {
 
                 <AlertDialog open={leaveOpen} onOpenChange={open => { setLeaveOpen(open); if (!open) setLeaveError(null); }}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="self-start">Leave site</Button>
+                    <Button variant="destructive" className="mt-3 self-start">Leave site</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -2690,8 +2669,30 @@ export function SiteSettingsPage() {
           </div>
         </>
       )}
-      </div>
     </SettingsShell>
+  );
+}
+
+/** Collapsed "Role permissions" disclosure shown under the invite role picker. */
+function RolePermissions({ roles }: { roles: Role[] }) {
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group -ml-0.5 inline-flex h-8 items-center gap-1 rounded-md px-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
+        Role permissions
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {/* Fixed badge column so every description starts at the same x. */}
+        <dl className="mt-1 grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 rounded-lg border border-border bg-card p-4">
+          {roles.map(role => (
+            <div key={role} className="contents">
+              <dt><RoleBadge role={role} /></dt>
+              <dd className="text-[13px] leading-snug text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
+            </div>
+          ))}
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

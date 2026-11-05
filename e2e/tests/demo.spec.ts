@@ -34,7 +34,8 @@ async function scrollUntilVisible(page: Page, locator: ReturnType<Page["locator"
 test.describe("demo sandbox", () => {
   test("landing page 'See a demo' links to /demo", async ({ page }) => {
     await page.goto("/");
-    const demoLink = page.locator('a:has-text("See a demo")');
+    // The hero and the closing CTA band both link to the demo.
+    const demoLink = page.locator('a:has-text("See a demo")').first();
     await expect(demoLink).toHaveAttribute("href", "/demo");
   });
 
@@ -200,6 +201,6 @@ test.describe("demo sandbox", () => {
     await enterDemo(page);
     await page.click('button:has-text("Exit demo")');
     await page.waitForURL((url) => url.pathname === "/");
-    await expect(page.getByText("See a demo")).toBeVisible();
+    await expect(page.getByText("See a demo").first()).toBeVisible();
   });
 });

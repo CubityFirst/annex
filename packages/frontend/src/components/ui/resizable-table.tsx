@@ -449,7 +449,10 @@ export function ResizableTableRow({
       onDrop={onDrop}
     >
       {checkboxCell !== undefined && (
-        <div role="gridcell" aria-colindex={1} className="w-10 shrink-0 px-3" onClick={e => e.stopPropagation()}>
+        // Flex-centred on the row's full height so the checkbox sits on the
+        // same optical centre line as the cell text (an inline box would ride
+        // the baseline a pixel or two high).
+        <div role="gridcell" aria-colindex={1} className="flex w-10 shrink-0 items-center justify-center self-stretch" onClick={e => e.stopPropagation()}>
           {checkboxCell}
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
-import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Lock, Mail, Plus, Radio, Sparkles, Star, Users } from "lucide-react";
+import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Plus, Radio, Settings, Sparkles, Star, Users } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,8 +53,8 @@ export function DashboardPage() {
     });
   }
 
-  async function handleToggleHidden(e: React.MouseEvent, projectId: string) {
-    e.stopPropagation();
+  async function handleToggleHidden(e: React.MouseEvent | null, projectId: string) {
+    e?.stopPropagation();
     const token = getToken();
     // Hiding clears the favourite flag (mutually exclusive - mirrors the server).
     setProjects(prev => sortByFavourite(prev.map(p => p.id === projectId
@@ -190,7 +191,7 @@ export function DashboardPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    className="mr-1.5 flex items-center gap-1 text-xs text-muted-foreground"
+                    className="mr-2.5 flex items-center gap-1 text-xs text-muted-foreground"
                     aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
                     title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
                   >
@@ -204,26 +205,6 @@ export function DashboardPage() {
               </Tooltip>
             )}
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={FOOTER_SLOT}
-                  aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
-                  onClick={(e) => handleToggleHidden(e, project.id)}
-                >
-                  {project.is_hidden ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {project.is_hidden ? "Unhide site" : "Hide site"}
-              </TooltipContent>
-            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -244,6 +225,39 @@ export function DashboardPage() {
                 {project.is_favourite ? "Remove from favourites" : "Add to favourites"}
               </TooltipContent>
             </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={FOOTER_SLOT}
+                  aria-label="Site actions"
+                  title="More actions"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px]" onClick={(e) => e.stopPropagation()}>
+                {project.published_at && (
+                  <DropdownMenuItem onSelect={() => navigate(`/s/${project.id}`)}>
+                    <Globe className="h-4 w-4" /> View public site
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => navigate(`/projects/${project.id}/settings`)}>
+                  <Settings className="h-4 w-4" /> Site settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  aria-label={project.is_hidden ? "Unhide site" : "Hide site"}
+                  onSelect={() => handleToggleHidden(null, project.id)}
+                >
+                  {project.is_hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {project.is_hidden ? "Show on dashboard" : "Hide from dashboard"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardFooter>
 
@@ -260,7 +274,7 @@ export function DashboardPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Organizations group sites and share access across them.
           </p>
-          <div className="mt-6 grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-6 grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
             {orgs.map(org => (
               <Card key={org.id} asChild>
                 <Link
@@ -304,20 +318,31 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Your sites</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Select a site to browse its documentation.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={openCreateOrg} className="shrink-0 gap-1.5">
-          <Building2 className="h-4 w-4" />
-          New organization
-        </Button>
+        <div className="flex shrink-0 items-center gap-2 self-start">
+          <Button variant="outline" size="sm" onClick={openCreateOrg} className="h-10 gap-1.5 sm:h-9">
+            <Building2 className="h-4 w-4" />
+            New organization
+          </Button>
+          {/* With sites present the header carries the primary "New site";
+              with none, the large empty-state card below does instead (only
+              one "New site" control is ever rendered). */}
+          {projects.length > 0 && (
+            <Button size="sm" onClick={openCreateSite} className="h-10 gap-1.5 sm:h-9">
+              <Plus className="h-4 w-4" />
+              New site
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
           {visibleProjects.map(project => renderProjectCard(project))}
           {pendingCount > 0 && (
             <Card asChild>
@@ -347,6 +372,7 @@ export function DashboardPage() {
               </Link>
             </Card>
           )}
+          {projects.length === 0 && (
           <Card asChild>
             <button
               type="button"
@@ -364,6 +390,7 @@ export function DashboardPage() {
             </CardContent>
             </button>
           </Card>
+          )}
         </div>
 
       {hiddenProjects.length > 0 && (
@@ -379,7 +406,7 @@ export function DashboardPage() {
             <Badge variant="secondary" className="ml-1">{hiddenProjects.length}</Badge>
           </button>
           {hiddenOpen && (
-            <div className="mt-4 grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-4 grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
               {hiddenProjects.map(project => renderProjectCard(project))}
             </div>
           )}

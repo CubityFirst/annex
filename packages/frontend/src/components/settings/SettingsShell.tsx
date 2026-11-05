@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useScrollSpy } from "./useScrollSpy";
@@ -16,7 +17,7 @@ export interface SettingsSectionDef {
   /** Pass the page's existing gate expression; default true. Hidden sections
    *  are dropped from the outline (and groups with no visible sections too). */
   visible?: boolean;
-  /** Render the link in the destructive colour (Danger Zone). */
+  /** Render the link in the destructive colour (Danger zone). */
   danger?: boolean;
 }
 
@@ -46,21 +47,41 @@ export function resolveOutline(groups: SettingsGroupDef[], sections: SettingsSec
 interface SettingsShellProps {
   title: string;
   description?: ReactNode;
-  /** Content column max width. Defaults to 3xl; SiteSettings uses 4xl. */
-  maxWidth?: "3xl" | "4xl";
   groups: SettingsGroupDef[];
   sections: SettingsSectionDef[];
   children: ReactNode;
 }
 
+/** Shared styling for every outline row: the nav draws a 1px track and each
+ *  row carries a 2px marker on it that turns solid at the current location. */
+function outlineItemClass(active: boolean, danger: boolean | undefined, indent: boolean) {
+  return cn(
+    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm transition-colors",
+    indent ? "pl-6" : "pl-3",
+    danger
+      ? active
+        ? "border-destructive font-medium text-destructive"
+        : "border-transparent text-destructive/75 hover:text-destructive"
+      : active
+        ? "border-foreground font-medium text-foreground"
+        : "border-transparent text-muted-foreground hover:text-foreground",
+  );
+}
+
 /**
- * Shared chrome for both settings surfaces: a header, a sticky grouped
- * accordion outline that auto-expands the group of the section you're scrolled
- * to (and collapses the rest), and a content column holding the page's own
- * section JSX verbatim. Owns scroll-spy and hash deep-linking; knows nothing
- * about auth - pages pass pre-gated `visible` flags.
+ * Shared chrome for every settings surface (user, site, org): a header, a
+ * sticky grouped accordion outline that auto-expands the group of the section
+ * you're scrolled to (and collapses the rest), a mobile "Jump to section"
+ * select in place of the outline, and a content column holding the page's own
+ * section JSX. Owns scroll-spy and hash deep-linking; knows nothing about
+ * auth - pages pass pre-gated `visible` flags.
+ *
+ * Geometry is fixed so every settings page lines up identically: a 12rem
+ * outline, a 3.5rem gutter and a 44rem (704px) content measure shared by the
+ * header, its divider and every section. Pages must not add their own
+ * narrower max-width wrappers.
  */
-export function SettingsShell({ title, description, maxWidth = "3xl", groups, sections, children }: SettingsShellProps) {
+export function SettingsShell({ title, description, groups, sections, children }: SettingsShellProps) {
   const location = useLocation();
   const resolved = resolveOutline(groups, sections);
   const orderedIds = resolved.flatMap(group => group.sections.map(s => s.id));
@@ -90,98 +111,115 @@ export function SettingsShell({ title, description, maxWidth = "3xl", groups, se
   }, [location.hash, idsKey]);
 
   const activeGroupId = resolved.find(group => group.sections.some(s => s.id === active))?.id ?? null;
-  // Shared settings grid: a 12rem outline + a ~46rem form column. Both pages
-  // use the same geometry now; `maxWidth` only widens the form column.
-  const maxWidthClass = maxWidth === "4xl" ? "max-w-[66rem]" : "max-w-[62rem]";
 
   return (
-    <div className={cn("mx-auto px-6 py-10 sm:px-10", maxWidthClass)}>
+    <div className="mx-auto w-full max-w-[64rem] px-4 py-8 sm:px-8 sm:py-10">
       <div className="flex gap-14">
-        {/* Grouped accordion outline - desktop only, mirrors DocsLayout's own
-            mobile sidebar gesture by staying out of the way on small screens. */}
+        {/* Grouped accordion outline - desktop only; below md the "Jump to
+            section" select under the header takes its place. */}
         <aside className="hidden md:block w-48 shrink-0">
-          <nav className="sticky top-10 flex flex-col">
+          <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
-            {resolved.map(group => {
-              const isActiveGroup = group.id === activeGroupId;
-              // A group holding a single section would just repeat itself
-              // ("Danger zone › Danger zone"), so render it as one plain link.
-              if (group.sections.length === 1) {
-                const section = group.sections[0];
+            <div className="flex flex-col border-l border-border">
+              {resolved.map(group => {
+                const isActiveGroup = group.id === activeGroupId;
+                // A group holding a single section would just repeat itself
+                // ("Danger zone › Danger zone"), so render it as one plain link.
+                if (group.sections.length === 1) {
+                  const section = group.sections[0];
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => scrollTo(section.id)}
+                      aria-current={isActiveGroup ? "true" : undefined}
+                      className={outlineItemClass(isActiveGroup, section.danger, false)}
+                    >
+                      {group.label}
+                    </button>
+                  );
+                }
                 return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => scrollTo(section.id)}
-                    aria-current={isActiveGroup ? "true" : undefined}
-                    className={cn(
-                      "py-1 text-left text-sm transition-colors",
-                      section.danger
-                        ? isActiveGroup
-                          ? "font-medium text-destructive"
-                          : "text-destructive/70 hover:text-destructive"
-                        : isActiveGroup
-                          ? "font-medium text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {group.label}
-                  </button>
+                  <Collapsible key={group.id} open={isActiveGroup}>
+                    <CollapsibleTrigger
+                      type="button"
+                      onClick={() => scrollTo(group.sections[0].id)}
+                      aria-expanded={isActiveGroup}
+                      className={cn(
+                        "-ml-px flex w-full items-center justify-between gap-2 border-l-2 border-transparent py-1.5 pl-3 pr-2 text-left text-sm transition-colors",
+                        isActiveGroup ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {group.label}
+                      <ChevronDown
+                        className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", isActiveGroup && "rotate-180")}
+                      />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="flex flex-col">
+                      {group.sections.map(section => {
+                        const isActive = active === section.id;
+                        return (
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => scrollTo(section.id)}
+                            aria-current={isActive ? "true" : undefined}
+                            className={outlineItemClass(isActive, section.danger, true)}
+                          >
+                            {section.label}
+                          </button>
+                        );
+                      })}
+                    </CollapsibleContent>
+                  </Collapsible>
                 );
-              }
-              return (
-                <Collapsible key={group.id} open={isActiveGroup}>
-                  <CollapsibleTrigger
-                    type="button"
-                    onClick={() => scrollTo(group.sections[0].id)}
-                    aria-expanded={isActiveGroup}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 py-1 text-left text-sm transition-colors",
-                      isActiveGroup ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {group.label}
-                    <ChevronDown
-                      className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", isActiveGroup && "rotate-180")}
-                    />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="flex flex-col">
-                    {group.sections.map(section => {
-                      const isActive = active === section.id;
-                      return (
-                        <button
-                          key={section.id}
-                          type="button"
-                          onClick={() => scrollTo(section.id)}
-                          aria-current={isActive ? "true" : undefined}
-                          className={cn(
-                            "py-1 pl-3 text-left text-sm transition-colors",
-                            section.danger
-                              ? isActive
-                                ? "text-destructive"
-                                : "text-destructive/70 hover:text-destructive"
-                              : isActive
-                                ? "text-foreground"
-                                : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {section.label}
-                        </button>
-                      );
-                    })}
-                  </CollapsibleContent>
-                </Collapsible>
-              );
-            })}
+              })}
+            </div>
           </nav>
         </aside>
 
-        {/* Content column - the page's existing sections, unchanged. */}
-        {/* pb-32 leaves room for the scroll-spy to settle on the last sections. */}
-        <div className="flex-1 min-w-0 pb-32">
+        {/* Content column - one measure for header, divider and sections.
+            pb-32 leaves breathing room below the last section. */}
+        <div className="min-w-0 max-w-[44rem] flex-1 pb-32">
           <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">{title}</h1>
           {description && <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>}
-          <Separator className="mb-8 mt-7" />
+          {orderedIds.length > 1 && (
+            <div className="mt-5 md:hidden">
+              <Select value={active ?? undefined} onValueChange={scrollTo}>
+                <SelectTrigger className="h-11 w-full" aria-label="Jump to section">
+                  {/* A div, not a span: SelectTrigger line-clamps its direct
+                      span children, which would collapse this flex row. */}
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="shrink-0 text-muted-foreground">Jump to</span>
+                    <span className="min-w-0 truncate font-medium"><SelectValue placeholder="Section" /></span>
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  {resolved.map(group =>
+                    group.sections.length === 1 ? (
+                      <SelectItem
+                        key={group.id}
+                        value={group.sections[0].id}
+                        className={cn("min-h-10", group.sections[0].danger && "text-destructive focus:text-destructive")}
+                      >
+                        {group.label}
+                      </SelectItem>
+                    ) : (
+                      <SelectGroup key={group.id}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.sections.map(section => (
+                          <SelectItem key={section.id} value={section.id} className="min-h-10 pl-4">
+                            {section.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <Separator className="mb-10 mt-7" />
           {children}
         </div>
       </div>

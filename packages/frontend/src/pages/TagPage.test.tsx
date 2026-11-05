@@ -31,7 +31,8 @@ describe("TagPage", () => {
     expect(screen.getByRole("heading", { name: "alpha" })).toBeInTheDocument();
     expect(screen.getByText("Alpha Doc")).toBeInTheDocument();
     expect(screen.queryByText("Other Doc")).not.toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument(); // count badge
+    // Muted sub-line under the title carries the count.
+    expect(screen.getByText(/1 document tagged/)).toHaveTextContent("1 document tagged alpha");
   });
 
   it("shows an empty state when no doc has the tag", () => {

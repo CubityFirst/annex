@@ -282,6 +282,10 @@
   aspect-ratio: 16 / 10;
   background: var(--skeleton);
 }
+.l-viewer-host { color: #6f6b66; }
+/* <picture> wrappers (mobile <source>) shouldn't add a box of their own. */
+.l-viewer-stage picture,
+.l-show-media picture { display: contents; }
 .l-viewer-stage img {
   position: absolute;
   inset: 0;
@@ -335,6 +339,7 @@
 .l-showcase {
   border-top: 1px solid var(--border);
   padding: clamp(40px, 5vw, 64px) 0;
+  scroll-margin-top: var(--nav-h);
 }
 .l-show {
   display: grid;
@@ -654,27 +659,28 @@
   margin: 32px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 12px 28px;
 }
+/* Name + licence read as one inline run: a long name wraps and the tag
+   simply follows its last line (no justify-between gutter). */
 .l-ack-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   min-width: 0;
+  line-height: 1.5;
 }
 .l-ack-link {
   font-size: 15px;
   color: var(--text2);
   transition: color 0.15s;
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 .l-ack-link:hover { color: var(--text); }
 .l-ack-license {
-  font: 400 11px "DM Mono", monospace;
+  display: inline-block;
+  margin-left: 6px;
+  font: 400 12px "DM Mono", monospace;
   color: var(--text3);
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* ── LEGAL PAGES ── */
@@ -703,14 +709,14 @@
   font-size: 16px;
   font-family: 'DM Mono', monospace;
   color: var(--text3);
-  margin: 0 0 72px;
+  margin: 0 0 44px;
 }
 /* Lead paragraph (Acknowledgements) - body sans, muted, like the legal copy. */
 .l-legal-intro {
   font-size: 18px;
-  font-weight: 300;
-  line-height: 1.7;
-  color: var(--text3);
+  font-weight: 400;
+  line-height: 30px;
+  color: #b3aea8;
   max-width: 640px;
   margin: 0 0 24px;
 }
@@ -722,22 +728,26 @@
   letter-spacing: -0.01em;
 }
 .l-legal-body h2:first-child { margin-top: 0; }
+/* Body copy: regular weight + a lifted grey so long-form reading holds up on
+   the dark ground; ~68ch measure. */
 .l-legal-body p {
   font-size: 18px;
-  font-weight: 300;
-  color: var(--text3);
-  line-height: 1.75;
+  font-weight: 400;
+  color: #b3aea8;
+  line-height: 30px;
+  max-width: 68ch;
   margin: 0 0 18px;
 }
 .l-legal-body ul {
   margin: 0 0 18px;
   padding-left: 24px;
+  max-width: 68ch;
 }
 .l-legal-body li {
   font-size: 18px;
-  font-weight: 300;
-  color: var(--text3);
-  line-height: 1.75;
+  font-weight: 400;
+  color: #b3aea8;
+  line-height: 30px;
   margin-bottom: 6px;
   list-style: disc;
 }
@@ -801,8 +811,19 @@
   .l-viewer-chrome { height: 32px; }
   .l-viewer-dots { display: none; }
   .l-viewer-url { font-size: 11px; }
+  /* Phone-width shots (390x488) replace the desktop ones here - see
+     VIEWER_MOBILE_MQ in LandingPage.tsx. Cap the width so a tablet-ish
+     window doesn't blow a phone capture up past ~1.2x. */
+  .l-viewer-frame { max-width: 460px; margin: 0 auto; }
+  .l-viewer-stage { aspect-ratio: 4 / 5; }
+}
+@media (max-width: 480px) {
+  /* Drop the host so the path fits instead of trailing off. */
+  .l-viewer-host { display: none; }
 }
 @media (max-width: 560px) {
+  /* Phone-width shots here too - see SHOWCASE_MOBILE_MQ in LandingPage.tsx. */
+  .l-show-media { aspect-ratio: 4 / 5; }
   .l-uses-grid,
   .l-extras-grid { grid-template-columns: minmax(0, 1fr); }
   .l-use { border-left: none; }

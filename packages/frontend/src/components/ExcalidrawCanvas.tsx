@@ -64,10 +64,16 @@ interface Props {
 
 // Re-skin Excalidraw's UI chrome (not the drawing itself) with the app's warm
 // neutral tokens so its default purple accent doesn't clash with the brand.
-// Scoped under our wrapper class, which out-specifies Excalidraw's own
-// `.excalidraw.theme--dark` blocks. Light mode gets the same treatment.
+// Every selector doubles `.excalidraw.excalidraw` under our wrapper so it
+// strictly out-specifies Excalidraw 0.18's own rules (`.excalidraw` /
+// `.excalidraw.theme--dark` at 0-2-0, and its `.excalidraw.theme--dark.excalidraw
+// .x:hover` dark-mode hovers at 0-5-0) regardless of stylesheet order - the
+// lazily-loaded chunk can inject its CSS after this <style> in production.
+// Light mode gets the same treatment.
+const EX = ".annex-excalidraw .excalidraw.excalidraw";
+const EX_DARK = `${EX}.theme--dark`;
 const EXCALIDRAW_THEME_CSS = `
-.annex-excalidraw .excalidraw {
+${EX} {
   --color-primary: var(--primary);
   --color-primary-darker: color-mix(in oklch, var(--primary) 88%, black);
   --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, black);
@@ -87,7 +93,9 @@ const EXCALIDRAW_THEME_CSS = `
   --color-surface-low: var(--muted);
   --color-surface-lowest: var(--background);
   --color-on-surface: var(--foreground);
+  --color-border-outline: var(--muted-foreground);
   --color-border-outline-variant: var(--border);
+  --color-promo: var(--primary);
   --island-bg-color: var(--card);
   --popup-bg-color: var(--popover);
   --default-bg-color: var(--background);
@@ -100,8 +108,11 @@ const EXCALIDRAW_THEME_CSS = `
   --select-highlight-color: var(--ring);
   --focus-highlight-color: var(--ring);
   --link-color: var(--foreground);
+  /* Hovered buttons: a hair above the --accent "selected" fill. */
+  --annex-hover: color-mix(in oklch, var(--accent) 94%, var(--foreground));
+  --button-hover-bg: var(--annex-hover);
 }
-.annex-excalidraw .excalidraw.theme--dark {
+${EX_DARK} {
   /* In dark the "darker" accent steps get lighter, as in Excalidraw's own palette. */
   --color-primary-darker: color-mix(in oklch, var(--primary) 88%, white);
   --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, white);
@@ -109,14 +120,47 @@ const EXCALIDRAW_THEME_CSS = `
   --color-brand-hover: color-mix(in oklch, var(--primary) 88%, white);
   --color-brand-active: color-mix(in oklch, var(--primary) 76%, white);
 }
-/* Text that Excalidraw paints white on a --color-primary fill: use the
+/* Selected tool / toggled toolbar buttons: the app's quiet accent fill. */
+${EX} .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
+${EX} .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+${EX} .App-toolbar__extra-tools-trigger--selected,
+${EX} .App-toolbar__extra-tools-trigger--selected:hover,
+${EX} .dropdown-menu-button.active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+/* Excalidraw hard-codes a violet (#363541 / #31303b) for these dark-mode
+   hovers and the main/mobile menu buttons instead of using its tokens. */
+${EX_DARK} .dropdown-menu-button:hover,
+${EX_DARK} .HelpDialog__btn:hover {
+  --background: var(--annex-hover);
+}
+${EX_DARK} .App-mobile-menu,
+${EX_DARK} .App-menu__left {
+  --button-hover-bg: var(--annex-hover);
+  --button-bg: var(--accent);
+}
+${EX_DARK} .layer-ui__search-header .ExcTextField__input {
+  background-color: var(--background);
+}
+${EX} .App-toolbar__extra-tools-trigger:active {
+  box-shadow: 0 0 0 1px var(--border) inset;
+}
+/* Canvas hint ("To move canvas, hold mouse wheel…"): the app's caption style. */
+${EX} .HintViewer,
+${EX_DARK} .HintViewer {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+/* Text that Excalidraw paints white/black on a --color-primary fill: use the
    app's on-primary colour so it stays legible on the cream accent. */
-.annex-excalidraw .excalidraw .Dialog__action-button--primary,
-.annex-excalidraw .excalidraw .ttd-dialog-panel-button.excalidraw-button,
-.annex-excalidraw .excalidraw .library-actions-counter {
+${EX} .Dialog__action-button--primary,
+${EX} .ttd-dialog-panel-button.excalidraw-button,
+${EX} .library-actions-counter,
+${EX} .sidebar-tab-trigger[data-state=active] {
   color: var(--primary-foreground);
 }
-.annex-excalidraw .excalidraw .App-toolbar .eraser.active {
+${EX} .App-toolbar .eraser.active {
   --icon-fill-color: var(--primary-foreground);
   --keybinding-color: var(--primary-foreground);
 }

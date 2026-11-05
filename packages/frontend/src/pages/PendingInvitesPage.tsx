@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { BookOpen, Building2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
@@ -99,12 +100,13 @@ export function PendingInvitesPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-8 sm:py-10">
-      <div className="mb-8">
-        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pending invites</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Accept or decline invitations to sites and organizations.
-        </p>
-      </div>
+      {/* Same header rhythm as the settings pages: title, muted line, then a
+          divider spanning the one content measure the list below shares. */}
+      <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pending invites</h1>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Accept or decline invitations to sites and organizations.
+      </p>
+      <Separator className="mb-8 mt-7" />
 
       <div aria-live="polite" className="sr-only">{statusMessage}</div>
 

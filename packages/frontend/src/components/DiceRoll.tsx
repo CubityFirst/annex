@@ -397,7 +397,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
     return (
       <button
         onClick={doRoll}
-        className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1.5 rounded-md border border-input/70 bg-card px-2 py-0.5 text-[0.875em] font-medium text-foreground shadow-xs hover:bg-accent transition-colors cursor-pointer"
         style={{ fontFamily: "var(--ui-font)" }}
       >
         <Dices className="h-3.5 w-3.5" />
@@ -431,12 +431,12 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onClick={doRoll}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-md border border-input/70 bg-card px-2 py-0.5 text-[0.875em] text-foreground shadow-xs select-none not-prose hover:bg-accent transition-colors cursor-pointer"
           style={{ fontFamily: "var(--ui-font)" }}
           aria-label="Re-roll"
         >
-          <Dices className="h-3.5 w-3.5 text-zinc-500" />
-          <span className="text-zinc-400">{splitFormulaLabel(notation).formula}</span>
+          <Dices className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">{splitFormulaLabel(notation).formula}</span>
           {result.label && (
             <span className="text-zinc-400">{result.label}</span>
           )}

@@ -55,13 +55,11 @@ export function TagPage() {
         <div className="flex items-center gap-2.5">
           <Tag className="size-5 shrink-0 text-muted-foreground" aria-hidden />
           <h1 className="min-w-0 truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{decodedTag}</h1>
-          <span
-            className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground ring-1 ring-inset ring-border"
-            aria-label={`${matchingDocs.length} ${matchingDocs.length === 1 ? "document" : "documents"}`}
-          >
-            {matchingDocs.length}
-          </span>
         </div>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {matchingDocs.length} {matchingDocs.length === 1 ? "document" : "documents"} tagged{" "}
+          <span className="font-medium text-foreground">{decodedTag}</span>
+        </p>
       </div>
 
       {matchingDocs.length === 0 ? (

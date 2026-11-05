@@ -24,7 +24,8 @@ import { apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
-import { Building2 } from "lucide-react";
+import { Building2, ChevronRight } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -79,6 +80,29 @@ interface OwnedSite {
   name: string;
   role: string;
   organization_id: string | null;
+}
+
+/** Collapsed "Role permissions" disclosure shown under the invite form. */
+function RolePermissions() {
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group -ml-0.5 inline-flex h-8 items-center gap-1 rounded-md px-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
+        Role permissions
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {/* Fixed badge column so every description starts at the same x. */}
+        <dl className="mt-1 grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 rounded-lg border border-border bg-card p-4">
+          {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
+            <div key={role} className="contents">
+              <dt><RoleBadge role={role} /></dt>
+              <dd className="text-[13px] leading-snug text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
+            </div>
+          ))}
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 function RoleBadge({ role }: { role: Role }) {
@@ -336,47 +360,6 @@ export function OrgSettingsPage() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-border bg-card p-4">
-                <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Permission levels</p>
-                {/* Fixed badge column so every description starts at the same x. */}
-                <dl className="grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 text-sm">
-                  {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
-                    <div key={role} className="contents">
-                      <dt><RoleBadge role={role} /></dt>
-                      <dd className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-
-              {/* Invite */}
-              <form onSubmit={handleInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Label htmlFor="invite-email">Invite by email</Label>
-                  <Input
-                    id="invite-email"
-                    type="email"
-                    placeholder="teammate@example.com"
-                    value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>Role</Label>
-                  <Select value={inviteRole} onValueChange={v => setInviteRole(v as Role)}>
-                    <SelectTrigger className="w-32" aria-label="Role"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
-                        <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" disabled={inviting}>{inviting ? "Inviting…" : "Invite"}</Button>
-              </form>
-              {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
-
               {/* Member list */}
               <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                 {members.map(member => {
@@ -408,7 +391,7 @@ export function OrgSettingsPage() {
                           </Badge>
                         ) : canChangeRole ? (
                           <Select value={member.role} onValueChange={val => handleRoleChange(member, val as Role)}>
-                            <SelectTrigger className="h-9 w-28 text-xs sm:h-7" aria-label={`Role for ${member.name}`}><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-9 w-28 text-xs sm:h-8" aria-label={`Role for ${member.name}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
                                 <SelectItem key={role} value={role} className="text-xs">{ROLE_LABELS[role]}</SelectItem>
@@ -423,7 +406,7 @@ export function OrgSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
                             disabled={removingId === member.userId}
                             onClick={() => handleRemove(member)}
                           >
@@ -434,6 +417,37 @@ export function OrgSettingsPage() {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Invite */}
+              <div className="flex flex-col gap-2">
+              <form onSubmit={handleInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <Label htmlFor="invite-email">Invite by email</Label>
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="teammate@example.com"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={v => setInviteRole(v as Role)}>
+                    <SelectTrigger className="w-32" aria-label="Role"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
+                        <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" disabled={inviting}>{inviting ? "Inviting…" : "Invite"}</Button>
+              </form>
+              {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
+              <RolePermissions />
               </div>
             </div>
           </>
@@ -497,7 +511,7 @@ export function OrgSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
                             disabled={detachingId === site.id}
                           >
                             {detachingId === site.id ? "Detaching…" : "Detach"}
@@ -533,7 +547,7 @@ export function OrgSettingsPage() {
         {myRole !== null && (
           <>
             <Separator className="my-10" />
-            <div id="danger" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+            <div id="danger" className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
               <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
 
               {isOwner ? (
@@ -544,7 +558,7 @@ export function OrgSettingsPage() {
                   </p>
                   <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="self-start">Delete organization</Button>
+                      <Button variant="destructive" className="mt-3 self-start">Delete organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -572,7 +586,7 @@ export function OrgSettingsPage() {
                   </p>
                   <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="self-start">Leave organization</Button>
+                      <Button variant="destructive" className="mt-3 self-start">Leave organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>

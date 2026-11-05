@@ -165,12 +165,12 @@ export function RecycleBin({ projectId }: { projectId: string }) {
                 <span className="hidden sm:inline shrink-0 text-xs text-muted-foreground" title="Permanently deleted after this">
                   {daysLeft === 0 ? "Deleting soon" : `${daysLeft}d left`}
                 </span>
-                <Button size="sm" variant="outline" className="gap-1.5 h-9 shrink-0" onClick={() => handleRestore(entry)} disabled={busy} aria-label={`Restore ${entry.name}`}>
+                <Button size="sm" variant="outline" className="gap-1.5 h-9 sm:h-8 shrink-0" onClick={() => handleRestore(entry)} disabled={busy} aria-label={`Restore ${entry.name}`}>
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Restore</span>
                 </Button>
                 {listing.canPurge && (
-                  <Button size="sm" variant="ghost" className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setPurgeTarget(entry)} disabled={busy} aria-label={`Delete ${entry.name} forever`} title="Delete forever">
+                  <Button size="sm" variant="ghost" className="h-9 w-9 p-0 sm:h-8 sm:w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setPurgeTarget(entry)} disabled={busy} aria-label={`Delete ${entry.name} forever`} title="Delete forever">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
