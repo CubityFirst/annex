@@ -1422,14 +1422,12 @@ export function UserSettingsPage() {
                   onChange={handleAvatarChange}
                 />
                 <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
-                  {/* From sm up a grid: avatar | controls, with the one-line
-                      helper under the controls. Below sm everything stacks -
-                      avatar, then controls, then helper - each full width, so
-                      the helper never drops under the avatar while the
-                      controls wrap beside it. */}
-                  <div className="flex w-full flex-col items-start gap-3 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-1.5">
+                  {/* A grid at every width: avatar | controls (Change photo
+                      over the Dark/Light selector). The helper sits under the
+                      controls from sm up and spans the full row on phones. */}
+                  <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5">
                     <PopoverTrigger asChild>
-                      <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 sm:row-span-2">
+                      <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 row-span-2">
                         <UserAvatar userId={userId} name={name || "?"} className="size-20 [&_[data-slot=avatar-fallback]]:text-[1.875rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
                         <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                           {avatarUploading
@@ -1478,7 +1476,7 @@ export function UserSettingsPage() {
                         compact Dark/Light toggle sits directly under it and
                         picks which avatar slot the preview shows and
                         Upload/Remove target (one image per background). */}
-                    <div className="flex w-full flex-col items-start gap-2 sm:self-end">
+                    <div className="flex min-w-0 flex-col items-start gap-2 self-end">
                       <PopoverAnchor asChild>
                         <Button
                           ref={changePhotoButtonRef}
@@ -1536,7 +1534,7 @@ export function UserSettingsPage() {
                         </Tooltip>
                       </div>
                     </div>
-                    <p id="avatar-variant-hint" className="w-full text-xs text-muted-foreground sm:col-start-2 sm:self-start">
+                    <p id="avatar-variant-hint" className="col-span-2 mt-1.5 text-xs text-muted-foreground sm:col-span-1 sm:col-start-2 sm:mt-0 sm:self-start">
                       Use a different photo on light backgrounds (optional).
                     </p>
                   </div>

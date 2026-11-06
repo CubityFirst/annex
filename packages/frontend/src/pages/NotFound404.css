@@ -57,6 +57,8 @@
   color: var(--text);
   display: flex;
   align-items: baseline;
+  /* The block is centred: centre the numeral + cursor row with it. */
+  justify-content: center;
   margin-bottom: 36px;
 }
 .v404-cursor {
