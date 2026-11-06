@@ -2376,7 +2376,7 @@ export function UserSettingsPage() {
                               a wide face still overflows) so every row is the
                               same height and the radios align across rows. */}
                           <div className="truncate font-medium">{FONT_LABELS[choice]}</div>
-                          <div className="mt-0.5 truncate text-[13px] leading-snug text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
+                          <div className="mt-0.5 truncate text-sm leading-snug text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
                             The quick brown fox
                           </div>
                         </td>

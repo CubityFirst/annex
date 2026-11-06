@@ -166,7 +166,7 @@ describe("SearchPalette (dashboard mode)", () => {
   it("lists all sites and dashboard actions with no query, without fetching", () => {
     const fetchMock = mockFetch({});
     renderPalette({ projectId: null, sites: SITES, onCreateSite: () => {}, onCreateOrg: () => {} });
-    expect(screen.getByPlaceholderText("Search sites and docs…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search sites and documents…")).toBeInTheDocument();
     expect(screen.getByText("Sites")).toBeInTheDocument();
     expect(screen.getByText("Campaign Notes")).toBeInTheDocument();
     expect(screen.getByText("Recipe Book")).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe("SearchPalette (dashboard mode)", () => {
   it("filters sites client-side and navigates on select", async () => {
     const fetchMock = mockFetch({});
     renderPalette({ projectId: null, sites: SITES });
-    await userEvent.type(screen.getByPlaceholderText("Search sites and docs…"), "recipe");
+    await userEvent.type(screen.getByPlaceholderText("Search sites and documents…"), "recipe");
     expect(screen.queryByText("Campaign Notes")).not.toBeInTheDocument();
     const fragment = screen.getByText("Recipe");
     await userEvent.click(fragment.closest("[cmdk-item]") as HTMLElement);
@@ -193,7 +193,7 @@ describe("SearchPalette (dashboard mode)", () => {
   it("searches doc titles across sites and labels each hit with its site", async () => {
     const fetchMock = mockFetch({ docs: [DOC_HIT] });
     renderPalette({ projectId: null, sites: SITES });
-    await userEvent.type(screen.getByPlaceholderText("Search sites and docs…"), "coffee");
+    await userEvent.type(screen.getByPlaceholderText("Search sites and documents…"), "coffee");
     const hits = await screen.findAllByText("Coffee", { exact: false, selector: "mark" });
     expect(hits.length).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -226,7 +226,7 @@ describe("SearchPalette (dashboard mode)", () => {
   it("shows no-results when the query matches nothing", async () => {
     mockFetch({});
     renderPalette({ projectId: null, sites: SITES });
-    await userEvent.type(screen.getByPlaceholderText("Search sites and docs…"), "zzz");
+    await userEvent.type(screen.getByPlaceholderText("Search sites and documents…"), "zzz");
     expect((await screen.findAllByText("No results found.")).length).toBeGreaterThan(0);
   });
 });

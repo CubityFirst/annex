@@ -215,7 +215,15 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
         }
       }));
       if (ctrl.signal.aborted) return;
-      setSiteDocs(perSite.flat().slice(0, 10));
+      // Direct title matches first (stable within each bucket), then the
+      // body-only matches, which show an excerpt explaining why they're here.
+      const needle = term.toLowerCase();
+      const hits = perSite.flat();
+      const ranked = [
+        ...hits.filter(d => d.title.toLowerCase().includes(needle)),
+        ...hits.filter(d => !d.title.toLowerCase().includes(needle)),
+      ];
+      setSiteDocs(ranked.slice(0, 10));
       setLoading(false);
     },
     [sites],
@@ -381,7 +389,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
-        placeholder={isDashboard ? "Search sites and docs…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
+        placeholder={isDashboard ? "Search sites and documents…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
         value={query}
         onValueChange={setQuery}
       />
@@ -394,7 +402,9 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
               ? `${resultCount} result${resultCount === 1 ? "" : "s"} found.`
               : ""}
       </div>
-      <CommandList>
+      {/* Taller than the shared default so the dashboard's full action list
+          fits at common heights; still capped by the viewport. */}
+      <CommandList className="max-h-[min(360px,calc(100dvh-14vh-8rem))]">
         {showRecent && (
           <CommandGroup heading="Recently viewed">
             {recent.map(item => (
@@ -433,7 +443,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             <p className="text-sm font-medium">No results found</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {isDashboard
-                ? "This searches site names and doc titles. Open a site to search its files and tags."
+                ? "This searches sites and documents. Open a site to search its files or filter by tag."
                 : "Try a different word, or type # to filter by tag."}
             </p>
           </div>
@@ -481,11 +491,17 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 onSelect={() => { close(); navigate(`/projects/${d.siteId}/docs/${d.doc_id}`); }}
                 className="flex items-center gap-2 py-2 min-w-0"
               >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="text-sm flex-1 min-w-0 truncate">
-                  <HighlightedText text={d.title} term={searchTerm} />
+                <FileText className="h-3.5 w-3.5 shrink-0 self-start mt-[3px] text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-sm">
+                    <HighlightedText text={d.title} term={searchTerm} />
+                  </span>
+                  {/* Body-only match: one line of context showing the hit. */}
+                  {d.excerpt && !d.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) && (
+                    <span className="[&>span]:line-clamp-1"><SearchSnippet html={d.excerpt} /></span>
+                  )}
                 </span>
-                <span className="ml-auto max-w-36 shrink-0 truncate text-[10px] text-muted-foreground">{d.siteName}</span>
+                <span className="ml-auto max-w-36 shrink-0 self-start mt-[3px] truncate text-[10px] text-muted-foreground">{d.siteName}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -599,7 +615,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             </span>
           ) : isDashboard ? (
             // Keep the search scope visible once the placeholder is gone.
-            <span className="text-[11px] text-muted-foreground" aria-hidden="true">Searching site names</span>
+            <span className="text-[11px] text-muted-foreground" aria-hidden="true">Sites and documents</span>
           ) : null}
         </div>
         <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
