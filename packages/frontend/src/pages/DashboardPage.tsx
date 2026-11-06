@@ -21,6 +21,9 @@ const REALTIME_FEATURE = 4;
 // Shared square slot so every footer item (clickable button or static info icon)
 // occupies the same footprint - uniform touch/visual regions across the row.
 const FOOTER_SLOT = "flex h-11 w-11 shrink-0 items-center justify-center sm:h-8 sm:w-8";
+// Feature hints are glanceable (tooltip on hover/focus), not tap targets, so
+// they sit in a tighter slot than the pin/menu buttons.
+const FEATURE_SLOT = "flex h-7 w-6 shrink-0 items-center justify-center";
 
 interface Org {
   id: string;
@@ -118,22 +121,26 @@ export function DashboardPage() {
         }}
         className="group flex cursor-pointer flex-col transition-[border-color,background-color,box-shadow] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CardHeader className="flex-row items-center justify-between gap-3 pb-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-              <BookOpen className="h-4 w-4 text-primary" />
-            </div>
-            <div>
-              <CardTitle as="h3">{project.name}</CardTitle>
-            </div>
+        {/* Title with a one-line meta row (docs · members) under it, so a long
+            name never fights a count badge and the footer keeps room for
+            every feature hint plus the pin and menu. */}
+        <CardHeader className="flex-row items-start gap-2.5 pb-0">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+            <BookOpen className="h-4 w-4 text-primary" />
           </div>
-          {/* Counts arrive with the dashboard's ?counts=1 load; a list reused
-              from the sidebar's boot fetch has none until that lands. */}
-          {project.doc_count != null && (
-            <Badge variant="outline" className="shrink-0">
-              {project.doc_count} {project.doc_count === 1 ? "doc" : "docs"}
-            </Badge>
-          )}
+          <div className="min-w-0 flex-1">
+            <CardTitle as="h3" className="line-clamp-2 leading-snug">{project.name}</CardTitle>
+            {/* Counts arrive with the dashboard's ?counts=1 load; a list reused
+                from the sidebar's boot fetch has none until that lands. */}
+            {(project.doc_count != null || project.member_count != null) && (
+              <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                {[
+                  project.doc_count != null && `${project.doc_count.toLocaleString()} ${project.doc_count === 1 ? "doc" : "docs"}`,
+                  project.member_count != null && `${project.member_count.toLocaleString()} ${project.member_count === 1 ? "member" : "members"}`,
+                ].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
         </CardHeader>
 
         {/* Grows so cards in a row stay equal height; three lines of
@@ -149,7 +156,7 @@ export function DashboardPage() {
         {/* Footer: a labelled visibility status on the left (colour + words,
             not a lone green globe), feature hints as quiet glyphs, and the
             personal actions (favourite / hide) grouped on the right. */}
-        <CardFooter className="flex items-center gap-1 pt-1">
+        <CardFooter className="flex items-center gap-1 pt-1 [&>button:first-child]:mr-1.5 [&>span:first-child]:mr-1.5">
           {project.published_at ? (
             <button
               type="button"
@@ -171,7 +178,7 @@ export function DashboardPage() {
           {!!project.ai_enabled && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
+                <span tabIndex={0} className={`${FEATURE_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Sparkles className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label="AI features enabled" />
                 </span>
               </TooltipTrigger>
@@ -182,7 +189,7 @@ export function DashboardPage() {
           {!!(project.features & REALTIME_FEATURE) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
+                <span tabIndex={0} className={`${FEATURE_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Radio className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label="Real-time collaboration enabled" />
                 </span>
               </TooltipTrigger>
@@ -193,7 +200,7 @@ export function DashboardPage() {
           {project.organization_id && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span tabIndex={0} className={`${FOOTER_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
+                <span tabIndex={0} className={`${FEATURE_SLOT} rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                   <Building2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} role="img" aria-label={`Part of ${project.organization_name ?? "an organization"}`} />
                 </span>
               </TooltipTrigger>
@@ -204,23 +211,6 @@ export function DashboardPage() {
           )}
 
           <div className="ml-auto flex items-center gap-0.5">
-            {project.member_count != null && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div
-                    className="mr-2.5 flex items-center gap-1 text-xs text-muted-foreground"
-                    aria-label={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
-                    title={`${project.member_count} ${project.member_count === 1 ? "member" : "members"}`}
-                  >
-                    <Users className="h-4 w-4" strokeWidth={1.5} />
-                    <span className="tabular-nums">{project.member_count}</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {project.member_count} {project.member_count === 1 ? "member" : "members"}
-                </TooltipContent>
-              </Tooltip>
-            )}
 
 
             <Tooltip>
