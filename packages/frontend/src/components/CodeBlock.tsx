@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { DiceRoll } from "@/components/DiceRoll";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
 
-const THEME = "github-dark-dimmed";
+const THEME = "vitesse-dark";
 
 function highlight(code: string, lang: string): string | null {
   const h = getHighlighter();
@@ -38,7 +38,7 @@ export function CodeBlock({ lang, code, className }: CodeBlockProps) {
   return <ShikiCodeBlock lang={lang} code={code} className={className} />;
 }
 
-/** Highlighted fenced code block using Shiki (github-dark-dimmed theme). */
+/** Highlighted fenced code block using Shiki (vitesse-dark theme on the card surface). */
 function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(() => highlight(code, lang));
   const [copied, setCopied] = useState(false);
@@ -61,7 +61,7 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
       size="icon"
       variant="ghost"
       onClick={copy}
-      className="pdf-print-hide absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10"
+      className="pdf-print-hide absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent"
       aria-label={copied ? "Copied" : "Copy code"}
     >
       {copied ? (
@@ -77,7 +77,7 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
 
   if (html) {
     return (
-      <div className={`not-prose relative my-4 rounded-md text-sm [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-4 ${className ?? ""}`}>
+      <div className={`not-prose relative my-4 rounded-lg text-sm [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:!bg-card [&_pre]:p-4 [&_pre]:leading-relaxed ${className ?? ""}`}>
         {/* Shiki escapes all user code content - safe to set innerHTML */}
         <div dangerouslySetInnerHTML={{ __html: html }} />
         {copyButton}
@@ -88,7 +88,7 @@ function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
   // Plain fallback shown only on the very first page load before Shiki is ready.
   return (
     <div className={`not-prose relative my-4 ${className ?? ""}`}>
-      <pre className="overflow-x-auto rounded-md bg-[#22272e] p-4 text-sm text-[#adbac7]">
+      <pre className="overflow-x-auto rounded-md border border-border bg-card p-4 text-sm text-foreground/85">
         <code>{code}</code>
       </pre>
       {copyButton}

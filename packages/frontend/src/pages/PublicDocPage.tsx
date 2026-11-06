@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import { useActiveHeading } from "@/hooks/useActiveHeading";
+import { DocOutline, outlineHeadings } from "@/components/DocOutline";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { fileKind } from "@/lib/fileKind";
 import { formatBytes } from "@/lib/fileManager";
 import { SearchPalette } from "@/components/SearchPalette";
-import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
+import { useParams, useNavigate, NavLink, Link, useLocation } from "react-router-dom";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { toHeadingId } from "@/lib/headingSlug";
 import { useScrollToHeading } from "@/hooks/useScrollToHeading";
@@ -19,18 +21,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List } from "lucide-react";
+import { ArrowLeft, BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List, PanelLeftOpen } from "lucide-react";
 import { ReportSiteDialog } from "@/components/ReportSiteDialog";
 
 // Heavy chunk - only loaded when a published drawing is opened.
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
 interface Heading { level: number; text: string; id: string }
+
+/** Outline entries: like the app, a leading H1 that repeats the title is skipped. */
+function publicOutline(content: string, title: string): Heading[] {
+  return outlineHeadings(extractHeadings(content), parseFrontmatter(content).title ?? title);
+}
 
 function extractHeadings(content: string): Heading[] {
   const headings: Heading[] = [];
@@ -83,10 +91,28 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; slug?: string | null; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null };
+  // `description` only comes with the site payload (/public/projects/:id).
+  project: { id: string; name: string; description?: string | null; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
+}
+
+/** GET /public/projects/:id - the published site row plus its nav lists. */
+type PublicProjectPayload = PublicData["project"] & { docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] };
+
+const EMPTY_DOC: PublicData["doc"] = { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" };
+
+/** Page data for the doc-less views (site index, graph, file) from the site payload. */
+function dataFromProject(p: PublicProjectPayload): PublicData {
+  return {
+    doc: EMPTY_DOC,
+    sitePublished: true,
+    project: { id: p.id, name: p.name, description: p.description ?? null, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
+    docs: p.docs ?? [],
+    folders: p.folders ?? [],
+    files: p.files ?? [],
+  };
 }
 
 function flattenDocs(folders: NavFolder[], docs: NavDoc[], parentId: string | null = null): NavDoc[] {
@@ -108,12 +134,105 @@ function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], 
     .some(child => folderHasItems(child.id, folders, docs, files));
 }
 
-// When a folder or doc is the last child, we erase the parent's border-l below the
-// item's midpoint so the vertical line terminates rather than running past the last item.
-// For folders, the midpoint is top-4 (16px = half of the 32px button row height).
-// For docs, it's top-1/2 (50% of the single-row element height).
-const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-1px] after:top-4 after:bottom-0 after:w-[2px] after:bg-background";
-const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:top-1/2 after:bottom-0 after:w-[2px] after:bg-background";
+const HIDDEN_FOLDER_NAMES = ["hidden", "doc_assets"];
+
+/** Folders the public nav shows under `parentId`: not hidden, not empty. */
+function visibleChildFolders(parentId: string | null, folders: NavFolder[], docs: NavDoc[], files: NavFile[]): NavFolder[] {
+  return folders
+    .filter(f => f.parent_id === parentId)
+    .filter(f => !HIDDEN_FOLDER_NAMES.includes(f.name.toLowerCase()))
+    .filter(f => folderHasItems(f.id, folders, docs, files));
+}
+
+/** Files in `folderId` and every folder below it, in nav (tree) order. */
+function filesInSubtree(folderId: string, folders: NavFolder[], files: NavFile[]): NavFile[] {
+  return [
+    ...folders.filter(f => f.parent_id === folderId).flatMap(f => filesInSubtree(f.id, folders, files)),
+    ...files.filter(f => f.folder_id === folderId),
+  ];
+}
+
+/**
+ * Generated landing page for a published site with no home doc: the site's
+ * name and description over its top-level pages, folders and files in sidebar
+ * order. A folder links to its first page (or first file when it holds only
+ * uploads), since folders have no page of their own.
+ */
+function SiteIndex({
+  name,
+  description,
+  href,
+  folders,
+  docs,
+  files,
+}: {
+  name: string;
+  description: string | null;
+  href: (id: string) => string;
+  folders: NavFolder[];
+  docs: NavDoc[];
+  files: NavFile[];
+}) {
+  // No right-side meta on any row: the public nav payload carries no
+  // per-doc timestamp (GET /public/projects/:id selects id/slug/title/
+  // folder/position only), so doc rows can't have any, and meta on only the
+  // folder/file rows read as inconsistent.
+  type Row = { key: string; to: string; label: string; icon: React.ReactNode };
+  const iconClass = "h-4 w-4 shrink-0 text-muted-foreground";
+  const rows: Row[] = [];
+  for (const folder of visibleChildFolders(null, folders, docs, files)) {
+    const target = flattenDocs(folders, docs, folder.id)[0]?.id ?? filesInSubtree(folder.id, folders, files)[0]?.id;
+    if (!target) continue;
+    rows.push({ key: folder.id, to: href(target), label: folder.name, icon: <Folder className={iconClass} aria-hidden /> });
+  }
+  for (const doc of docs.filter(d => d.folder_id === null)) {
+    rows.push({ key: doc.id, to: href(doc.id), label: doc.display_title ?? doc.title, icon: <FileText className={iconClass} aria-hidden /> });
+  }
+  for (const file of files.filter(f => f.folder_id === null)) {
+    rows.push({ key: file.id, to: href(file.id), label: file.name, icon: <FileTypeIcon mimeType={file.mime_type} name={file.name} className={iconClass} /> });
+  }
+
+  return (
+    <div>
+      <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
+        <h1>{name}</h1>
+        {description?.trim() && <p className="lead text-muted-foreground">{description}</p>}
+      </article>
+      {rows.length > 0 ? (
+        <nav aria-label="Site contents" className="not-prose mt-10">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Contents</h2>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {rows.map(r => (
+              <li key={r.key}>
+                <Link
+                  to={r.to}
+                  className="group flex min-h-12 items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                >
+                  {r.icon}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">{r.label}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ) : (
+        <div className="not-prose mt-10 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <FileText className="mx-auto h-5 w-5 text-muted-foreground" aria-hidden />
+          <p className="mt-3 text-sm font-medium">Nothing published here yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Pages will appear here once the site has some.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Nesting matches the app sidebar (SidebarPageTree): each open folder's
+// children sit in a wrapper with a plain vertical guide line
+// (`ml-3 border-l border-border pl-1`) - no elbow connectors - and every row is
+// full-width inside it, so a hovered/active highlight starts right of the line.
+// Labels truncate with an ellipsis (min-w-0 + truncate) instead of wrapping.
+const ROW_BASE = "flex h-8 w-full min-w-0 items-center rounded-md px-2 text-sm transition-colors";
 
 function FolderNode({
   folder,
@@ -122,7 +241,6 @@ function FolderNode({
   docs,
   files,
   depth,
-  isLast,
   onFileClick,
   onDocClick,
   selectedFileId,
@@ -133,7 +251,6 @@ function FolderNode({
   docs: NavDoc[];
   files: NavFile[];
   depth: number;
-  isLast: boolean;
   onFileClick: (file: NavFile) => void;
   onDocClick: () => void;
   selectedFileId: string | null;
@@ -142,22 +259,20 @@ function FolderNode({
   const childrenId = `folder-children-${folder.id}`;
 
   return (
-    <div className={`relative ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
+    <div className="min-w-0">
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         aria-controls={childrenId}
-        className={`relative w-full flex items-center gap-1.5 rounded-md py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
+        title={folder.name}
+        className={`${ROW_BASE} gap-1.5 text-muted-foreground hover:bg-accent hover:text-foreground`}
       >
-        {depth > 0 && (
-          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
-        )}
         <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
         <Folder className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate font-medium">{folder.name}</span>
+        <span className="min-w-0 truncate font-medium">{folder.name}</span>
       </button>
       {open && (
-        <div id={childrenId} className="ml-3 border-l border-border">
+        <div id={childrenId} className="ml-3 flex flex-col gap-px border-l border-border pl-1">
           <NavTree href={href} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
         </div>
       )}
@@ -186,77 +301,66 @@ function NavTree({
   onDocClick: () => void;
   selectedFileId: string | null;
 }) {
-  const HIDDEN_FOLDER_NAMES = ["hidden", "doc_assets"];
-  const childFolders = folders
-    .filter(f => f.parent_id === parentId)
-    .filter(f => !HIDDEN_FOLDER_NAMES.includes(f.name.toLowerCase()))
-    .filter(f => folderHasItems(f.id, folders, docs, files));
+  const childFolders = visibleChildFolders(parentId, folders, docs, files);
   const childDocs = docs.filter(d => d.folder_id === parentId);
   const childFiles = files.filter(f => f.folder_id === parentId);
-  const hasLeafItems = childDocs.length > 0 || childFiles.length > 0;
 
   return (
     <>
-      {childFolders.map((folder, i) => {
-        const isLast = !hasLeafItems && i === childFolders.length - 1;
-        return (
-          <FolderNode
-            key={folder.id}
-            folder={folder}
-            href={href}
-            folders={folders}
-            docs={docs}
-            files={files}
-            depth={depth}
-            isLast={isLast}
-            onFileClick={onFileClick}
-            onDocClick={onDocClick}
-            selectedFileId={selectedFileId}
-          />
-        );
-      })}
-      {childDocs.map((doc, i) => {
-        const isLast = childFiles.length === 0 && i === childDocs.length - 1;
+      {childFolders.map(folder => (
+        <FolderNode
+          key={folder.id}
+          folder={folder}
+          href={href}
+          folders={folders}
+          docs={docs}
+          files={files}
+          depth={depth}
+          onFileClick={onFileClick}
+          onDocClick={onDocClick}
+          selectedFileId={selectedFileId}
+        />
+      ))}
+      {childDocs.map(doc => {
+        const label = doc.display_title ?? doc.title;
         return (
           <NavLink
             key={doc.id}
             to={href(doc.id)}
             onClick={onDocClick}
+            title={label}
             className={({ isActive }) =>
-              `relative flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-                depth > 0 ? "pl-3" : "pl-2"
-              } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
+              `${ROW_BASE} gap-2 hover:bg-accent hover:text-accent-foreground ${
+                isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+              }`
             }
           >
-            {depth > 0 && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
-            )}
+            {/* Spacer reserves the folder chevron column (w-2.5 + gap-2 = the
+                folder row's w-3 chevron + gap-1.5), so leaf icons line up
+                under folder icons - the app sidebar's rule. */}
+            <span aria-hidden className="w-2.5 shrink-0" />
             {doc.is_home === 1
               ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
-            <span className="truncate">{doc.display_title ?? doc.title}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </NavLink>
         );
       })}
-      {childFiles.map((file, i) => {
-        const isLast = i === childFiles.length - 1;
-        return (
-          <button
-            key={file.id}
-            onClick={() => onFileClick(file)}
-            className={`relative w-full flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-              depth > 0 ? "pl-3" : "pl-2"
-            } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
-          >
-            {depth > 0 && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
-            )}
-            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{file.name}</span>
-          </button>
-        );
-      })}
+      {childFiles.map(file => (
+        <button
+          key={file.id}
+          onClick={() => onFileClick(file)}
+          title={file.name}
+          className={`${ROW_BASE} gap-2 hover:bg-accent hover:text-accent-foreground ${
+            selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+          }`}
+        >
+          <span aria-hidden className="w-2.5 shrink-0" />
+          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate">{file.name}</span>
+        </button>
+      ))}
     </>
   );
 }
@@ -398,7 +502,9 @@ export function PublicDocPage() {
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
-  const [hasToken, setHasToken] = useState(false);
+  // Only signed-in *members* get the back-to-project shortcut; a signed-in
+  // visitor who isn't on the site would just hit a 404 in the app.
+  const [isMember, setIsMember] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [reportOpen, setReportOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -463,28 +569,47 @@ export function PublicDocPage() {
     buildUrl: (id: string, anchor?: string) => href(id, anchor),
   }), [docId, data, href]);
 
+  const memberCheckId = hostMode ? null : data?.project.id ?? null;
   useEffect(() => {
-    setHasToken(!!getToken());
-  }, []);
+    setIsMember(false);
+    const token = getToken();
+    if (!token || !memberCheckId) return;
+    let cancelled = false;
+    // Plain fetch, not apiFetch: a stale token on a public page must not
+    // bounce the reader to /login - it just means no back button.
+    fetch(`/api/projects/${encodeURIComponent(memberCheckId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (!cancelled && r.ok) setIsMember(true); })
+      .catch(() => { /* not a member / offline - keep it hidden */ });
+    return () => { cancelled = true; };
+  }, [memberCheckId]);
 
   useEffect(() => {
     if (!projectId) return;
 
-    // If no docId, fetch the site to get the first doc and redirect
+    // Site root: a site with a home doc redirects to it; one without gets a
+    // generated index page (site name, description, top-level pages) instead
+    // of an arbitrary first doc.
     if (!docId) {
+      setNotFound(false);
+      setSelectedFile(null);
       fetch(`/api/public/projects/${projectId}`)
-        .then(r => r.json())
-        .then((json: { ok: boolean; data?: { id: string; vanity_slug?: string | null; home_doc_id?: string | null; docs: NavDoc[] } }) => {
-          if (json.ok && json.data && json.data.docs.length > 0) {
-            const slug = json.data.vanity_slug ?? projectId;
-            const homeDoc = json.data.home_doc_id ? json.data.docs.find(d => d.id === json.data!.home_doc_id) : null;
-            const target = homeDoc ?? json.data.docs[0];
-            const docSeg = target.slug ?? target.id;
-            navigate(hostMode ? `/${docSeg}` : `/s/${slug}/${docSeg}`, { replace: true });
-          } else {
+        .then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>)
+        .then(json => {
+          const p = json.ok ? json.data : undefined;
+          if (!p) {
             setNotFound(true);
             setLoading(false);
+            return;
           }
+          const homeDoc = p.home_doc_id ? p.docs.find(d => d.id === p.home_doc_id) : null;
+          if (homeDoc) {
+            const slug = p.vanity_slug ?? projectId;
+            const docSeg = homeDoc.slug ?? homeDoc.id;
+            navigate(hostMode ? `/${docSeg}` : `/s/${slug}/${docSeg}`, { replace: true });
+            return;
+          }
+          setData(dataFromProject(p));
+          setLoading(false);
         })
         .catch(() => { setNotFound(true); setLoading(false); });
       return;
@@ -496,7 +621,7 @@ export function PublicDocPage() {
       setNotFound(false);
       setSelectedFile(null);
       Promise.all([
-        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
+        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>),
         fetch(`/api/public/projects/${projectId}/graph`).then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>),
       ])
         .then(([projJson, graphJson]) => {
@@ -506,14 +631,7 @@ export function PublicDocPage() {
               setNotFound(true);
               return;
             }
-            setData({
-              doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
-              sitePublished: true,
-              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
-              docs: p.docs ?? [],
-              folders: p.folders ?? [],
-              files: p.files ?? [],
-            });
+            setData(dataFromProject(p));
           } else {
             setNotFound(true);
           }
@@ -536,19 +654,12 @@ export function PublicDocPage() {
         // are directly linkable too). Load the site nav and, if it matches a file,
         // show the file view; otherwise it's a genuine 404.
         const projJson = await fetch(`/api/public/projects/${projectId}`)
-          .then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>)
+          .then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>)
           .catch(() => null);
         const p = projJson?.ok ? projJson.data : undefined;
         const file = p?.files?.find(f => f.id === docId);
         if (p && file) {
-          setData({
-            doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
-            sitePublished: true,
-            project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
-            docs: p.docs ?? [],
-            folders: p.folders ?? [],
-            files: p.files ?? [],
-          });
+          setData(dataFromProject(p));
           setSelectedFile(file);
         } else {
           setNotFound(true);
@@ -580,6 +691,10 @@ export function PublicDocPage() {
   // the outline buttons. See useScrollToHeading for why this resolves the
   // heading's line position from the markdown source instead of the DOM.
   const scrollToHash = useScrollToHeading(data?.doc.content);
+  const activeHeadingId = useActiveHeading(
+    data?.doc.content,
+    data?.doc.content ? publicOutline(data.doc.content, data.doc.title).map(h => h.id) : [],
+  );
 
   // Scroll to #heading anchor when one is present in the URL.
   useEffect(() => {
@@ -617,13 +732,60 @@ export function PublicDocPage() {
         subtitle="No published document exists at this location. The document may be unpublished, moved, or the link mistyped."
         primaryLabel="Go home"
         primaryHref="/"
-        secondary={{ label: "report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
+        secondary={{ label: "Report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
       />
     );
   }
 
-  const headings = extractHeadings(data.doc.content);
+  const headings = publicOutline(data.doc.content, data.doc.title);
   const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
+
+  // Desktop top bar breadcrumb: site name (links to the home doc, or the
+  // generated site index when there is none) › current page.
+  const homeDocId = data.docs?.find(d => d.is_home === 1)?.id ?? null;
+  const currentNavDoc = data.docs?.find(d => d.id === data.doc.id);
+  const pageTitle = isGraph
+    ? "Graph"
+    : selectedFile
+      ? selectedFile.name
+      : (currentNavDoc?.display_title ?? currentNavDoc?.title ?? data.doc.display_title ?? data.doc.title) || null;
+  const searchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
+  // Folder ancestry of the current page (outermost first) so the breadcrumb
+  // mirrors the sidebar tree: Site › Guides › Editor tour.
+  const crumbFolders: NavFolder[] = (() => {
+    if (isGraph) return [];
+    const startId = selectedFile ? selectedFile.folder_id : currentNavDoc?.folder_id ?? null;
+    const byId = new Map((data.folders ?? []).map(f => [f.id, f]));
+    const chain: NavFolder[] = [];
+    let cur = startId ? byId.get(startId) : undefined;
+    while (cur && chain.length < 8) {
+      chain.unshift(cur);
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+    }
+    return chain;
+  })();
+
+  // Bare site root (no home doc - one with a home doc redirected to it).
+  const isSiteIndex = !docId;
+
+  const publishedWithAnnex = (
+    <footer className="not-prose mt-16 border-t border-border pt-6 text-xs text-muted-foreground">
+      {hostMode ? (
+        <a
+          href="https://docs.cubityfir.st/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-foreground"
+        >
+          Published with Annex
+        </a>
+      ) : (
+        <Link to="/" className="transition-colors hover:text-foreground">
+          Published with Annex
+        </Link>
+      )}
+    </footer>
+  );
 
   const filteredDocs = searchQuery.trim()
     ? (data.docs ?? []).filter(d => (d.display_title ?? d.title).toLowerCase().includes(searchQuery.toLowerCase()))
@@ -638,21 +800,12 @@ export function PublicDocPage() {
       {/* Sidebar - only shown when the entire site is published */}
       {showNav && (
         <div className={cn(
-          "fixed inset-y-0 left-0 z-40 transition-transform duration-200",
+          "group/sidebar fixed inset-y-0 left-0 z-40 transition-transform duration-200",
           "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}>
-        <aside className={cn("flex h-full flex-col border-r border-border bg-background overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
-          <div className="flex h-20 items-center gap-2 px-4">
-            {hasToken && (
-              <button
-                onClick={() => navigate(`/projects/${data.project.id}`)}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="Back to project"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-            )}
+        <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
+          <div className="flex h-14 shrink-0 items-center gap-2 px-4">
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -686,15 +839,16 @@ export function PublicDocPage() {
             </Button>
           </div>
           <Separator />
-          <div className="px-3 py-2 flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 aria-label="Filter titles"
-                placeholder={
+                placeholder="Filter pages…"
+                title={
                   typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
-                    ? "Filter titles…"
-                    : `Filter titles… (${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full search)`
+                    ? undefined
+                    : `Press ${searchShortcut} for full-text search`
                 }
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -724,7 +878,10 @@ export function PublicDocPage() {
               </NavLink>
             )}
           </div>
-          <ScrollArea className="flex-1 px-2 py-1">
+          {/* app-sidebar-scroller (index.css) drops Radix's display:table
+              content wrapper, which sizes to max-content and would stop long
+              labels from truncating - same fix as the app sidebar. */}
+          <ScrollArea className="app-sidebar-scroller flex-1 px-2 pb-2">
             <nav className="flex flex-col gap-0.5">
               {filteredDocs !== null ? (
                 filteredDocs.length === 0 ? (
@@ -736,7 +893,7 @@ export function PublicDocPage() {
                       to={href(doc.id)}
                       onClick={() => setSelectedFile(null)}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                        `flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                           isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
                         }`
                       }
@@ -759,7 +916,7 @@ export function PublicDocPage() {
                         to={href(homeDoc.id)}
                         onClick={() => setSelectedFile(null)}
                         className={({ isActive }) =>
-                          `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                          `flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                             isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
                           }`
                         }
@@ -782,22 +939,37 @@ export function PublicDocPage() {
               })()}
             </nav>
           </ScrollArea>
-          <div className="border-t border-border px-3 py-2">
+          <div className="flex flex-col gap-0.5 border-t border-border px-3 py-2">
+            {/* Signed-in members only (isMember is never set for visitors):
+                back to this site in the app, labelled so it doesn't read as
+                browser-style "back". */}
+            {isMember && (
+              <Button asChild variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground">
+                <Link to={`/projects/${data.project.id}`}>
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                  Back to app
+                </Link>
+              </Button>
+            )}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="w-full justify-start gap-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={() => setReportOpen(true)}
             >
               <Flag className="h-3.5 w-3.5" />
-              Report Site
+              Report this site
             </Button>
           </div>
         </aside>
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-[color,background-color,opacity] after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0",
+            // Only shown on sidebar hover/focus while open (as in the app).
+            sidebarOpen && "md:opacity-0 md:group-hover/sidebar:opacity-100 md:hover:opacity-100 md:focus-visible:opacity-100",
+          )}
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -838,12 +1010,12 @@ export function PublicDocPage() {
                   alt=""
                   className="h-5 w-5 shrink-0 rounded object-cover"
                 />
-                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+                <span className="text-sm font-semibold text-foreground truncate">{data.project.name}</span>
               </>
             ) : (
               <>
                 <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+                <span className="text-sm font-semibold text-foreground truncate">{data.project.name}</span>
               </>
             )}
             <Button
@@ -868,8 +1040,69 @@ export function PublicDocPage() {
             )}
           </header>
         )}
+        {showNav && (
+          // Desktop top bar. Same 56px height and 24px inset as the app's top
+          // bar; box-content h-14 + border-b puts its rule level with the
+          // sidebar header's Separator.
+          <header className="hidden md:flex box-content h-14 shrink-0 items-center gap-2 border-b border-border px-6">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-ml-1 h-8 w-8"
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            )}
+            {/* The site index already names the site twice (sidebar header +
+                its H1), so the top bar stays empty there; doc pages keep the
+                Site › … › Page trail. */}
+            {!(isSiteIndex && !pageTitle) && (
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+              {pageTitle ? (
+                <Link
+                  to={homeDocId ? href(homeDocId) : hostMode ? "/" : `/s/${linkSlug}`}
+                  onClick={() => setSelectedFile(null)}
+                  className="shrink-0 truncate text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {data.project.name}
+                </Link>
+              ) : (
+                <span className={cn("truncate", pageTitle ? "shrink-0 text-muted-foreground" : "font-medium text-foreground")}>
+                  {data.project.name}
+                </span>
+              )}
+              {pageTitle && crumbFolders.map(f => (
+                <span key={f.id} className="flex min-w-0 shrink items-center gap-1.5">
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                  <span className="truncate text-muted-foreground">{f.name}</span>
+                </span>
+              ))}
+              {pageTitle && (
+                <>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                  <span aria-current="page" className="truncate font-medium text-foreground">{pageTitle}</span>
+                </>
+              )}
+            </nav>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-8 shrink-0 gap-2 pr-1.5 text-muted-foreground hover:text-foreground"
+              onClick={openSearch}
+            >
+              <Search className="h-3.5 w-3.5" aria-hidden />
+              Search
+              <Kbd className="ml-2 text-muted-foreground">{searchShortcut}</Kbd>
+            </Button>
+          </header>
+        )}
         {!showNav && (
-          <header className="flex h-14 items-center border-b border-border px-6 gap-2">
+          <header className="flex h-14 shrink-0 items-center border-b border-border px-6 gap-2">
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -884,12 +1117,12 @@ export function PublicDocPage() {
                   alt=""
                   className="h-5 w-5 shrink-0 rounded object-cover"
                 />
-                <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+                <h1 className="text-sm font-semibold text-foreground truncate">{data.project.name}</h1>
               </>
             ) : (
               <>
                 <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+                <h1 className="text-sm font-semibold text-foreground truncate">{data.project.name}</h1>
               </>
             )}
           </header>
@@ -898,6 +1131,7 @@ export function PublicDocPage() {
           <div className="flex-1 min-h-0">
             {graphData && graphData.nodes.length > 0 ? (
               <GraphView
+                showControls
                 data={graphData}
                 onNodeClick={id => navigate(href(id))}
               />
@@ -924,32 +1158,70 @@ export function PublicDocPage() {
             </Suspense>
           </div>
         ) : (
-        <ScrollArea className="flex-1 public-doc-scroller">
+        // The reading pane (not the window) scrolls, with a thin Radix bar in
+        // place of the native one. It shows only while the reader is actually
+        // scrolling (type="scroll", every device): "hover" kept a thumb parked
+        // at the window's right edge whenever the pointer sat over the page,
+        // which the app's screens never show. Thumb tinted like the app's
+        // quiet native scrollbars (index.css: muted-foreground at 35%),
+        // firming up under the pointer.
+        <ScrollArea
+          type="scroll"
+          scrollHideDelay={600}
+          className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-muted-foreground/35 [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/50"
+        >
           {selectedFile ? (
             <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />
+          ) : isSiteIndex ? (
+            // Same column + empty rail as a doc page, so the index and docs
+            // share one left edge.
+            <div className="flex min-h-full">
+            <div className="flex-1 min-w-0 px-4 pt-6 pb-24 sm:px-6 md:pt-12">
+              <div className="mx-auto max-w-[44rem]">
+                <SiteIndex
+                  name={data.project.name}
+                  description={data.project.description ?? null}
+                  href={href}
+                  folders={data.folders ?? []}
+                  docs={data.docs ?? []}
+                  files={data.files ?? []}
+                />
+                {publishedWithAnnex}
+              </div>
+            </div>
+            <div className="hidden w-56 shrink-0 xl:block" aria-hidden="true" />
+            </div>
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
-              <div className="flex-1 min-w-0 px-6 py-10">
+              <div className="flex-1 min-w-0 px-4 pt-6 pb-24 sm:px-6 md:pt-12">
                 {(() => {
                   const cover = parseFrontmatter(data.doc.content).cover;
                   return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;
                 })()}
-                <div className="mx-auto max-w-3xl">
+                <div className="mx-auto max-w-[44rem]">
                   <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
                     {(() => {
                       const fm = parseFrontmatter(data.doc.content);
                       const showHeading = fm.hide_title !== undefined ? !fm.hide_title : data.doc.showHeading;
                       const headingTitle = fm.title ?? data.doc.title;
-                      return showHeading && <h1>{headingTitle}</h1>;
+                      return showHeading && <h1 className="text-balance">{headingTitle}</h1>;
                     })()}
                     {data.doc.showLastUpdated && (
-                      <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+                      <p className="not-prose -mt-2 mb-1 text-[13px] text-muted-foreground sm:mb-3 sm:text-sm">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                        {/* Same "· N min read" as the app's doc header. */}
+                        {data.doc.content.trim() && (
+                          <span className="whitespace-nowrap">&nbsp;· {Math.max(1, Math.round(data.doc.content.trim().split(/\s+/).length / 200))} min read</span>
+                        )}
                       </p>
                     )}
                     {data.doc.content.trim() ? (
-                      <div className="not-prose">
+                      <div className={cn(
+                        "not-prose",
+                        "max-sm:[&_.cm-line.cm-h1]:!pt-[0.2em]",
+                        "max-sm:[&_.cm-line:is(.cm-h1,.cm-h2,.cm-h3)+.cm-line:has(>br:only-child)]:!h-[0.5em]",
+                      )}>
                         <WysiwygEditor
                           mode="reading"
                           value={data.doc.content}
@@ -1006,6 +1278,8 @@ export function PublicDocPage() {
                       </div>
                     );
                   })()}
+
+                  {publishedWithAnnex}
                 </div>
               </div>
 
@@ -1014,8 +1288,8 @@ export function PublicDocPage() {
                 const showLinkedDocs = data.project.published_graph_enabled === 1 && !!currentDocId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
                 return (
-                  <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
-                    <div className="sticky top-6">
+                  <aside className="hidden xl:block w-56 shrink-0 pt-12 pb-10 pl-4 pr-6">
+                    <div className="sticky top-8">
                       {showLinkedDocs && currentDocId && graphData && (
                         <LinkedDocsPanel
                           data={graphData}
@@ -1026,38 +1300,19 @@ export function PublicDocPage() {
                       )}
                       {headings.length > 0 && (
                         <>
-                          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
                             Outline
                           </p>
                           {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
                           <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
-                            <nav className="flex flex-col gap-0.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
-                                  const scroller = document.querySelector(".public-doc-scroller");
-                                  const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-                                  if (vp) vp.scrollTop = 0;
-                                }}
-                                className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                              >
-                                Top
-                              </button>
-                              {headings.map((h, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => {
-                                    try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
-                                    scrollToHash(h.id);
-                                  }}
-                                  style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                                  className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                >
-                                  {h.text}
-                                </button>
-                              ))}
-                            </nav>
+                            <DocOutline
+                              headings={headings}
+                              activeId={activeHeadingId}
+                              onSelect={id => {
+                                try { window.history.replaceState(null, "", `#${id}`); } catch { /* */ }
+                                scrollToHash(id);
+                              }}
+                            />
                           </ScrollArea>
                         </>
                       )}
@@ -1081,39 +1336,20 @@ export function PublicDocPage() {
       {headings.length > 0 && (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="bottom" className="lg:hidden max-h-[70vh] p-0">
-            <SheetTitle className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <SheetTitle className="px-4 pt-5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               Outline
             </SheetTitle>
-            <ScrollArea className="max-h-[calc(70vh-3rem)] pl-2 pr-3 pb-4">
-              <nav className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
-                    const scroller = document.querySelector(".public-doc-scroller");
-                    const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
-                    if (vp) vp.scrollTop = 0;
-                    setSheetOpen(false);
-                  }}
-                  className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  Top
-                </button>
-                {headings.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
-                      scrollToHash(h.id);
-                      setSheetOpen(false);
-                    }}
-                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {h.text}
-                  </button>
-                ))}
-              </nav>
+            <ScrollArea className="max-h-[calc(70vh-3rem)] pl-4 pr-3 pb-6">
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                className="[&>button]:min-h-10 [&>button]:text-sm"
+                onSelect={id => {
+                  try { window.history.replaceState(null, "", `#${id}`); } catch { /* */ }
+                  scrollToHash(id);
+                  setSheetOpen(false);
+                }}
+              />
             </ScrollArea>
           </SheetContent>
         </Sheet>
@@ -1124,6 +1360,7 @@ export function PublicDocPage() {
           <div className="h-full w-full">
             {graphData && data && graphData.nodes.length > 0 && (
               <GraphView
+                showControls
                 data={graphData}
                 onNodeClick={id => {
                   setGraphExpanded(false);

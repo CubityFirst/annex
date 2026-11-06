@@ -8,14 +8,23 @@
   --bg3: #1a1a1a;
   --border: #232323;
   --border2: #2e2e2e;
-  --text: #e8e4de;
-  --text2: #a39e98;
+  --text: #e8e8e8;
+  --text2: #a3a3a3;
   --text3: #8a8a8a;
-  --accent: #e8e4de;
+  /* Meaningful secondary copy (descriptions, captions, footer links). --text3
+     is kept for decorative labels/eyebrows only. */
+  --text-sub: #a8a8a8;
+  --accent: #e8e8e8;
   --ink: linear-gradient(110deg, hsl(45 100% 65%), hsl(320 80% 65%) 50%, hsl(200 80% 60%));
   --max: 1240px;
   --gutter: clamp(16px, 4vw, 56px);
   --nav-h: 72px;
+  --radius: 6px;
+  /* One vertical rhythm for every landing section: the same padding above and
+     below each band, so every section boundary has the same breathing room. */
+  --section-y: clamp(80px, 10vw, 128px);
+  /* Placeholder fill for screenshot frames before the image paints. */
+  --skeleton: linear-gradient(180deg, #151515 0, #121212 40px, #101010 100%);
 
   font-family: 'DM Sans', sans-serif;
   background: var(--bg);
@@ -80,7 +89,7 @@
   color: var(--bg);
   background: var(--accent);
   padding: 9px 20px;
-  border-radius: 3px;
+  border-radius: var(--radius);
   letter-spacing: 0.01em;
   transition: opacity 0.15s;
 }
@@ -110,7 +119,7 @@
   font-weight: 500;
   font-family: 'DM Sans', sans-serif;
   padding: 0 26px;
-  border-radius: 3px;
+  border-radius: var(--radius);
   letter-spacing: 0.01em;
   cursor: pointer;
   transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
@@ -119,10 +128,15 @@
   background: var(--accent);
   color: var(--bg);
   border: 1px solid var(--accent);
+  /* Dark-on-light renders thinner than light-on-dark: one step heavier so
+     it matches the outline button beside it. */
+  font-weight: 600;
 }
 .l-btn-primary:hover { opacity: 0.88; }
-.l-btn-primary svg { transition: transform 0.15s; }
-.l-btn-primary:hover svg { transform: translateX(2px); }
+.l-btn-primary svg,
+.l-btn-secondary svg { transition: transform 0.15s; }
+.l-btn-primary:hover svg,
+.l-btn-secondary:hover svg { transform: translateX(2px); }
 .l-btn-secondary {
   background: transparent;
   color: var(--text);
@@ -132,9 +146,10 @@
 
 /* ── HERO ── */
 .l-hero {
-  padding: calc(var(--nav-h) + clamp(64px, 9vw, 112px)) 0 clamp(64px, 8vw, 104px);
+  /* Tighter top so the product preview starts inside the first viewport. */
+  padding: calc(var(--nav-h) + clamp(40px, 5vw, 72px)) 0 var(--section-y);
   background:
-    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(232,228,222,0.045), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(232,232,232,0.045), transparent 70%),
     var(--bg);
 }
 .l-hero-inner {
@@ -155,12 +170,14 @@
   font-size: clamp(44px, 7.4vw, 96px);
   font-weight: 300;
   line-height: 1.02;
-  letter-spacing: -0.035em;
+  /* Light strokes need more air than bold ones at display sizes, or adjacent
+     letters merge ("rn" reading as "m"). */
+  letter-spacing: -0.03em;
   color: var(--text);
   margin: 0 0 28px;
   text-wrap: balance;
 }
-.l-hero-headline b { font-weight: 600; }
+.l-hero-headline b { font-weight: 600; letter-spacing: -0.02em; }
 .l-hero-sub {
   font-size: clamp(18px, 1.7vw, 21px);
   font-weight: 300;
@@ -180,16 +197,17 @@
   margin-top: 18px;
   font-size: 13px;
   font-family: 'DM Mono', monospace;
-  color: var(--text3);
+  color: var(--text-sub);
   letter-spacing: 0.02em;
 }
 
 /* ── PRODUCT VIEWER ── */
 .l-viewer {
-  margin-top: clamp(56px, 7vw, 88px);
+  margin-top: clamp(32px, 3.5vw, 48px);
 }
 .l-viewer-tabs {
   display: flex;
+  scroll-padding-inline: var(--gutter);
   justify-content: center;
   gap: 4px;
   margin-bottom: 18px;
@@ -235,14 +253,18 @@
 @keyframes l-viewer-progress {
   to { transform: scaleX(1); }
 }
+/* The capture is the top of a taller page, so it would otherwise end on a
+   hard cut through a line of text - fade the whole frame (border included)
+   out over its last third so it reads as "and it keeps going". One mask on
+   the frame, none on the image, so border and content fade together. */
 .l-viewer-frame {
   border: 1px solid var(--border2);
   border-radius: 10px;
   overflow: hidden;
-  background: #0a0a0b;
-  box-shadow:
-    0 40px 120px -20px rgba(0,0,0,0.85),
-    0 0 0 1px rgba(255,255,255,0.02) inset;
+  background: #0a0a0a;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset;
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+          mask-image: linear-gradient(to bottom, #000 65%, transparent);
 }
 .l-viewer-chrome {
   display: flex;
@@ -274,10 +296,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Crop the 2304x1440 captures to their top 1250px (object-position: top):
+   that ends above the sidebar's user footer and the next heading, so the
+   fade never ghosts a half-visible "Demo User / Owner" or title. */
 .l-viewer-stage {
   position: relative;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 2304 / 1250;
+  background: var(--skeleton);
 }
+.l-viewer-host { color: #6c6c6c; }
+/* <picture> wrappers (mobile <source>) shouldn't add a box of their own. */
+.l-viewer-stage picture,
+.l-show-media picture { display: contents; }
 .l-viewer-stage img {
   position: absolute;
   inset: 0;
@@ -293,27 +323,31 @@
   margin-top: 18px;
   text-align: center;
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   min-height: 1.5em;
 }
 
 /* ── USES ── */
 .l-uses {
-  padding: clamp(64px, 8vw, 96px) 0;
+  /* A light strip: tighter than a full feature section. */
+  padding: calc(var(--section-y) * 0.75) 0;
   border-top: 1px solid var(--border);
 }
+/* Separate cards on a gap - the same card style as the feature grid
+   (.l-extras-grid / .l-extra) further down, so the page has one card voice. */
 .l-uses-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
+  gap: 14px;
 }
 .l-use {
-  padding: 28px 26px;
-  border-left: 1px solid var(--border);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 26px 24px;
 }
-.l-use:first-child { border-left: none; }
+/* Same icon tile as the feature grid (.l-extra-icon). */
+.l-use-icon { margin-bottom: 18px; }
 .l-use-title {
   font-size: 17px;
   font-weight: 500;
@@ -322,25 +356,25 @@
 }
 .l-use-items {
   font-size: 15px;
-  font-weight: 300;
-  color: var(--text3);
+  font-weight: 400;
+  color: var(--text-sub);
   line-height: 1.55;
 }
 
 /* ── SHOWCASE ── */
 .l-showcase {
   border-top: 1px solid var(--border);
-  padding: clamp(40px, 5vw, 64px) 0;
+  padding: var(--section-y) 0;
+  scroll-margin-top: var(--nav-h);
 }
 .l-show {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: clamp(40px, 6vw, 88px);
   align-items: center;
-  padding-top: clamp(40px, 5vw, 64px);
-  padding-bottom: clamp(40px, 5vw, 64px);
   scroll-margin-top: var(--nav-h);
 }
+.l-show + .l-show { margin-top: var(--section-y); }
 .l-show-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 .l-show-flip .l-show-copy { order: 2; }
 .l-show-eyebrow {
@@ -355,11 +389,11 @@
   font-size: clamp(32px, 3.6vw, 48px);
   font-weight: 300;
   line-height: 1.1;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.018em;
   color: var(--text);
   margin-bottom: 20px;
 }
-.l-show-title b { font-weight: 600; }
+.l-show-title b { font-weight: 600; letter-spacing: -0.02em; }
 .l-show-body {
   font-size: 18px;
   font-weight: 300;
@@ -374,8 +408,17 @@
   align-items: flex-start;
   gap: 12px;
   font-size: 16px;
-  color: #cdc9c3;
+  color: #cacaca;
   line-height: 1.5;
+}
+/* Inline code in marketing copy (e.g. the slug: frontmatter key). */
+.l-code {
+  font: 400 0.875em "DM Mono", monospace;
+  color: var(--text);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 .l-checks svg {
   flex-shrink: 0;
@@ -386,18 +429,27 @@
   border: 1px solid var(--border2);
   border-radius: 8px;
   overflow: hidden;
-  background: #0a0a0b;
+  aspect-ratio: 16 / 10;
+  background: var(--skeleton);
   box-shadow: 0 30px 80px -24px rgba(0,0,0,0.8);
 }
 .l-show-media img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+/* Captures that end mid-content (a page that keeps scrolling) fade out at the
+   bottom instead of stopping on a half-cut row. */
+.l-show-media-fade img {
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
 }
 
 /* ── EXTRAS ── */
 .l-extras {
-  padding: clamp(64px, 8vw, 104px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
 }
 .l-extras-grid {
@@ -417,7 +469,7 @@
   background: #1f1f1f;
   border: 1px solid var(--border2);
   display: flex; align-items: center; justify-content: center;
-  color: #b3aea8;
+  color: #b0b0b0;
 }
 .l-extra-head {
   display: flex;
@@ -434,8 +486,8 @@
 }
 .l-extra-desc {
   font-size: 15px;
-  font-weight: 300;
-  color: var(--text3);
+  font-weight: 400;
+  color: var(--text-sub);
   line-height: 1.55;
 }
 .l-tag {
@@ -450,7 +502,7 @@
 
 /* ── PRICING ── */
 .l-pricing {
-  padding: clamp(72px, 9vw, 112px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
   text-align: center;
   scroll-margin-top: var(--nav-h);
@@ -459,12 +511,13 @@
   font-size: clamp(38px, 5vw, 64px);
   font-weight: 300;
   line-height: 1.08;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.024em;
   color: var(--text);
   margin-bottom: 20px;
 }
 .l-pricing-headline span {
   font-weight: 600;
+  letter-spacing: -0.02em;
   background: var(--ink);
   -webkit-background-clip: text;
   background-clip: text;
@@ -535,7 +588,7 @@
 }
 .l-plan-desc {
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   margin-bottom: 24px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border);
@@ -546,7 +599,7 @@
 
 /* ── FAQ ── */
 .l-faq {
-  padding: clamp(64px, 8vw, 104px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
 }
 .l-faq-inner { max-width: 760px; }
@@ -584,7 +637,7 @@
 .l-faq-more {
   margin-top: 28px;
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   text-align: center;
 }
 .l-faq-more a {
@@ -597,21 +650,21 @@
 
 /* ── CTA BAND ── */
 .l-cta-band {
-  padding: clamp(88px, 11vw, 136px) 0;
+  padding: var(--section-y) 0;
   text-align: center;
   border-top: 1px solid var(--border);
   background:
-    radial-gradient(ellipse 60% 70% at 50% 100%, rgba(232,228,222,0.04), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 50% 100%, rgba(232,232,232,0.04), transparent 70%),
     var(--bg);
 }
 .l-cta-band-headline {
   font-size: clamp(36px, 5vw, 60px);
   font-weight: 300;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.024em;
   color: var(--text);
   margin-bottom: 40px;
 }
-.l-cta-band-headline b { font-weight: 600; }
+.l-cta-band-headline b { font-weight: 600; letter-spacing: -0.02em; }
 
 /* ── FOOTER ── */
 .l-footer {
@@ -636,7 +689,7 @@
 }
 .l-footer-link {
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   transition: color 0.15s;
 }
 .l-footer-link:hover { color: var(--text); }
@@ -647,28 +700,48 @@
   margin: 32px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px 28px;
+  /* Full container width: three columns, two on tablets, one on phones. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 32px;
 }
+@media (max-width: 860px) {
+  .l-ack-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .l-ack-list { grid-template-columns: minmax(0, 1fr); }
+}
+/* Name + licence read as one inline run: a long name wraps and the tag
+   simply follows its last line (no justify-between gutter). */
 .l-ack-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   min-width: 0;
+  line-height: 1.5;
 }
-.l-ack-link {
+.l-ack-list .l-ack-link {
   font-size: 15px;
-  color: var(--text2);
-  transition: color 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 500;
+  /* A faint resting underline (border tone) marks the names as links
+     without a wall of bright underlines; it brightens on hover/focus. */
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--border2);
+  transition: text-decoration-color 0.15s;
 }
-.l-ack-link:hover { color: var(--text); }
+.l-ack-list .l-ack-link:hover,
+.l-ack-list .l-ack-link:focus-visible {
+  text-decoration-color: currentColor;
+}
+/* Licence tag: small but at the full muted-text strength (--text2), not the
+   fainter --text3, so "MIT" / "Apache-2.0" stay readable. */
 .l-ack-license {
-  font-size: 11px;
-  color: var(--text3);
-  flex-shrink: 0;
+  display: inline-block;
+  margin-left: 8px;
+  font: 400 11px/1 "DM Mono", monospace;
+  letter-spacing: 0.02em;
+  color: var(--text2);
+  white-space: nowrap;
 }
 
 /* ── LEGAL PAGES ── */
@@ -678,6 +751,9 @@
 .l-legal-inner {
   max-width: 780px;
 }
+/* Acknowledgements: the list spans the whole container; the lead stays at
+   its own readable measure (.l-legal-intro max-width). */
+.l-legal-inner.l-legal-wide { max-width: none; }
 .l-legal-label {
   font-size: 15px;
   font-family: 'DM Mono', monospace;
@@ -689,7 +765,7 @@
 .l-legal-title {
   font-size: clamp(36px, 5vw, 60px);
   font-weight: 300;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.022em;
   color: var(--text);
   margin: 0 0 12px;
 }
@@ -697,32 +773,112 @@
   font-size: 16px;
   font-family: 'DM Mono', monospace;
   color: var(--text3);
-  margin: 0 0 72px;
+  margin: 0 0 44px;
 }
+/* Lead paragraph (Acknowledgements) - body sans, muted, like the legal copy. */
+.l-legal-intro {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 30px;
+  color: #b0b0b0;
+  max-width: 640px;
+  margin: 0 0 24px;
+}
+/* Section headings: clearly above the 18px body (23px semibold, full text
+   colour), with 56px of air above and 12px down to their own copy. */
 .l-legal-body h2 {
-  font-size: 20px;
-  font-weight: 500;
-  color: #ccc8c2;
-  margin: 54px 0 14px;
-  letter-spacing: -0.01em;
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  margin: 56px 0 12px;
+  letter-spacing: -0.012em;
 }
 .l-legal-body h2:first-child { margin-top: 0; }
+/* Section anchors land below the fixed nav, not under it. */
+.l-legal-body h2 { scroll-margin-top: calc(var(--nav-h) + 32px); }
+
+/* Sticky "On this page" rail (privacy / terms) - fills the otherwise empty
+   right side on wide screens; hidden below 1024px. Same shape as the app's
+   settings rail (hairline track, 2px active bar), with the label in the same
+   mono eyebrow voice as the page's "Legal" label. The text column (40rem
+   measure) and the rail sit 96px apart and are centred as one block, so
+   there's no dead gutter between them. */
+.l-legal-toc { display: none; }
+@media (min-width: 1024px) {
+  .l-legal-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 40rem) 230px;
+    /* Start on the site container's edge, like Acknowledgements and the
+       nav logo; the "On this page" rail follows 96px after the text. */
+    justify-content: start;
+    column-gap: 96px;
+    align-items: start;
+  }
+  .l-legal-toc {
+    display: block;
+    position: sticky;
+    top: calc(var(--nav-h) + 40px);
+    /* Start level with the page title, below the eyebrow label. */
+    margin-top: 4px;
+  }
+}
+.l-legal-toc-label {
+  font-size: 13px;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.l-legal-toc-list {
+  border-left: 1px solid var(--border2);
+}
+.landing .l-legal-toc-link {
+  display: flex;
+  align-items: baseline;
+  margin-left: -1px;
+  padding: 6px 8px 6px 14px;
+  border-left: 2px solid transparent;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-sub);
+  transition: color 0.15s, border-color 0.15s;
+}
+/* Section number, matching the numbered h2s: muted, tabular, and in its own
+   fixed-width column so wrapped titles hang-indent past it. */
+.l-legal-toc-num {
+  flex: none;
+  min-width: 1.6em;
+  margin-right: 4px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.landing .l-legal-toc-link:hover { color: var(--text); }
+.landing .l-legal-toc-link[aria-current="true"] {
+  color: var(--text);
+  border-left-color: var(--text);
+}
+/* Body copy: regular weight + a lifted grey so long-form reading holds up on
+   the dark ground; a 40rem measure (~70 characters at 18px). */
 .l-legal-body p {
   font-size: 18px;
-  font-weight: 300;
-  color: var(--text3);
-  line-height: 1.75;
+  font-weight: 400;
+  color: #b0b0b0;
+  line-height: 30px;
+  max-width: 40rem;
   margin: 0 0 18px;
 }
 .l-legal-body ul {
   margin: 0 0 18px;
   padding-left: 24px;
+  max-width: 40rem;
 }
 .l-legal-body li {
   font-size: 18px;
-  font-weight: 300;
-  color: var(--text3);
-  line-height: 1.75;
+  font-weight: 400;
+  color: #b0b0b0;
+  line-height: 30px;
   margin-bottom: 6px;
   list-style: disc;
 }
@@ -739,14 +895,13 @@
 @media (prefers-reduced-motion: reduce) {
   .l-viewer-stage img,
   .l-faq-item summary::after,
-  .l-btn-primary svg { transition: none; }
+  .l-btn-primary svg,
+  .l-btn-secondary svg { transition: none; }
 }
 
 /* ── Responsive ── */
 @media (max-width: 1000px) {
   .l-uses-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .l-use:nth-child(3) { border-left: none; }
-  .l-use:nth-child(n + 3) { border-top: 1px solid var(--border); }
   .l-extras-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
@@ -771,18 +926,56 @@
     scrollbar-width: none;
     margin-left: calc(var(--gutter) * -1);
     margin-right: calc(var(--gutter) * -1);
-    padding: 0 var(--gutter);
+    /* Symmetric gutters at both ends: left padding plus a trailing spacer of
+       the same width (end padding on a scrolling flex row isn't reliably
+       part of the scroll area). Auto margins on the first/last tab centre
+       the row when it fits, and collapse to 0 when it has to scroll, so a
+       row that just fits doesn't leave its slack all on the right. */
+    padding: 0 0 0 var(--gutter);
   }
+  .l-viewer-tabs::after {
+    content: "";
+    /* Minus the row's 4px gap, which also sits before the spacer. */
+    flex: 0 0 calc(var(--gutter) - 4px);
+  }
+  .l-viewer-tab:first-child { margin-left: auto; }
+  .l-viewer-tab:last-of-type { margin-right: auto; }
   .l-viewer-tabs::-webkit-scrollbar { display: none; }
+  /* While more tabs sit off the right edge, fade the last 24px so the row
+     reads as scrollable rather than clipped (see ProductViewer). */
+  .l-viewer-tabs[data-overflow-end] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  /* Never let a tab squash and clip its label; tighten them so all five fit
+     a 390px phone, and scroll (not clip) on anything narrower. */
+  .l-viewer-tab {
+    flex-shrink: 0;
+    padding: 8px 11px;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    min-height: 44px;
+  }
   .l-viewer-chrome { height: 32px; }
   .l-viewer-dots { display: none; }
   .l-viewer-url { font-size: 11px; }
+  /* Phone-width shots (390x488) replace the desktop ones here - see
+     VIEWER_MOBILE_MQ in LandingPage.tsx. Cap the width so a tablet-ish
+     window doesn't blow a phone capture up past ~1.2x. */
+  .l-viewer-frame { max-width: 460px; margin: 0 auto; }
+  /* Phone captures (780x976) cropped to their top 760px - stops above the
+     next heading / bottom toolbar so the fade doesn't half-show it. */
+  .l-viewer-stage { aspect-ratio: 780 / 760; }
+}
+@media (max-width: 480px) {
+  /* Drop the host so the path fits instead of trailing off. */
+  .l-viewer-host { display: none; }
 }
 @media (max-width: 560px) {
+  /* Phone-width shots here too - see SHOWCASE_MOBILE_MQ in LandingPage.tsx. */
+  .l-show-media { aspect-ratio: 4 / 5; }
   .l-uses-grid,
   .l-extras-grid { grid-template-columns: minmax(0, 1fr); }
-  .l-use { border-left: none; }
-  .l-use + .l-use { border-top: 1px solid var(--border); }
   .l-hero-ctas { flex-direction: column; align-self: stretch; }
   .l-hero-ctas > * { width: 100%; }
 }

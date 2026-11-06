@@ -46,10 +46,24 @@ export function frontmatterPass(
 
   // Reading mode (or explicit hideFrontmatter) hides the YAML block entirely.
   if (!reveal || ctx.hideFrontmatter) {
+    // Also swallow the blank line(s) that conventionally follow the closing
+    // `---`; otherwise they render as an empty line and docs with frontmatter
+    // start visibly lower than docs without it.
+    let hideTo = range.to;
+    let next = endLine.number + 1;
+    while (next <= state.doc.lines) {
+      const line = state.doc.line(next);
+      if (line.text.trim() !== "") break;
+      hideTo = line.to;
+      next++;
+    }
+    // Leave at least one line after the block so the replace never spans the
+    // whole doc's final newline into nothing.
+    if (next > state.doc.lines) hideTo = range.to;
     decos.push(
-      Decoration.replace({ block: true }).range(range.from, range.to),
+      Decoration.replace({ block: true }).range(range.from, hideTo),
     );
-    return range;
+    return { from: range.from, to: hideTo };
   }
 
   const cursorIn = cursorTouches(sel, range.from, range.to);

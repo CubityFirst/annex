@@ -4,7 +4,11 @@
 // across many projects.
 
 const STORAGE_KEY = "cd_recent_docs";
-const MAX_PER_PROJECT = 3;
+/** How many recent items the sidebar shows. The sidebar leaves out the item
+ *  that's currently open (the page tree already highlights it), so one more
+ *  than this is stored to keep the list full while viewing a recent item. */
+export const RECENT_DISPLAY_LIMIT = 3;
+const MAX_PER_PROJECT = RECENT_DISPLAY_LIMIT + 1;
 const UPDATED_EVENT = "cd:recent-items-updated";
 
 export type RecentItemKind = "doc" | "file";
@@ -52,8 +56,10 @@ function writeAll(data: Store): void {
   }
 }
 
-export function readRecentItems(projectId: string): RecentItem[] {
-  return readAll()[projectId] ?? [];
+/** Most recent first, at most `limit` (default: the display limit; the
+ *  sidebar asks for one extra so it can drop the open item). */
+export function readRecentItems(projectId: string, limit = RECENT_DISPLAY_LIMIT): RecentItem[] {
+  return (readAll()[projectId] ?? []).slice(0, limit);
 }
 
 export function pushRecentItem(

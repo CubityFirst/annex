@@ -60,9 +60,9 @@ describe("HistorySheet", () => {
   it("shows a revision's title only when it differs from the current doc title", () => {
     renderSheet();
     // r2 was saved under a different title - shown, quoted.
-    expect(screen.getByText("“Renamed title”")).toBeInTheDocument();
+    expect(screen.getByText("Titled “Renamed title”")).toBeInTheDocument();
     // r1's title matches the live title - no quoted title row.
-    expect(screen.queryByText("“Live title”")).not.toBeInTheDocument();
+    expect(screen.queryByText("Titled “Live title”")).not.toBeInTheDocument();
   });
 
   it("selects a revision on click", async () => {
@@ -131,9 +131,9 @@ describe("HistorySheet", () => {
 
   it("shows the revision count in the header, marked open-ended when more pages exist", () => {
     const { unmount } = renderSheet({ hasMore: true });
-    expect(screen.getByText("· 2+")).toBeInTheDocument();
+    expect(screen.getByText("· 2+ revisions")).toBeInTheDocument();
     unmount();
     renderSheet();
-    expect(screen.getByText("· 2")).toBeInTheDocument();
+    expect(screen.getByText("· 2 revisions")).toBeInTheDocument();
   });
 });

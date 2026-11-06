@@ -63,6 +63,25 @@ export const visitListItem: Visitor = ({ node, state, sel, reveal, decos }) => {
   const cursorInItem = reveal && cursorTouches(sel, node.from, node.to);
   if (cursorInItem) return;
 
+  // Hanging indent on the marker line, so text that wraps lines up under the
+  // item's first word instead of back under the bullet / checkbox / number.
+  // Width = leading indentation + the rendered marker (approximate em widths
+  // for DM Sans; the bullet widget and checkbox have fixed widths in CSS).
+  {
+    const markerLine = state.doc.lineAt(mark.from);
+    const leading = state.doc.sliceString(markerLine.from, mark.from);
+    if (/^[ 	]*$/.test(leading)) {
+      const wsEm = [...leading].reduce((n, ch) => n + (ch === "	" ? 4 : 1), 0) * 0.26;
+      const markerEm = task
+        ? 1.375 // 14px box + 0.5em gap at 16px
+        : isOrdered
+          ? (mark.to - mark.from) * 0.58 + 0.26 // "12." + the following space
+          : 1.35; // bullet: 1em box + 0.35em gap
+      const hang = (wsEm + markerEm).toFixed(3);
+      decos.push(Decoration.line({ attributes: { style: `padding-left:${hang}em;text-indent:-${hang}em` } }).range(markerLine.from));
+    }
+  }
+
   if (task) {
     // Replace "- [x] " / "1. [x] " with the checkbox widget
     decos.push(

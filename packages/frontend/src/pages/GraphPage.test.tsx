@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 
 // The real GraphView pulls in react-force-graph-2d / canvas-heavy rendering that
 // jsdom can't drive. Mock it to a marker and a node-click trigger so we can
@@ -20,7 +20,9 @@ function renderAt(path = "/projects/p1/graph") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/projects/:projectId/graph" element={<GraphPage />} />
+        <Route element={<Outlet context={{ projectName: "Proj", setBreadcrumbs: vi.fn() }} />}>
+          <Route path="/projects/:projectId/graph" element={<GraphPage />} />
+        </Route>
         <Route path="/projects/:projectId/docs/:docId" element={<div>DOC PAGE</div>} />
       </Routes>
     </MemoryRouter>,
@@ -65,6 +67,54 @@ describe("GraphPage", () => {
       "/api/projects/p1/graph",
       expect.objectContaining({ headers: { Authorization: "Bearer jwt-123" } }),
     );
+  });
+
+  it("shows a summary card with doc and link counts", async () => {
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data: sampleData }));
+    renderAt();
+    const summary = await screen.findByTestId("graph-summary");
+    expect(summary).toHaveTextContent("2 docs · 1 link");
+    // No tag colours configured: no legend.
+    expect(screen.queryByRole("list", { name: "Tag colour legend" })).not.toBeInTheDocument();
+  });
+
+  it("counts a two-way link pair once and ignores self-links", async () => {
+    const data = {
+      nodes: [
+        { id: "d1", title: "Alpha", links: 2 },
+        { id: "d2", title: "Beta", links: 2 },
+        { id: "d3", title: "Gamma", links: 1 },
+      ],
+      edges: [
+        { source: "d1", target: "d2" },
+        { source: "d2", target: "d1" },
+        { source: "d2", target: "d3" },
+        { source: "d3", target: "d3" },
+      ],
+    };
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data }));
+    renderAt();
+    const summary = await screen.findByTestId("graph-summary");
+    expect(summary).toHaveTextContent("3 docs · 2 links");
+  });
+
+  it("lists only the tag colours that colour a node in the legend", async () => {
+    const data = {
+      nodes: [
+        { id: "d1", title: "Alpha", links: 1, tags: ["lore"] },
+        { id: "d2", title: "Beta", links: 1, tags: [] },
+      ],
+      edges: [{ source: "d1", target: "d2" }],
+      tagColors: [
+        { tag: "lore", color: "#ff0000" },
+        { tag: "unused", color: "#00ff00" },
+      ],
+    };
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data }));
+    renderAt();
+    const legend = await screen.findByRole("list", { name: "Tag colour legend" });
+    expect(legend).toHaveTextContent("lore");
+    expect(legend).not.toHaveTextContent("unused");
   });
 
   it("navigates to the doc when a node is clicked", async () => {

@@ -377,7 +377,15 @@ describe("demo server published site", () => {
 });
 
 describe("demo server graph", () => {
+  it("refuses the graph while the feature is off, like the real API", async () => {
+    await patch("/projects/demo-site", { graphEnabled: false });
+    expect((await api("/projects/demo-site/graph")).ok).toBe(false);
+    await patch("/projects/demo-site", { graphEnabled: true });
+    expect((await api("/projects/demo-site/graph")).ok).toBe(true);
+  });
+
   it("derives edges from wikilinks between docs", async () => {
+    await patch("/projects/demo-site", { graphEnabled: true });
     const aId = await createDoc("Graph source doc");
     const bId = await createDoc("Graph target doc");
     await put(`/docs/${aId}`, { content: "Links to [[Graph target doc]] and [[Graph target doc|again]]." });
@@ -434,6 +442,17 @@ describe("demo server user prefs", () => {
     await patch("/me/handle", { handle: null });
     expect((await api("/me")).data.handle).toBeNull();
     expect((await api("/users/by-handle/demo-person")).status).toBe(404);
+  });
+
+  it("lists this browser as the one current session and refuses revoking", async () => {
+    const res = await api("/me/sessions");
+    expect(res.ok).toBe(true);
+    expect(res.data.sessions).toHaveLength(1);
+    const [session] = res.data.sessions;
+    expect(session.current).toBe(true);
+    expect(typeof session.clientLabel).toBe("string");
+    expect(session.createdAt).toBeLessThanOrEqual(Date.now());
+    expect((await post("/me/sessions/revoke-others")).error).toBe("Session management is disabled in the demo.");
   });
 
   it("refuses avatar changes and account deletion with readable messages", async () => {

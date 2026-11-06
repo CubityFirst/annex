@@ -9,8 +9,8 @@
  *   pnpm dev
  *
  * Scenario (single owner, two sites):
- *   - Create Site A, upload an audio file to Site A, grab its "Copy markdown".
- *   - Create Site B, upload an audio file to Site B, grab its "Copy markdown".
+ *   - Create Site A, upload an audio file to Site A, grab its "Copy embed".
+ *   - Create Site B, upload an audio file to Site B, grab its "Copy embed".
  *   - Create a document in Site B and paste BOTH internal links plus a third
  *     "External URL" audio (https://i.cubityfir.st/explorer_9LHgOrjobE.wav).
  *   - View the doc in reading mode internal to Site B.
@@ -31,14 +31,14 @@
  *
  * Notes:
  *   - Audio detection (`looksLikeAudio`) keys off the URL extension, falling
- *     back to the alt text when the URL has none. A "Copy markdown" link is
+ *     back to the alt text when the URL has none. A "Copy embed" link is
  *     `![<filename>](/api/files/<id>/content)` (no extension), so the uploaded
  *     files MUST be named `*.wav` for the alt to trigger the audio renderer.
  *   - The external audio is intercepted and fulfilled with a tiny valid WAV so
  *     the test is hermetic / offline-deterministic - we are exercising the
  *     renderer branch that treats non-/api/files URLs as a plain <audio> not
  *     subject to the lock, not third-party network availability.
- *   - The doc body is built from the exact "Copy markdown" string format (see
+ *   - The doc body is built from the exact "Copy embed" string format (see
  *     FilePage.tsx; the button is shown for `audio/*` too). On Chromium we
  *     additionally click the real button and assert the clipboard matches;
  *     Firefox can't read the clipboard under Playwright, so there we only
@@ -125,7 +125,7 @@ async function createSite(p: Page, name: string): Promise<string> {
 }
 
 // Upload the tiny WAV straight to /api/files (mime audio/wav so the FilePage
-// "Copy markdown" button appears and the file is treated as audio).
+// "Copy embed" button appears and the file is treated as audio).
 async function uploadAudio(p: Page, projectId: string, name: string): Promise<string> {
   const id = await p.evaluate(async ({ projectId, name, b64 }) => {
     const token = localStorage.getItem("token");
@@ -266,6 +266,8 @@ test("registers, creates Site A + Site B, uploads audio to each, and a doc in Si
   // save the empty draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Audio Permission Lock Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   docId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
@@ -277,13 +279,13 @@ test("registers, creates Site A + Site B, uploads audio to each, and a doc in Si
   expect(docId).toBeTruthy();
 });
 
-test("the 'Copy markdown' button copies the canonical /api/files link for audio", async ({ browserName }) => {
+test("the 'Copy embed' button copies the canonical /api/files link for audio", async ({ browserName }) => {
   for (const [projectId, fileId, fileName] of [
     [projectAId, fileAId, FILE_A_NAME],
     [projectBId, fileBId, FILE_B_NAME],
   ] as const) {
     await page.goto(`/projects/${projectId}/files/${fileId}`);
-    const copyBtn = page.getByRole("button", { name: /copy markdown/i });
+    const copyBtn = page.getByRole("button", { name: /copy embed/i });
     await expect(copyBtn).toBeVisible({ timeout: 10000 });
     await copyBtn.click();
 
@@ -302,7 +304,7 @@ test("the 'Copy markdown' button copies the canonical /api/files link for audio"
 
 test("internal reading view locks the Site A audio; Site B + external render", async () => {
   // "Paste both links" + the external URL into the Site B document. This is
-  // exactly the markdown the FilePage "Copy markdown" button produces.
+  // exactly the markdown the FilePage "Copy embed" button produces.
   const content = [
     "# Audio Permission Lock",
     "",

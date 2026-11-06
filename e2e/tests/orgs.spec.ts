@@ -166,7 +166,7 @@ test("owner invites a member to the org", async () => {
 
 test("member sees and accepts the org invite", async () => {
   await memberPage.goto("/invites/pending");
-  await expect(memberPage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
+  await expect(memberPage.getByRole("heading", { name: "Invites", exact: true })).toBeVisible({ timeout: 5000 });
   // The pending-invites fetch or the accept POST can get dropped by the local
   // wrangler chain under full-suite load - reload / re-click until it lands.
   await expect(async () => {

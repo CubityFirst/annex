@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fileKind, guessLanguage } from "./fileKind";
+import { describeFileType, fileKind, guessLanguage } from "./fileKind";
 
 describe("fileKind", () => {
   it("classifies images, audio, video, pdf by MIME", () => {
@@ -57,6 +57,35 @@ describe("fileKind", () => {
   it("ignores MIME parameters and case", () => {
     expect(fileKind("TEXT/PLAIN; charset=utf-8", "a.txt")).toBe("text");
     expect(fileKind("Image/PNG", "a.png")).toBe("image");
+  });
+});
+
+describe("describeFileType", () => {
+  it("calls plain text a 'Text file' without repeating the extension", () => {
+    expect(describeFileType("text/plain", "kickoff-notes.txt")).toBe("Text file");
+    expect(describeFileType("text/plain", "notes.TEXT")).toBe("Text file");
+    expect(describeFileType("application/octet-stream", "LICENSE")).toBe("Text file");
+    expect(describeFileType("application/octet-stream", "Dockerfile")).toBe("Text file");
+  });
+
+  it("names the format when the extension adds information", () => {
+    expect(describeFileType("text/markdown", "readme.md")).toBe("Markdown file");
+    expect(describeFileType("application/json", "data.json")).toBe("JSON file");
+    expect(describeFileType("application/octet-stream", "config.yaml")).toBe("YAML file");
+    expect(describeFileType("text/plain", "server.log")).toBe("Log file");
+  });
+
+  it("prefixes the extension for media and archives", () => {
+    expect(describeFileType("image/svg+xml", "logo.svg")).toBe("SVG image");
+    expect(describeFileType("audio/mpeg", "a.mp3")).toBe("MP3 audio");
+    expect(describeFileType("application/zip", "a.zip")).toBe("ZIP archive");
+  });
+
+  it("uses fixed labels for PDFs and drawings, and a sentence label without an extension", () => {
+    expect(describeFileType("application/pdf", "a.pdf")).toBe("PDF document");
+    expect(describeFileType("application/json", "d.excalidraw")).toBe("Excalidraw drawing");
+    expect(describeFileType("image/png", "screenshot")).toBe("Image");
+    expect(describeFileType("application/octet-stream", "blob")).toBe("File");
   });
 });
 

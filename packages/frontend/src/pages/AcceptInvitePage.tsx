@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,13 +15,7 @@ const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
 };
 
-const ROLE_COLORS: Record<Role, string> = {
-  owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-  admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-foreground",
-  limited: "bg-muted text-foreground",
-};
+const ROLE_COLORS: Record<Role, string> = ROLE_BADGE_CLASSES;
 
 interface InviteInfo {
   projectId: string;
@@ -124,12 +119,12 @@ export function AcceptInvitePage() {
             <div className="h-5 w-48 bg-muted animate-pulse rounded" />
           </div>
         ) : error && !alreadyMember ? (
-          <div role="alert" className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8 shadow-sm">
-            <div className="size-16 rounded-2xl bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground">
+          <div role="alert" className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8">
+            <div className="size-16 rounded-2xl bg-muted flex items-center justify-center text-2xl font-semibold text-muted-foreground ring-1 ring-inset ring-border">
               ?
             </div>
             <div className="flex flex-col gap-2">
-              <h1 className="text-xl font-semibold">Invalid invite</h1>
+              <h1 className="text-xl font-semibold tracking-tight">Invalid invite</h1>
               <p className="text-sm text-muted-foreground">{error}</p>
             </div>
             <Button variant="outline" onClick={handleDecline}>
@@ -137,33 +132,27 @@ export function AcceptInvitePage() {
             </Button>
           </div>
         ) : alreadyMember ? (
-          <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8 shadow-sm">
-            <div
-              className="size-16 rounded-2xl flex items-center justify-center text-2xl font-bold text-white"
-              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-            >
+          <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8">
+            <div className="size-16 rounded-2xl flex items-center justify-center text-2xl font-semibold bg-muted text-foreground ring-1 ring-inset ring-border">
               {projectLetter}
             </div>
             <div className="flex flex-col gap-2">
-              <h1 className="text-xl font-semibold">{info?.projectName}</h1>
-              <p className="text-sm text-muted-foreground">You&apos;re already a member of this project.</p>
+              <h1 className="text-xl font-semibold tracking-tight">{info?.projectName}</h1>
+              <p className="text-sm text-muted-foreground">You&apos;re already a member of this site.</p>
             </div>
             <Button onClick={() => navigate(`/projects/${alreadyProjectId}`)}>
-              Go to project
+              Go to site
             </Button>
           </div>
         ) : info ? (
-          <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8 shadow-sm">
-            <div
-              className="size-16 rounded-2xl flex items-center justify-center text-2xl font-bold text-white"
-              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-            >
+          <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8">
+            <div className="size-16 rounded-2xl flex items-center justify-center text-2xl font-semibold bg-muted text-foreground ring-1 ring-inset ring-border">
               {projectLetter}
             </div>
 
             <div className="flex flex-col gap-2">
               <p className="text-sm text-muted-foreground">You&apos;ve been invited to join</p>
-              <h1 className="text-2xl font-bold">{info.projectName}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">{info.projectName}</h1>
               <p className="text-sm text-muted-foreground">Invited by {info.ownerName}</p>
               <div className="flex justify-center mt-1">
                 <Badge variant="outline" className={`text-xs font-medium ${ROLE_COLORS[info.role]}`}>

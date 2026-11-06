@@ -186,7 +186,7 @@ test("owner invites the second account with the Limited role", async () => {
 test("limited user accepts the invite", async () => {
   await login(limitedPage, LIMITED);
   await limitedPage.goto("/invites/pending");
-  await expect(limitedPage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
+  await expect(limitedPage.getByRole("heading", { name: "Invites", exact: true })).toBeVisible({ timeout: 5000 });
   // The pending-invites fetch or the accept POST can get dropped by the local
   // wrangler chain under full-suite load - reload / re-click until it lands.
   await expect(async () => {
@@ -238,9 +238,10 @@ test("by default the limited user does NOT see the doc in the file list", async 
 
 test("owner grants the limited user VIEW access on the doc", async () => {
   await ownerPage.goto(`/projects/${projectId}/docs/${docId}`);
+  await ownerPage.getByRole("button", { name: "More actions" }).click();
   await ownerPage.getByTitle("Manage limited viewer access").click();
 
-  const dialog = ownerPage.getByRole("dialog", { name: "Document Access" });
+  const dialog = ownerPage.getByRole("dialog", { name: "Document access" });
   await expect(dialog).toBeVisible({ timeout: 5000 });
 
   // Sanity: no shares yet - the empty-state copy is visible.
@@ -284,9 +285,10 @@ test("with VIEW share - limited user does NOT see the Edit affordance", async ()
 
 test("owner uplifts the share from VIEW to EDIT", async () => {
   await ownerPage.goto(`/projects/${projectId}/docs/${docId}`);
+  await ownerPage.getByRole("button", { name: "More actions" }).click();
   await ownerPage.getByTitle("Manage limited viewer access").click();
 
-  const dialog = ownerPage.getByRole("dialog", { name: "Document Access" });
+  const dialog = ownerPage.getByRole("dialog", { name: "Document access" });
   await expect(dialog).toBeVisible({ timeout: 5000 });
 
   // Single existing share row - its permission combobox is the only

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
+vi.mock("@/components/DotGrid", () => ({ DotGrid: () => null }));
+
 import { CheckEmailPage } from "./CheckEmailPage";
 
 function renderWith(state: { email?: string } | null) {
@@ -16,6 +18,7 @@ function renderWith(state: { email?: string } | null) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  sessionStorage.clear();
 });
 
 describe("CheckEmailPage", () => {
@@ -23,6 +26,14 @@ describe("CheckEmailPage", () => {
     renderWith({ email: "user@example.com" });
     expect(screen.getByRole("heading", { name: /check your email/i })).toBeInTheDocument();
     expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByText(/we sent a link to/i)).toBeInTheDocument();
+  });
+
+  it("still names the address after a reload drops the router state", () => {
+    renderWith({ email: "user@example.com" }).unmount();
+    renderWith(null);
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resend verification email/i })).toBeInTheDocument();
   });
 
   it("shows a generic message and no resend button when no email is provided", () => {

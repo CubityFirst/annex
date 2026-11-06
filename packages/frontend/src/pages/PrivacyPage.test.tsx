@@ -22,9 +22,9 @@ beforeEach(() => {
 
 describe("PrivacyPage", () => {
 
-  it("shows the logged-out nav (login + get started) when no token is present", () => {
+  it("shows the logged-out nav (sign in + get started) when no token is present", () => {
     renderPage();
-    expect(screen.getByRole("link", { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /get started/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /go to dashboard/i })).not.toBeInTheDocument();
   });
@@ -33,7 +33,7 @@ describe("PrivacyPage", () => {
     window.localStorage.setItem("token", "jwt-abc");
     renderPage();
     expect(screen.getByRole("link", { name: /go to dashboard/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^login$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^sign in$/i })).not.toBeInTheDocument();
   });
 
   it("renders the shared site footer with the standard link set", () => {

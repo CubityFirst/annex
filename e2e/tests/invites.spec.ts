@@ -177,7 +177,7 @@ test("email invite - invited member shows as pending in the members list", async
 test("email invite - invitee sees the pending invite", async () => {
   await login(inviteePage, EMAIL_USER);
   await inviteePage.goto("/invites/pending");
-  await expect(inviteePage.getByRole("heading", { name: "Pending Invites" })).toBeVisible({ timeout: 5000 });
+  await expect(inviteePage.getByRole("heading", { name: "Invites", exact: true })).toBeVisible({ timeout: 5000 });
   // The pending-invites fetch can get dropped by the local wrangler chain
   // under full-suite load - reload until the invite shows.
   await expect(async () => {
@@ -257,7 +257,7 @@ test("invite link - project appears in link-invitee's dashboard", async () => {
 test("invite link - owner revokes the link", async () => {
   await ownerPage.goto(`/projects/${projectId}/settings`);
   // The link exists, so its Revoke button must load before anything else is
-  // checked (an empty or dropped list fetch also reads "No invite links yet.").
+  // checked (an empty or dropped list fetch also reads "No invite links yet").
   await expect(ownerPage.getByRole("button", { name: "Revoke" })).toBeVisible({ timeout: 10000 });
   // Retry on transient drops of the revoke DELETE: the button only disappears
   // once the request lands, so re-clicking while it's still there is safe.
@@ -267,7 +267,7 @@ test("invite link - owner revokes the link", async () => {
       await revoke.click();
       await expect(ownerPage.getByText("Invite link revoked.", { exact: true })).toBeVisible({ timeout: 5000 });
     }
-    await expect(ownerPage.getByText("No invite links yet.")).toBeVisible({ timeout: 5000 });
+    await expect(ownerPage.getByText("No invite links yet", { exact: true })).toBeVisible({ timeout: 5000 });
   }).toPass({ timeout: 30000 });
 });
 

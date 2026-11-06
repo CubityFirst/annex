@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
 import { isDemoMode, exitDemoMode } from "@/lib/demo";
@@ -23,6 +22,9 @@ import {
   BookOpen,
   Settings,
   LogOut,
+  UserRound,
+  KeyRound,
+  FolderOpen,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -32,21 +34,20 @@ import {
   Network,
   Search,
   Image,
-  Music,
-  FileCode,
-  FileArchive,
-  File,
   Plus,
   Upload,
   Building2,
   Menu,
   LayoutGrid,
+  X,
 } from "lucide-react";
-import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
+import { readRecentItems, onRecentItemsUpdated, RECENT_DISPLAY_LIMIT, type RecentItem } from "@/lib/recentDocs";
+import { SidebarPageTree, onSiteTreeChanged, type TreeFile } from "@/components/SidebarPageTree";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { UserAvatar } from "@/components/UserAvatar";
-import { UserProfileCard } from "@/components/UserProfileCard";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
 // A row of GET /api/projects. doc_count / member_count are only present when
@@ -86,6 +87,8 @@ interface Doc {
   display_title?: string | null;
   folder_id?: string | null;
   tags?: string | null;
+  is_home?: number;
+  sidebar_position?: number | null;
 }
 
 interface Folder {
@@ -94,25 +97,40 @@ interface Folder {
   parent_id: string | null;
 }
 
+// Swap in a refetched list only when it differs, so an unchanged refresh keeps
+// the old array identity (and memoised consumers don't recompute).
+function keepIfSame<T>(prev: T[], next: T[]): T[] {
+  return prev.length === next.length && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+}
+
 type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText };
 
 const DOCUMENTS_SECTION: Section = { id: "documents", label: "Documents", icon: FileText };
 const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 
+// App sidebar nav rows (File manager, Graph, Recently accessed, the overview
+// Sites list) - 14px text on the ghost sm button's 32px row, matching the page
+// tree's rows (SidebarPageTree ROW_CLASS) and the Search entry. Below md (the
+// slide-over drawer) rows grow to 40px so they're comfortable touch targets.
+const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal max-md:h-10";
+
+// Create-dialog submit buttons stay disabled until Name has text; same muted
+// disabled look as the editor's Save so it reads as "not yet", not "broken".
+const MUTED_DISABLED_CLASS = "disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100";
+
 function RecentItemIcon({ item, className }: { item: RecentItem; className?: string }) {
   if (item.kind === "doc") return <FileText className={className} />;
-  const mime = item.mime ?? "";
-  if (mime.startsWith("image/")) return <Image className={className} />;
-  if (mime.startsWith("audio/")) return <Music className={className} />;
-  if (mime === "application/pdf") return <FileText className={className} />;
-  if (mime === "application/json" || mime.startsWith("text/")) return <FileCode className={className} />;
-  if (mime.includes("zip") || mime.includes("tar") || mime.includes("gzip") || mime.includes("archive")) return <FileArchive className={className} />;
-  return <File className={className} />;
+  // Same classifier as the file manager / public tree, so e.g. a drawing gets
+  // the pen icon everywhere (name-based detection needs the title).
+  return <FileTypeIcon mimeType={item.mime ?? ""} name={item.title} className={className} />;
 }
 
 export interface BreadcrumbItem {
   id: string | null;
   name: string;
+  /** Render as a link even when it's the last crumb (e.g. a doc in edit mode,
+   *  whose own title continues the bar as an editable field). */
+  forceLink?: boolean;
   onClick?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: () => void;
@@ -241,7 +259,7 @@ function ProjectSwitcher({
           <CommandList>
             <CommandEmpty>No sites found.</CommandEmpty>
             {favourites.length > 0 && (
-              <CommandGroup heading="Favourites">{favourites.map(renderSite)}</CommandGroup>
+              <CommandGroup heading="Pinned">{favourites.map(renderSite)}</CommandGroup>
             )}
             {[...orgGroups.entries()].map(([orgId, group]) => (
               <CommandGroup key={orgId} heading={group.name}>{group.sites.map(renderSite)}</CommandGroup>
@@ -302,6 +320,8 @@ export function DocsLayout() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  // Sidebar page tree only (not part of the outlet context).
+  const [files, setFiles] = useState<TreeFile[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   // DOM node of the top-bar action slot, exposed via context so a page can
   // portal an action (e.g. drawing Save) into the title bar.
@@ -339,6 +359,7 @@ export function DocsLayout() {
   // current user
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
@@ -377,14 +398,23 @@ export function DocsLayout() {
   // Recently accessed docs/files for the current project. Re-read on route
   // change AND when DocPage / FilePage push a new entry - pushes happen
   // after the fetch resolves, so they land later than the pathname change.
+  // The open doc/file is left out: it's already highlighted in the page tree,
+  // and dropping it keeps the list from reshuffling on every navigation.
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const openItemMatch = useMatch("/projects/:projectId/:kind/:itemId");
+  const openItemKey = openItemMatch && (openItemMatch.params.kind === "docs" || openItemMatch.params.kind === "files")
+    ? `${openItemMatch.params.kind === "docs" ? "doc" : "file"}:${openItemMatch.params.itemId}`
+    : null;
+  const visibleRecentItems = recentItems
+    .filter(item => `${item.kind}:${item.id}` !== openItemKey)
+    .slice(0, RECENT_DISPLAY_LIMIT);
   useEffect(() => {
-    setRecentItems(projectId ? readRecentItems(projectId) : []);
+    setRecentItems(projectId ? readRecentItems(projectId, RECENT_DISPLAY_LIMIT + 1) : []);
   }, [projectId, location.pathname]);
   useEffect(() => {
     if (!projectId) return;
     return onRecentItemsUpdated(updatedProjectId => {
-      if (updatedProjectId === projectId) setRecentItems(readRecentItems(projectId));
+      if (updatedProjectId === projectId) setRecentItems(readRecentItems(projectId, RECENT_DISPLAY_LIMIT + 1));
     });
   }, [projectId]);
 
@@ -407,11 +437,12 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; emailVerified: boolean; emailVerificationEnabled: boolean; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; email?: string | null; emailVerified: boolean; emailVerificationEnabled: boolean; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
           setUserId(result.data.userId);
+          setUserEmail(typeof result.data.email === "string" && result.data.email ? result.data.email : null);
           setPersonalPlan(result.data.personalPlan ?? "free");
           setPersonalPlanStyle(result.data.personalPlanStyle ?? null);
           setPersonalPresenceColor(result.data.personalPresenceColor ?? null);
@@ -472,25 +503,75 @@ export function DocsLayout() {
       .catch(() => {});
   }, [onDashboard]);
 
+  // Site docs/folders (outlet context + sidebar page tree) and files (tree
+  // only). Loaded when the site changes, then refreshed on every navigation
+  // within it, when the window regains focus, and on notifySiteTreeChanged()
+  // so the tree picks up creates/renames/moves/deletes. Refreshes keep the
+  // previous data on screen (no flicker) and keep the previous array identity
+  // when nothing changed, so consumers memoised on `docs`/`folders` (DocPage's
+  // editor context) don't churn. The sequence number drops stale responses.
+  const [treeRefresh, setTreeRefresh] = useState(0);
   useEffect(() => {
-    if (!projectId) { setDocs([]); setFolders([]); return; }
+    const bump = () => setTreeRefresh(n => n + 1);
+    const onVisible = () => { if (document.visibilityState === "visible") bump(); };
+    const off = onSiteTreeChanged(bump);
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      off();
+      window.removeEventListener("focus", bump);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+  const treeProjectRef = useRef<string | null>(null);
+  const treeFetchSeq = useRef(0);
+  const isLimitedViewer = currentProject?.role === "limited";
+  useEffect(() => {
+    if (!projectId) {
+      treeProjectRef.current = null;
+      setDocs([]); setFolders([]); setFiles([]);
+      return;
+    }
     if (!getToken()) return;
+    if (treeProjectRef.current !== projectId) {
+      treeProjectRef.current = projectId;
+      setDocs([]); setFolders([]); setFiles([]);
+    }
+    const seq = ++treeFetchSeq.current;
+    const current = () => seq === treeFetchSeq.current;
     apiFetchJson<Doc[]>(`/api/docs?projectId=${projectId}`)
       .then(result => {
         // apiFetch already triggered window.location.replace - don't fight it
         // by also calling React Router navigate.
-        if (result.redirected) return;
+        if (result.redirected || !current()) return;
         if (result.status === 403 || result.status === 404) {
           navigate("/dashboard", { replace: true });
           return;
         }
-        if (result.ok && result.data) setDocs(result.data);
+        const next = result.ok ? result.data : undefined;
+        if (next) setDocs(prev => keepIfSame(prev, next));
       })
       .catch(() => {});
     apiFetchJson<Folder[]>(`/api/folders?projectId=${projectId}&all=1`)
-      .then(result => { if (result.ok && result.data) setFolders(result.data); })
+      .then(result => {
+        const next = result.ok ? result.data : undefined;
+        if (current() && next) setFolders(prev => keepIfSame(prev, next));
+      })
       .catch(() => {});
-  }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Limited viewers can't list files (403) - don't ask. Until the site row
+    // (and so the role) has loaded we do ask; a 403 just leaves the tree
+    // without files.
+    if (isLimitedViewer) {
+      setFiles([]);
+    } else {
+      apiFetchJson<TreeFile[]>(`/api/files?projectId=${projectId}`)
+        .then(result => {
+          const next = result.ok ? result.data : undefined;
+          if (current() && next) setFiles(prev => keepIfSame(prev, next));
+        })
+        .catch(() => {});
+    }
+  }, [navigate, projectId, location.pathname, treeRefresh, isLimitedViewer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lazily load the orgs the user can place a new site under, the first time
   // the dialog opens. The API only lets admin+ create sites in an org, so we
@@ -669,7 +750,7 @@ export function DocsLayout() {
   const searchEntry = (
     <button
       onClick={openSearch}
-      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}
+      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-sm font-normal text-muted-foreground max-md:h-10")}
     >
       <span className="flex items-center gap-1.5">
         <Search className="h-3.5 w-3.5 shrink-0" />
@@ -681,10 +762,46 @@ export function DocsLayout() {
     </button>
   );
 
+  // Pages that don't publish their own breadcrumbs still get a titled top bar,
+  // so every app route shares the same header (and the sidebar's header rule
+  // lines up with something on the right).
+  async function signOut() {
+    // Best-effort: revoke the server-side session so the JWT is dead even if it
+    // gets exfiltrated from localStorage post-logout. We proceed with the local
+    // clear regardless of the network result.
+    if (getToken()) {
+      try {
+        await apiFetch("/api/me/sessions/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch { /* ignore */ }
+    }
+    clearToken();
+    navigate("/login");
+  }
+
+  const fallbackCrumbs = ((): BreadcrumbItem[] => {
+    const path = location.pathname;
+    if (path === "/dashboard") return [{ id: null, name: "Home" }];
+    if (path === "/settings") return [{ id: null, name: "Account settings" }];
+    if (path === "/invites/pending") return [{ id: null, name: "Invites" }];
+    if (/^\/u\//.test(path)) return [{ id: null, name: "Profile" }];
+    const siteSettings = path.match(/^\/projects\/([^/]+)\/settings$/);
+    if (siteSettings && currentProject) {
+      return [
+        { id: null, name: currentProject.name, onClick: () => navigate(`/projects/${siteSettings[1]}`) },
+        { id: "settings", name: "Settings" },
+      ];
+    }
+    return [];
+  })();
+  const displayCrumbs = breadcrumbs.length > 0 ? breadcrumbs : fallbackCrumbs;
+
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
           <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
           <button
             type="button"
@@ -693,19 +810,19 @@ export function DocsLayout() {
               // Full reload so the demo fetch patch and in-memory data are dropped.
               window.location.replace("/");
             }}
-            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
           >
             Exit demo
           </button>
         </div>
       )}
       {emailUnverified && location.pathname !== "/settings" && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
           <span>Your email address hasn't been verified.</span>
           <button
             type="button"
             onClick={() => navigate("/settings")}
-            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
           >
             Update or verify email
           </button>
@@ -715,15 +832,17 @@ export function DocsLayout() {
       {/* Backdrop - mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
-          className="absolute inset-0 z-10 md:hidden"
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
       <aside className={cn(
-        "z-20 flex flex-col shrink-0 border-r border-border bg-background w-64",
+        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 md:shadow-none",
         // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
+        // The drop shadow only exists while open - parked off-canvas it would
+        // bleed ~30px onto the page's left edge.
         "fixed inset-y-0 left-0 transition-transform duration-200",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        sidebarOpen ? "translate-x-0 shadow-2xl shadow-black/40" : "-translate-x-full",
         // Desktop: static-flow column (relative, so it keeps its place in the row
         // and anchors the toggle button) whose width collapses instead of translating.
         "md:relative md:inset-auto md:translate-x-0 md:transition-[width] md:duration-200",
@@ -756,7 +875,7 @@ export function DocsLayout() {
                     isActive ? "bg-accent text-foreground" : "text-muted-foreground"
                   }`
                 }
-                title="Site Settings"
+                title="Site settings"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
               </NavLink>
@@ -773,6 +892,14 @@ export function DocsLayout() {
               <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto dark:invert" />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation"
+            className="ml-auto -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {projectId ? (
@@ -781,45 +908,51 @@ export function DocsLayout() {
             {/* Sections */}
             <nav className="flex flex-col gap-1">
               {searchEntry}
-              <div className="flex items-center mb-1">
+              <NavLink
+                to={`/projects/${projectId}`}
+                end
+                className={({ isActive }) =>
+                  cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    SIDEBAR_ROW_CLASS,
+                    // Folder views are still the File manager - keep it lit.
+                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
+                  )
+                }
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                File manager
+              </NavLink>
+              {currentProject?.graph_enabled ? (
                 <NavLink
-                  to={`/projects/${projectId}`}
-                  end
+                  to={`/projects/${projectId}/graph`}
                   className={({ isActive }) =>
-                    cn(buttonVariants({ variant: "ghost", size: "sm" }), "flex-1 justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                   }
+                  title="Graph"
                 >
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                  File Manager
+                  <Network className="h-3.5 w-3.5 shrink-0" />
+                  Graph
                 </NavLink>
-                {currentProject?.graph_enabled ? (
-                  <NavLink
-                    to={`/projects/${projectId}/graph`}
-                    className={({ isActive }) =>
-                      cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0 px-2", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
-                    }
-                    title="Graph"
-                  >
-                    <Network className="h-3.5 w-3.5" />
-                  </NavLink>
-                ) : null}
-              </div>
+              ) : null}
             </nav>
 
-            {recentItems.length > 0 && (
+            <SidebarPageTree key={projectId} projectId={projectId} docs={docs} folders={folders} files={files} />
+
+            {visibleRecentItems.length > 0 && (
               <div className="mt-4">
-                <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
                   Recently accessed
                 </p>
                 <nav className="flex flex-col gap-0.5">
-                  {recentItems.map(item => (
+                  {visibleRecentItems.map(item => (
                     <NavLink
                       key={`${item.kind}:${item.id}`}
                       to={item.kind === "doc"
                         ? `/projects/${projectId}/docs/${item.id}`
                         : `/projects/${projectId}/files/${item.id}`}
                       className={({ isActive }) =>
-                        cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                       }
                       title={item.title}
                     >
@@ -836,16 +969,20 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-1">
               {searchEntry}
+              {visibleProjects.length > 0 && (
+                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Sites</p>
+              )}
               {visibleProjects.map(p => (
                 <Button
                   key={p.id}
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start gap-2"
+                  className={cn(SIDEBAR_ROW_CLASS, "gap-2 text-muted-foreground hover:text-foreground")}
                   onClick={() => navigate(`/projects/${p.id}`)}
+                  title={p.name}
                 >
                   <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-4 w-4" />
-                  {p.name}
+                  <span className="truncate">{p.name}</span>
                 </Button>
               ))}
             </nav>
@@ -854,103 +991,120 @@ export function DocsLayout() {
 
         <Separator />
 
-        {/* Footer */}
-        <div className="p-2">
-          <div className="flex items-center gap-2 px-2 py-1.5">
+        {/* Footer - fixed height so the divider doesn't jump when the
+            role sub-line appears inside a site. */}
+        <div className="flex h-16 items-center p-2">
+          <div className="flex w-full items-center gap-2 px-2 py-1.5">
             {userId && userName ? (
-              <UserProfileCard userId={userId} name={userName}>
+              // Own-account menu: a small popover anchored above the user row
+              // (the full profile card modal is for viewing other people).
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   aria-label="Open profile"
                   title={userName}
                   className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <UserAvatar userId={userId} name={userName} className="size-7 shrink-0 text-xs" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
-                  <span className="flex-1 truncate text-left text-sm font-medium">
-                    {userName}
+                  <UserAvatar userId={userId} name={userName} className="size-8 shrink-0 text-xs" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
+                  <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
+                    <span className="truncate text-sm font-medium">{userName}</span>
+                    {currentProject && (
+                      <span className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"}</span>
+                    )}
                   </span>
                 </button>
-              </UserProfileCard>
+                </DropdownMenuTrigger>
+                {/* sideOffset clears the footer's top divider: the trigger
+                    sits ~13px below it, so 16 leaves a ~3px gap above the rule. */}
+                <DropdownMenuContent side="top" align="start" sideOffset={16} collisionPadding={12} className="w-[232px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
+                  <div className="flex items-center gap-2.5 px-2 py-2">
+                    <UserAvatar userId={userId} name={userName} className="size-9 shrink-0 text-sm" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{userName}</p>
+                      {userEmail
+                        ? <p className="truncate text-xs text-muted-foreground" title={userEmail}>{userEmail}</p>
+                        : currentProject && <p className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"} of {currentProject.name}</p>}
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => navigate(`/u/${userId}`)}>
+                    <UserRound /> View your public profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate("/settings")}>
+                    <Settings /> Account settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate("/settings#two-factor")}>
+                    <KeyRound /> Security &amp; sessions
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => { void signOut(); }}>
+                    <LogOut /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <>
                 <div className="size-7 shrink-0 rounded-full bg-muted" />
                 <span className="flex-1 truncate text-sm font-medium">-</span>
               </>
             )}
-            <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "hidden")}>
-              {currentProject?.role ?? "owner"}
-            </Badge>
-            <button
-              onClick={() => navigate("/settings")}
-              title="Settings"
-              aria-label="Settings"
-              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-            <button
-              onClick={async () => {
-                // Best-effort: revoke the server-side session so the JWT is dead
-                // even if it gets exfiltrated from localStorage post-logout. We
-                // proceed with the local clear regardless of the network result.
-                if (getToken()) {
-                  try {
-                    await apiFetch("/api/me/sessions/logout", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                    });
-                  } catch { /* ignore */ }
-                }
-                clearToken();
-                navigate("/login");
-              }}
-              title="Sign out"
-              aria-label="Sign out"
-              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            {/* Account settings and Sign out live in the profile menu above,
+                so the footer is just the account row (no duplicate icons). */}
           </div>
         </div>
         </div>
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors before:absolute before:inset-y-0 before:-right-3 before:left-0 before:content-['']"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-[color,background-color,opacity] before:absolute before:inset-y-0 before:-right-3 before:left-0 before:content-['']",
+            // While open, the tab only appears when the sidebar is hovered or
+            // the tab is focused; collapsed, it stays visible as the way back.
+            sidebarOpen && "md:opacity-0 md:group-hover/sidebar:opacity-100 md:hover:opacity-100 md:focus-visible:opacity-100",
+          )}
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
       </aside>
 
       {/* Main content - full-width and static; the sidebar overlays it on mobile */}
-      <main className="flex flex-1 flex-col overflow-hidden min-w-0">
+
+      {/* data-app-main: a docked side panel (e.g. the Markdown reference)
+          reserves its width here so it never covers the page - see the
+          html[data-side-panel] rule in index.css. */}
+      <main data-app-main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top bar: holds the mobile menu opener and the breadcrumbs. Rendered on
             mobile whenever the sidebar is closed (so the opener sits in the bar
             instead of floating over content); on desktop only when there are
             crumbs. The opener itself is md:hidden. */}
-        {(breadcrumbs.length > 0 || !sidebarOpen) && (
+        {(displayCrumbs.length > 0 || !sidebarOpen) && (
           <div className={cn(
             "shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap px-2 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]",
-            breadcrumbs.length === 0 && "md:hidden",
+            displayCrumbs.length === 0 && "md:hidden",
           )}>
             {!sidebarOpen && (
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
                 aria-label="Open navigation menu"
-                className="md:hidden shrink-0 mr-1 flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="md:hidden shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Menu className="h-5 w-5" />
               </button>
             )}
-            <nav aria-label="Breadcrumb" className="flex items-center">
-              <ol className="flex items-center gap-1">
-                {breadcrumbs.map((crumb, i) => {
-                  const isLast = i === breadcrumbs.length - 1;
+            {/* Phones show only the final crumb (the current page/doc title,
+                truncated) so the bar keeps room for page actions and Search;
+                the full trail is in the sidebar tree. */}
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center">
+              <ol className="flex min-w-0 items-center gap-1">
+                {displayCrumbs.map((crumb, i) => {
+                  const isFinal = i === displayCrumbs.length - 1;
+                  const isLast = isFinal && !crumb.forceLink;
                   const clickable = !isLast && !!crumb.onClick;
                   return (
-                    <li key={i} className="flex items-center gap-1 shrink-0">
-                      {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" aria-hidden="true" />}
+                    <li key={i} className={cn("flex items-center gap-1", isFinal ? "min-w-0 md:shrink-0" : "hidden shrink-0 md:flex")}>
+                      {i > 0 && <ChevronRight className="hidden h-3.5 w-3.5 text-muted-foreground/50 shrink-0 md:block" aria-hidden="true" />}
                       {clickable ? (
                         <button
                           type="button"
@@ -959,7 +1113,7 @@ export function DocsLayout() {
                           onDragOver={crumb.onDragOver}
                           onDragLeave={crumb.onDragLeave}
                           onDrop={crumb.onDrop}
-                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
+                          className={`min-w-0 max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
                         >
                           {crumb.name}
                         </button>
@@ -967,7 +1121,7 @@ export function DocsLayout() {
                         <span
                           title={crumb.name}
                           aria-current={isLast ? "page" : undefined}
-                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
+                          className={`min-w-0 max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
                             isLast ? "text-foreground font-medium" : "text-muted-foreground"
                           } ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
                           onDragOver={crumb.onDragOver}
@@ -982,9 +1136,19 @@ export function DocsLayout() {
                 })}
               </ol>
             </nav>
-            {/* Right-aligned action slot. sticky+bg keeps it pinned to the right
-                edge (and masking) while long breadcrumbs scroll underneath. */}
-            <div ref={setHeaderActionEl} className="ml-auto shrink-0 sticky right-0 flex items-center gap-2 bg-background pl-2" />
+            {/* Action slot: fills the rest of the bar (pages portal right-aligned
+                actions or, while editing a doc, its title field + actions). */}
+            <div ref={setHeaderActionEl} className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 bg-background pl-2" />
+            {/* Phones: search without opening the drawer (desktop has the
+                sidebar search row and Ctrl/⌘K). */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search"
+              className="md:hidden ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Search className="h-5 w-5" />
+            </button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
@@ -1002,17 +1166,10 @@ export function DocsLayout() {
         onCreateOrg={() => setCreatingOrg(true)}
       />
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
-        <DialogContent className="sm:max-w-lg" hideClose>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <BookOpen className="size-5" />
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <DialogTitle>Create a new site</DialogTitle>
-                <DialogDescription>You can change any of this later in Site Settings.</DialogDescription>
-              </div>
-            </div>
+            <DialogTitle>New site</DialogTitle>
+            <DialogDescription>You can change any of this later in Site settings.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="flex flex-col gap-5 py-1">
             <div className="flex flex-col gap-2">
@@ -1051,7 +1208,7 @@ export function DocsLayout() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="personal">
-                    <span className="flex items-center gap-2"><BookOpen className="size-3.5 text-muted-foreground" /> Personal</span>
+                    <span className="flex items-center gap-2"><UserRound className="size-3.5 text-muted-foreground" /> Personal</span>
                   </SelectItem>
                   {creatableOrgs.map(org => (
                     <SelectItem key={org.id} value={org.id}>
@@ -1070,26 +1227,32 @@ export function DocsLayout() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Branding <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <div className="flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-start">
+              {/* One tile per row: side by side the captions wrapped unevenly
+                  and the two upload actions fell on different baselines. */}
+              <div className="grid gap-2">
                 {/* Square icon - cropped to 512×512 via AvatarCropDialog. */}
-                <div className="flex flex-1 items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => squareInputRef.current?.click()}
-                    aria-label="Upload square icon"
-                    className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
-                  >
-                    {squarePreviewUrl
-                      ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
-                      : <Image className="size-5 text-muted-foreground" />}
-                  </button>
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <p className="text-sm font-medium">Square icon</p>
-                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => squareInputRef.current?.click()}>
-                      {squareBlob ? "Change" : "Upload"}
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                  {/* Fixed 80px slot (the wordmark tile's width) so both rows'
+                      captions start on the same edge; the square sits centred. */}
+                  <div className="flex w-20 shrink-0 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => squareInputRef.current?.click()}
+                      aria-label="Upload square icon"
+                      className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
+                    >
+                      {squarePreviewUrl
+                        ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
+                        : <Image className="size-5 text-muted-foreground" />}
                     </button>
-                    <p className="text-xs text-muted-foreground">Sidebar &amp; favourites.</p>
                   </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <p className="text-sm font-medium">Square icon</p>
+                    <p className="text-xs text-muted-foreground">Sidebar and profile cards</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => squareInputRef.current?.click()}>
+                    {squareBlob ? "Change" : "Upload"}
+                  </Button>
                   <input
                     ref={squareInputRef}
                     type="file"
@@ -1106,24 +1269,24 @@ export function DocsLayout() {
                   />
                 </div>
                 {/* Wide wordmark - native aspect, no crop. */}
-                <div className="flex flex-1 items-center gap-3">
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                   <button
                     type="button"
                     onClick={() => wideInputRef.current?.click()}
                     aria-label="Upload wordmark"
-                    className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40 transition-colors hover:border-primary/50"
+                    className="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
                   >
                     {widePreviewUrl
                       ? <img src={widePreviewUrl} alt="" className="max-h-full max-w-full object-contain" />
                       : <Image className="size-5 text-muted-foreground" />}
                   </button>
-                  <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium">Wordmark</p>
-                    <button type="button" className="self-start text-xs text-primary hover:underline" onClick={() => wideInputRef.current?.click()}>
-                      {wideFile ? "Change" : "Upload"}
-                    </button>
-                    <p className="text-xs text-muted-foreground">Published header.</p>
+                    <p className="text-xs text-muted-foreground">Site header</p>
                   </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => wideInputRef.current?.click()}>
+                    {wideFile ? "Change" : "Upload"}
+                  </Button>
                   <input
                     ref={wideInputRef}
                     type="file"
@@ -1150,8 +1313,7 @@ export function DocsLayout() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={saving} className="gap-1.5">
-                <Plus className="size-4" />
+              <Button type="submit" disabled={saving || !name.trim()} className={MUTED_DISABLED_CLASS}>
                 {saving ? "Creating…" : "Create site"}
               </Button>
             </DialogFooter>
@@ -1172,9 +1334,10 @@ export function DocsLayout() {
         />
       )}
       <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); setOrgFromSite(false); } }}>
-        <DialogContent className="sm:max-w-md" hideClose>
-          <DialogHeader className="pb-2">
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
             <DialogTitle>New organization</DialogTitle>
+            <DialogDescription>Group sites so members&rsquo; roles apply to all of them.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateOrg} className="flex flex-col gap-5 py-2">
             <div className="flex flex-col gap-2">
@@ -1195,7 +1358,7 @@ export function DocsLayout() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={orgSaving}>
+              <Button type="submit" disabled={orgSaving || !orgName.trim()} className={MUTED_DISABLED_CLASS}>
                 {orgSaving ? "Creating…" : "Create organization"}
               </Button>
             </DialogFooter>

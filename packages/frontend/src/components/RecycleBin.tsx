@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
+import { DESTRUCTIVE_OUTLINE_BUTTON, SettingsEmptyState, SettingsListStatusRow, SettingsSectionHeader } from "@/components/settings/SettingsShell";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { formatBytes, formatRelativeTime } from "@/lib/fileManager";
@@ -90,7 +91,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
       const result = await apiFetchJson<{ purged: number; remaining: number }>(`/api/projects/${projectId}/trash`, { method: "DELETE" });
       if (result.ok && result.data && result.data.remaining > 0) {
         // A very large bin is emptied in bounded passes server-side.
-        toast({ title: `Deleted ${result.data.purged} items.`, description: `${result.data.remaining} remain - empty the bin again to finish.` });
+        toast({ title: `Deleted ${result.data.purged} items.`, description: `${result.data.remaining} remain – empty the bin again to finish.` });
       } else if (!result.ok && !result.redirected) {
         toast({ title: "Couldn't empty the recycle bin.", description: result.error, variant: "destructive" });
       }
@@ -105,78 +106,87 @@ export function RecycleBin({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold">Recycle bin</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Deleted docs, files and folders are kept for {retentionDays} days, then permanently deleted.
-            {listing && !listing.canPurge && " Only admins can delete items forever."}
-          </p>
-        </div>
-        {listing?.canPurge && entries.length > 0 && (
-          <Button size="sm" variant="destructive" className="shrink-0 gap-1.5" onClick={() => setEmptyConfirmOpen(true)} disabled={emptying}>
-            <Trash2 className="h-3.5 w-3.5" />
-            {emptying ? "Emptying…" : "Empty bin"}
-          </Button>
-        )}
-      </div>
+      <SettingsSectionHeader
+        title="Recycle bin"
+        description={<>
+          Restore deleted docs, files and folders, or delete them for good.
+          {listing && !listing.canPurge && " Only admins can delete items forever."}
+        </>}
+      />
 
       {loadError ? (
-        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
-          <p className="text-sm font-medium text-muted-foreground">Couldn't load the recycle bin.</p>
-          <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
-          <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => load()}>
+        <div className="flex min-h-12 items-center justify-between gap-3 rounded-lg border border-border py-2 pl-4 pr-2 text-sm">
+          <p className="min-w-0 text-muted-foreground">
+            <span className="text-foreground">Couldn't load the recycle bin.</span> {loadError}
+          </p>
+          <Button size="sm" variant="outline" className="shrink-0 gap-1.5" onClick={() => load()}>
             <RefreshCw className="h-3.5 w-3.5" />
             Retry
           </Button>
         </div>
       ) : !listing ? (
         <div className="flex flex-col gap-1.5">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+          {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       ) : entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
-          <Trash2 className="mb-2 h-8 w-8 text-muted-foreground/30" aria-hidden="true" />
-          <p className="text-sm text-muted-foreground">The recycle bin is empty</p>
-        </div>
+        <SettingsEmptyState
+          size="compact"
+          icon={Trash2}
+          title="The recycle bin is empty"
+          hint={`Deleted items stay here for ${retentionDays} days, then are permanently deleted.`}
+        />
       ) : (
-        // Capped height so a full bin doesn't push the rest of Settings away.
-        <ul className="max-h-[28rem] overflow-y-auto rounded-md border bg-background" aria-label="Deleted items">
-          {entries.map(entry => {
-            const contents = trashContentsLabel(entry);
-            const daysLeft = daysUntilPurge(entry.deleted_at, retentionDays);
-            const busy = busyId === entry.id;
-            const meta = [
-              entry.folder_path ? `from ${entry.folder_path}` : null,
-              contents || null,
-              entry.size > 0 ? formatBytes(entry.size) : null,
-              `deleted ${formatRelativeTime(entry.deleted_at).toLowerCase()}${entry.deleted_by_name ? ` by ${entry.deleted_by_name}` : ""}`,
-            ].filter(Boolean).join(" · ");
-            return (
-              <li key={entry.id} className="flex items-center gap-3 min-h-14 px-3 py-2.5 border-b last:border-b-0">
-                <EntryIcon entry={entry} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{entry.name}</div>
-                  <div className="truncate text-xs text-muted-foreground" title={new Date(entry.deleted_at).toLocaleString()}>
-                    {meta}
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {/* The list action sits in the card's first row, like the invite-link
+              and API-key lists. */}
+          <SettingsListStatusRow
+            action={listing.canPurge ? (
+              <Button size="sm" variant="outline" className={`gap-1.5 ${DESTRUCTIVE_OUTLINE_BUTTON}`} onClick={() => setEmptyConfirmOpen(true)} disabled={emptying}>
+                <Trash2 className="h-3.5 w-3.5" />
+                {emptying ? "Emptying…" : "Empty bin"}
+              </Button>
+            ) : undefined}
+          >
+            {entries.length === 1 ? "1 item" : `${entries.length} items`}
+          </SettingsListStatusRow>
+          {/* Capped height so a full bin doesn't push the rest of Settings away. */}
+          <ul className="max-h-[28rem] overflow-y-auto border-t border-border" aria-label="Deleted items">
+            {entries.map(entry => {
+              const contents = trashContentsLabel(entry);
+              const daysLeft = daysUntilPurge(entry.deleted_at, retentionDays);
+              const busy = busyId === entry.id;
+              const meta = [
+                entry.folder_path ? `from ${entry.folder_path}` : null,
+                contents || null,
+                entry.size > 0 ? formatBytes(entry.size) : null,
+                `deleted ${formatRelativeTime(entry.deleted_at).toLowerCase()}${entry.deleted_by_name ? ` by ${entry.deleted_by_name}` : ""}`,
+              ].filter(Boolean).join(" · ");
+              return (
+                <li key={entry.id} className="flex items-center gap-3 min-h-14 px-4 py-2.5 border-b border-border last:border-b-0">
+                  <EntryIcon entry={entry} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{entry.name}</div>
+                    <div className="truncate text-xs text-muted-foreground" title={new Date(entry.deleted_at).toLocaleString()}>
+                      {meta}
+                    </div>
                   </div>
-                </div>
-                <span className="hidden sm:inline shrink-0 text-xs text-muted-foreground" title="Permanently deleted after this">
-                  {daysLeft === 0 ? "Deleting soon" : `${daysLeft}d left`}
-                </span>
-                <Button size="sm" variant="outline" className="gap-1.5 h-9 shrink-0" onClick={() => handleRestore(entry)} disabled={busy} aria-label={`Restore ${entry.name}`}>
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Restore</span>
-                </Button>
-                {listing.canPurge && (
-                  <Button size="sm" variant="ghost" className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setPurgeTarget(entry)} disabled={busy} aria-label={`Delete ${entry.name} forever`} title="Delete forever">
-                    <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline shrink-0 text-xs text-muted-foreground" title="Permanently deleted after this">
+                    {daysLeft === 0 ? "Deleting soon" : `${daysLeft}d left`}
+                  </span>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-9 sm:h-8 shrink-0" onClick={() => handleRestore(entry)} disabled={busy} aria-label={`Restore ${entry.name}`}>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Restore</span>
                   </Button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  {listing.canPurge && (
+                    <Button size="sm" variant="ghost" className="h-9 w-9 p-0 sm:h-8 sm:w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setPurgeTarget(entry)} disabled={busy} aria-label={`Delete ${entry.name} forever`} title="Delete forever">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <AlertDialog open={!!purgeTarget} onOpenChange={open => { if (!open) setPurgeTarget(null); }}>

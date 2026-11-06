@@ -62,8 +62,8 @@ describe("DashboardPage", () => {
   it("renders the layout's site list without fetching /api/projects itself", async () => {
     renderDashboard([site({ id: "s1", name: "Handbook", doc_count: 3, member_count: 2 })]);
     expect(await screen.findByText("Handbook")).toBeInTheDocument();
-    expect(screen.getByText("3 docs")).toBeInTheDocument();
-    expect(screen.getByLabelText("2 members")).toBeInTheDocument();
+    // Counts share one meta line under the title.
+    expect(screen.getByText("3 docs · 2 members")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const urls = fetchMock.mock.calls.map(c => String(c[0]));
     expect(urls.some(u => u.startsWith("/api/projects"))).toBe(false);
@@ -82,9 +82,9 @@ describe("DashboardPage", () => {
       site({ id: "s2", name: "Beta", doc_count: 1, member_count: 1 }),
     ]);
     await screen.findByText("Beta");
-    await userEvent.click(screen.getAllByRole("button", { name: /favourite/i })[1]);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pin to top" })[1]);
     expect(fetchMock).toHaveBeenCalledWith("/api/projects/s2/favourite", expect.objectContaining({ method: "PATCH" }));
-    // Favourites sort first.
+    // Pinned sites sort first.
     const titles = screen.getAllByRole("heading", { level: 3 }).map(h => h.textContent);
     expect(titles).toEqual(["Beta", "Alpha"]);
   });

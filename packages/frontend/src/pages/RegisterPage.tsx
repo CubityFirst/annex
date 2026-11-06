@@ -3,12 +3,12 @@ import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthForm } from "@/components/AuthForm";
+import { AuthForm, PasswordInput, AUTH_INPUT_CLASS } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 
-const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto dark:invert" />;
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />;
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
@@ -97,7 +97,7 @@ export function RegisterPage() {
       footer={
         <>
           Already have an account?{" "}
-          <a href="/login" className="text-primary underline-offset-4 hover:underline">
+          <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
             Sign in
           </a>
         </>
@@ -106,6 +106,7 @@ export function RegisterPage() {
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="name"
           type="text"
           placeholder="Your name"
@@ -117,6 +118,7 @@ export function RegisterPage() {
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="email"
           type="email"
           placeholder="you@example.com"
@@ -127,13 +129,20 @@ export function RegisterPage() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           value={password}
+          autoComplete="new-password"
           onChange={e => setPassword(e.target.value)}
+          aria-describedby="password-hint"
           required
         />
+        {/* The real rule (auth worker routes/register.ts): zxcvbn score >= 3,
+            i.e. "Strong" on the meter below. There is no fixed length/character
+            rule, so don't invent one here. */}
+        <p id="password-hint" className="text-xs text-muted-foreground">
+          Must rate &ldquo;Strong&rdquo; or better on the strength meter. A phrase of a few unrelated words works well.
+        </p>
         {password && (
           <div className="space-y-1">
             <div
@@ -157,7 +166,10 @@ export function RegisterPage() {
           </div>
         )}
       </div>
-      <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      {/* Left-align the challenge widget to the form edge like every other field. */}
+      <div className="[&>div]:justify-start">
+        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </div>
     </AuthForm>
   );
 }

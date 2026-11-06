@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Dialog,
@@ -60,13 +61,7 @@ function getCurrentUserId(): Promise<string | null> {
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
-const ROLE_COLORS: Record<Role, string> = {
-  owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-  admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  viewer: "bg-muted text-foreground",
-  limited: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-};
+const ROLE_COLORS: Record<Role, string> = ROLE_BADGE_CLASSES;
 
 const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
@@ -369,11 +364,10 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
                 clearToken();
                 navigate("/login");
               }}
-              className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="group mt-1 flex w-full items-center gap-3 rounded-md border-t border-border px-3 py-2.5 pt-3 text-left text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             >
-              <LogOut className="size-4 shrink-0 text-muted-foreground group-hover:text-destructive" />
+              <LogOut className="size-4 shrink-0 group-hover:text-destructive" />
               <span className="flex-1 text-sm font-medium">Sign out</span>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-destructive" />
             </button>
           </div>
         ) : loading ? (

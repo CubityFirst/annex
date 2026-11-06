@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/index.css";
 import { Excalidraw, serializeAsJSON, getSceneVersion } from "@excalidraw/excalidraw";
 import { fileContentEtag } from "@/lib/excalidraw";
-import { Check } from "lucide-react";
+import { Check, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +62,140 @@ interface Props {
   saveSlot?: HTMLElement | null;
 }
 
+// Re-skin Excalidraw's UI chrome (not the drawing itself) with the app's neutral
+// neutral tokens so its default purple accent doesn't clash with the brand.
+// Every selector doubles `.excalidraw.excalidraw` under our wrapper so it
+// strictly out-specifies Excalidraw 0.18's own rules (`.excalidraw` /
+// `.excalidraw.theme--dark` at 0-2-0, and its `.excalidraw.theme--dark.excalidraw
+// .x:hover` dark-mode hovers at 0-5-0) regardless of stylesheet order - the
+// lazily-loaded chunk can inject its CSS after this <style> in production.
+// Light mode gets the same treatment.
+const EX = ".annex-excalidraw .excalidraw.excalidraw";
+const EX_DARK = `${EX}.theme--dark`;
+const EXCALIDRAW_THEME_CSS = `
+${EX} {
+  --color-primary: var(--primary);
+  --color-primary-darker: color-mix(in oklch, var(--primary) 88%, black);
+  --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, black);
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --color-primary-light: var(--accent);
+  --color-primary-light-darker: color-mix(in oklch, var(--accent) 85%, var(--foreground));
+  --color-brand-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --color-brand-active: color-mix(in oklch, var(--primary) 76%, black);
+  --color-selection: color-mix(in oklch, var(--primary) 70%, transparent);
+  --color-slider-track: var(--border);
+  --color-logo-icon: var(--primary);
+  --color-logo-text: var(--foreground);
+  --color-on-primary-container: var(--foreground);
+  --color-surface-primary-container: var(--accent);
+  --color-surface-high: var(--accent);
+  --color-surface-mid: var(--muted);
+  --color-surface-low: var(--muted);
+  --color-surface-lowest: var(--background);
+  --color-on-surface: var(--foreground);
+  --color-border-outline: var(--muted-foreground);
+  --color-border-outline-variant: var(--border);
+  --color-promo: var(--primary);
+  --island-bg-color: var(--card);
+  --popup-bg-color: var(--popover);
+  --default-bg-color: var(--background);
+  --input-bg-color: var(--background);
+  --input-border-color: var(--input);
+  --input-hover-bg-color: var(--muted);
+  --sidebar-bg-color: var(--card);
+  --sidebar-border-color: var(--border);
+  --default-border-color: var(--border);
+  --select-highlight-color: var(--ring);
+  --focus-highlight-color: var(--ring);
+  --link-color: var(--foreground);
+  /* Hovered buttons: a hair above the --accent "selected" fill. */
+  --annex-hover: color-mix(in oklch, var(--accent) 94%, var(--foreground));
+  --button-hover-bg: var(--annex-hover);
+}
+${EX_DARK} {
+  /* In dark the "darker" accent steps get lighter, as in Excalidraw's own palette. */
+  --color-primary-darker: color-mix(in oklch, var(--primary) 88%, white);
+  --color-primary-darkest: color-mix(in oklch, var(--primary) 76%, white);
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, white);
+  --color-brand-hover: color-mix(in oklch, var(--primary) 88%, white);
+  --color-brand-active: color-mix(in oklch, var(--primary) 76%, white);
+}
+/* Selected tool / toggled toolbar buttons: the app's quiet accent fill. */
+${EX} .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
+${EX} .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+${EX} .App-toolbar__extra-tools-trigger--selected,
+${EX} .App-toolbar__extra-tools-trigger--selected:hover,
+${EX} .dropdown-menu-button.active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+/* Excalidraw hard-codes a violet (#363541 / #31303b) for these dark-mode
+   hovers and the main/mobile menu buttons instead of using its tokens. */
+${EX_DARK} .dropdown-menu-button:hover,
+${EX_DARK} .HelpDialog__btn:hover {
+  --background: var(--annex-hover);
+}
+${EX_DARK} .App-mobile-menu,
+${EX_DARK} .App-menu__left {
+  --button-hover-bg: var(--annex-hover);
+  --button-bg: var(--accent);
+}
+${EX_DARK} .layer-ui__search-header .ExcTextField__input {
+  background-color: var(--background);
+}
+${EX} .App-toolbar__extra-tools-trigger:active {
+  box-shadow: 0 0 0 1px var(--border) inset;
+}
+/* Canvas hint ("To move canvas, hold mouse wheel…"): an 11px line under the
+   toolbar that competes with the drawing - hidden (the help dialog and the
+   tool tooltips cover the same ground). */
+${EX} .HintViewer,
+${EX_DARK} .HintViewer {
+  display: none;
+}
+/* App UI chrome metrics. Excalidraw defines its own --ui-font (Assistant) on
+   .excalidraw, shadowing the app's variable of the same name, so the wrapper
+   captures the app's value first and the editor re-points at it. */
+.annex-excalidraw {
+  --annex-ui-font: var(--ui-font);
+}
+${EX} {
+  --ui-font: var(--annex-ui-font);
+  /* Panels/islands at the app's 8px surface radius, controls at 6px. */
+  --border-radius-lg: 8px;
+  --border-radius-md: 6px;
+  /* Every toolbar/menu button at the app's 32px control height (Excalidraw
+     uses 36px for the main tool row and 36-40px on large displays). */
+  --default-button-size: 2rem;
+  --lg-button-size: 2rem;
+  --default-icon-size: 1rem;
+  --lg-icon-size: 1rem;
+}
+/* Labels Excalidraw sets in a hard-coded "Assistant". */
+${EX} .ExcTextField__label,
+${EX} .ImageExportModal h3,
+${EX} .ImageExportModal__settings__setting__label {
+  font-family: var(--ui-font);
+}
+/* Tool tooltips are portalled to <body>, outside the wrapper; inherit the
+   app's font from there. */
+body .excalidraw-tooltip.excalidraw-tooltip {
+  --ui-font: inherit;
+}
+/* Text that Excalidraw paints white/black on a --color-primary fill: use the
+   app's on-primary colour so it stays legible on the cream accent. */
+${EX} .Dialog__action-button--primary,
+${EX} .ttd-dialog-panel-button.excalidraw-button,
+${EX} .library-actions-counter,
+${EX} .sidebar-tab-trigger[data-state=active] {
+  color: var(--primary-foreground);
+}
+${EX} .App-toolbar .eraser.active {
+  --icon-fill-color: var(--primary-foreground);
+  --keybinding-color: var(--primary-foreground);
+}
+`;
+
 function serialize(api: ExcalidrawApi): string {
   return serializeAsJSON(
     api.getSceneElements() as never,
@@ -92,7 +226,6 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const [justSaved, setJustSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   // Concurrency guard (server returns 412 when the content changed since we
@@ -234,7 +367,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
           setConflictState(true);
           toast({
             title: "Drawing changed elsewhere",
-            description: "Someone saved a newer version. Reload to get it - saving is paused so it isn't overwritten.",
+            description: "Someone saved a newer version. Reload to get it – saving is paused so it isn't overwritten.",
             variant: "destructive",
           });
           return false;
@@ -256,10 +389,6 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
         const clean = sceneContentKey(serialize(api)) === savedKeyRef.current;
         if (clean) savedVersionRef.current = getSceneVersion(api.getSceneElements() as never);
         setDirtyState(!clean);
-        if (clean) {
-          setJustSaved(true);
-          setTimeout(() => setJustSaved(false), 2000);
-        }
         if (meta) onSaved?.(meta);
         return true;
       } catch (e) {
@@ -361,7 +490,11 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
     files: scene.files ?? undefined,
   };
 
-  const saveLabel = saving ? "Saving…" : dirty ? "Save" : justSaved ? "Saved" : "Save";
+  // Mirrors DocPage's Save button: primary + Save icon while there are
+  // unsaved edits; a quiet "Saved" (check) state once everything is persisted.
+  // A parked 412 conflict keeps the "Save" label but stays disabled.
+  const clean = !saving && !dirty && !conflict;
+  const saveLabel = saving ? "Saving…" : clean ? "Saved" : "Save";
 
   // When a slot is provided we portal the button there (e.g. the page top bar);
   // otherwise it floats over the canvas. The floating placement keeps clear of
@@ -370,26 +503,37 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
   const saveButton = (
     <Button
       size="sm"
+      variant={clean ? (inHeader ? "ghost" : "outline") : "default"}
       onClick={() => void handleSave()}
       disabled={saving || !dirty || conflict}
-      className={inHeader
-        ? "h-8 gap-1.5"
-        : "absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"}
+      className={[
+        "gap-1.5",
+        clean && "text-muted-foreground disabled:opacity-100",
+        clean && !inHeader && "bg-card",
+        inHeader
+          ? ""
+          : "absolute right-3 top-3 z-20 h-10 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3",
+      ].filter(Boolean).join(" ")}
     >
-      {saving ? <Spinner className="h-3.5 w-3.5 text-current" /> : (!dirty && justSaved) ? <Check className="h-3.5 w-3.5" /> : null}
+      {saving
+        ? <Spinner className="h-3.5 w-3.5 text-current" />
+        : clean
+          ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
       {saveLabel}
     </Button>
   );
 
   return (
-    <div className="relative h-full w-full">
+    <div className="annex-excalidraw relative h-full w-full">
+      <style>{EXCALIDRAW_THEME_CSS}</style>
       {/* 412 conflict: a newer version exists on the server. Reload swaps in
           the latest scene (discarding the local unsaved edits it refused to
           save over); until then every save path stays parked. */}
       {conflict && (
         <div className="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-background/95 px-4 py-2 text-sm">
           <span className="text-destructive">
-            This drawing was changed elsewhere - saving is paused so the newer version isn't overwritten.
+            This drawing was changed elsewhere – saving is paused so the newer version isn't overwritten.
           </span>
           <Button size="sm" variant="outline" className="h-7" onClick={() => setReloadKey(k => k + 1)}>
             Reload latest

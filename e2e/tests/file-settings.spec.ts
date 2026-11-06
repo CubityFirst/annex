@@ -72,13 +72,15 @@ async function putDoc(p: Page, id: string, title: string, content: string) {
 }
 
 async function openDocSettings(p: Page) {
-  await p.getByRole("button", { name: "Document settings" }).click();
-  await expect(p.getByRole("dialog", { name: "Document Settings" })).toBeVisible({ timeout: 5000 });
+  // Document settings lives in the doc toolbar's "More actions" menu.
+  await p.getByRole("button", { name: "More actions" }).click();
+  await p.getByRole("menuitem", { name: "Document settings" }).click();
+  await expect(p.getByRole("dialog", { name: "Document settings" })).toBeVisible({ timeout: 5000 });
 }
 
 async function closeDocSettings(p: Page) {
   await p.keyboard.press("Escape");
-  await expect(p.getByRole("dialog", { name: "Document Settings" })).not.toBeVisible({ timeout: 5000 });
+  await expect(p.getByRole("dialog", { name: "Document settings" })).not.toBeVisible({ timeout: 5000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -138,6 +140,8 @@ test("sets up a project + doc", async () => {
   // Docs are only created on first save - save the empty draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Settings Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   docId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];

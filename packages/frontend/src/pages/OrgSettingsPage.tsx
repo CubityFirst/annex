@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { InlineSaveControls, SavedIndicator, useSavedFlash } from "@/components/InlineSaveControls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
+import {
+  DESTRUCTIVE_OUTLINE_BUTTON,
+  DangerRow,
+  SettingsEmptyRow,
+  SettingsSectionHeader,
+  SettingsShell,
+  type SettingsGroupDef,
+  type SettingsSectionDef,
+} from "@/components/settings/SettingsShell";
+import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
+import { ChevronRight, Globe } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -47,7 +59,7 @@ const ORG_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "org", label: "Organization" },
   { id: "people", label: "People" },
   { id: "sites", label: "Sites" },
-  { id: "danger", label: "Danger Zone" },
+  { id: "danger", label: "Danger zone" },
 ];
 
 interface OrgDetail {
@@ -79,8 +91,35 @@ interface OwnedSite {
   organization_id: string | null;
 }
 
+/** Collapsed "Role permissions" disclosure shown under the invite form. */
+function RolePermissions() {
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group -ml-0.5 inline-flex h-8 items-center gap-1 rounded-md px-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
+        Role permissions
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {/* Fixed badge column so every description starts at the same x. */}
+        <dl className="mt-1 grid grid-cols-[5rem_1fr] items-baseline gap-x-3 gap-y-2 rounded-lg border border-border bg-card p-4">
+          {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
+            <div key={role} className="contents">
+              <dt><RoleBadge role={role} /></dt>
+              <dd className="text-[13px] leading-snug text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</dd>
+            </div>
+          ))}
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function RoleBadge({ role }: { role: Role }) {
-  return <Badge variant="secondary" className="capitalize">{ROLE_LABELS[role]}</Badge>;
+  return (
+    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[role]}`}>
+      {ROLE_LABELS[role]}
+    </Badge>
+  );
 }
 
 export function OrgSettingsPage() {
@@ -98,6 +137,7 @@ export function OrgSettingsPage() {
 
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [nameSaved, flashNameSaved] = useSavedFlash();
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
@@ -156,7 +196,8 @@ export function OrgSettingsPage() {
       });
       if (result.ok && result.data) {
         setOrg(prev => prev ? { ...prev, name: result.data!.name } : prev);
-        toast({ title: "Organization renamed." });
+        setNameDraft(result.data.name);
+        flashNameSaved();
       } else {
         toast({ title: "Failed to rename.", variant: "destructive" });
       }
@@ -279,12 +320,12 @@ export function OrgSettingsPage() {
     { id: "general", label: "General", group: "org" },
     { id: "members", label: "Members", group: "people", visible: isAdmin },
     { id: "sites", label: "Sites", group: "sites", visible: isAdmin },
-    { id: "danger", label: "Danger Zone", group: "danger", danger: true },
+    { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
 
   return (
     <SettingsShell
-      title="Organization Settings"
+      title="Organization settings"
       description={org ? org.name : undefined}
       groups={ORG_SETTINGS_GROUPS}
       sections={settingsSections}
@@ -292,30 +333,38 @@ export function OrgSettingsPage() {
       <div>
         {/* General */}
         <div id="general" className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-base font-semibold">General</h3>
-            <p className="mt-1 text-sm text-muted-foreground">The organization's name.</p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="org-name">Name</Label>
-            <div className="flex gap-2">
-              <Input
-                id="org-name"
-                value={nameDraft}
-                onChange={e => setNameDraft(e.target.value)}
-                disabled={!isAdmin}
-                className="max-w-sm"
-              />
-              {isAdmin && (
-                <Button
-                  onClick={handleRename}
-                  disabled={savingName || !nameDraft.trim() || nameDraft.trim() === org?.name}
-                >
-                  {savingName ? "Saving…" : "Save"}
-                </Button>
-              )}
+          <SettingsSectionHeader title="General" description="The organization's name." />
+          <form
+            className="flex flex-col gap-1.5"
+            onSubmit={e => {
+              e.preventDefault();
+              if (isAdmin && nameDraft.trim() && nameDraft.trim() !== org?.name) handleRename();
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Label htmlFor="org-name">Name</Label>
+              <SavedIndicator show={nameSaved} />
             </div>
-          </div>
+            <div className="flex items-center">
+              <InlineSaveControls
+                changed={isAdmin && !!org && nameDraft !== org.name}
+                saving={savingName}
+                onReset={() => setNameDraft(org?.name ?? "")}
+                saveDisabled={!nameDraft.trim() || nameDraft.trim() === org?.name}
+                resetLabel="Reset name"
+                saveLabel="Save name"
+              >
+                <Input
+                  id="org-name"
+                  value={nameDraft}
+                  onChange={e => setNameDraft(e.target.value)}
+                  disabled={!isAdmin}
+                  required
+                  className="flex-1"
+                />
+              </InlineSaveControls>
+            </div>
+          </form>
         </div>
 
         {/* Members */}
@@ -323,26 +372,69 @@ export function OrgSettingsPage() {
           <>
             <Separator className="my-10" />
             <div id="members" className="flex flex-col gap-6">
-              <div>
-                <h3 className="text-base font-semibold">Members</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Members of this organization get their role on every site in it.
-                </p>
-              </div>
+              <SettingsSectionHeader title="Members" description="Members of this organization get their role on every site in it." />
 
-              <div className="rounded-md border border-border bg-muted/40 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Permission levels</p>
-                <div className="flex flex-col gap-1.5">
-                  {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
-                    <div key={role} className="flex items-center gap-2 text-sm">
-                      <RoleBadge role={role} />
-                      <span className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
+              {/* Member list */}
+              <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+                {members.map(member => {
+                  const isMe = member.userId === currentUser?.id;
+                  const isPending = !member.accepted;
+                  const canManage = isOwner || (myRole === "admin" && ROLE_RANK[member.role] < ROLE_RANK["admin"]);
+                  const canChangeRole = !isPending && canManage && member.role !== "owner" && !isMe;
+                  const canRemove = canManage && member.role !== "owner" && !isMe;
+
+                  return (
+                    <div key={member.userId} className="flex items-center gap-3 px-4 py-3">
+                      <UserProfileCard userId={member.userId} name={member.name}>
+                        <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
+                          <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" personalPlan={member.personalPlan} personalPlanStyle={member.personalPlanStyle} />
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate text-sm font-medium">
+                              {member.name}
+                              {isMe && <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>}
+                            </span>
+                            <span className="truncate text-xs text-muted-foreground">{member.email}</span>
+                          </div>
+                        </button>
+                      </UserProfileCard>
+
+                      <div className="flex shrink-0 items-center gap-3">
+                        {isPending ? (
+                          <Badge variant="warning">
+                            Pending
+                          </Badge>
+                        ) : canChangeRole ? (
+                          <Select value={member.role} onValueChange={val => handleRoleChange(member, val as Role)}>
+                            <SelectTrigger className="h-9 w-28 text-xs sm:h-8" aria-label={`Role for ${member.name}`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
+                                <SelectItem key={role} value={role} className="text-xs">{ROLE_LABELS[role]}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <RoleBadge role={member.role} />
+                        )}
+
+                        {canRemove && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
+                            disabled={removingId === member.userId}
+                            onClick={() => handleRemove(member)}
+                          >
+                            {removingId === member.userId ? (isPending ? "Canceling…" : "Removing…") : (isPending ? "Cancel" : "Remove")}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
 
               {/* Invite */}
+              <div className="flex flex-col gap-2">
               <form onSubmit={handleInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="flex flex-1 flex-col gap-1.5">
                   <Label htmlFor="invite-email">Invite by email</Label>
@@ -369,64 +461,7 @@ export function OrgSettingsPage() {
                 <Button type="submit" disabled={inviting}>{inviting ? "Inviting…" : "Invite"}</Button>
               </form>
               {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
-
-              {/* Member list */}
-              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
-                {members.map(member => {
-                  const isMe = member.userId === currentUser?.id;
-                  const isPending = !member.accepted;
-                  const canManage = isOwner || (myRole === "admin" && ROLE_RANK[member.role] < ROLE_RANK["admin"]);
-                  const canChangeRole = !isPending && canManage && member.role !== "owner" && !isMe;
-                  const canRemove = canManage && member.role !== "owner" && !isMe;
-
-                  return (
-                    <div key={member.userId} className="flex items-center gap-3 px-4 py-3">
-                      <UserProfileCard userId={member.userId} name={member.name}>
-                        <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
-                          <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" personalPlan={member.personalPlan} personalPlanStyle={member.personalPlanStyle} />
-                          <div className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate text-sm font-medium">
-                              {member.name}
-                              {isMe && <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>}
-                            </span>
-                            <span className="truncate text-xs text-muted-foreground">{member.email}</span>
-                          </div>
-                        </button>
-                      </UserProfileCard>
-
-                      <div className="flex shrink-0 items-center gap-3">
-                        {isPending ? (
-                          <Badge variant="outline" className="text-xs font-medium bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
-                            Pending
-                          </Badge>
-                        ) : canChangeRole ? (
-                          <Select value={member.role} onValueChange={val => handleRoleChange(member, val as Role)}>
-                            <SelectTrigger className="h-9 w-28 text-xs sm:h-7" aria-label={`Role for ${member.name}`}><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
-                                <SelectItem key={role} value={role} className="text-xs">{ROLE_LABELS[role]}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <RoleBadge role={member.role} />
-                        )}
-
-                        {canRemove && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
-                            disabled={removingId === member.userId}
-                            onClick={() => handleRemove(member)}
-                          >
-                            {removingId === member.userId ? (isPending ? "Canceling…" : "Removing…") : (isPending ? "Cancel" : "Remove")}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <RolePermissions />
               </div>
             </div>
           </>
@@ -437,19 +472,17 @@ export function OrgSettingsPage() {
           <>
             <Separator className="my-10" />
             <div id="sites" className="flex flex-col gap-6">
-              <div>
-                <h3 className="text-base font-semibold">Sites</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Sites in this organization. Attaching a site you own grants every org member their role on it.
-                </p>
-              </div>
+              <SettingsSectionHeader
+                title="Sites"
+                description="Sites in this organization. Attaching a site you own grants every org member their role on it."
+              />
 
               {/* Attach */}
               <div className="flex flex-col gap-1.5">
                 <Label>Attach a site you own</Label>
                 <div className="flex gap-2">
                   <Select value={attachId} onValueChange={setAttachId}>
-                    <SelectTrigger className="max-w-sm" aria-label="Attach a site you own">
+                    <SelectTrigger className="flex-1" aria-label="Attach a site you own">
                       <SelectValue placeholder={attachable.length ? "Choose a site…" : "No eligible sites"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -458,7 +491,7 @@ export function OrgSettingsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleAttach} disabled={!attachId || attaching}>
+                  <Button variant="outline" onClick={handleAttach} disabled={!attachId || attaching}>
                     {attaching ? "Attaching…" : "Attach"}
                   </Button>
                 </div>
@@ -469,9 +502,9 @@ export function OrgSettingsPage() {
 
               {/* Attached list */}
               {sites.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sites attached yet.</p>
+                <SettingsEmptyRow icon={Globe}>No sites attached yet.</SettingsEmptyRow>
               ) : (
-                <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                   {sites.map(site => (
                     <div key={site.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <button
@@ -486,7 +519,7 @@ export function OrgSettingsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-9 sm:h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive"
+                            className="h-9 sm:h-8 px-2.5 text-muted-foreground hover:text-destructive"
                             disabled={detachingId === site.id}
                           >
                             {detachingId === site.id ? "Detaching…" : "Detach"}
@@ -518,22 +551,21 @@ export function OrgSettingsPage() {
           </>
         )}
 
-        {/* Danger Zone */}
+        {/* Danger zone */}
         {myRole !== null && (
           <>
             <Separator className="my-10" />
-            <div id="danger" className="flex flex-col gap-3">
-              <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
+            <div id="danger" className="flex flex-col gap-4">
+              <SettingsSectionHeader title="Danger zone" />
 
               {isOwner ? (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Deleting this organization removes it for all members. The sites inside it are NOT deleted - they're
-                    detached and remain owned by their respective owners. This action cannot be undone.
-                  </p>
+                <DangerRow
+                  title="Delete this organization"
+                  description="Removes it for all members. Its sites aren't deleted — they're detached and stay with their owners. This cannot be undone."
+                  action={
                   <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="self-start">Delete organization</Button>
+                      <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Delete organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -553,15 +585,16 @@ export function OrgSettingsPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </>
+                  }
+                />
               ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Leaving this organization removes your access to all of its sites. You'll need to be re-invited to regain it.
-                  </p>
+                <DangerRow
+                  title="Leave this organization"
+                  description="Removes your access to all of its sites. You'll need to be re-invited to get it back."
+                  action={
                   <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="self-start">Leave organization</Button>
+                      <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Leave organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -581,7 +614,8 @@ export function OrgSettingsPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </>
+                  }
+                />
               )}
             </div>
           </>

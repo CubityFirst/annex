@@ -105,6 +105,8 @@ test("sets up a project with two docs (root + folder)", async () => {
   // draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Root Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   const rootDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
@@ -119,17 +121,22 @@ test("sets up a project with two docs (root + folder)", async () => {
 
   // Folder + doc inside.
   await page.goto(`/projects/${projectId}`);
-  await page.getByRole("button", { name: "New folder" }).click();
-  const folderInput = page.getByPlaceholder("Folder name");
+  // Secondary create actions live behind the "New document" split button's chevron.
+  await page.getByRole("button", { name: "More create options" }).click();
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  const folderInput = page.getByLabel("Folder name", { exact: true });
   await expect(folderInput).toBeVisible({ timeout: 5000 });
   await folderInput.fill("Notes");
   await page.getByRole("button", { name: "Create" }).click();
   // .first(): folders render twice (desktop table + CSS-hidden mobile cards).
-  await expect(page.getByText("Notes").first()).toBeVisible({ timeout: 5000 });
+  // Scoped to <main>: the sidebar page tree has a same-named folder toggle.
+  await expect(page.getByRole("main").getByText("Notes").first()).toBeVisible({ timeout: 5000 });
 
-  await page.getByText("Notes").first().click();
+  await page.getByRole("main").getByText("Notes").first().click();
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Inner Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   const folderDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];

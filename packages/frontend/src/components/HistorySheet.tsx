@@ -1,6 +1,7 @@
 import { Fragment } from "react";
-import { ChevronRight } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ChevronRight, Type } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
 
@@ -42,6 +43,15 @@ function formatDateTime(iso: string): string {
   return `${date} ${time}`;
 }
 
+// Row time: clock time inside Today/Yesterday/weekday groups (the group label
+// already says which day); a short date for older groups.
+function rowTime(iso: string): string {
+  const d = new Date(iso);
+  const days = Math.round((new Date(new Date().toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days < 7) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const seconds = Math.floor(diff / 1000);
@@ -57,7 +67,8 @@ function timeAgo(iso: string): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-// Date bucket for the section headers: Today / Yesterday / "June 2026".
+// Date bucket for the section headers: Today / Yesterday / weekday (this
+// week) / Earlier this month / "June 2026".
 function groupLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -65,20 +76,21 @@ function groupLabel(iso: string): string {
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
   if (diffDays <= 0) return "Today";
   if (diffDays === 1) return "Yesterday";
+  // Within the last week: name the day ("Monday") rather than a month header
+  // that would visually overlap with "Today".
+  if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return "Earlier this month";
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-// Selected row uses the app's inset rounded-highlight pattern (see the
-// sidebar's recent-docs list) rather than full-width bands, which read as
-// stacked horizontal lines next to the header/section borders.
-function rowClass(selected: boolean): string {
-  return `mx-3 flex items-center gap-3 rounded-md px-3 py-2.5 text-left disabled:opacity-50 ${selected ? "bg-accent" : "hover:bg-accent/60"}`;
-}
+// Every row - the pinned current version and each revision - shares one
+// geometry: an inset rounded hover highlight and no persistent fill. The row
+// being viewed is marked by its "Viewing" badge alone, so the current-version
+// entry doesn't read as a filled card sitting above flush revision rows.
+const ROW_CLASS = "mx-3 flex items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent/60 disabled:opacity-50 [&>svg:last-child]:self-center";
 
 function ViewingBadge() {
-  return (
-    <span className="shrink-0 rounded-sm bg-primary px-1 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">Viewing</span>
-  );
+  return <Badge variant="neutral" size="sm" className="shrink-0">Viewing</Badge>;
 }
 
 // Single avatar, or the app's overlapping-stack pattern (see EditorPresence)
@@ -101,14 +113,12 @@ function AvatarCluster({ people }: { people: Person[] }) {
   );
 }
 
-// Presence-style "this is now" indicator for the pinned current-version row.
+// Quiet neutral "this is now" marker for the pinned current-version row -
+// centred in the avatar column so the row text lines up with revisions below.
 function LiveDot() {
   return (
     <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden="true">
-      <span className="relative flex size-2.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/50" />
-        <span className="relative inline-flex size-2.5 rounded-full bg-emerald-500" />
-      </span>
+      <span className="inline-flex size-2 rounded-full bg-muted-foreground" />
     </span>
   );
 }
@@ -145,14 +155,16 @@ interface Props {
 export function HistorySheet({ open, onOpenChange, revisions, selectedId, loading, onSelect, currentTitle, onSelectCurrent, hasMore, loadingMore, onLoadMore }: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-80 sm:w-96 flex flex-col gap-0 p-0">
-        <SheetHeader className="px-6 py-4 border-b border-border">
+      {/* Same width and header recipe as the Markdown reference sheet. */}
+      <SheetContent className="w-full sm:max-w-md flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 py-5 border-b border-border">
           <SheetTitle>
             History
             {revisions && revisions.length > 0 && (
-              <span className="ml-1.5 font-normal text-muted-foreground">· {revisions.length}{hasMore ? "+" : ""}</span>
+              <span className="ml-1.5 font-normal text-muted-foreground">· {revisions.length}{hasMore ? "+" : ""} {revisions.length === 1 && !hasMore ? "revision" : "revisions"}</span>
             )}
           </SheetTitle>
+          <SheetDescription>Kept for 90 days. The latest revision is always retained.</SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-auto">
           {revisions === null ? (
@@ -168,7 +180,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
               {onSelectCurrent && (
                 <button
                   aria-current={!selectedId ? "true" : undefined}
-                  className={rowClass(!selectedId)}
+                  className={ROW_CLASS}
                   onClick={onSelectCurrent}
                   disabled={loading}
                 >
@@ -196,22 +208,30 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                     )}
                     <button
                       aria-current={selectedId === rev.id ? "true" : undefined}
-                      className={rowClass(selectedId === rev.id)}
+                      className={ROW_CLASS}
                       onClick={() => onSelect(rev.id)}
                       disabled={loading}
                     >
                       <AvatarCluster people={people} />
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        {/* Fixed layout: name + time on the first line, then an
+                            optional rename line, then the note. */}
                         <span className="flex items-center gap-1.5 text-sm font-medium">
                           <span className="truncate">{displayName(people)}</span>
                           {selectedId === rev.id && <ViewingBadge />}
+                          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground" title={formatDateTime(rev.created_at)}>{rowTime(rev.created_at)}</span>
                         </span>
+                        {/* System note (generated, not written by a person):
+                            muted with a small glyph. The author's own note
+                            below is plain muted text, one step below the name. */}
                         {rev.title && rev.title !== currentTitle && (
-                          <span className="truncate text-xs text-muted-foreground">“{rev.title}”</span>
+                          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                            <Type className="size-3 shrink-0 opacity-70" aria-hidden="true" />
+                            <span className="truncate">Titled “{rev.title}”</span>
+                          </span>
                         )}
-                        <span className="text-xs text-muted-foreground" title={formatDateTime(rev.created_at)}>{timeAgo(rev.created_at)}</span>
                         {rev.changelog && (
-                          <span className="text-xs text-foreground/70 italic line-clamp-2" title={rev.changelog}>{rev.changelog}</span>
+                          <span className="line-clamp-2 text-xs font-normal text-muted-foreground" title={rev.changelog}>{rev.changelog}</span>
                         )}
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -228,7 +248,6 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
               )}
-              <p className="px-6 pt-3 pb-2 text-xs text-muted-foreground">Revisions are kept for 90 days. The latest revision is always retained.</p>
             </div>
           )}
         </div>

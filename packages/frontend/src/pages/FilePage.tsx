@@ -1,22 +1,31 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Download, Link, Check } from "lucide-react";
+import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Spinner } from "@/components/ui/spinner";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
-import { fileKind, guessLanguage } from "@/lib/fileKind";
+import { describeFileType, fileKind, guessLanguage } from "@/lib/fileKind";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { fileContentEtag } from "@/lib/excalidraw";
-import { formatBytes } from "@/lib/fileManager";
+import { formatBytes, formatRelativeTime, folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
+import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
 import { isLightTheme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 import { pushRecentItem } from "@/lib/recentDocs";
+import { PAGE_PADDING, READING_CONTAINER, WIDE_CONTAINER } from "@/lib/pageContainer";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
 // @excalidraw/excalidraw is a heavy chunk - keep it out of the main bundle and
@@ -31,6 +40,9 @@ interface FileRecord {
   project_id: string;
   folder_id: string | null;
   uploaded_by: string;
+  // Display name of the uploader, when the endpoint joins it in (the listing
+  // routes and the demo do; it falls back to the raw user id there).
+  uploader_name?: string | null;
   created_at: string;
   updated_at: string;
   // Short-lived capability token for streaming this file's bytes by URL, so
@@ -44,6 +56,31 @@ interface FileRecord {
 // Guard rail so a huge log/dump doesn't lock up the tab - preview the first
 // chunk and tell the user to download for the rest.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
+
+// Very low-contrast neutral 8px checkerboard behind image previews, so
+// transparent regions read as transparent rather than as the frame colour:
+// the page background and a 4% step towards the foreground (~#1b1b1b/#222 in
+// dark, ~#fcfcfc/#f2f2f2 in light). Token-based so it follows the theme.
+const CHECKER_SQUARE = "color-mix(in oklch, var(--background) 96%, var(--foreground))";
+const CHECKERBOARD_STYLE: React.CSSProperties = {
+  backgroundColor: "var(--background)",
+  backgroundImage: `conic-gradient(${CHECKER_SQUARE} 25%, transparent 0 50%, ${CHECKER_SQUARE} 0 75%, transparent 0)`,
+  backgroundSize: "16px 16px",
+};
+
+// Muted 16px menu icons, the destructive item keeping its red (same as the
+// File Manager's row menus).
+const MENU_CLASS =
+  "min-w-[200px] [&_[role=menuitem]]:pr-4 [&_svg:not([class*='size-'])]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground";
+
+// The padded pane; each block inside picks a shared container
+// (lib/pageContainer). The header and text/audio previews use the doc's
+// reading column, so a file title sits exactly where a doc title does and
+// both edges match a doc; image/PDF/video previews use the wide container,
+// which keeps that left edge but runs further right.
+function ViewerLayout({ children }: { children: React.ReactNode }) {
+  return <div className={PAGE_PADDING}>{children}</div>;
+}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -65,7 +102,44 @@ export function FilePage() {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textTruncated, setTextTruncated] = useState(false);
   const [drawingDirty, setDrawingDirty] = useState(false);
+  // Drawing view: the canvas portals its Save state into this node, which
+  // sits beside the ⋯ menu in the top bar's action slot.
+  const [drawingSaveSlot, setDrawingSaveSlot] = useState<HTMLSpanElement | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  // Image previews: intrinsic pixel size, read from the <img> once it loads.
+  const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Desktop: page actions live in the app top bar (same rule as DocPage);
+  // phones keep them in-page. Each control renders in exactly one place.
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // "⋯" menu (editors): rename / move / delete, mirroring the File Manager's
+  // file row actions and API calls.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
+
+  // Move picker rows: every folder with its full ancestry label, sorted by path.
+  const destinations = useMemo(() => {
+    const all = moveFolders ?? [];
+    const byId = new Map(all.map(f => [f.id, f]));
+    return all
+      .map(f => ({ folder: f, label: folderPathLabel(all, f, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [moveFolders]);
 
   useEffect(() => {
     if (!fileId) return;
@@ -76,6 +150,8 @@ export function FilePage() {
     setTextContent(null);
     setTextTruncated(false);
     setDrawingDirty(false);
+    setLightboxOpen(false);
+    setImageDims(null);
     // One automatic retry on 5xx: a single transient server hiccup otherwise
     // dead-ends the page in "File not found" with no recourse but reload.
     const loadMeta = async () => {
@@ -90,21 +166,6 @@ export function FilePage() {
         if (result.ok && result.data) {
           setFile(result.data);
           if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.name, kind: "file", mime: result.data.mime_type });
-          const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
-          const basePath = location.state?.basePath ?? `/projects/${projectId}`;
-          // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
-          const folderAncestry = rawPath.length > 0 && rawPath[0].id === null ? rawPath.slice(1) : rawPath;
-          const projectCrumb: BreadcrumbItem = {
-            id: null,
-            name: projectName,
-            onClick: () => navigate(basePath),
-          };
-          const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
-            id: crumb.id,
-            name: crumb.name,
-            onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
-          }));
-          setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
           // Media (audio/video/pdf) streams directly from the content URL via a
           // capability token - no blob fetch. Text is fetched + decoded here so
           // we can render it inline (and cap the preview size).
@@ -128,6 +189,28 @@ export function FilePage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Breadcrumbs live in their own effect (not the fetch above) so they rebuild
+  // once the layout's project list resolves - on a direct load the file meta
+  // can land before `projectName`, which left an empty leading crumb.
+  useEffect(() => {
+    if (!file || file.id !== fileId) return;
+    const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
+    const basePath = location.state?.basePath ?? `/projects/${projectId}`;
+    // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
+    const folderAncestry = rawPath.length > 0 && rawPath[0].id === null ? rawPath.slice(1) : rawPath;
+    const projectCrumb: BreadcrumbItem = {
+      id: null,
+      name: projectName,
+      onClick: () => navigate(basePath),
+    };
+    const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
+      id: crumb.id,
+      name: crumb.name,
+      onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
+    }));
+    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: file.name }]);
+  }, [file, fileId, projectId, projectName, location.state, navigate, setBreadcrumbs]);
 
   // Warn before the tab/window closes while the drawing has unsaved edits.
   // In-app route changes can't be blocked this way: react-router's useBlocker
@@ -167,31 +250,345 @@ export function FilePage() {
     }
   }
 
+  async function handleRename(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = renameName.trim();
+    if (!file || !trimmed || renaming) return;
+    setRenaming(true);
+    try {
+      const result = await apiFetchJson(`/api/files/${file.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (result.ok) {
+        setFile(f => (f && f.id === file.id ? { ...f, name: trimmed } : f));
+        // Keep the sidebar's "Recently accessed" entry in step with the new name.
+        if (projectId) pushRecentItem(projectId, { id: file.id, title: trimmed, kind: "file", mime: file.mime_type });
+        setRenameOpen(false);
+      } else if (!result.redirected) {
+        toast({ title: "Rename failed.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function openMove() {
+    setMoveOpen(true);
+    setMoveFolders(null);
+    const result = await apiFetchJson<MoveFolderLike[]>(`/api/folders?projectId=${projectId}&all=1`);
+    if (result.ok && result.data) setMoveFolders(result.data);
+    else {
+      setMoveFolders([]);
+      if (!result.redirected) toast({ title: "Couldn't load folders.", description: result.error, variant: "destructive" });
+    }
+  }
+
+  async function handleMoveTo(targetFolderId: string | null) {
+    if (!file || moving) return;
+    setMoving(true);
+    try {
+      const result = await apiFetchJson(`/api/files/${file.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: targetFolderId }),
+      });
+      if (result.ok) {
+        setFile(f => (f && f.id === file.id ? { ...f, folder_id: targetFolderId } : f));
+        // Rebuild the breadcrumb trail for the new location - the crumbs come
+        // from router state, which still describes the old folder.
+        const byId = new Map((moveFolders ?? []).map(f => [f.id, f]));
+        const chain: { id: string; name: string }[] = [];
+        const seen = new Set<string>();
+        for (let id = targetFolderId; id && !seen.has(id); id = byId.get(id)?.parent_id ?? null) {
+          seen.add(id);
+          const folder = byId.get(id);
+          if (!folder) break;
+          chain.unshift({ id: folder.id, name: folder.name });
+        }
+        navigate(location.pathname, {
+          replace: true,
+          state: { ...(location.state ?? {}), folderPath: [{ id: null, name: projectName }, ...chain] },
+        });
+        setMoveOpen(false);
+        const dest = chain.at(-1);
+        toast({ title: dest ? `Moved to "${dest.name}".` : "Moved to the top level." });
+      } else if (!result.redirected) {
+        toast({ title: "Failed to move file.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!file || !projectId || deleting) return;
+    setDeleting(true);
+    const { id, name, folder_id } = file;
+    try {
+      const result = await apiFetchJson<{ trashEntryId?: string }>(`/api/files/${id}`, { method: "DELETE" });
+      if (result.ok) {
+        const entryId = result.data?.trashEntryId;
+        setDeleteOpen(false);
+        navigate(folder_id ? `/projects/${projectId}/folders/${folder_id}` : `/projects/${projectId}`);
+        toast({
+          title: `Moved "${name}" to the recycle bin.`,
+          action: entryId ? {
+            label: "Undo",
+            onClick: () => {
+              void restoreTrashEntry(projectId, entryId).then(r => {
+                if (r.ok) navigate(`/projects/${projectId}/files/${id}`);
+                else if (!r.redirected) toast({ title: `Couldn't restore "${name}".`, description: r.error, variant: "destructive" });
+              });
+            },
+          } : undefined,
+        });
+      } else if (!result.redirected) {
+        toast({ title: "Delete failed.", description: result.error, variant: "destructive" });
+        setDeleteOpen(false);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-2xl items-center gap-2 px-6 py-10 text-sm text-muted-foreground">
-        <Spinner /> Loading…
-      </div>
+      <ViewerLayout>
+        <div className={cn(READING_CONTAINER, "flex items-center gap-2 text-sm text-muted-foreground")}>
+          <Spinner /> Loading…
+        </div>
+      </ViewerLayout>
     );
   }
 
   if (!file) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-sm text-destructive">File not found.</p>
-      </div>
+      <ViewerLayout>
+        <p className={cn(READING_CONTAINER, "text-sm text-destructive")}>File not found.</p>
+      </ViewerLayout>
     );
   }
 
   const kind = fileKind(file.mime_type, file.name);
+  const embedMarkdown = fileEmbedMarkdown(file);
+  const isSvg = /svg/i.test(file.mime_type) || /\.svg$/i.test(file.name);
+  const actionsInBar = isDesktop && !!headerActionSlot;
+
+  function copyEmbed() {
+    navigator.clipboard.writeText(embedMarkdown);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
+
+  // Editor-only items shared by every ⋯ menu: rename / move / delete,
+  // mirroring the File Manager's file row actions.
+  const editItems = canEdit && (
+    <>
+      <DropdownMenuItem onClick={() => { setRenameName(file.name); setRenameOpen(true); }}>
+        <Pencil />
+        Rename
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => { void openMove(); }}>
+        <FolderInput />
+        Move to folder…
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+        <Trash2 />
+        Delete
+      </DropdownMenuItem>
+    </>
+  );
+
+  const copyIcon = copiedLink
+    ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+    : <Code className="h-4 w-4" aria-hidden="true" />;
+
+  // Desktop top-bar actions, shared by every file kind (drawings add their
+  // Save state in front): Copy embed (ghost), Download (outline), ⋯ (editors).
+  const barActions = (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1.5"
+        aria-label={copiedLink ? "Copied" : "Copy embed"}
+        title="Copy markdown to embed this file in a doc"
+        onClick={copyEmbed}
+      >
+        {copyIcon}
+        {copiedLink ? "Copied!" : "Copy embed"}
+      </Button>
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDownload} disabled={downloading}>
+        <Download className="h-4 w-4" aria-hidden="true" />
+        {downloading ? "Downloading…" : "Download"}
+      </Button>
+      {canEdit && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More file actions" title="More actions">
+              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={MENU_CLASS}>
+            {editItems}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </>
+  );
+
+  // Announce the transient copy confirmation to assistive tech (the button
+  // text swap alone isn't reliably announced).
+  const copyStatus = (
+    <div role="status" aria-live="polite" className="sr-only">
+      {copiedLink ? "Embed markdown copied to clipboard" : ""}
+    </div>
+  );
+
+  const dialogs = (
+    <>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRename} className="flex flex-col">
+            <div className="grid gap-2">
+              <Label htmlFor="file-rename-name">Name</Label>
+              <Input
+                id="file-rename-name"
+                value={renameName}
+                onChange={e => setRenameName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renaming}>
+                {renaming ? "Renaming…" : "Rename"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move-to-folder picker - same rows as the File Manager's. */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Move "{file.name}"</DialogTitle>
+            <DialogDescription>Choose a destination folder.</DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+            {moveFolders === null ? (
+              <div className="flex flex-col gap-1.5 py-1">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={moving || file.folder_id === null}
+                  onClick={() => handleMoveTo(null)}
+                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                  <span className="truncate">{projectName} (home)</span>
+                </button>
+                {destinations.map(({ folder: f, label }) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    disabled={moving || file.folder_id === f.id}
+                    onClick={() => handleMoveTo(f.id)}
+                    title={label}
+                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+                {destinations.length === 0 && (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">No folders yet.</p>
+                )}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{file.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It will be moved to the recycle bin, where it can be restored for 30 days.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={e => { e.preventDefault(); void handleDelete(); }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 
   // Drawings render as a live canvas filling the content area - editor+ get the
   // full editor + Save; everyone else gets a read-only (view-mode) canvas.
+  // Page actions live in the top bar's right side on every screen size (the
+  // canvas fills the page, so there's no in-page header): the canvas's Save
+  // state (portalled into drawingSaveSlot), then the same actions as every
+  // other file kind on desktop, folded into one ⋯ menu on phones.
   if (kind === "drawing") {
-    const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
     const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
     return (
       <div className="flex h-full flex-col">
+        {headerActionSlot && createPortal(
+          <div className="flex shrink-0 items-center gap-1 md:gap-2">
+            {canEdit && <span ref={setDrawingSaveSlot} className="flex items-center" />}
+            {isDesktop ? barActions : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More file actions" title="More actions">
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className={MENU_CLASS}>
+                <DropdownMenuItem onClick={() => { void handleDownload(); }} disabled={downloading}>
+                  <Download />
+                  Download
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  title="Copy markdown to embed this drawing in a doc"
+                  onClick={() => {
+                    navigator.clipboard.writeText(embedMarkdown);
+                    toast({ title: "Embed copied", description: "Paste it into a doc to embed this drawing." });
+                  }}
+                >
+                  <Code />
+                  Copy embed
+                </DropdownMenuItem>
+                {canEdit && <DropdownMenuSeparator />}
+                {editItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            )}
+          </div>,
+          headerActionSlot,
+        )}
         <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading editor…</div>}>
           <ExcalidrawCanvas
             contentUrl={`/api/files/${file.id}/content`}
@@ -208,55 +605,178 @@ export function FilePage() {
             onDirtyChange={setDrawingDirty}
             // Render Save in the top bar (title bar) rather than floating over
             // the canvas, where it overlapped Excalidraw's bottom-right "?".
-            saveSlot={headerActionSlot}
+            // Null until the slot mounts (no floating-button flash).
+            saveSlot={drawingSaveSlot}
           />
         </Suspense>
+        {copyStatus}
+        {dialogs}
       </div>
     );
   }
 
+  // The header - title + metadata - sits in the doc's reading column for
+  // every kind, so it's in exactly the same place from file to file and the
+  // title shares a doc title's left edge (the type icon rides in the metadata
+  // line rather than a leading tile, which would push the title off that
+  // edge). Previews share that left edge (see ViewerLayout). Actions go to the
+  // top bar on desktop and stay beside the title on phones (exactly one copy
+  // each).
+  const uploadedRelative = formatRelativeTime(file.created_at);
+  // The list routes COALESCE a missing member name to the raw user id; only
+  // show a real name.
+  const uploaderName = file.uploader_name && file.uploader_name !== file.uploaded_by ? file.uploader_name : null;
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <div className="flex items-center gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-6 w-6 text-muted-foreground" />
+    <ViewerLayout>
+      {actionsInBar && createPortal(
+        <div className="flex shrink-0 items-center gap-2">{barActions}</div>,
+        headerActionSlot!,
+      )}
+      <div className={cn(READING_CONTAINER, "flex flex-wrap items-center gap-4")}>
+        {/* min width lets the actions wrap onto their own line on phones
+            instead of squeezing the title to a sliver. */}
+        <div className="min-w-[12rem] flex-1">
+          <h1 className="truncate text-2xl font-semibold leading-tight tracking-tight">{file.name}</h1>
+          {/* Each item carries a leading "·" in its left padding; the row is
+              pulled left by that padding and clipped, so the first item on
+              every line (including after a wrap) shows no stray separator. */}
+          <div className="mt-1 overflow-hidden">
+            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:content-['·']">
+              <span title={file.mime_type} className="inline-flex items-center gap-1.5">
+                <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
+                {describeFileType(file.mime_type, file.name)}
+              </span>
+              {kind === "image" && imageDims && (
+                <span className="whitespace-nowrap tabular-nums" title="Pixel dimensions">
+                  {imageDims.w} × {imageDims.h}
+                </span>
+              )}
+              <span>{formatBytes(file.size)}</span>
+              {/* Relative like a doc's "Last updated 2d ago"; the full date is the tooltip. */}
+              <span>
+                <span className="whitespace-nowrap">
+                  Uploaded <time dateTime={file.created_at} title={formatDate(file.created_at)}>
+                    {uploadedRelative === "Just now" ? "just now" : uploadedRelative}
+                  </time>
+                </span>
+                {uploaderName && ` by ${uploaderName}`}
+              </span>
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold">{file.name}</h1>
-          <p className="text-sm text-muted-foreground">{file.mime_type}</p>
-        </div>
+        {!actionsInBar && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              aria-label={copiedLink ? "Copied" : "Copy embed"}
+              title="Copy markdown to embed this file in a doc"
+              onClick={copyEmbed}
+            >
+              {copyIcon}
+              {copiedLink ? "Copied!" : "Copy embed"}
+            </Button>
+            <Button onClick={handleDownload} disabled={downloading} className="gap-2">
+              <Download className="h-4 w-4" />
+              {downloading ? "Downloading…" : "Download"}
+            </Button>
+            {canEdit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className={MENU_CLASS}>
+                  {editItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
 
-      <Separator className="my-6" />
-
-      <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
-        <dt className="text-muted-foreground">Size</dt>
-        <dd>{formatBytes(file.size)}</dd>
-        <dt className="text-muted-foreground">Uploaded</dt>
-        <dd>{formatDate(file.created_at)}</dd>
-      </dl>
-
+      {/* One frame only: the image sits centred in a bordered card whose
+          rounded corners clip it (no inner mat). The hairline border keeps
+          dark-edged images from merging into the page. The image itself
+          carries a checkerboard so transparency reads as transparency (the
+          letterbox around it stays the plain card), and clicking it opens a
+          full-size lightbox. The frame takes the wide container: same left
+          edge as the header, more room to the right. */}
       {kind === "image" && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <AuthenticatedImage
-            src={`/api/files/${file.id}/content`}
-            alt={file.name}
-            projectId={projectId}
-            mimeType={file.mime_type}
-            className="max-h-[60vh] w-full object-contain"
-          />
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-card")}>
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label="Zoom image"
+            title="Zoom image"
+            className="flex min-h-40 w-full cursor-zoom-in items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <AuthenticatedImage
+              src={`/api/files/${file.id}/content`}
+              alt={file.name}
+              projectId={projectId}
+              mimeType={file.mime_type}
+              style={CHECKERBOARD_STYLE}
+              onLoad={e => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                if (w > 0 && h > 0) setImageDims({ w, h });
+              }}
+              // Rasters show at natural size (never upscaled into blur); SVGs
+              // often have no intrinsic size, so they fill the column instead.
+              className={isSvg
+                ? "block h-auto max-h-[70vh] w-full object-contain"
+                : "block h-auto max-h-[70vh] w-auto max-w-full"}
+            />
+          </button>
         </div>
       )}
 
+      {kind === "image" && (
+        <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+          {/* Sized to the image's natural width (+ padding/border) up to the
+              viewport. An explicit width is needed: the dialog is fixed at
+              left:50%, so w-fit alone caps it at half the viewport. */}
+          <DialogContent
+            className="w-fit max-w-[calc(100vw-2rem)] p-4 sm:max-w-[calc(100vw-4rem)]"
+            style={imageDims ? { width: `calc(${imageDims.w}px + 2rem + 2px)` } : undefined}
+          >
+            <DialogHeader className="pb-3 pr-10">
+              <DialogTitle className="truncate">{file.name}</DialogTitle>
+              <DialogDescription className="sr-only">Full-size image preview</DialogDescription>
+            </DialogHeader>
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              aria-label="Close full-size view"
+              className="block cursor-zoom-out rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <AuthenticatedImage
+                src={`/api/files/${file.id}/content`}
+                alt={file.name}
+                projectId={projectId}
+                mimeType={file.mime_type}
+                // Natural size up to the dialog: rasters size themselves
+                // (w-auto); an SVG gets its intrinsic width once known.
+                style={isSvg && imageDims ? { ...CHECKERBOARD_STYLE, width: `${imageDims.w}px` } : CHECKERBOARD_STYLE}
+                className={isSvg
+                  ? "mx-auto block h-auto max-h-[calc(100dvh-8rem)] w-[min(calc(100vw-6rem),80rem)] max-w-full rounded-md object-contain"
+                  : "mx-auto block h-auto max-h-[calc(100dvh-8rem)] w-auto max-w-full rounded-md"}
+              />
+            </button>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {kind === "audio" && contentUrl && (
-        <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
+        <div className={cn(READING_CONTAINER, "mt-8 rounded-xl border border-border bg-card p-4")}>
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
         </div>
       )}
 
       {kind === "video" && videoSrc && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-black")}>
           <video
             controls
             preload="metadata"
@@ -276,7 +796,7 @@ export function FilePage() {
       )}
 
       {kind === "pdf" && contentUrl && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-card")}>
           {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
               origin, so the browser's PDF script can't touch the app origin;
               allow-scripts keeps the viewer itself functional. */}
@@ -292,11 +812,13 @@ export function FilePage() {
       )}
 
       {kind === "text" && textContent !== null && (
-        <div className="mt-6">
+        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6")}>
+          {/* Plain-file preview sits on the card surface (never the
+              highlighter theme's own background), framed like the other previews. */}
           <CodeBlock
             lang={guessLanguage(file.name)}
             code={textContent}
-            className="[&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto"
+            className="!my-0 [&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto [&_pre]:!rounded-xl [&_pre]:!border [&_pre]:!border-border [&_pre]:!bg-card [&_pre]:!p-5"
           />
           {textTruncated && (
             <p className="mt-2 text-xs text-muted-foreground">
@@ -306,30 +828,9 @@ export function FilePage() {
         </div>
       )}
 
-      <div className="mt-8 flex flex-wrap items-center gap-2">
-        <Button onClick={handleDownload} disabled={downloading} className="gap-2">
-          <Download className="h-4 w-4" />
-          {downloading ? "Downloading…" : "Download"}
-        </Button>
-        <Button
-          variant="outline"
-          className="gap-2"
-          aria-label={copiedLink ? "Copied" : "Copy markdown"}
-          onClick={() => {
-            navigator.clipboard.writeText(fileEmbedMarkdown(file));
-            setCopiedLink(true);
-            setTimeout(() => setCopiedLink(false), 2000);
-          }}
-        >
-          {copiedLink ? <Check className="h-4 w-4 text-green-500" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
-          {copiedLink ? "Copied!" : "Copy markdown"}
-        </Button>
-      </div>
-      {/* Announce the transient copy confirmation to assistive tech (the button
-          text swap alone isn't reliably announced). */}
-      <div role="status" aria-live="polite" className="sr-only">
-        {copiedLink ? "Markdown copied to clipboard" : ""}
-      </div>
-    </div>
+      {copyStatus}
+
+      {dialogs}
+    </ViewerLayout>
   );
 }

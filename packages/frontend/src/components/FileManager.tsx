@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw } from "lucide-react";
+import { notifySiteTreeChanged } from "@/components/SidebarPageTree";
+import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
+import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreHorizontal, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
-import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
@@ -41,54 +44,198 @@ const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
 };
 
-function RoleBadge({ role }: { role: Role }) {
-  const variants: Record<Role, string> = {
-    owner: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-    admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-    editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-    viewer: "bg-muted text-muted-foreground",
-  };
-  return (
-    <Badge variant="outline" className={`shrink-0 text-xs font-medium ${variants[role]}`}>
-      {ROLE_LABELS[role]}
-    </Badge>
-  );
-}
 
-// "Created by" cell - the author/uploader name plus an optional role badge,
-// linking to the user's profile card when we have an id. The name truncates in
-// its own span while the badge stays `shrink-0`, so a long name never pushes
-// the badge out of the (overflow-hidden) cell.
+// "Created by" chip: a 20px disc with 10px medium initials. The default
+// fallback (bg-accent, muted text) nearly vanishes against the table surface,
+// so the initials sit at foreground/80 on bg-muted inside a hairline ring.
+const AUTHOR_AVATAR_CLASS =
+  "size-5 shrink-0 text-[10px] ring-1 ring-border [&_[data-slot=avatar-fallback]]:bg-muted [&_[data-slot=avatar-fallback]]:font-medium [&_[data-slot=avatar-fallback]]:tracking-normal [&_[data-slot=avatar-fallback]]:text-foreground/80";
+
+// "Created by" cell - the author/uploader avatar and name (role in the
+// tooltip), linking to the user's profile card when we have an id. The name
+// truncates in its own span so it never overflows the cell.
 function AuthorCell({ userId, name, role }: { userId?: string; name?: string; role?: Role | null }) {
   if (userId && name) {
     return (
       <UserProfileCard userId={userId} name={name}>
         <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-          <UserAvatar userId={userId} name={name} className="h-5 w-5 shrink-0 text-[10px]" />
-          <span className="truncate">{name}</span>
-          {role && <RoleBadge role={role} />}
+          <UserAvatar userId={userId} name={name} className={AUTHOR_AVATAR_CLASS} />
+          <span className="truncate" title={role ? `${name} · ${ROLE_LABELS[role]}` : name}>{name}</span>
         </div>
       </UserProfileCard>
     );
   }
+  if (!name) return <EmptyCell label="Unknown author" />;
   return (
     <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
-      <span className="truncate">{name ?? ""}</span>
-      {role && <RoleBadge role={role} />}
+      <span className="truncate" title={role ? `${name} · ${ROLE_LABELS[role]}` : name}>{name}</span>
     </div>
   );
 }
 
+// Folder item count - a folder's "size" - shown in its row's Size column / its
+// card subtitle: one total ("1 item", "7 items", "Empty") on desktop and
+// mobile alike; the doc/file/folder breakdown rides in the tooltip
+// (folderCountLabel).
+function folderItemsLabel(c: FolderCounts | undefined): string {
+  const n = c ? c.docs + c.files + c.folders : 0;
+  return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
+}
+
+// Muted em dash for a table cell without a value - one that doesn't apply
+// (a doc's byte size) or isn't known (an unknown author, a folder's creator or
+// not-yet-seen update time); the label is for screen readers.
+function EmptyCell({ label }: { label: string }) {
+  return (
+    <span className="text-sm text-muted-foreground/50">
+      <span aria-hidden="true">&mdash;</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+// Newest edit time seen among each folder's direct docs/files (plus any child
+// folders already known), recorded whenever that folder's contents load. The
+// listing API doesn't send per-folder dates, so a folder row shows one in
+// "Last updated" only once its contents have been loaded this session and
+// shows a muted dash otherwise. Module scope so it survives navigating up a level.
+const folderNewestCache = new Map<string, string>();
+
+function newestTimestamp(values: (string | undefined)[]): string | undefined {
+  let best: string | undefined;
+  let bestMs = -Infinity;
+  for (const v of values) {
+    if (!v) continue;
+    const ms = Date.parse(v);
+    if (!Number.isNaN(ms) && ms > bestMs) { bestMs = ms; best = v; }
+  }
+  return best;
+}
+
+// Fixed desktop widths (px) for the metadata columns: sized for their longest
+// values ("Dec 31, 2025", "999.9 MB", a name + avatar) so the columns sit in
+// the same place in every folder and the trailing actions follow Last updated
+// directly. Name takes whatever width is left and truncates. Size includes its
+// extra 32px right gutter (SIZE_CELL_CLASS).
+const AUTHOR_COL_PX = 200;
+const SIZE_COL_PX = 120;
+const UPDATED_COL_PX = 128;
+
+// Size is right-aligned and Last updated left-aligned, so with the default
+// 12px padding on each side the two values ran together ("3.3 KB 2d ago").
+// Size takes a 32px right gutter instead - its header too (matched by the
+// sort button's constant title, see FIXED_COLUMNS_CLASS) so the label stays
+// on the figures' right edge. Both columns use tabular figures.
+const SIZE_CELL_CLASS = "pl-3 pr-8";
+const UPDATED_CELL_CLASS = "px-3 tabular-nums";
+
 // Module-scope so the array identity is stable across renders - the table keys
-// its segment memo and auto-fit effect off this reference. "Name" and
-// "Created by" are constrained (minWidth/maxWidth) so they auto-fit to content;
-// "Size"/"Last updated" share the remaining resizable space.
+// its segment memo off this reference. min = max width makes each metadata
+// column a fixed standalone segment; Name is the one flexible column (see
+// FIXED_COLUMNS_CLASS for how it's sized). Row actions live in a fixed
+// trailing column.
 const FILE_COLUMNS = [
-  { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500, sortable: true },
-  { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400, sortable: true },
-  { label: "Size", defaultSize: 15, minSize: 8, sortable: true },
-  { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
+  { label: "Name", defaultSize: 100, minSize: 20, sortable: true },
+  { label: "Created by", defaultSize: 0, minWidth: AUTHOR_COL_PX, maxWidth: AUTHOR_COL_PX, sortable: true },
+  // Right-aligned with tabular figures so byte sizes line up digit for digit.
+  { label: "Size", defaultSize: 0, minWidth: SIZE_COL_PX, maxWidth: SIZE_COL_PX, sortable: true, align: "right" as const },
+  { label: "Last updated", defaultSize: 0, minWidth: UPDATED_COL_PX, maxWidth: UPDATED_COL_PX, sortable: true },
 ];
+// Bumped when the layout above changed, so stale persisted widths from the
+// old proportional columns don't carry over.
+const FILE_COLUMNS_STORAGE_KEY = "file-columns-v4";
+
+// ResizableTable always lets its *last* segment (here Last updated) fill the
+// row, while the first segment (Name) gets a fixed share. To make Name the
+// flexible column instead, pin Name's segment to "row minus every fixed
+// column" (`--fm-fixed-cols`, set inline per render since the checkbox and
+// actions columns vary) - the last segment's flex then resolves to exactly
+// its own fixed width. `!important` is needed to beat the table's inline
+// custom property. The segment drag grips are hidden: every column but Name
+// is fixed, so there's nothing to drag.
+const FIXED_COLUMNS_CLASS =
+  "[&_[role=grid]]:[--seg-0-width:calc(100%_-_var(--fm-fixed-cols))]! [&_.cursor-col-resize]:hidden [&_[role=columnheader][title='Sort_by_Size']]:pr-8";
+
+// Higher-contrast checkbox border for the listing (the shared default is too
+// faint against the table surface): the same full-strength grey as the
+// row action icons.
+const ROW_CHECKBOX_CLASS = "border-muted-foreground data-[state=checked]:border-primary";
+
+// Desktop row checkboxes stay out of the way until they're useful: faded in
+// while the row is hovered, holds focus (so keyboard users tabbing onto a box
+// see it) or has its menu open; always shown once any row is selected (the
+// listing's `data-selecting`, `group/fm`) and on touch pointers that can't
+// hover. Opacity only - never display/visibility - so the column keeps its
+// width, the boxes stay in the tab order and remain clickable. A wrapper
+// rather than classes on the box itself so the disabled home-doc box's own
+// half opacity still applies on top.
+const ROW_CHECK_REVEAL_CLASS =
+  "inline-flex opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 group-data-[state=open]/rowmenu:opacity-100 group-has-[[data-row-menu][data-state=open]]/row:opacity-100 group-data-[selecting]/fm:opacity-100 [@media(hover:none)]:opacity-100";
+const RowCheckReveal = ({ children }: { children: React.ReactNode }) => (
+  <span className={ROW_CHECK_REVEAL_CLASS}>{children}</span>
+);
+
+// Header select-all box. A local primitive rather than the shared Checkbox
+// because the shared one always draws a check - the indeterminate (partial
+// selection) state needs a dash. Styles mirror the shared box + row override.
+function SelectAllCheckbox({ checked, onCheckedChange, disabled }: {
+  checked: boolean | "indeterminate";
+  onCheckedChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <CheckboxPrimitive.Root
+      aria-label={checked === true ? "Deselect all" : "Select all"}
+      title={checked === true ? "Deselect all" : "Select all"}
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={onCheckedChange}
+      className="peer size-4 shrink-0 rounded-[4px] border border-muted-foreground shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
+    >
+      <CheckboxPrimitive.Indicator className="grid place-content-center text-current transition-none">
+        {checked === "indeterminate" ? <Minus className="size-3.5" /> : <Check className="size-3.5" />}
+      </CheckboxPrimitive.Indicator>
+    </CheckboxPrimitive.Root>
+  );
+}
+
+// A row stays highlighted while its right-click menu (the ContextMenuTrigger
+// wrapper, `group/rowmenu`) or its kebab (`data-row-menu`) is open, so it's
+// clear which item the menu acts on once the pointer moves into the menu.
+const ROW_MENU_OPEN_CLASS =
+  "group-data-[state=open]/rowmenu:bg-accent has-[[data-row-menu][data-state=open]]:bg-accent";
+// Checked rows get a quiet tint so a multi-selection reads at a glance.
+const ROW_SELECTED_CLASS = "bg-accent/50";
+
+// Dropdown menu items carry no icon sizing of their own (context menu items
+// do) - match them: 16px muted icons, the destructive item keeping its red.
+const MENU_ICON_CLASS =
+  "[&_svg:not([class*='size-'])]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground";
+
+// Trailing actions column: up to three (with AI) / two 32px buttons, 4px
+// gaps, and the cell's 8px right padding.
+const ACTIONS_COL = 2 * 32 + 4 + 8;
+const ACTIONS_COL_WITH_AI = 3 * 32 + 2 * 4 + 8;
+
+// Shared sizing for the per-row menus (context menu + kebabs).
+const ROW_MENU_CLASS = `min-w-[200px] [&_[role=menuitem]]:pr-4 ${MENU_ICON_CLASS}`;
+
+// Square 32px icon button for the desktop row actions column - 16px icons in
+// full-strength muted grey so the actions read without hovering the row.
+const ROW_ICON_BUTTON_BASE =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const ROW_ICON_BUTTON_CLASS = `${ROW_ICON_BUTTON_BASE} transition-colors`;
+
+// Secondary row actions (download / AI summary) fade in only while the row is
+// hovered, holds focus, or has its menu open - the always-visible kebab
+// carries the row's actions otherwise. They stay in the tab order (focusing
+// one reveals it) and are always shown on touch pointers, which can't hover.
+const ROW_REVEAL_BUTTON_CLASS =
+  `${ROW_ICON_BUTTON_BASE} transition-[color,background-color,opacity] opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 group-data-[state=open]/rowmenu:opacity-100 group-has-[[data-row-menu][data-state=open]]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100`;
+
+// Empty placeholder that holds the download slot on rows without one
+// (folders), so the kebab column lines up on every row.
+const RowActionSlot = () => <span aria-hidden="true" className="h-8 w-8 shrink-0" />;
 
 // The same five actions repeat across the desktop context menu, the desktop
 // kebab, and the mobile kebab - render them once from a "kit" of menu-item
@@ -98,10 +245,33 @@ interface MenuKit {
   Separator: React.ElementType;
 }
 
-// Stable empty arrays for search mode - fresh [] literals per render would
-// defeat the sorted-list/measureKey memos below.
-const EMPTY_FOLDERS: FolderItem[] = [];
-const EMPTY_FILES: FileItem[] = [];
+// Toggle one row's checkbox in a selection set - or, with Shift held and an
+// anchor set, every row from the anchor to it (all on or all off, following
+// the clicked row). Rows matching `skip` (the home doc) never join.
+function applyCheck<T extends { id: string }>(
+  prev: Set<string>,
+  list: T[],
+  idx: number,
+  anchor: number | null,
+  shift: boolean,
+  skip?: (item: T) => boolean,
+): Set<string> {
+  const willBeChecked = !prev.has(list[idx].id);
+  const range = shift ? shiftSelectionRange(anchor, idx, list.length) : null;
+  const next = new Set(prev);
+  for (let i = range ? range.from : idx; i <= (range ? range.to : idx); i++) {
+    if (skip?.(list[i])) continue;
+    if (willBeChecked) next.add(list[i].id);
+    else next.delete(list[i].id);
+  }
+  return next;
+}
+
+// Search matches for the current folder's own folders/files (the server-side
+// search covers docs only). Case-insensitive substring on the name.
+function nameMatches(name: string, query: string): boolean {
+  return name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+}
 
 interface Props {
   projectId: string;
@@ -116,7 +286,20 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const { setBreadcrumbs, headerActionSlot } = useOutletContext<DocsLayoutContext>();
+
+  // md+ puts the create split button in the top bar; below md it sits in the
+  // toolbar. A media-query state (not CSS hiding) so it renders in exactly one
+  // place - keeps "New document" / "More create options" unique for role lookups.
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   const currentFolderId = folderId;
   const {
@@ -126,8 +309,40 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     folderCounts, bumpFolderCount, path, loading, error: loadError, reload,
   } = useFolderContents(projectId, currentFolderId, projectName);
 
+  // Keep the sidebar page tree in step with edits made here (create, rename,
+  // move, delete, upload) - none of them change the route, which is the
+  // tree's other refetch trigger. The lists filled in by a (re)load are
+  // skipped: those don't mean anything changed.
+  const skipTreeNotify = useRef(true);
+  useEffect(() => {
+    if (loading) { skipTreeNotify.current = true; return; }
+    if (skipTreeNotify.current) { skipTreeNotify.current = false; return; }
+    notifySiteTreeChanged();
+  }, [folders, docs, files, loading]);
+
+  // Record this folder's newest child edit for its row's "Last updated" one
+  // level up (see folderNewestCache). The lists briefly still hold the
+  // previous folder's rows after navigating, so only record once every listed
+  // doc/file actually belongs to the folder being viewed.
+  useEffect(() => {
+    if (loading || currentFolderId === null) return;
+    const own = docs.every(d => d.folder_id === currentFolderId)
+      && files.every(f => f.folder_id === currentFolderId)
+      && folders.every(f => f.parent_id === currentFolderId);
+    if (!own) return;
+    const newest = newestTimestamp([
+      ...docs.map(d => d.updated_at),
+      ...files.map(f => f.updated_at ?? f.created_at),
+      ...folders.map(f => folderNewestCache.get(f.id)),
+    ]);
+    if (newest) folderNewestCache.set(currentFolderId, newest);
+    else folderNewestCache.delete(currentFolderId);
+  }, [loading, currentFolderId, docs, files, folders]);
+
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastCheckedFolderIndex = useRef<number | null>(null);
   const lastCheckedDocIndex = useRef<number | null>(null);
   const lastCheckedFileIndex = useRef<number | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -149,6 +364,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const handleSort = useCallback((colIdx: number) => {
     // A sort change reorders the lists, so the shift-select anchors point at
     // different rows than the user last clicked - drop them.
+    lastCheckedFolderIndex.current = null;
     lastCheckedDocIndex.current = null;
     lastCheckedFileIndex.current = null;
     setSort(prev => prev.colIdx === colIdx
@@ -209,8 +425,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   // the user is no longer looking at, and a stale anchor can index past the end
   // of a shorter list.
   useEffect(() => {
+    setSelectedFolders(new Set());
     setSelectedDocs(new Set());
     setSelectedFiles(new Set());
+    lastCheckedFolderIndex.current = null;
     lastCheckedDocIndex.current = null;
     lastCheckedFileIndex.current = null;
   }, [projectId, currentFolderId, inSearch]);
@@ -389,6 +607,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     // The moved folder carries its whole subtree into the destination's totals.
     const moved = folderCounts.get(movedFolderId);
     setFolders(prev => prev.filter(f => f.id !== movedFolderId));
+    setSelectedFolders(prev => { if (!prev.has(movedFolderId)) return prev; const next = new Set(prev); next.delete(movedFolderId); return next; });
     const result = await apiFetchJson(`/api/folders/${movedFolderId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -518,28 +737,41 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     setDeleting(true);
     setDeleteConfirmOpen(false);
     try {
+      const folderIds = [...selectedFolders];
       const docIds = [...selectedDocs];
       const fileIds = [...selectedFiles];
       const results = await Promise.all([
-        ...docIds.map(async id => ({ kind: "doc" as const, id, ok: (await apiFetch(`/api/docs/${id}`, { method: "DELETE" })).ok })),
-        ...fileIds.map(async id => ({ kind: "file" as const, id, ok: (await apiFetch(`/api/files/${id}`, { method: "DELETE" })).ok })),
+        // Folder deletes report whether the site's home doc had to be left
+        // behind at the top level (it can't be binned with its folder).
+        ...folderIds.map(async id => {
+          const r = await apiFetchJson<{ homeDocMoved?: boolean }>(`/api/folders/${id}`, { method: "DELETE" });
+          return { kind: "folder" as const, id, ok: r.ok, homeDocMoved: !!r.data?.homeDocMoved };
+        }),
+        ...docIds.map(async id => ({ kind: "doc" as const, id, ok: (await apiFetch(`/api/docs/${id}`, { method: "DELETE" })).ok, homeDocMoved: false })),
+        ...fileIds.map(async id => ({ kind: "file" as const, id, ok: (await apiFetch(`/api/files/${id}`, { method: "DELETE" })).ok, homeDocMoved: false })),
       ]);
+      const deletedFolders = new Set(results.filter(r => r.kind === "folder" && r.ok).map(r => r.id));
       const deletedDocs = new Set(results.filter(r => r.kind === "doc" && r.ok).map(r => r.id));
       const deletedFiles = new Set(results.filter(r => r.kind === "file" && r.ok).map(r => r.id));
+      const homeDocMoved = results.some(r => r.ok && r.homeDocMoved);
       const failed = results.filter(r => !r.ok).length;
       // Search hits deleted from inside a listed child folder shrink its badge.
       for (const d of searchResults ?? []) if (deletedDocs.has(d.id)) bumpCountFor(d.folder_id, { docs: -1 });
+      setFolders(prev => prev.filter(f => !deletedFolders.has(f.id)));
       updateDocLists(prev => prev.filter(d => !deletedDocs.has(d.id)));
       setFiles(prev => prev.filter(f => !deletedFiles.has(f.id)));
+      setSelectedFolders(prev => { const next = new Set(prev); for (const id of deletedFolders) next.delete(id); return next; });
       setSelectedDocs(prev => { const next = new Set(prev); for (const id of deletedDocs) next.delete(id); return next; });
       setSelectedFiles(prev => { const next = new Set(prev); for (const id of deletedFiles) next.delete(id); return next; });
+      if (homeDocMoved && currentFolderId === null) void reload();
       if (failed > 0) {
         toast({ title: `${failed} item${failed === 1 ? "" : "s"} couldn't be deleted.`, variant: "destructive" });
       }
-      const moved = deletedDocs.size + deletedFiles.size;
+      const moved = deletedFolders.size + deletedDocs.size + deletedFiles.size;
       if (moved > 0) {
         toast({
           title: `Moved ${moved} item${moved === 1 ? "" : "s"} to the recycle bin.`,
+          description: homeDocMoved ? "The site's home document was moved to the top level." : undefined,
           action: { label: "View bin", onClick: () => navigate(`/projects/${projectId}/settings#recycle-bin`) },
         });
       }
@@ -617,8 +849,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         if (result.data?.homeDocMoved && currentFolderId === null) void reload();
         // Docs/files also leave the bulk selection - otherwise the toolbar keeps
         // counting them and a later bulk delete reports them as failures.
-        if (type === "folder") setFolders(prev => prev.filter(f => f.id !== id));
-        else if (type === "doc") {
+        if (type === "folder") {
+          setFolders(prev => prev.filter(f => f.id !== id));
+          setSelectedFolders(prev => { if (!prev.has(id)) return prev; const next = new Set(prev); next.delete(id); return next; });
+        } else if (type === "doc") {
           const hit = searchResults?.find(d => d.id === id);
           if (hit) bumpCountFor(hit.folder_id, { docs: -1 });
           updateDocLists(prev => prev.filter(d => d.id !== id));
@@ -701,7 +935,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <M.Separator />
       <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
         <Trash2 />
-        Delete
+        Move to recycle bin
       </M.Item>
     </>
   );
@@ -732,10 +966,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             Move to folder…
           </M.Item>
         )}
+        {canEdit && !isHome && <M.Separator />}
         {canEdit && !isHome && (
           <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: title })}>
             <Trash2 />
-            Delete
+            Move to recycle bin
           </M.Item>
         )}
       </>
@@ -748,9 +983,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <Link />
         Copy link
       </M.Item>
-      <M.Item onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
+      <M.Item title="Copy markdown to embed this file in a doc" onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Embed copied", description: "Paste it into a doc to embed this file." }); }}>
         <Code />
-        Copy markdown
+        Copy embed
       </M.Item>
       <M.Item onClick={() => downloadFile(file)}>
         <Download />
@@ -769,10 +1004,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           Move to folder…
         </M.Item>
       )}
+      {canEdit && <M.Separator />}
       {canEdit && (
         <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
           <Trash2 />
-          Delete
+          Move to recycle bin
         </M.Item>
       )}
     </>
@@ -784,71 +1020,221 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     ? folderCountLabel(folderCounts.get(contextDeleteTarget.id))
     : "";
 
+  // The create menu behind the split button's chevron. Upload lives here too;
+  // the desktop menu also points at drag-and-drop, which has no other visible
+  // affordance, and the touch variant gets 44px rows.
+  const createMenu = (touch: boolean) => (
+    <DropdownMenuContent align="end" className={`min-w-[200px] ${MENU_ICON_CLASS}${touch ? " [&_[role=menuitem]]:min-h-11" : ""}`}>
+      <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
+        <FolderPlus />
+        New folder
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={handleNewDrawing}>
+        <PenTool />
+        New drawing
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+        <Upload />
+        Upload files
+      </DropdownMenuItem>
+      {!touch && (
+        // Indented to the item labels (8px item padding + 16px icon + 8px
+        // gap), capped so it wraps instead of outgrowing the items.
+        <p className="max-w-[200px] pb-2 pl-8 pr-3 pt-0.5 text-xs leading-snug text-muted-foreground">Or drop files onto the page.</p>
+      )}
+    </DropdownMenuContent>
+  );
+
+  // Creation controls: one split button - "New document" plus an attached
+  // chevron menu for the secondary creates and Upload. On md+ it's a page
+  // action in the top bar (createInHeader); below md it spans the toolbar's
+  // full width with 44px touch targets. Same labels and menu either way.
+  const createInHeader = isDesktop && !!headerActionSlot;
+  const createSplitButton = canEdit ? (
+    <div className={createInHeader ? "flex shrink-0" : "flex w-full md:w-auto"}>
+      <Button
+        aria-label="New document"
+        title="New document"
+        size={createInHeader ? "sm" : "default"}
+        className={`gap-1.5 rounded-r-none ${createInHeader ? "h-8 px-3" : "h-11 flex-1 px-4 md:h-9 md:flex-none md:px-3"}`}
+        onClick={handleNewDoc}
+      >
+        <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+        New document
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="More create options"
+            title="More create options"
+            size={createInHeader ? "sm" : "default"}
+            className={`rounded-l-none border-l border-primary-foreground/20 px-0 ${createInHeader ? "h-8 w-8" : "h-11 w-11 md:h-9 md:w-9"}`}
+            disabled={creatingDrawing}
+          >
+            {creatingDrawing
+              ? <Spinner className="size-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
+          </Button>
+        </DropdownMenuTrigger>
+        {createMenu(!isDesktop)}
+      </DropdownMenu>
+    </div>
+  ) : null;
+
   const contextKit: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
   const dropdownKit: MenuKit = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
 
   // Sort within each group; folders stay pinned above docs above files. In
   // search mode the doc results replace the folder view's lists. Memoized so a
   // checkbox toggle doesn't re-sort all three arrays.
-  const displayFolders = inSearch ? EMPTY_FOLDERS : folders;
+  // Search mode: the server's doc hits (whole subtree) plus this folder's own
+  // folders/files whose names match.
+  const trimmedQuery = searchQuery.trim();
+  const displayFolders = useMemo(
+    () => (inSearch ? folders.filter(f => nameMatches(f.name, trimmedQuery)) : folders),
+    [inSearch, folders, trimmedQuery],
+  );
   const displayDocs = searchResults ?? docs;
-  const displayFiles = inSearch ? EMPTY_FILES : files;
+  const displayFiles = useMemo(
+    () => (inSearch ? files.filter(f => nameMatches(f.name, trimmedQuery)) : files),
+    [inSearch, files, trimmedQuery],
+  );
   const sortedFolders = useMemo(() => sortFolders(displayFolders, sort), [displayFolders, sort]);
   const sortedDocs = useMemo(() => sortDocs(displayDocs, sort), [displayDocs, sort]);
   const sortedFiles = useMemo(() => sortFiles(displayFiles, sort), [displayFiles, sort]);
 
-  // Re-fit the auto-sizing columns ("Name", "Created by") whenever the text
-  // shown in them changes - folder/doc/file names plus author/uploader names.
-  // Deliberately excludes selection state, so checkbox toggles don't re-measure.
-  const measureKey = useMemo(() => [
-    ...sortedFolders.map(f => f.name),
-    ...sortedDocs.map(d => `${d.title} ${d.author_name ?? ""}`),
-    ...sortedFiles.map(f => `${f.name} ${f.uploader_name ?? ""}`),
-  ].join("|"), [sortedFolders, sortedDocs, sortedFiles]);
+  const selectedCount = selectedFolders.size + selectedDocs.size + selectedFiles.size;
 
   function renderTable() {
     // Mobile card helpers. The kebab mirrors the desktop ContextMenu exactly;
     // on desktop the same kebab renders in the row's last cell so keyboard
     // users can reach Move/Delete/Copy without a right-click.
-    const toggleDocSel = (id: string) =>
-      setSelectedDocs(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    const toggleFileSel = (id: string) =>
-      setSelectedFiles(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    const toggleIn = (set: React.Dispatch<React.SetStateAction<Set<string>>>) => (id: string) =>
+      set(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    const toggleFolderSel = toggleIn(setSelectedFolders);
+    const toggleDocSel = toggleIn(setSelectedDocs);
+    const toggleFileSel = toggleIn(setSelectedFiles);
+    // Desktop checkbox click: plain toggle, or a Shift range from the last
+    // checkbox clicked in the same group.
+    const checkClick = <T extends { id: string }>(
+      list: T[],
+      idx: number,
+      anchorRef: React.MutableRefObject<number | null>,
+      set: React.Dispatch<React.SetStateAction<Set<string>>>,
+      skip?: (item: T) => boolean,
+    ) => (e: React.MouseEvent) => {
+      const anchor = anchorRef.current;
+      const shift = e.shiftKey;
+      set(prev => applyCheck(prev, list, idx, anchor, shift, skip));
+      anchorRef.current = idx;
+    };
+    const isHomeDoc = (d: DocItem) => d.is_home === 1;
+    const rowClass = (selected: boolean, extra?: string) =>
+      [ROW_MENU_OPEN_CLASS, selected ? ROW_SELECTED_CLASS : "", extra ?? ""].filter(Boolean).join(" ");
     const renderKebab = (label: string, items: React.ReactNode, compact = false) => (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
+            data-row-menu=""
             aria-label={label}
             title={label}
             onClick={e => e.stopPropagation()}
             className={compact
-              ? "inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-              : "inline-flex items-center justify-center h-9 w-9 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-muted"}
+              ? ROW_ICON_BUTTON_CLASS
+              : "inline-flex items-center justify-center h-11 w-11 -mr-2 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
-            <MoreVertical className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">{items}</DropdownMenuContent>
+        {/* Menu items render in a portal, but React still bubbles their clicks
+            through the component tree - stop them before they reach the row's
+            own onClick (which would also open the item). */}
+        <DropdownMenuContent align="end" className={ROW_MENU_CLASS} onClick={e => e.stopPropagation()}>{items}</DropdownMenuContent>
       </DropdownMenu>
     );
+
+    // Mobile: row checkboxes stay hidden until a selection is started from a
+    // row's "Select" menu item; then every row reserves the checkbox slot so
+    // the icons stay in one column.
+    const mobileSelecting = canEdit && selectedCount > 0;
+    const mobileCheckSlot = (control?: React.ReactNode) => mobileSelecting ? (
+      <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+        {control}
+      </div>
+    ) : null;
+    const selectItem = (onSelect: () => void) => (
+      <>
+        <DropdownMenuItem onClick={onSelect}>
+          <SquareCheck />
+          Select
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </>
+    );
+
+    // Header select-all: every visible folder/doc/file except the home doc
+    // (which can't be binned or moved). Partial selection shows a dash.
+    const selectableDocs = sortedDocs.filter(d => !isHomeDoc(d));
+    const selectableTotal = sortedFolders.length + selectableDocs.length + sortedFiles.length;
+    const visibleSelected =
+      sortedFolders.filter(f => selectedFolders.has(f.id)).length +
+      selectableDocs.filter(d => selectedDocs.has(d.id)).length +
+      sortedFiles.filter(f => selectedFiles.has(f.id)).length;
+    const allSelected = selectableTotal > 0 && visibleSelected === selectableTotal;
+    const headerChecked: boolean | "indeterminate" = allSelected ? true : visibleSelected > 0 ? "indeterminate" : false;
+    const toggleSelectAll = () => {
+      if (allSelected) {
+        setSelectedFolders(new Set());
+        setSelectedDocs(new Set());
+        setSelectedFiles(new Set());
+      } else {
+        setSelectedFolders(new Set(sortedFolders.map(f => f.id)));
+        setSelectedDocs(new Set(selectableDocs.map(d => d.id)));
+        setSelectedFiles(new Set(sortedFiles.map(f => f.id)));
+      }
+      lastCheckedFolderIndex.current = null;
+      lastCheckedDocIndex.current = null;
+      lastCheckedFileIndex.current = null;
+    };
 
     return (
       <>
       {/* Desktop: resizable table (md+) */}
-      <div className="hidden md:block">
-      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort} measureKey={measureKey}>
+      <div
+        className={`group/fm hidden md:block ${FIXED_COLUMNS_CLASS}`}
+        // Selection mode: any checked row keeps every row's checkbox shown
+        // (see ROW_CHECK_REVEAL_CLASS).
+        data-selecting={canEdit && selectedCount > 0 ? "" : undefined}
+        style={{ "--fm-fixed-cols": `${(canEdit ? 40 : 0) + AUTHOR_COL_PX + SIZE_COL_PX + UPDATED_COL_PX + (aiEnabled ? ACTIONS_COL_WITH_AI : ACTIONS_COL)}px` } as React.CSSProperties}
+      >
+      <ResizableTable
+        columns={FILE_COLUMNS}
+        checkboxColumn={canEdit}
+        headerCheckbox={canEdit ? (
+          <SelectAllCheckbox checked={headerChecked} onCheckedChange={toggleSelectAll} disabled={selectableTotal === 0} />
+        ) : undefined}
+        storageKey={FILE_COLUMNS_STORAGE_KEY} sort={sort} onSort={handleSort} actionsColumn={aiEnabled ? ACTIONS_COL_WITH_AI : ACTIONS_COL}>
         <>
-          {sortedFolders.map(folder => {
+          {sortedFolders.map((folder, folderIdx) => {
             const isDropTarget = dropTarget === folder.id;
-            const countLabel = folderCountLabel(folderCounts.get(folder.id));
+            const counts = folderCounts.get(folder.id);
+            const folderNewest = folderNewestCache.get(folder.id);
             const folderRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
                 draggable={canEdit}
-                  // Folders have no checkbox, but an editor's header reserves the
-                  // checkbox column - `null` renders the spacer so cells line up.
-                  checkboxCell={canEdit ? null : undefined}
+                  checkboxCell={canEdit ? (
+                    <RowCheckReveal>
+                      <Checkbox
+                        aria-label={`Select folder ${folder.name}`}
+                        className={ROW_CHECKBOX_CLASS}
+                        checked={selectedFolders.has(folder.id)}
+                        onClick={checkClick(sortedFolders, folderIdx, lastCheckedFolderIndex, setSelectedFolders)}
+                      />
+                    </RowCheckReveal>
+                  ) : undefined}
                   onDragStart={e => onDragStart(e, "folder", folder.id)}
                   onDragEnd={onDragEnd}
                   onDragOver={e => {
@@ -867,7 +1253,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     else if (item.type === "file") await moveFile(item.id, folder.id);
                     else await moveFolder(item.id, folder.id);
                   }}
-                  className={isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : undefined}
+                  className={rowClass(selectedFolders.has(folder.id), isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : undefined)}
                   cells={[
                     {
                       content: (
@@ -880,11 +1266,6 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
-                          {countLabel && (
-                            <Badge variant="outline" className="ml-2 shrink-0 text-xs text-muted-foreground">
-                              {countLabel}
-                            </Badge>
-                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -901,23 +1282,40 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
-                    { content: null },
-                    { content: null },
+                    // The listing API records no creator for folders - dashed.
+                    { content: <EmptyCell label="No author" /> },
+                    // A folder's size is its item count (full-subtree total,
+                    // breakdown in the tooltip).
                     {
-                      content: canEdit ? (
-                        <div className="flex items-center justify-end w-full">
-                          {renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true)}
-                        </div>
-                      ) : null,
+                      content: (
+                        <span className="text-sm text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
+                          {folderItemsLabel(counts)}
+                        </span>
+                      ),
+                      className: SIZE_CELL_CLASS,
+                    },
+                    // Newest child edit, once this folder's contents have been
+                    // seen (see folderNewestCache); dashed until then.
+                    {
+                      content: folderNewest
+                        ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
+                        : <EmptyCell label="No update time" />,
+                      className: UPDATED_CELL_CLASS,
                     },
                   ]}
+                  actionsCell={canEdit ? (
+                    <>
+                      <RowActionSlot />
+                      {renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true)}
+                    </>
+                  ) : null}
                 />
             );
             if (!canEdit) return <div key={folder.id}>{folderRow}</div>;
             return (
               <ContextMenu key={folder.id}>
-                <ContextMenuTrigger asChild><div>{folderRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{folderActionItems(contextKit, folder)}</ContextMenuContent>
+                <ContextMenuTrigger asChild><div className="group/rowmenu">{folderRow}</div></ContextMenuTrigger>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{folderActionItems(contextKit, folder)}</ContextMenuContent>
               </ContextMenu>
             );
             })}
@@ -931,37 +1329,28 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 draggable={canEdit && !isHome}
                   onDragStart={e => onDragStart(e, "doc", doc.id)}
                   onDragEnd={onDragEnd}
-                  checkboxCell={!canEdit ? undefined : isHome ? null : (
-                    <Checkbox
-                      aria-label={`Select ${doc.title || "Untitled"}`}
-                      checked={selectedDocs.has(doc.id)}
-                      onClick={(e) => {
-                        const willBeChecked = !selectedDocs.has(doc.id);
-                        const range = e.shiftKey
-                          ? shiftSelectionRange(lastCheckedDocIndex.current, docIdx, sortedDocs.length)
-                          : null;
-                        if (range) {
-                          setSelectedDocs(prev => {
-                            const next = new Set(prev);
-                            for (let i = range.from; i <= range.to; i++) {
-                              if (sortedDocs[i].is_home === 1) continue;
-                              if (willBeChecked) next.add(sortedDocs[i].id);
-                              else next.delete(sortedDocs[i].id);
-                            }
-                            return next;
-                          });
-                        } else {
-                          setSelectedDocs(prev => {
-                            const next = new Set(prev);
-                            if (willBeChecked) next.add(doc.id);
-                            else next.delete(doc.id);
-                            return next;
-                          });
-                        }
-                        lastCheckedDocIndex.current = docIdx;
-                      }}
-                    />
+                  checkboxCell={!canEdit ? undefined : isHome ? (
+                    // The home doc can't be binned or moved, so it can't join a
+                    // bulk selection - a disabled box keeps the column intact.
+                    <RowCheckReveal>
+                      <Checkbox
+                        disabled
+                        aria-label={`${doc.title || "Untitled"} is the home document and can't be selected`}
+                        title="The home document can't be deleted or moved"
+                        className={ROW_CHECKBOX_CLASS}
+                      />
+                    </RowCheckReveal>
+                  ) : (
+                    <RowCheckReveal>
+                      <Checkbox
+                        aria-label={`Select ${doc.title || "Untitled"}`}
+                        className={ROW_CHECKBOX_CLASS}
+                        checked={selectedDocs.has(doc.id)}
+                        onClick={checkClick(sortedDocs, docIdx, lastCheckedDocIndex, setSelectedDocs, isHomeDoc)}
+                      />
+                    </RowCheckReveal>
                   )}
+                  className={rowClass(selectedDocs.has(doc.id))}
                   cells={[
                     {
                       content: (
@@ -996,44 +1385,44 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     {
                       content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
-                    { content: null },
+                    // Docs have no byte size.
+                    { content: <EmptyCell label="No size" />, className: SIZE_CELL_CLASS },
                     {
-                      content: (
-                        <div className="flex items-center justify-between gap-2 w-full">
-                          <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>
-                          <div className="flex items-center gap-3.5">
-                            {aiEnabled && (
-                              <button
-                                type="button"
-                                aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
-                                onClick={e => handleSummarize(e, doc)}
-                                className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
-                                title="Summarise with AI"
-                              >
-                                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              aria-label={`Download ${doc.title || "Untitled"} as markdown`}
-                              onClick={e => handleDownloadDoc(e, doc)}
-                              className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                              title="Download as markdown"
-                            >
-                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
-                          </div>
-                        </div>
-                      ),
+                      content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
+                      className: UPDATED_CELL_CLASS,
                     },
                   ]}
+                  actionsCell={
+                    <>
+                      {aiEnabled && (
+                        <button
+                          type="button"
+                          aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
+                          onClick={e => handleSummarize(e, doc)}
+                          className={ROW_REVEAL_BUTTON_CLASS}
+                          title="Summarise with AI"
+                        >
+                          <Sparkles className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Download ${doc.title || "Untitled"} as markdown`}
+                        onClick={e => handleDownloadDoc(e, doc)}
+                        className={ROW_REVEAL_BUTTON_CLASS}
+                        title="Download as markdown"
+                      >
+                        <Download className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
+                    </>
+                  }
                 />
             );
             return (
               <ContextMenu key={doc.id}>
-                <ContextMenuTrigger asChild><div>{docRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{docActionItems(contextKit, doc)}</ContextMenuContent>
+                <ContextMenuTrigger asChild><div className="group/rowmenu">{docRow}</div></ContextMenuTrigger>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{docActionItems(contextKit, doc)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -1045,35 +1434,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 onDragStart={e => onDragStart(e, "file", file.id)}
                 onDragEnd={onDragEnd}
                 checkboxCell={canEdit ? (
-                  <Checkbox
-                    aria-label={`Select ${file.name}`}
-                    checked={selectedFiles.has(file.id)}
-                    onClick={(e) => {
-                      const willBeChecked = !selectedFiles.has(file.id);
-                      const range = e.shiftKey
-                        ? shiftSelectionRange(lastCheckedFileIndex.current, fileIdx, sortedFiles.length)
-                        : null;
-                      if (range) {
-                        setSelectedFiles(prev => {
-                          const next = new Set(prev);
-                          for (let i = range.from; i <= range.to; i++) {
-                            if (willBeChecked) next.add(sortedFiles[i].id);
-                            else next.delete(sortedFiles[i].id);
-                          }
-                          return next;
-                        });
-                      } else {
-                        setSelectedFiles(prev => {
-                          const next = new Set(prev);
-                          if (willBeChecked) next.add(file.id);
-                          else next.delete(file.id);
-                          return next;
-                        });
-                      }
-                      lastCheckedFileIndex.current = fileIdx;
-                    }}
-                  />
+                  <RowCheckReveal>
+                    <Checkbox
+                      aria-label={`Select ${file.name}`}
+                      className={ROW_CHECKBOX_CLASS}
+                      checked={selectedFiles.has(file.id)}
+                      onClick={checkClick(sortedFiles, fileIdx, lastCheckedFileIndex, setSelectedFiles)}
+                    />
+                  </RowCheckReveal>
                 ) : undefined}
+                className={rowClass(selectedFiles.has(file.id))}
                 cells={[
                   {
                     content: (
@@ -1091,7 +1461,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             type="button"
                             aria-label={`Rename ${file.name}`}
                             onClick={e => { e.stopPropagation(); openRename("file", file.id, file.name); }}
-                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 inline-flex items-center justify-center min-h-6 min-w-6 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            className="ml-1.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:focus-visible:opacity-100 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
                             title="Rename"
                           >
                             <Pencil className="h-3 w-3" aria-hidden="true" />
@@ -1107,33 +1477,33 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   },
                   {
                     content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
+                    className: SIZE_CELL_CLASS,
                   },
                   {
-                    content: (
-                      <div className="flex items-center justify-between gap-2 w-full">
-                        <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>
-                        <div className="flex items-center gap-3.5">
-                          <button
-                            type="button"
-                            aria-label={`Download ${file.name}`}
-                            onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                            className="shrink-0 inline-flex items-center justify-center h-9 w-9 sm:h-auto sm:w-auto sm:p-1 sm:min-h-6 sm:min-w-6 -m-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                            title="Download"
-                          >
-                            <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
-                        </div>
-                      </div>
-                    ),
+                    content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>,
+                    className: UPDATED_CELL_CLASS,
                   },
                 ]}
+                actionsCell={
+                  <>
+                    <button
+                      type="button"
+                      aria-label={`Download ${file.name}`}
+                      onClick={e => { e.stopPropagation(); downloadFile(file); }}
+                      className={ROW_REVEAL_BUTTON_CLASS}
+                      title="Download"
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
+                  </>
+                }
               />
             );
             return (
               <ContextMenu key={file.id}>
-                <ContextMenuTrigger asChild><div>{fileRow}</div></ContextMenuTrigger>
-                <ContextMenuContent>{fileActionItems(contextKit, file)}</ContextMenuContent>
+                <ContextMenuTrigger asChild><div className="group/rowmenu">{fileRow}</div></ContextMenuTrigger>
+                <ContextMenuContent className={ROW_MENU_CLASS}>{fileActionItems(contextKit, file)}</ContextMenuContent>
               </ContextMenu>
             );
           })}
@@ -1142,9 +1512,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       </div>
 
       {/* Mobile: card list (below md) - same data, tappable rows + kebab actions */}
-      <div className="md:hidden rounded-md border bg-background overflow-hidden">
+      <div className="md:hidden rounded-lg border border-border bg-background overflow-hidden">
         {sortedFolders.map(folder => {
-          const countLabel = folderCountLabel(folderCounts.get(folder.id));
+          const counts = folderCounts.get(folder.id);
+          const folderNewest = folderNewestCache.get(folder.id);
           return (
             <div
               key={folder.id}
@@ -1155,14 +1526,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={() => enterFolder(folder)}
             >
+              {mobileCheckSlot(
+                <Checkbox aria-label={`Select folder ${folder.name}`} className={ROW_CHECKBOX_CLASS} checked={selectedFolders.has(folder.id)} onClick={() => toggleFolderSel(folder.id)} />
+              )}
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
-                {countLabel && (
-                  <div className="truncate text-xs text-muted-foreground">{countLabel}</div>
-                )}
+                <div className="truncate text-xs text-muted-foreground">
+                  {folderNewest && <span>{formatRelativeTime(folderNewest)} · </span>}
+                  <span title={folderCountLabel(counts) || "Empty folder"}>{folderItemsLabel(counts)}</span>
+                </div>
               </div>
-              {canEdit && renderKebab("Folder actions", folderActionItems(dropdownKit, folder))}
+              {canEdit && renderKebab("Folder actions", (
+                <>
+                  {!selectedFolders.has(folder.id) && selectItem(() => toggleFolderSel(folder.id))}
+                  {folderActionItems(dropdownKit, folder)}
+                </>
+              ))}
             </div>
           );
         })}
@@ -1179,11 +1559,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={navToDoc}
             >
-              {canEdit && !isHome && (
-                <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                  <Checkbox aria-label={`Select ${doc.title || "Untitled"}`} checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
-                </div>
-              )}
+              {mobileCheckSlot(isHome ? undefined : (
+                <Checkbox aria-label={`Select ${doc.title || "Untitled"}`} className={ROW_CHECKBOX_CLASS} checked={selectedDocs.has(doc.id)} onClick={() => toggleDocSel(doc.id)} />
+              ))}
               {isHome
                 ? <House className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
                 : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
@@ -1194,7 +1572,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
                 </div>
               </div>
-              {renderKebab("Document actions", docActionItems(dropdownKit, doc))}
+              {renderKebab("Document actions", (
+                <>
+                  {canEdit && !isHome && !selectedDocs.has(doc.id) && selectItem(() => toggleDocSel(doc.id))}
+                  {docActionItems(dropdownKit, doc)}
+                </>
+              ))}
             </div>
           );
         })}
@@ -1208,19 +1591,22 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             className="flex items-center gap-3 min-h-12 px-3 py-2.5 border-b last:border-b-0 cursor-pointer active:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={() => openFile(file)}
           >
-            {canEdit && (
-              <div className="flex items-center justify-center min-w-10 min-h-10 -ml-1 shrink-0" onClick={e => e.stopPropagation()}>
-                <Checkbox aria-label={`Select ${file.name}`} checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
-              </div>
+            {mobileCheckSlot(
+              <Checkbox aria-label={`Select ${file.name}`} className={ROW_CHECKBOX_CLASS} checked={selectedFiles.has(file.id)} onClick={() => toggleFileSel(file.id)} />
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm">{file.name}</div>
               <div className="truncate text-xs text-muted-foreground">
-                {formatBytes(file.size)} · {formatRelativeTime(file.updated_at ?? file.created_at)}
+                {formatRelativeTime(file.updated_at ?? file.created_at)} · {formatBytes(file.size)}
               </div>
             </div>
-            {renderKebab("File actions", fileActionItems(dropdownKit, file))}
+            {renderKebab("File actions", (
+              <>
+                {canEdit && !selectedFiles.has(file.id) && selectItem(() => toggleFileSel(file.id))}
+                {fileActionItems(dropdownKit, file)}
+              </>
+            ))}
           </div>
         ))}
       </div>
@@ -1286,7 +1672,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         </div>
       )}
 
-      {/* Hidden file input backing the explicit Upload button (touch can't drag) */}
+      {/* Hidden file input backing the create menu's "Upload files" item (touch can't drag) */}
       <input
         type="file"
         multiple
@@ -1295,16 +1681,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         onChange={e => { enqueueFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
       />
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
-        <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
+      {/* Desktop: the create split button is a page action in the app's top
+          bar (right side). Rendered in exactly one place at a time - see
+          isDesktop - so role/name lookups stay unique. */}
+      {createInHeader && createPortal(createSplitButton, headerActionSlot!)}
+
+      {/* Shared page container: same left edge and width as the dashboard
+          and other wide pages (see lib/pageContainer.ts). */}
+      <div className={PAGE_PADDING}><div className={WIDE_CONTAINER}>
+      {/* Toolbar - search fills the row (bulk Delete joins it on the right
+          while a selection is active). Below md the actions drop to their
+          own full-width row under the search, with the create split button
+          there instead of the top bar. */}
+      <div className="flex flex-wrap items-center gap-2 pb-3">
+        <div className="relative w-full md:w-auto md:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
-            placeholder="Search documents…"
-            aria-label="Search documents"
+            placeholder="Search files and documents…"
+            aria-label="Search files and documents"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
+            className="h-11 pl-9 pr-10 md:h-9 md:pr-8"
           />
           {searchQuery && (
             <button
@@ -1312,48 +1709,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               aria-label="Clear search"
               title="Clear search"
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-5 sm:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 md:h-5 md:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
-            <Button size="sm" variant="outline" aria-label="New folder" title="New folder" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setShowNewFolder(true)}>
-              <FolderPlus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">New folder</span>
-            </Button>
-          )}
-          {canEdit && (
-            <Button size="sm" variant="outline" aria-label="Upload files" title="Upload files" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Upload</span>
-            </Button>
-          )}
-          {canEdit && (
-            <Button size="sm" variant="outline" aria-label="New drawing" title="New drawing" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDrawing} disabled={creatingDrawing}>
-              <PenTool className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{creatingDrawing ? "Creating…" : "New drawing"}</span>
-            </Button>
-          )}
-          {canEdit && (
-            <Button size="sm" aria-label="New document" title="New document" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={handleNewDoc}>
-              <Plus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">New document</span>
-            </Button>
-          )}
-          {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
-            <Button size="sm" variant="destructive" aria-label={`Delete ${selectedDocs.size + selectedFiles.size} selected`} title="Delete selected" className="gap-1.5 h-9 min-w-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
-              <Trash2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}</span>
-            </Button>
-          )}
-        </div>
+        {canEdit && (selectedCount > 0 || !createInHeader) && (
+          <div className="flex w-full flex-col gap-2 md:ml-auto md:w-auto md:flex-row md:items-center">
+            {selectedCount > 0 && (
+              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 md:h-9 md:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {deleting ? "Deleting…" : `Delete (${selectedCount})`}
+              </Button>
+            )}
+            {!createInHeader && createSplitButton}
+          </div>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="px-6 pb-6">
+      {/* Table - same 16px mobile gutter as the toolbar above */}
+      <div>
         {loading ? (
           <div className="flex flex-col gap-1.5 pt-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -1361,71 +1737,95 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             ))}
           </div>
         ) : loadError && !inSearch ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">Couldn't load this folder.</p>
-            <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Folder className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">Couldn't load this folder.</p>
+            <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
             <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => reload()}>
               <RefreshCw className="h-3.5 w-3.5" />
               Retry
             </Button>
           </div>
-        ) : inSearch && sortedDocs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">No documents found</p>
+        ) : inSearch && sortedDocs.length === 0 && sortedFolders.length === 0 && sortedFiles.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Search className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">No results</p>
+            <p className="mt-1 text-sm text-muted-foreground">Nothing matches “{searchQuery.trim()}”. Try a different search.</p>
           </div>
         ) : !inSearch && folders.length === 0 && docs.length === 0 && files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">This folder is empty</p>
+          <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <Folder className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">This folder is empty</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {canEdit
+                ? "Create a document, add a folder, or drop files here to upload."
+                : "Nothing has been added here yet."}
+            </p>
           </div>
         ) : renderTable()}
       </div>
+      </div></div>
 
       {/* New folder dialog */}
       <Dialog open={showNewFolder} onOpenChange={setShowNewFolder}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>Folders group docs, files and drawings.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateFolder} className="flex flex-col gap-3">
-            <Label htmlFor="new-folder-name" className="sr-only">Folder name</Label>
-            <Input
-              id="new-folder-name"
-              placeholder="Folder name"
-              aria-label="Folder name"
-              value={newFolderName}
-              onChange={e => setNewFolderName(e.target.value)}
-              autoFocus
-              required
-            />
-            <Button type="submit" disabled={creatingFolder || !newFolderName.trim()}>
-              {creatingFolder ? "Creating…" : "Create"}
-            </Button>
+          <form onSubmit={handleCreateFolder} className="flex flex-col">
+            <div className="grid gap-2">
+              <Label htmlFor="new-folder-name">Folder name</Label>
+              <Input
+                id="new-folder-name"
+                placeholder="e.g. Meeting notes"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowNewFolder(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={creatingFolder || !newFolderName.trim()}
+                className="disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
+              >
+                {creatingFolder ? "Creating…" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Rename</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleRename} className="flex flex-col gap-3">
-            <Label htmlFor="rename-name" className="sr-only">New name</Label>
-            <Input
-              id="rename-name"
-              aria-label="New name"
-              value={renameName}
-              onChange={e => setRenameName(e.target.value)}
-              autoFocus
-              required
-            />
-            <Button type="submit" disabled={renaming || !renameName.trim()}>
-              {renaming ? "Renaming…" : "Rename"}
-            </Button>
+          <form onSubmit={handleRename} className="flex flex-col">
+            <div className="grid gap-2">
+              <Label htmlFor="rename-name">Name</Label>
+              <Input
+                id="rename-name"
+                value={renameName}
+                onChange={e => setRenameName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renaming}>
+                {renaming ? "Renaming…" : "Rename"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -1480,10 +1880,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {selectedDocs.size + selectedFiles.size} {selectedDocs.size + selectedFiles.size === 1 ? "item" : "items"}?
+              Move {selectedCount} {selectedCount === 1 ? "item" : "items"} to the recycle bin?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {selectedDocs.size + selectedFiles.size === 1 ? "It" : "They"} will be moved to the recycle bin, where {selectedDocs.size + selectedFiles.size === 1 ? "it" : "they"} can be restored for 30 days.
+              {selectedCount === 1 ? "It" : "They"} will be moved to the recycle bin, where {selectedCount === 1 ? "it" : "they"} can be restored for 30 days.
+              {selectedFolders.size > 0 && " Folders go with everything in them."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1492,7 +1893,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteConfirmed}
             >
-              Delete
+              Move to recycle bin
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1528,7 +1929,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <AlertDialog open={!!contextDeleteTarget} onOpenChange={open => { if (!open) setContextDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{contextDeleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>Move "{contextDeleteTarget?.name}" to the recycle bin?</AlertDialogTitle>
             <AlertDialogDescription>
               {contextDeleteTarget?.type === "folder"
                 ? `The folder${contextDeleteCountLabel ? ` and everything in it (${contextDeleteCountLabel})` : ""} will be moved to the recycle bin, where it can be restored for 30 days.`
@@ -1542,7 +1943,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               onClick={handleContextDelete}
               disabled={contextDeleting}
             >
-              {contextDeleting ? "Deleting…" : "Delete"}
+              {contextDeleting ? "Moving…" : "Move to recycle bin"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

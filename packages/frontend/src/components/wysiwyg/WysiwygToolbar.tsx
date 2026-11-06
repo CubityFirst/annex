@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Bell,
+  MessageSquareQuote,
   Bold,
   ChevronDown,
   Code,
@@ -104,20 +104,20 @@ interface WysiwygToolbarProps {
 }
 
 const HEADING_OPTIONS: { label: string; display: string }[] = [
-  { label: "Paragraph", display: "¶" },
-  { label: "Heading 1",  display: "H1" },
-  { label: "Heading 2",  display: "H2" },
-  { label: "Heading 3",  display: "H3" },
-  { label: "Heading 4",  display: "H4" },
-  { label: "Heading 5",  display: "H5" },
-  { label: "Heading 6",  display: "H6" },
+  { label: "Paragraph", display: "Text" },
+  { label: "Heading 1",  display: "Heading 1" },
+  { label: "Heading 2",  display: "Heading 2" },
+  { label: "Heading 3",  display: "Heading 3" },
+  { label: "Heading 4",  display: "Heading 4" },
+  { label: "Heading 5",  display: "Heading 5" },
+  { label: "Heading 6",  display: "Heading 6" },
 ];
 
 const TABLE_COLS = 6;
 const TABLE_ROWS = 5;
 
 function ToolbarSeparator() {
-  return <Separator orientation="vertical" className="h-4 mx-0.5" />;
+  return <Separator orientation="vertical" className="h-5 mx-0.5" />;
 }
 
 // Buttons run their action on `click`, NOT on mousedown, so keyboard
@@ -147,7 +147,7 @@ function ToolToggle({
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
-          className="shrink-0"
+          className="shrink-0 sm:min-w-7 sm:px-0 text-muted-foreground hover:text-foreground data-[state=on]:text-foreground [&_svg]:size-4"
         >
           {children}
         </Toggle>
@@ -177,7 +177,7 @@ function ToolButton({
         <Button
           type="button"
           variant="ghost"
-          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-8 sm:px-1.5 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
+          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-7 sm:px-0 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
@@ -269,7 +269,7 @@ export function WysiwygToolbar({
   onRedo,
   onFind,
 }: WysiwygToolbarProps) {
-  const currentDisplay = HEADING_OPTIONS[active.headingLevel]?.display ?? "¶";
+  const currentDisplay = HEADING_OPTIONS[active.headingLevel]?.display ?? "Text";
   const [tableOpen, setTableOpen] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -323,7 +323,7 @@ export function WysiwygToolbar({
         role="toolbar"
         aria-label="Formatting"
         aria-orientation="horizontal"
-        className="flex items-center gap-1 px-2 h-11 sm:h-9 sm:gap-0.5 border-b border-border shrink-0 overflow-x-auto"
+        className="mt-3 mb-1 flex h-11 shrink-0 items-center gap-1 overflow-x-auto rounded-lg border border-border bg-card px-1.5 shadow-xs sm:gap-0.5"
         onFocusCapture={handleToolbarFocus}
         onKeyDown={handleToolbarKeyDown}
       >
@@ -347,7 +347,7 @@ export function WysiwygToolbar({
               size="sm"
               aria-label="Heading level"
               className={cn(
-                "h-9 sm:h-7 gap-1 px-2 text-xs font-medium w-[4.5rem] justify-between shrink-0",
+                "h-9 sm:h-8 gap-1.5 px-2 text-xs font-medium min-w-[4.75rem] justify-between shrink-0",
                 active.headingLevel > 0 && "bg-accent text-accent-foreground",
               )}
             >
@@ -490,9 +490,9 @@ export function WysiwygToolbar({
                   type="button"
                   variant="ghost"
                   aria-label="Insert callout"
-                  className="h-8 px-1.5 min-w-8 shrink-0 hover:bg-muted hover:text-muted-foreground [&_svg]:size-3.5"
+                  className="h-8 px-0 min-w-7 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
                 >
-                  <Bell />
+                  <MessageSquareQuote />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -516,9 +516,8 @@ export function WysiwygToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <ToolbarSeparator />
-
-        {/* Find */}
+        {/* Find sits at the far end on purpose (a utility, not formatting). */}
+        <span className="ml-auto" aria-hidden="true" />
         <ToolButton title={`Find & replace (${modShortcut("F")})`} onAction={onFind}>
           <Search />
         </ToolButton>

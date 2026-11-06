@@ -17,6 +17,11 @@ export interface ColumnDef {
   minWidth?: number;   // px - if set, column becomes a standalone fixed-width segment
   maxWidth?: number;   // px - maximum width for constrained columns (only used with minWidth)
   sortable?: boolean;  // when true (with onSort), the header is a clickable sort toggle
+  /**
+   * "right" right-aligns the header label and every cell in the column, with
+   * tabular figures so numbers (e.g. byte sizes) line up digit for digit.
+   */
+  align?: "left" | "right";
 }
 
 export interface CellDef {
@@ -28,6 +33,11 @@ export interface CellDef {
 interface ResizableTableProps {
   columns: ColumnDef[];
   checkboxColumn?: boolean;
+  /**
+   * Content for the checkbox column's header cell (e.g. a tri-state
+   * select-all). Centred on the same 40px axis as each row's checkbox cell.
+   */
+  headerCheckbox?: React.ReactNode;
   storageKey?: string;
   /** Active sort (column index + direction), or null for none. */
   sort?: SortSpec | null;
@@ -40,6 +50,13 @@ interface ResizableTableProps {
    * constrained (minWidth) column - e.g. a join of that column's cell text.
    */
   measureKey?: string | number;
+  /**
+   * Width (px) of a fixed trailing actions column (row buttons / kebab). When
+   * set, the header reserves it and each row renders its `actionsCell` there,
+   * so actions sit right after the last data column instead of being pushed to
+   * the far edge of a stretched cell.
+   */
+  actionsColumn?: number;
   children: React.ReactNode;
 }
 
@@ -60,7 +77,11 @@ function HeaderCell({
   sort?: SortSpec | null;
   onSort?: (colIdx: number) => void;
 }) {
-  const base = "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground";
+  const right = col.align === "right";
+  const base = cn(
+    "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground",
+    right && "justify-end text-right",
+  );
 
   if (!col.sortable || !onSort) {
     return <div role="columnheader" aria-colindex={colIndex} className={base}>{col.label}</div>;
@@ -68,6 +89,13 @@ function HeaderCell({
 
   const active = sort?.colIdx === idx;
   const dir = active ? sort!.dir : undefined;
+  const arrow = active ? (
+    dir === "asc"
+      ? <ArrowUp className="size-3 shrink-0" />
+      : <ArrowDown className="size-3 shrink-0" />
+  ) : (
+    <ArrowUpDown className="size-3 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
+  );
 
   return (
     <button
@@ -82,16 +110,13 @@ function HeaderCell({
           ? `${col.label}, sorted ${dir === "asc" ? "ascending" : "descending"}`
           : `Sort by ${col.label}`
       }
-      className={cn(base, "group gap-1 select-none text-left cursor-pointer hover:text-foreground transition-colors")}
+      className={cn(base, "group gap-1 select-none cursor-pointer hover:text-foreground transition-colors", !right && "text-left")}
     >
+      {/* Right-aligned columns put the sort arrow before the label so the
+          label's right edge stays on the cells' right edge. */}
+      {right && arrow}
       <span className="truncate">{col.label}</span>
-      {active ? (
-        dir === "asc"
-          ? <ArrowUp className="size-3 shrink-0" />
-          : <ArrowDown className="size-3 shrink-0" />
-      ) : (
-        <ArrowUpDown className="size-3 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
-      )}
+      {!right && arrow}
     </button>
   );
 }
@@ -100,6 +125,8 @@ interface ResizableTableRowProps {
   columns: ColumnDef[];
   cells: CellDef[];
   checkboxCell?: React.ReactNode;
+  /** Content for the table's trailing actions column (see `actionsColumn`). */
+  actionsCell?: React.ReactNode;
   className?: string;
   draggable?: boolean;
   onDragStart?: React.DragEventHandler;
@@ -181,7 +208,7 @@ function buildSegments(columns: ColumnDef[]): Segment[] {
 
 // ── ResizableTable ────────────────────────────────────────────────────────────
 
-export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, measureKey, children }: ResizableTableProps) {
+export function ResizableTable({ columns, checkboxColumn = true, headerCheckbox, storageKey, sort, onSort, measureKey, actionsColumn, children }: ResizableTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = useMemo(() => buildSegments(columns), [columns]);
   // Segments the user has manually dragged this session. The auto-fit effect
@@ -233,8 +260,11 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
       }
     }
 
+    // Rows read the actions column width from here so header and rows match.
+    if (actionsColumn != null) style["--actions-col-width"] = `${actionsColumn}px`;
+
     return style as React.CSSProperties;
-  }, [columns, segments, saved]);
+  }, [columns, segments, saved, actionsColumn]);
 
   const segDefaultLayout = useCallback((seg: ResizableSegment): Layout => {
     const layout: Layout = {};
@@ -321,10 +351,16 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
   const colOffset = checkboxColumn ? 1 : 0;
 
   return (
-    <div ref={containerRef} role="grid" className="rounded-md border overflow-x-auto bg-background" style={initialStyle}>
+    <div ref={containerRef} role="grid" className="rounded-lg border border-border overflow-x-auto bg-background" style={initialStyle}>
     <div className="min-w-0 md:min-w-[700px]">
-      <div role="row" className="flex items-center bg-muted/50 border-b h-10">
-        {checkboxColumn && <div role="columnheader" aria-colindex={1} className="w-10 shrink-0" />}
+      <div role="row" className="group/thead flex items-center bg-muted/40 border-b h-10">
+        {checkboxColumn && (
+          // Same box as the row checkbox cell (w-10, flex-centred, full row
+          // height) so the header control sits on the row-checkbox axis.
+          <div role="columnheader" aria-colindex={1} className="flex w-10 shrink-0 items-center justify-center self-stretch">
+            {headerCheckbox}
+          </div>
+        )}
 
         {segments.map((seg, i) => {
           const wrapperStyle: React.CSSProperties = seg.isLast
@@ -347,7 +383,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                     onLayoutChange={makeLayoutHandler(seg)}
                   >
                     {seg.cols.flatMap(({ col, idx }, j) => [
-                      j > 0 ? <ResizableHandle key={`h${idx}`} withHandle className="bg-transparent" /> : null,
+                      j > 0 ? <ResizableHandle key={`h${idx}`} withHandle className="bg-transparent [&>div]:opacity-0 [&>div]:transition-opacity group-hover/thead:[&>div]:opacity-100 focus-visible:[&>div]:opacity-100" /> : null,
                       <ResizablePanel
                         key={`p${idx}`}
                         id={`col-${idx}`}
@@ -365,7 +401,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                   className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2"
                   onMouseDown={e => startSegDrag(seg, e)}
                 >
-                  <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border">
+                  <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border opacity-0 transition-opacity group-hover/thead:opacity-100">
                     <GripVerticalIcon className="size-2.5" />
                   </div>
                 </div>
@@ -373,6 +409,12 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
             </React.Fragment>
           );
         })}
+
+        {actionsColumn != null && (
+          <div role="columnheader" aria-colindex={columns.length + 1 + colOffset} className="h-full shrink-0" style={{ width: actionsColumn }}>
+            <span className="sr-only">Actions</span>
+          </div>
+        )}
       </div>
 
       {children}
@@ -387,6 +429,7 @@ export function ResizableTableRow({
   columns,
   cells,
   checkboxCell,
+  actionsCell,
   className,
   draggable,
   onDragStart,
@@ -418,7 +461,9 @@ export function ResizableTableRow({
       aria-label={ariaLabel}
       onKeyDown={onActivate || onKeyDown ? handleKeyDown : undefined}
       className={cn(
-        "flex items-center border-b last:border-b-0 h-10 select-none transition-colors hover:bg-muted/40",
+        // `group/row` lets cell content react to row hover/focus (e.g. row
+        // actions that fade in with `group-hover/row:`).
+        "group/row flex items-center border-b last:border-b-0 h-10 select-none transition-colors hover:bg-muted/40",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         className,
       )}
@@ -430,7 +475,10 @@ export function ResizableTableRow({
       onDrop={onDrop}
     >
       {checkboxCell !== undefined && (
-        <div role="gridcell" aria-colindex={1} className="w-10 shrink-0 px-3" onClick={e => e.stopPropagation()}>
+        // Flex-centred on the row's full height so the checkbox sits on the
+        // same optical centre line as the cell text (an inline box would ride
+        // the baseline a pixel or two high).
+        <div role="gridcell" aria-colindex={1} className="flex w-10 shrink-0 items-center justify-center self-stretch" onClick={e => e.stopPropagation()}>
           {checkboxCell}
         </div>
       )}
@@ -442,7 +490,7 @@ export function ResizableTableRow({
 
         return (
           <div key={`seg-${seg.segIdx}`} style={containerStyle}>
-            {seg.cols.map(({ idx }) => {
+            {seg.cols.map(({ col, idx }) => {
               const cell = cells[idx];
               return (
                 <div
@@ -451,7 +499,11 @@ export function ResizableTableRow({
                   role="gridcell"
                   aria-colindex={idx + 1 + colOffset}
                   style={{ width: `var(--col-${idx})` }}
-                  className={cn("flex items-center overflow-hidden shrink-0", cell?.className ?? "px-3")}
+                  className={cn(
+                    "flex items-center overflow-hidden shrink-0",
+                    col.align === "right" && "justify-end text-right tabular-nums",
+                    cell?.className ?? "px-3",
+                  )}
                   onClick={cell?.onClick}
                 >
                   {cell?.content}
@@ -461,6 +513,17 @@ export function ResizableTableRow({
           </div>
         );
       })}
+
+      {actionsCell !== undefined && (
+        <div
+          role="gridcell"
+          aria-colindex={columns.length + 1 + colOffset}
+          className="flex h-full shrink-0 items-center justify-end gap-1 pr-2"
+          style={{ width: "var(--actions-col-width)" }}
+        >
+          {actionsCell}
+        </div>
+      )}
     </div>
   );
 }

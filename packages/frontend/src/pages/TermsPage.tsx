@@ -1,59 +1,46 @@
-import { Link } from "react-router-dom";
-import { getToken } from "@/lib/auth";
-import { AnnexLogo } from "@/components/AnnexLogo";
-import { SiteFooter } from "@/components/SiteFooter";
+import { useRef } from "react";
+import { LegalToc, SiteFooter, SiteNav } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 export function TermsPage() {
-  const isLoggedIn = !!getToken();
-
+  const bodyRef = useRef<HTMLDivElement>(null);
   return (
     <div className="landing">
-      <nav className="l-nav">
-        <div className="l-nav-inner">
-          <Link to="/" aria-label="Annex home"><AnnexLogo height={21} /></Link>
-          <div className="l-nav-links">
-            {!isLoggedIn && <Link className="l-nav-link l-nav-login" to="/login">login</Link>}
-            {isLoggedIn
-              ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
-              : <Link className="l-nav-cta" to="/register">get started</Link>}
-          </div>
-        </div>
-      </nav>
+      <SiteNav />
 
       <section className="l-legal">
-        <div className="site-wrap">
+        <div className="site-wrap l-legal-layout">
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
-            <h1 className="l-legal-title">Terms of Service</h1>
-            <p className="l-legal-meta">Effective date: September 29, 2026</p>
+            <h1 className="l-legal-title">Terms of service</h1>
+            <p className="l-legal-meta">Effective date: 29 September 2026</p>
 
-            <div className="l-legal-body">
+            <div className="l-legal-body" ref={bodyRef}>
               <h2>1. Acceptance</h2>
               <p>
-                By creating an account or using Annex, you agree to these Terms of Service. If you
+                By creating an account or using Annex, you agree to these terms of service. If you
                 do not agree, do not use the service. We may update these terms; continued use
                 after notice of changes constitutes acceptance.
               </p>
 
-              <h2>2. Your Account</h2>
+              <h2>2. Your account</h2>
               <p>
                 You are responsible for maintaining the security of your account credentials. Do
                 not share your password. You are responsible for all activity that occurs under
-                your account. Notify us immediately if you suspect unauthorized access.
+                your account. Notify us immediately if you suspect unauthorised access.
               </p>
               <p>
                 You must provide accurate information when registering. Accounts found to use false
                 information may be suspended.
               </p>
 
-              <h2>3. Acceptable Use</h2>
+              <h2>3. Acceptable use</h2>
               <p>You agree not to use Annex to:</p>
               <ul>
-                <li>Upload or share content that is unlawful, harmful, abusive, defamatory, or infringing</li>
-                <li>Distribute spam, malware, or phishing content</li>
-                <li>Attempt to gain unauthorized access to our systems or other users' workspaces</li>
-                <li>Scrape, crawl, or systematically extract data without prior written permission</li>
+                <li>Upload or share content that is unlawful, harmful, abusive, defamatory or infringing</li>
+                <li>Distribute spam, malware or phishing content</li>
+                <li>Attempt to gain unauthorised access to our systems or other users' workspaces</li>
+                <li>Scrape, crawl or systematically extract data without prior written permission</li>
                 <li>Interfere with or disrupt the integrity or performance of the service</li>
                 <li>Use the service in any way that violates applicable laws or regulations</li>
               </ul>
@@ -62,25 +49,25 @@ export function TermsPage() {
                 without prior notice.
               </p>
 
-              <h2>4. Fair Use</h2>
+              <h2>4. Fair use</h2>
               <p>
                 Annex is intended for normal documentation and collaboration use. Storage, file
-                uploads, bandwidth, AI features, API requests, published sites, and other resources
+                uploads, bandwidth, AI features, API requests, published sites and other resources
                 are subject to reasonable limits, which we may set or change at our discretion to
                 keep the service reliable and fair for everyone.
               </p>
               <p>
                 If your usage significantly exceeds what is typical for your plan, or places an
-                unreasonable load on our infrastructure, we may throttle, limit, or suspend the
+                unreasonable load on our infrastructure, we may throttle, limit or suspend the
                 affected features or your account. Where practical, we will contact you first and
                 give you an opportunity to reduce your usage. This applies to free and paid
                 accounts alike.
               </p>
 
-              <h2>5. Your Content</h2>
+              <h2>5. Your content</h2>
               <p>
                 You retain ownership of all content you create in Annex. By using the service, you
-                grant us a limited, non-exclusive license to store, process, and display your
+                grant us a limited, non-exclusive licence to store, process and display your
                 content solely to provide the service to you and your invited collaborators.
               </p>
               <p>
@@ -88,7 +75,7 @@ export function TermsPage() {
                 moderate private workspaces. Public sites you publish are your responsibility.
               </p>
 
-              <h2>6. Service Availability</h2>
+              <h2>6. Service availability</h2>
               <p>
                 We strive for high availability but do not guarantee uninterrupted access. The
                 service is provided "as is" without warranty of any kind. We may modify, suspend,
@@ -96,7 +83,7 @@ export function TermsPage() {
                 possible.
               </p>
 
-              <h2>7. Payments, Subscriptions, and Refunds</h2>
+              <h2>7. Payments, subscriptions and refunds</h2>
               <p>
                 Paid plans (such as Annex Ink) are billed in advance on a recurring basis at the
                 price shown when you subscribe. By starting a subscription you authorise us, through
@@ -136,15 +123,15 @@ export function TermsPage() {
                 to use the service ceases immediately.
               </p>
 
-              <h2>9. Limitation of Liability</h2>
+              <h2>9. Limitation of liability</h2>
               <p>
                 To the fullest extent permitted by law, Annex and its operators are not liable for
-                any indirect, incidental, special, or consequential damages arising from your use
+                any indirect, incidental, special or consequential damages arising from your use
                 of the service. Our total liability for any claim shall not exceed the amount you
                 paid us in the three months preceding the claim.
               </p>
 
-              <h2>10. Governing Law</h2>
+              <h2>10. Governing law</h2>
               <p>
                 These terms are governed by the laws of the jurisdiction in which the operator is
                 established, without regard to conflict-of-law principles.
@@ -157,6 +144,7 @@ export function TermsPage() {
               </p>
             </div>
           </div>
+          <LegalToc bodyRef={bodyRef} />
         </div>
       </section>
 

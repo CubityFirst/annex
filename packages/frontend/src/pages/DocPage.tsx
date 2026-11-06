@@ -35,11 +35,20 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
+import { folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
+import { restoreTrashEntry } from "@/lib/trash";
 import { pushRecentItem } from "@/lib/recentDocs";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+import { Kbd } from "@/components/ui/kbd";
+import { createPortal } from "react-dom";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useActiveHeading } from "@/hooks/useActiveHeading";
+import { DocOutline, outlineHeadings } from "@/components/DocOutline";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
@@ -99,6 +108,12 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
+// Outline entries for a doc: its headings minus a leading H1 that just repeats
+// the page title (see outlineHeadings).
+function docOutlineHeadings(doc: { title: string; content: string }): Heading[] {
+  return outlineHeadings(extractHeadings(doc.content), parseFrontmatter(doc.content).title ?? doc.title);
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
@@ -128,11 +143,81 @@ function timeAgo(iso: string): string {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">{title}</p>
       {children}
     </div>
   );
 }
+
+// One table style for every reference group: the syntax (mono) on the left,
+// a short label or the rendered result on the right, and an optional
+// shortcut chip. Rows share the list's columns via subgrid, so the syntax
+// column is as wide as its longest entry (at least 9.5rem, which keeps short
+// groups like Headings and Emphasis aligned with each other) while always
+// leaving the right column room; long syntax wraps instead of clipping.
+type RefRow = { code: string; result: React.ReactNode; shortcut?: string };
+
+// Long syntax (links, sized images…) won't fit beside a label in the docked
+// panel without breaking mid-token, so those rows stack: syntax on its own
+// line, label underneath.
+const REF_STACK_AT = 22;
+
+function RefTable({ rows, align = "center" }: { rows: RefRow[]; align?: "center" | "baseline" }) {
+  // One fixed column template for every table in the sheet (syntax | result |
+  // shortcut), so the result column starts at the same x in every section.
+  return (
+    <ul className="grid grid-cols-[minmax(0,1fr)_8rem_3.5rem] gap-x-3 divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+      {rows.map(({ code, result, shortcut }) => {
+        const label = typeof result === "string"
+          ? <span className="text-[13px] leading-5 text-muted-foreground">{result}</span>
+          : <span className="text-sm text-foreground">{result}</span>;
+        if (code.length > REF_STACK_AT && !shortcut) {
+          return (
+            <li key={code} className="col-span-full flex flex-col gap-0.5 px-3 py-2">
+              <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
+              {label}
+            </li>
+          );
+        }
+        return (
+          <li key={code} className={cn("col-span-full grid grid-cols-subgrid px-3 py-2", align === "baseline" ? "items-baseline" : "items-center")}>
+            <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
+            {label}
+            {shortcut ? <Kbd className="shrink-0 justify-self-end">{shortcut}</Kbd> : <span aria-hidden="true" />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Plain [syntax, label] pairs - the common case.
+function RefList({ items }: { items: [string, string][] }) {
+  return <RefTable rows={items.map(([code, result]) => ({ code, result }))} />;
+}
+
+// Headings: show each level at its real relative size next to its syntax.
+function HeadingSamples() {
+  const rows: RefRow[] = ([["#", "Heading 1", "text-xl"], ["##", "Heading 2", "text-lg"], ["###", "Heading 3", "text-base"]] as const)
+    .map(([code, label, size]) => ({ code, result: <span className={cn("font-semibold tracking-tight", size)}>{label}</span> }));
+  return <RefTable rows={rows} align="baseline" />;
+}
+
+// Emphasis: syntax → rendered result → shortcut, in aligned columns.
+function EmphasisSamples() {
+  return (
+    <RefTable rows={[
+      { code: "**bold**", result: <strong className="font-semibold">bold</strong>, shortcut: "Ctrl+B" },
+      { code: "*italic*", result: <em>italic</em>, shortcut: "Ctrl+I" },
+      { code: "__underline__", result: <u className="underline-offset-2">underline</u>, shortcut: "Ctrl+U" },
+      { code: "~~strikethrough~~", result: <s>strikethrough</s> },
+    ]} />
+  );
+}
+
+// Square icon tool in the reading-mode action row: 40px inline on phones,
+// 32px in the desktop top bar (max-sm: overrides the Button's touch bump).
+const TOOL_ICON_BUTTON = "h-11 w-11 max-sm:h-11 max-sm:w-11 md:h-8 md:w-8 text-muted-foreground hover:text-foreground";
 
 function MajorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -145,7 +230,7 @@ function MajorSection({ title, children }: { title: string; children: React.Reac
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed overflow-x-auto whitespace-pre">{children}</pre>
+    <pre className="rounded-md border border-border bg-card px-3 py-2 font-mono text-xs font-normal leading-relaxed text-foreground/90 overflow-x-auto whitespace-pre">{children}</pre>
   );
 }
 
@@ -286,7 +371,7 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, addDoc, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, addDoc, setBreadcrumbs, headerActionSlot, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
   // Mounted at /docs/new (no :docId param): the document doesn't exist server-side
   // yet - the editor opens on a synthesized empty doc and the first save POSTs it.
   const isNewDoc = !docId;
@@ -334,6 +419,22 @@ export function DocPage() {
   const [myPermission, setMyPermission] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [outlineSheetOpen, setOutlineSheetOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [trashing, setTrashing] = useState(false);
+  const [docSettingsOpen, setDocSettingsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -355,6 +456,14 @@ export function DocPage() {
   const [changelogText, setChangelogText] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
+  // On desktop the Markdown reference docks beside the page instead of over
+  // it: flag the root so the app's main column gives up the panel's width.
+  useEffect(() => {
+    if (!(markdownHelpOpen && isDesktop)) return;
+    const root = document.documentElement;
+    root.dataset.sidePanel = "open";
+    return () => { delete root.dataset.sidePanel; };
+  }, [markdownHelpOpen, isDesktop]);
   const [rawMode, setRawMode] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [docShares, setDocShares] = useState<DocShareMember[]>([]);
@@ -386,6 +495,10 @@ export function DocPage() {
   // CodeMirror virtualises off-screen lines. Fed the *displayed* content so
   // it stays correct while previewing a historical revision.
   const scrollToHash = useScrollToHeading(viewingRevision ? viewingRevision.content : doc?.content);
+  const activeHeadingId = useActiveHeading(
+    editing ? undefined : doc?.content,
+    doc ? docOutlineHeadings(doc).map(h => h.id) : [],
+  );
 
   // Scroll to the URL-hash anchor once the doc is rendered. Keyed by
   // doc + hash so re-renders (saves, revision loads) don't re-yank the
@@ -520,8 +633,12 @@ export function DocPage() {
       name: crumb.name,
       onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : `/projects/${projectId}`),
     }));
-    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId ?? "new", name: isNewDoc ? "New document" : doc.title }]);
-  }, [doc, docId, isNewDoc, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
+    // While editing, the doc's own crumb is replaced by the editable title
+    // field rendered into the top bar (see the editing branch below).
+    setBreadcrumbs(editing
+      ? [projectCrumb, ...folderCrumbs].map(c => ({ ...c, forceLink: true }))
+      : [projectCrumb, ...folderCrumbs, { id: docId ?? "new", name: isNewDoc ? "New document" : doc.title }]);
+  }, [doc, docId, isNewDoc, editing, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
 
   function generateSummary() {
     if (!doc || aiSummaryLoading) return;
@@ -581,12 +698,12 @@ export function DocPage() {
       if (result.ok) {
         setCollabFatal(false);
         setCollabFatalReason(null);
-        toast({ title: "Realtime sync restored." });
+        toast({ title: "Real-time sync restored." });
       } else {
-        toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+        toast({ title: "Couldn't restore real-time sync.", variant: "destructive" });
       }
     } catch {
-      toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+      toast({ title: "Couldn't restore real-time sync.", variant: "destructive" });
     } finally {
       setResettingCollab(false);
     }
@@ -641,7 +758,7 @@ export function DocPage() {
         // The server echoes `content` only when the body actually changed; a
         // no-op save records no revision, so a provided changelog went nowhere.
         if (changelog && !("content" in data)) {
-          toast({ title: "No content changes - your changelog note wasn't saved." });
+          toast({ title: "No content changes – your changelog note wasn't saved." });
         }
       } else {
         setSaveError("Failed to save. Please try again.");
@@ -761,6 +878,101 @@ export function DocPage() {
       }
     } catch {
       // fail silently
+    }
+  }
+
+  // Move picker rows: every folder with its full ancestry label, sorted by
+  // path - same rows as the File Manager's and the file viewer's pickers.
+  const moveDestinations = useMemo(() => {
+    const all = moveFolders ?? [];
+    const byId = new Map(all.map(f => [f.id, f]));
+    return all
+      .map(f => ({ folder: f, label: folderPathLabel(all, f, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [moveFolders]);
+
+  function copyDocLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${docId}`);
+    toast({ title: "Link copied" });
+  }
+
+  async function openMove() {
+    setMoveOpen(true);
+    setMoveFolders(null);
+    const result = await apiFetchJson<MoveFolderLike[]>(`/api/folders?projectId=${projectId}&all=1`);
+    if (result.ok && result.data) setMoveFolders(result.data);
+    else {
+      setMoveFolders([]);
+      if (!result.redirected) toast({ title: "Couldn't load folders.", description: result.error, variant: "destructive" });
+    }
+  }
+
+  async function handleMoveTo(targetFolderId: string | null) {
+    if (!docId || !doc || moving) return;
+    setMoving(true);
+    try {
+      const result = await apiFetchJson(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: targetFolderId }),
+      });
+      if (result.ok) {
+        setDoc(prev => (prev && prev.id === docId ? { ...prev, folder_id: targetFolderId } : prev));
+        // Rebuild the breadcrumb trail for the new location - router state
+        // still describes the old folder. The navigation also refreshes the
+        // layout's sidebar tree.
+        const byId = new Map((moveFolders ?? []).map(f => [f.id, f]));
+        const chain: { id: string; name: string }[] = [];
+        const seen = new Set<string>();
+        for (let id = targetFolderId; id && !seen.has(id); id = byId.get(id)?.parent_id ?? null) {
+          seen.add(id);
+          const folder = byId.get(id);
+          if (!folder) break;
+          chain.unshift({ id: folder.id, name: folder.name });
+        }
+        navigate(location.pathname + location.hash, {
+          replace: true,
+          state: { ...(location.state ?? {}), folderPath: [{ id: null, name: projectName }, ...chain] },
+        });
+        setMoveOpen(false);
+        const dest = chain.at(-1);
+        toast({ title: dest ? `Moved to "${dest.name}".` : "Moved to the top level." });
+      } else if (!result.redirected) {
+        toast({ title: "Failed to move document.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  async function handleMoveToTrash() {
+    if (!docId || !doc || !projectId || trashing) return;
+    setTrashing(true);
+    const { id, title, folder_id } = doc;
+    try {
+      const result = await apiFetchJson<{ trashEntryId?: string }>(`/api/docs/${id}`, { method: "DELETE" });
+      if (result.ok) {
+        const entryId = result.data?.trashEntryId;
+        setTrashConfirmOpen(false);
+        navigate(folder_id ? `/projects/${projectId}/folders/${folder_id}` : `/projects/${projectId}`);
+        toast({
+          title: `Moved "${title}" to the recycle bin.`,
+          action: entryId ? {
+            label: "Undo",
+            onClick: () => {
+              void restoreTrashEntry(projectId, entryId).then(r => {
+                if (r.ok) navigate(`/projects/${projectId}/docs/${id}`);
+                else if (!r.redirected) toast({ title: `Couldn't restore "${title}".`, description: r.error, variant: "destructive" });
+              });
+            },
+          } : undefined,
+        });
+      } else if (!result.redirected) {
+        toast({ title: "Couldn't move the document to the recycle bin.", description: result.error, variant: "destructive" });
+        setTrashConfirmOpen(false);
+      }
+    } finally {
+      setTrashing(false);
     }
   }
 
@@ -931,7 +1143,7 @@ export function DocPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-[44rem] px-6 py-10">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </div>
     );
@@ -939,28 +1151,63 @@ export function DocPage() {
 
   if (!doc) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-[44rem] px-6 py-10">
         <p className="text-sm text-destructive">Document not found.</p>
       </div>
     );
   }
 
   if (editing) {
+    // Reserve the reading view's outline rail (xl, w-60) so the writing column
+    // keeps the same left edge when switching between reading and editing.
+    // Always reserve the outline rail (xl): the reading view keeps it even for
+    // heading-less docs, so every doc - new, editing, reading - shares one
+    // column position.
+    // ...except while the Markdown reference is docked beside the page: the
+    // main column has already given up the panel's width, so the rail's
+    // space goes back to the writing column.
+    const reserveOutline = !(markdownHelpOpen && isDesktop);
+    // Existing docs: Save is only offered once something changed. New docs
+    // light Save up once there's a title or any body text - an empty,
+    // untitled draft has nothing worth creating yet.
+    const isDirty = isNewDoc
+      ? titleDraft.trim() !== "" || draft.trim() !== ""
+      : draft !== doc.content || titleDraft.trim() !== doc.title;
+    // At rest (existing doc, nothing changed) leaving edit mode loses nothing,
+    // so it's a quiet "Done"; once there are edits it becomes "Cancel". A new
+    // doc has nothing to be done with, so it always says "Cancel" - but stays
+    // a quiet ghost until there's a title or body worth losing.
+    const exitLabel = !isNewDoc && !isDirty ? "Done" : "Cancel";
     return (
       <div className="flex h-full flex-col">
-        {/* Title + toolbar - inner row matches the editor's max-w-3xl column so
-            the title aligns with the document content below. */}
-        <div className="border-b border-border px-3 py-2 sm:px-6 sm:py-3">
-          <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 sm:gap-4">
-          <Input
-            value={titleDraft}
-            onChange={e => setTitleDraft(e.target.value)}
-            placeholder="Document title"
-            aria-label="Document title"
-            className="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none"
-            autoFocus={isNewDoc}
-          />
-          <div className="ml-auto flex items-center gap-2">
+        {/* One header for editing: the editable title continues the
+            breadcrumb in the app's top bar, with the editor actions at its
+            right end - no separate edit bar stacked above the toolbar. */}
+        {headerActionSlot && createPortal(
+          // Mirrors the reading-mode final crumb so nothing moves on Edit.
+          // Horizontally: the slot sits after the bar's gap-1 + its own pl-2
+          // (12px) where the reading crumb's chevron sits after the list's
+          // gap-1 (4px), so -ml-2 puts this chevron on the same x; gap-2.5
+          // (the crumb's gap-1 + px-1.5) then lands the unpadded input text on
+          // the crumb text's x. Vertically: pt-0.5 + 20px line + pb-px + the
+          // 1px dashed underline is the crumb's 24px box (py-0.5 + 20px), so
+          // the text baseline matches too. field-sizing hugs the typed title
+          // (or the placeholder for a new doc), with a small floor so an
+          // emptied field stays clickable.
+          <div className="-ml-2 flex min-w-0 flex-1 items-center gap-2.5">
+            <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/50 md:block" aria-hidden="true" />
+            <Input
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              placeholder="Document title"
+              aria-label="Document title"
+              className="hidden h-auto w-auto min-w-[4ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 pt-0.5 pb-px text-sm font-medium leading-5 shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground/85 enabled:hover:border-foreground/40 dark:enabled:hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
+              autoFocus={isNewDoc}
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {isDirty && !isNewDoc && !saving && (
+              <span className="hidden text-xs text-muted-foreground lg:inline" role="status">Unsaved changes</span>
+            )}
             {realtimeEnabled && !isNewDoc && <EditorPresence editors={remoteEditors} />}
             {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
@@ -968,7 +1215,7 @@ export function DocPage() {
                 variant="destructive"
                 size="sm"
                 onClick={() => setResetConfirmOpen(true)}
-                title="Realtime sync is disabled - click to restore"
+                title="Real-time sync is disabled – click to restore"
                 className="gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -980,34 +1227,70 @@ export function DocPage() {
               size="icon"
               onClick={() => setMarkdownHelpOpen(true)}
               title="Markdown reference"
-              className="h-8 w-8"
+              aria-label="Markdown reference"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
             >
               <HelpCircle className="h-4 w-4" />
             </Button>
+            {/* Labelled on wide screens; the pressed state gets the accent
+                fill so "raw mode is on" is obvious at a glance. */}
             <Button
-              variant={rawMode ? "secondary" : "ghost"}
-              size="icon"
+              variant="ghost"
+              size="sm"
               onClick={() => setRawMode(v => !v)}
               title={rawMode ? "Switch to WYSIWYG editor" : "Switch to raw markdown"}
+              aria-label={rawMode ? "Switch to WYSIWYG editor" : "Switch to raw markdown"}
               aria-pressed={rawMode}
-              className="h-8 w-8"
+              className={cn(
+                "h-8 gap-1.5 px-2 xl:px-2.5",
+                rawMode ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
             >
               <Code2 className="h-4 w-4" />
+              <span className="hidden xl:inline">Source</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
-              <X className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Cancel</span>
+            <Button
+              variant={isDirty ? "outline" : "ghost"}
+              size="sm"
+              onClick={cancelEditing}
+              aria-label={exitLabel}
+              title={exitLabel}
+              className="gap-1.5"
+            >
+              {exitLabel === "Cancel" && <X className="h-3.5 w-3.5 sm:hidden" />}
+              {exitLabel === "Done" && <Check className="h-3.5 w-3.5 sm:hidden" />}
+              <span className="hidden sm:inline">{exitLabel}</span>
             </Button>
-            <Button size="sm" onClick={handleSaveClick} disabled={saving} className="gap-1.5">
+            <Button
+              size="sm"
+              onClick={handleSaveClick}
+              disabled={saving || !isDirty}
+              aria-label={saving ? "Saving…" : "Save"}
+              // Nothing to save yet: recede to a quiet muted chip rather than
+              // a half-opacity primary block that outweighs Cancel.
+              className={cn("gap-1.5", !saving && !isDirty && "disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100")}
+            >
               <Save className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
             </Button>
-          </div>
-          </div>
+            </div>
+          </div>,
+          headerActionSlot,
+        )}
+        {/* Phones: the top bar is too narrow for the title, so it gets its
+            own row above the toolbar. */}
+        <div className="border-b border-border px-5 py-2 md:hidden">
+          <Input
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            placeholder="Title"
+            aria-label="Document title (mobile)"
+            className="h-10 border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+          />
         </div>
 
-        <div className="flex flex-1 justify-center overflow-hidden px-6">
-          <div className="relative w-full max-w-3xl overflow-hidden">
+        <div className={cn("flex flex-1 justify-center overflow-hidden px-6", reserveOutline && "xl:pr-[16.5rem]")}>
+          <div className="relative w-full max-w-[44rem] overflow-hidden">
             <WysiwygEditor
               key={collabFatal ? "fallback" : "collab"}
               mode={rawMode ? "raw" : "editing"}
@@ -1024,6 +1307,7 @@ export function DocPage() {
               }}
               rendererCtx={wysiwygCtx}
               onPasteImage={handlePasteImage}
+              placeholder="Start writing… Markdown works, or use the toolbar above."
             />
           </div>
         </div>
@@ -1031,68 +1315,70 @@ export function DocPage() {
         <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Congratulations! You broke it! Realtime sync disabled</AlertDialogTitle>
+              <AlertDialogTitle>Congratulations! You broke it! Real-time sync disabled</AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2">
-                  <p>{collabFatalReason || "This document has exceeded the realtime sync size limit."}</p>
+                  <p>{collabFatalReason || "This document has exceeded the real-time sync size limit."}</p>
                   <p>Your edits still save, but they won't sync live with other users until sync is restored.</p>
-                  <p>Restoring wipes the realtime sync state. Any unsaved in-progress edits from other users will be discarded, so save your own changes first if you don't want to lose them.</p>
+                  <p>Restoring wipes the real-time sync state. Any unsaved in-progress edits from other users will be discarded, so save your own changes first if you don't want to lose them.</p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
-                {resettingCollab ? "Restoring…" : "Restore realtime sync"}
+                {resettingCollab ? "Restoring…" : "Restore real-time sync"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Markdown reference dialog */}
-        <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Markdown reference</DialogTitle>
-              <DialogDescription>Supported syntax in this editor.</DialogDescription>
-            </DialogHeader>
-            <div className="overflow-y-auto max-h-[60vh] mt-3 pr-4">
-              <div className="flex flex-col gap-6 pb-2 text-sm">
-                <MajorSection title="Frontmatter">
-                  <Section title="YAML metadata block">
-                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
-                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
-                  </Section>
-                </MajorSection>
-
-                <Separator />
-
-                <MajorSection title="Markdown">
+        {/* Markdown reference - a side sheet so the document stays visible
+            next to it while you look something up. */}
+        {/* Desktop: a side inspector with no scrim, so the document stays
+            visible and editable while you compare syntax; phones keep the
+            modal sheet. */}
+        <Sheet open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen} modal={!isDesktop}>
+          <SheetContent
+            side="right"
+            overlay={!isDesktop}
+            onInteractOutside={isDesktop ? (e) => e.preventDefault() : undefined}
+            className="w-full gap-0 sm:max-w-md md:w-[26rem] md:shadow-xl"
+          >
+            <SheetHeader className="border-b border-border px-6 py-5">
+              <SheetTitle>Markdown reference</SheetTitle>
+              <SheetDescription>Supported syntax in this editor.</SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-6 pt-5 [&_p.text-xs]:text-[13px] [&_p.text-xs]:leading-5">
+              <div className="flex flex-col gap-6 pb-8 text-sm">
+                <MajorSection title="Everyday syntax">
                 <Section title="Headings">
-                  <Code>{`# H1\n## H2\n### H3`}</Code>
+                  <HeadingSamples />
                 </Section>
                 <Section title="Emphasis">
-                  <Code>{`**bold**       Ctrl+B\n*italic*       Ctrl+I\n__underline__  Ctrl+U\n~~strikethrough~~`}</Code>
+                  <EmphasisSamples />
                 </Section>
                 <Section title="Links & images">
-                  <Code>{`[link text](https://example.com)\n[email me](mailto:hello@example.com)\n[call](tel:+15551234567)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
+                  <RefList items={[[`[link text](https://example.com)`, `Link`], [`[email me](mailto:hello@example.com)`, `Email link`], [`[call](tel:+15551234567)`, `Phone link`], [`![alt text](https://example.com/img.png)`, `Image`], [`![alt](img.png){width=300}`, `Fixed width (px)`], [`![alt](img.png){width=50%}`, `Percentage width`], [`![alt](img.png){width=400 height=200}`, `Width and height`]]} />
                   <p className="text-xs text-muted-foreground mt-1">Allowed URL schemes: <span className="font-mono">http</span>, <span className="font-mono">https</span>, <span className="font-mono">mailto</span>, <span className="font-mono">tel</span>. Other schemes are stripped.</p>
                 </Section>
                 <Section title="Audio embeds">
-                  <Code>{`![song.mp3](song.mp3)                         full player (default)\n![song.mp3](song.mp3){size=full}              same as default\n![song.mp3](song.mp3){size=small}             inline chip\n![song.mp3](/api/files/<id>/content)          uploaded file`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Recognized extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
+                  <RefList items={[[`![song.mp3](song.mp3)`, `Full player (default)`], [`![song.mp3](song.mp3){size=full}`, `Same as default`], [`![song.mp3](song.mp3){size=small}`, `Inline chip`], [`![song.mp3](/api/files/<id>/content)`, `Uploaded file`]]} />
+                  <p className="text-xs text-muted-foreground mt-1">Recognised extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
                 </Section>
                 <Section title="Document links">
-                  <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>
+                  <RefList items={[[`[[My Document]]`, `Link by title`], [`[[My Document|custom label]]`, `Link with display text`], [`[[My Document#section]]`, `Link to a heading`], [`[[My Document#section|see this]]`, `Heading link with label`]]} />
                 </Section>
                 <Section title="Lists">
-                  <Code>{`- unordered item\n- another item\n\n1. ordered item\n2. another item`}</Code>
+                  <RefList items={[[`- item`, `Bulleted list item`], [`1. item`, `Numbered list item`]]} />
                 </Section>
                 <Section title="Task lists">
-                  <Code>{`- [x] done\n- [ ] not done`}</Code>
+                  <RefList items={[[`- [x] done`, `Ticked task`], [`- [ ] not done`, `Open task`]]} />
                 </Section>
                 <Section title="Tables">
-                  <Code>{`| Col A | Col B |\n|-------|-------|\n| one   | two   |`}</Code>
+                  <Code>{`| Col A | Col B |
+|-------|-------|
+| one   | two   |`}</Code>
                 </Section>
                 <Section title="Code">
                   <Code>{`\`inline code\`\n\n\`\`\`typescript\nconst x = 42;\n\`\`\``}</Code>
@@ -1103,7 +1389,7 @@ export function DocPage() {
                 </Section>
                 <Section title="Comments">
                   <Code>{`%% hidden note for editors %%`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Inline only - text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Inline only – text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
                 </Section>
                 <Section title="Callouts">
                   <Code>{`> [!note]\n> This is a note.\n\n> [!warning] Watch out\n> Something to be careful about.\n\n> [!tip]+ Foldable tip\n> This starts open.\n\n> [!danger]- Foldable danger\n> This starts closed.`}</Code>
@@ -1114,14 +1400,23 @@ export function DocPage() {
                   <Code>{`---`}</Code>
                 </Section>
                 <Section title="Dice roller">
-                  <Code>{`\`dice: 1d20\`             standard roll\n\`dice: 2d6+1d4+3\`       compound expression\n\`dice: 4d6kh3\`          keep highest 3\n\`dice: 4d6kl3\`          keep lowest 3\n\`dice: 2d8r1\`           reroll 1s (unlimited)\n\`dice: 2d8r<3\`          reroll less than 3\n\`dice: 2d8r>5\`          reroll greater than 5\n\`dice: 2d8r1r3\`         reroll 1s and 3s\n\`dice: 4d6kh3r1\`        keep highest 3, reroll 1s\n\`dice: 2d10ro<2\`        reroll once if less than 2\n\`dice: 2dF\`             fate/fudge dice (-1, 0, +1)\n\`dice: 1d[2,4,6,8]\`    custom numeric faces\n\`dice: 1d[fire,ice]\`   random string table\n\`dice: 2d6[Fire]\`      inline label\n\`dice: 2d6%4\`          modulus\n\`dice: 2d6**2\`         exponentiation\n\`dice: floor(2d6/3)\`   math function\n\`dice: (2d6+1d4)*2\`    grouping with parentheses\n\`dice: 1d20 Attack Roll\`         overall label\n\`dice: 1d20+5 \\ +5 for initiative\` label with separator`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
+                  <RefList items={[[`\`dice: 1d20\``, `Standard roll`], [`\`dice: 2d6+1d4+3\``, `Compound expression`], [`\`dice: 4d6kh3\``, `Keep highest 3`], [`\`dice: 4d6kl3\``, `Keep lowest 3`], [`\`dice: 2d8r1\``, `Reroll 1s (unlimited)`], [`\`dice: 2d8r<3\``, `Reroll less than 3`], [`\`dice: 2d8r>5\``, `Reroll greater than 5`], [`\`dice: 2d8r1r3\``, `Reroll 1s and 3s`], [`\`dice: 4d6kh3r1\``, `Keep highest 3, reroll 1s`], [`\`dice: 2d10ro<2\``, `Reroll once if less than 2`], [`\`dice: 2dF\``, `Fate/Fudge dice (−1, 0, +1)`], [`\`dice: 1d[2,4,6,8]\``, `Custom numeric faces`], [`\`dice: 1d[fire,ice]\``, `Random string table`], [`\`dice: 2d6[Fire]\``, `Inline label`], [`\`dice: 2d6%4\``, `Modulus`], [`\`dice: 2d6**2\``, `Exponentiation`], [`\`dice: floor(2d6/3)\``, `Maths function`], [`\`dice: (2d6+1d4)*2\``, `Grouping with parentheses`], [`\`dice: 1d20 Attack Roll\``, `Overall label`], [`\`dice: 1d20+5 \\ +5 for initiative\``, `Label after a separator`]]} />
+                  <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Maths functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
                 </Section>
+                </MajorSection>
+
+                <Separator />
+
+                <MajorSection title="Advanced: frontmatter">
+                  <Section title="YAML metadata block">
+                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
+                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognised keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
+                  </Section>
                 </MajorSection>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          </SheetContent>
+        </Sheet>
 
         <Dialog open={changelogDialogOpen} onOpenChange={open => { if (!saving) setChangelogDialogOpen(open); }}>
           <DialogContent className="sm:max-w-md">
@@ -1171,14 +1466,19 @@ export function DocPage() {
     );
   }
 
-  const headings = extractHeadings(doc.content);
+  const headings = docOutlineHeadings(doc);
   const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || myPermission === "edit";
   const isAdmin = myRole === "admin" || myRole === "owner";
+  // Structural changes (move, recycle bin) need a project-level editor role - a
+  // per-doc edit share only covers content (the API ignores/refuses the rest).
+  // The site's home doc is pinned, as in the File Manager.
+  const isHomeDoc = (allDocs.find(d => d.id === docId) as { is_home?: number } | undefined)?.is_home === 1;
+  const canManageDoc = (myRole === "editor" || isAdmin) && !isHomeDoc;
 
   return (
     <div className="flex min-h-full">
       {/* Article */}
-      <div className="flex-1 min-w-0 px-6 py-10">
+      <div className="flex-1 min-w-0 px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
         {isEditor && (
           <input
             ref={coverInputRef}
@@ -1207,7 +1507,7 @@ export function DocPage() {
             so the absolutely-positioned top-right action toolbar can never
             overlap it. */}
         {viewingRevision && (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-[44rem]">
             <HistoryBanner
               editorName={(() => {
                 if (viewingRevision.contributors) {
@@ -1229,34 +1529,30 @@ export function DocPage() {
             />
           </div>
         )}
-        <div className="mx-auto max-w-3xl md:relative">
+        <div className="mx-auto max-w-[44rem] md:relative">
           {/* Top-right actions */}
-          <div className="flex flex-wrap justify-end gap-1.5 mb-2 md:flex-nowrap md:gap-1 md:absolute md:top-0 md:right-0 md:mb-0">
-            {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
-              <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
-                <Sparkles className="h-4 w-4 text-violet-500" />
+          {/* Phones: float right so "Last updated" shares the row (the meta
+              line below is given the same 40px height). */}
+          {(() => { const bar = (
+          // Plain ghost tools, then Edit (outline - the one emphasised action),
+          // with the overflow menu always rightmost. Every control shares one
+          // height: 40px inline on phones, 32px in the desktop top bar.
+          <div className={cn("flex items-center justify-end gap-1.5", !isDesktop && "max-md:float-right max-md:ml-3 max-md:mb-2")}>
+            {headings.length > 0 && (
+              <Button variant="ghost" size="icon" className={cn(TOOL_ICON_BUTTON, "xl:hidden")} title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
+                <ListTree className="h-4 w-4" />
               </Button>
             )}
             <ExportPdfDialog
-              trigger={
-                <Button variant="ghost" size="icon" title="Export as PDF">
-                  <FileDown className="h-4 w-4" />
-                </Button>
-              }
+              open={exportOpen}
+              onOpenChange={setExportOpen}
               documentName={parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).title ?? doc.title}
             />
           {isEditor && (
             <>
-              <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
-                <Pencil className="h-4 w-4" />
-              </Button>
-              {!viewingRevision && !parseFrontmatter(doc.content).cover && (
-                <Button variant="ghost" size="icon" title="Add header image" onClick={() => coverInputRef.current?.click()} disabled={coverBusy}>
-                  <ImagePlus className="h-4 w-4" />
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" title="View history" onClick={openHistory}>
-                <History className="h-4 w-4" />
+              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="h-11 w-11 gap-1.5 px-0 max-sm:h-11 sm:w-auto sm:px-2.5 md:h-8">
+                <History className="h-4 w-4 text-muted-foreground" />
+                <span className="hidden sm:inline">History</span>
               </Button>
               <HistorySheet
                 open={historyOpen}
@@ -1273,13 +1569,10 @@ export function DocPage() {
               />
               {isAdmin && (
                 <>
-                  <Button variant="ghost" size="icon" title="Manage limited viewer access" onClick={openShareDialog}>
-                    <Users className="h-4 w-4" />
-                  </Button>
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Document Access</DialogTitle>
+                        <DialogTitle>Document access</DialogTitle>
                         <DialogDescription>
                           Grant per-document access to limited members, or uplift viewers to edit this document.
                         </DialogDescription>
@@ -1416,82 +1709,98 @@ export function DocPage() {
                             </div>
                           )}
                           {!sharesLoading && shareableMembers.length === 0 && (
-                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site Settings.</p>
+                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site settings.</p>
                           )}
                         </div>
                     </DialogContent>
                   </Dialog>
                 </>
               )}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" title="Document settings">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+              <Dialog open={docSettingsOpen} onOpenChange={setDocSettingsOpen}>
+                {/* Opened from a menu: focus the dialog itself rather than
+                    painting a focus ring on its first icon button. */}
+                <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                   <DialogHeader>
-                    <DialogTitle>Document Settings</DialogTitle>
+                    <DialogTitle>Document settings</DialogTitle>
+                    <DialogDescription>Who can read this document, and how its page is displayed.</DialogDescription>
                   </DialogHeader>
                   <div className="flex flex-col gap-6 py-2">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            {doc.published_at ? (
-                              <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
-                            ) : (
-                              <Lock className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <Label className="text-sm font-medium">
-                              {doc.published_at ? "Published" : "Unpublished"}
-                            </Label>
+                    {/* Effective visibility first (what readers actually get),
+                        then the document's own override as a separate row. */}
+                    <div className="flex flex-col gap-5">
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3.5 py-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className={cn(
+                            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
+                            doc.published_at || projectPublishedAt
+                              ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+                              : "bg-muted text-muted-foreground ring-border",
+                          )}>
+                            {doc.published_at || projectPublishedAt ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                          </span>
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <p className="text-sm font-medium">
+                              {projectPublishedAt ? "Public – inherited from site" : doc.published_at ? "Public" : "Private"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {projectPublishedAt && !doc.published_at
+                                ? "Anyone with the link can read this document while the site is published – no need to publish it on its own."
+                                : doc.published_at || projectPublishedAt
+                                  ? "Anyone with the link can read this document."
+                                  : "Only site members can see this document."}
+                            </p>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {doc.published_at
-                              ? "This document is marked as published."
-                              : "This document is marked as unpublished."}
-                          </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {(doc.published_at || projectPublishedAt) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
-                                toast({ title: "Link copied to clipboard." });
-                              }}
-                              title="Copy share link"
-                            >
-                              <Link className="h-4 w-4" />
-                            </Button>
-                          )}
+                        {(doc.published_at || projectPublishedAt) && (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
+                              toast({ title: "Link copied to clipboard." });
+                            }}
+                            title="Copy link"
+                            aria-label="Copy link"
+                          >
+                            <Link className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      {/* While the site is published a per-doc Publish would be
+                          a dead control, so the row is dropped (the card above
+                          says why). Unpublish stays if the doc carries its own
+                          flag (it outlives the site's). */}
+                      {!(projectPublishedAt && !doc.published_at) && (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-col gap-0.5">
+                            <Label className="text-sm font-medium">Publish this document on its own</Label>
+                            <p className="text-xs text-muted-foreground">
+                              {projectPublishedAt
+                                ? "Also published on its own, so it stays public if the site is unpublished."
+                                : "Make just this document public while the rest of the site stays private."}
+                            </p>
+                          </div>
                           <Button
                             variant={doc.published_at ? "outline" : "default"}
                             size="sm"
+                            className="shrink-0"
                             disabled={togglingPublish}
                             onClick={handleTogglePublish}
                           >
                             {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                           </Button>
                         </div>
-                      </div>
-                      {projectPublishedAt && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400">
-                          The site is currently published - individual document publish status has no effect until the site is unpublished.
-                        </p>
                       )}
                     </div>
-                    <Separator />
+                    <p className="-mb-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Display</p>
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
                         <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
                           Show page heading
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Display the document title as a heading at the top of the page.
+                          Adds the title above the content. Leave off if the doc starts with its own heading.
                         </p>
                       </div>
                       <Switch
@@ -1500,7 +1809,6 @@ export function DocPage() {
                         onCheckedChange={handleToggleHeading}
                       />
                     </div>
-                    <Separator />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
                         <Label htmlFor="show-last-updated" className="text-sm font-medium cursor-pointer">
@@ -1521,20 +1829,161 @@ export function DocPage() {
               </Dialog>
             </>
           )}
+            {isEditor && (
+              <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-11 gap-1.5 px-3 max-sm:h-11 md:h-8">
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+            )}
+            {/* Occasional tools live in one labelled menu instead of a row of
+                look-alike glyphs. Items keep their old titles for tests. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className={TOOL_ICON_BUTTON} title="More actions" aria-label="More actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[220px] [&_svg]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground">
+                <DropdownMenuItem onSelect={copyDocLink}>
+                  <Link /> Copy link
+                </DropdownMenuItem>
+                {canManageDoc && (
+                  <DropdownMenuItem onSelect={() => { void openMove(); }}>
+                    <FolderInput /> Move to folder…
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem title="Export as PDF" onSelect={() => setExportOpen(true)}>
+                  <FileDown /> Export as PDF
+                </DropdownMenuItem>
+                {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
+                  <DropdownMenuItem title="Generate AI summary" disabled={aiSummaryLoading} onSelect={() => { void generateSummary(); }}>
+                    <Sparkles /> Generate AI summary
+                  </DropdownMenuItem>
+                )}
+                {isEditor && !viewingRevision && !parseFrontmatter(doc.content).cover && (
+                  <DropdownMenuItem title="Add header image" disabled={coverBusy} onSelect={() => coverInputRef.current?.click()}>
+                    <ImagePlus /> Add header image
+                  </DropdownMenuItem>
+                )}
+                {isEditor && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {isAdmin && (
+                      <DropdownMenuItem title="Manage limited viewer access" onSelect={() => { void openShareDialog(); }}>
+                        <Users /> Manage access
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem title="Document settings" onSelect={() => setDocSettingsOpen(true)}>
+                      <Settings /> Document settings
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canManageDoc && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => setTrashConfirmOpen(true)}>
+                      <Trash2 /> Move to recycle bin
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canManageDoc && (
+              <>
+                {/* Move-to-folder picker - same rows as the File Manager's. */}
+                <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+                  <DialogContent className="sm:max-w-xs">
+                    <DialogHeader>
+                      <DialogTitle>Move "{doc.title}"</DialogTitle>
+                      <DialogDescription>Choose a destination folder.</DialogDescription>
+                    </DialogHeader>
+                    <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+                      {moveFolders === null ? (
+                        <div className="flex flex-col gap-1.5 py-1">
+                          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={moving || doc.folder_id === null}
+                            onClick={() => handleMoveTo(null)}
+                            className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          >
+                            <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                            <span className="truncate">{projectName} (home)</span>
+                          </button>
+                          {moveDestinations.map(({ folder: f, label }) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              disabled={moving || doc.folder_id === f.id}
+                              onClick={() => handleMoveTo(f.id)}
+                              title={label}
+                              className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            >
+                              <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                              <span className="truncate">{label}</span>
+                            </button>
+                          ))}
+                          {moveDestinations.length === 0 && (
+                            <p className="px-2 py-2 text-sm text-muted-foreground">No folders yet.</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <AlertDialog open={trashConfirmOpen} onOpenChange={open => { if (!trashing) setTrashConfirmOpen(open); }}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Move "{doc.title}" to the recycle bin?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        It can be restored from the recycle bin for 30 days.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={trashing}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={e => { e.preventDefault(); void handleMoveToTrash(); }}
+                        disabled={trashing}
+                      >
+                        {trashing ? "Moving…" : "Move to recycle bin"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
+          );
+          // Desktop: the reading actions live in the app top bar, exactly where
+          // the editing actions (Cancel / Save) appear, so Edit and Save swap
+          // in place. Phones keep them inline beside the meta line.
+          return isDesktop && headerActionSlot ? createPortal(bar, headerActionSlot) : bar;
+          })()}
+          {/* Without the meta line there's nothing to sit beside the floated
+              actions on phones, so clear them instead of indenting the title. */}
+          {(viewingRevision || doc.show_last_updated === 0) && <div className="max-md:clear-both" />}
 
           <article data-pdf-print-target className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
             {(() => {
               const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
               const showHeading = fm.hide_title !== undefined ? !fm.hide_title : doc.show_heading !== 0;
               const headingTitle = fm.title ?? doc.title;
-              return showHeading && <h1 data-pdf-title>{headingTitle}</h1>;
+              return showHeading && <h1 data-pdf-title className="text-balance">{headingTitle}</h1>;
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
-              <p data-pdf-last-updated className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
-                Last updated {timeAgo(doc.updated_at)} · {calcReadingTime(doc.content)}
+              <p data-pdf-last-updated className="not-prose mb-2 text-[13px] text-muted-foreground max-md:flex max-md:min-h-11 max-md:items-center sm:-mt-2 sm:mb-3 sm:text-sm">
+                <span className="whitespace-nowrap">Last updated {timeAgo(doc.updated_at)}</span>
+                <span className="hidden whitespace-nowrap sm:inline">&nbsp;· {calcReadingTime(doc.content)}</span>
               </p>
             )}
+            {/* End the phone float row here so the document body never lays
+                out beside the floated actions. */}
+            <div aria-hidden="true" className="max-md:clear-both" />
             {!viewingRevision && aiEnabled && (aiSummaryLoading || doc.ai_summary) && (
               <div data-pdf-ai-summary className="not-prose mb-6 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/30">
                 <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
@@ -1583,7 +2032,7 @@ export function DocPage() {
                   </span>
                 </div>
                 {diffBase === "previous" && !prevRevisionMeta ? (
-                  <p className="text-sm text-muted-foreground">This is the oldest loaded revision - there is no previous version to compare against.</p>
+                  <p className="text-sm text-muted-foreground">This is the oldest loaded revision – there is no previous version to compare against.</p>
                 ) : diffBase === "previous" && prevRevisionContent === null ? (
                   <p className="text-sm text-muted-foreground">Loading previous version…</p>
                 ) : (
@@ -1676,37 +2125,59 @@ export function DocPage() {
         </div>
       </div>
 
-      {/* Outline */}
       {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0 py-10 pl-4 pr-6">
-          <div className="sticky top-6">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Sheet open={outlineSheetOpen} onOpenChange={setOutlineSheetOpen}>
+          <SheetContent side="bottom" className="max-h-[70vh] gap-0 p-0 xl:hidden">
+            <SheetHeader className="px-5 pb-2 pt-5">
+              <SheetTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Outline</SheetTitle>
+              <SheetDescription className="sr-only">Jump to a section of this document.</SheetDescription>
+            </SheetHeader>
+            <div className="overflow-y-auto px-5 pb-6">
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                className="[&>button]:min-h-10 [&>button]:text-sm"
+                onSelect={id => {
+                  lastHashScrollRef.current = `${docId ?? ""}#${id}`;
+                  navigate(`#${id}`, { replace: true });
+                  scrollToHash(id);
+                  setOutlineSheetOpen(false);
+                }}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {/* Outline rail - always present at xl (empty for heading-less docs)
+          so the article column never shifts between docs or modes. */}
+      <aside className="hidden xl:block w-60 shrink-0 py-10 pl-0 pr-4" aria-hidden={headings.length === 0 || undefined}>
+      {headings.length > 0 && (
+        <>
+          {/* Sticky offset equals the aside's top padding (py-10) so the rail
+              doesn't jump when scrolling starts. */}
+          <div className="sticky top-10">
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               Outline
             </p>
             {/* pr-3 keeps the hover scrollbar (absolute, right edge) off the entries */}
             <ScrollArea className="max-h-[calc(100vh-8rem)] pr-3">
-              <nav className="flex flex-col gap-0.5">
-                {headings.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      // Pre-set the guard so the hash effect doesn't double-fire;
-                      // scroll directly so re-clicking the same heading still jumps.
-                      lastHashScrollRef.current = `${docId ?? ""}#${h.id}`;
-                      navigate(`#${h.id}`, { replace: true });
-                      scrollToHash(h.id);
-                    }}
-                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {h.text}
-                  </button>
-                ))}
-              </nav>
+              <DocOutline
+                headings={headings}
+                activeId={activeHeadingId}
+                onSelect={id => {
+                  // Pre-set the guard so the hash effect doesn't double-fire;
+                  // scroll directly so re-clicking the same heading still jumps.
+                  lastHashScrollRef.current = `${docId ?? ""}#${id}`;
+                  navigate(`#${id}`, { replace: true });
+                  scrollToHash(id);
+                }}
+              />
             </ScrollArea>
           </div>
-        </aside>
+        </>
       )}
+      </aside>
     </div>
   );
 }

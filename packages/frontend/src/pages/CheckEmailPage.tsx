@@ -1,12 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { BookOpen, Mail } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { AuthShell, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+const EMAIL_KEY = "annex:check-email";
+
+function readStoredEmail(): string | undefined {
+  try { return sessionStorage.getItem(EMAIL_KEY) ?? undefined; } catch { return undefined; }
+}
+
 export function CheckEmailPage() {
   const location = useLocation();
-  const email = (location.state as { email?: string } | null)?.email;
+  // Register hands the address over in router state; remember it for the tab
+  // so a reload still names it (and keeps the resend button).
+  const stateEmail = (location.state as { email?: string } | null)?.email;
+  const email = stateEmail ?? readStoredEmail();
+  useEffect(() => {
+    if (!stateEmail) return;
+    try { sessionStorage.setItem(EMAIL_KEY, stateEmail); } catch { /* storage blocked */ }
+  }, [stateEmail]);
 
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [cooldown, setCooldown] = useState(false);
@@ -29,24 +43,29 @@ export function CheckEmailPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
+    <AuthShell>
         <div className="w-full max-w-sm space-y-6">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold">Check your email</h1>
+          {/* Same heading block as AuthForm's wordmark screens (login,
+              register): left-aligned, wordmark then the step as the <h1>. */}
+          <div className="flex flex-col items-start gap-2 text-left">
+            <a href="/" aria-label="Annex home" className="mb-6 rounded-sm">
+              <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />
+            </a>
+            <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
             <p className="text-sm text-muted-foreground">
               {email
-                ? <>We sent a verification link to <strong>{email}</strong>.</>
+                ? <>We sent a link to <strong className="font-medium text-foreground">{email}</strong>.</>
                 : "We sent you a verification link."}
               {" "}Click it within 24 hours to activate your account.
             </p>
           </div>
 
-          <div className="flex flex-col items-center gap-1 rounded-lg border p-6">
-            <Mail className="h-10 w-10 text-muted-foreground mb-2" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground text-center">
-              Didn't receive the email? Check your spam folder, or request a new link.
+          <div className="rounded-lg border border-border bg-card px-5 py-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Didn&rsquo;t get it?</p>
+            <p className="mt-1">
+              {email
+                ? "Check your spam folder, or send a fresh link below."
+                : "Check your spam folder. Signing in with an unverified account also lets you request a fresh link."}
             </p>
           </div>
 
@@ -61,26 +80,24 @@ export function CheckEmailPage() {
             </Alert>
           )}
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {email && (
               <Button
                 onClick={handleResend}
                 disabled={resendState === "sending" || cooldown}
-                variant="outline"
-                className="w-full"
+                className={`${AUTH_BUTTON_CLASS} w-full`}
               >
                 {resendState === "sending" ? "Sending…" : cooldown ? "Email sent" : "Resend verification email"}
               </Button>
             )}
-            <a
-              href="/login"
-              className="text-center text-sm text-primary underline-offset-4 hover:underline"
-            >
-              Back to sign in
-            </a>
+            <Button asChild variant="ghost" className="-ml-3 h-11 self-start gap-2 px-3 text-muted-foreground hover:text-foreground">
+              <a href="/login">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Back to sign in
+              </a>
+            </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

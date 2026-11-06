@@ -397,11 +397,11 @@ export function DiceRoll({ notation }: DiceRollProps) {
     return (
       <button
         onClick={doRoll}
-        className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors cursor-pointer"
+        className="inline-flex max-w-full items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-md border border-input/70 bg-card px-2 py-0.5 text-left align-middle text-[0.875em] font-medium text-foreground shadow-xs hover:bg-accent transition-colors cursor-pointer max-sm:my-1 max-sm:min-h-11 max-sm:px-3 max-sm:py-1.5 max-sm:text-sm max-sm:whitespace-normal"
         style={{ fontFamily: "var(--ui-font)" }}
       >
-        <Dices className="h-3.5 w-3.5" />
-        <span>{notation}</span>
+        <Dices className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <DiceLabel notation={notation} />
       </button>
     );
   }
@@ -431,12 +431,12 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onClick={doRoll}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-input/70 bg-card px-2 py-0.5 text-left text-[0.875em] text-foreground shadow-xs select-none not-prose hover:bg-accent transition-colors cursor-pointer max-sm:my-1 max-sm:min-h-11 max-sm:px-3 max-sm:py-1.5 max-sm:text-sm max-sm:whitespace-normal"
           style={{ fontFamily: "var(--ui-font)" }}
           aria-label="Re-roll"
         >
-          <Dices className="h-3.5 w-3.5 text-zinc-500" />
-          <span className="text-zinc-400">{splitFormulaLabel(notation).formula}</span>
+          <Dices className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="font-mono text-[0.85em] text-muted-foreground max-sm:text-[0.9em] max-sm:break-words">{prettyFormula(splitFormulaLabel(notation).formula)}</span>
           {result.label && (
             <span className="text-zinc-400">{result.label}</span>
           )}
@@ -465,5 +465,28 @@ export function DiceRoll({ notation }: DiceRollProps) {
         {buildBreakdown(result)}
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+
+// Readable formula: a space after commas inside custom-face lists, so
+// "1d[V60,French press]" reads as "1d[V60, French press]".
+function prettyFormula(formula: string): string {
+  return formula.replace(/,\s*/g, ", ");
+}
+
+// Unrolled chip text: the human label first, the dice syntax second and
+// quieter - readers see "Try your luck · 2d6+1d4", not run-together notation.
+function DiceLabel({ notation }: { notation: string }) {
+  const { formula, label } = splitFormulaLabel(notation);
+  // No label: the notation is the only text, so keep it quiet (muted, medium)
+  // and on one line, truncating long custom-face lists (full text in title).
+  if (!label) return <span title={prettyFormula(formula)} className="min-w-0 truncate font-mono text-[0.85em] max-sm:text-[0.9em] max-sm:whitespace-normal max-sm:break-words font-medium text-muted-foreground">{prettyFormula(formula)}</span>;
+  return (
+    <span className="inline-flex min-w-0 items-baseline gap-x-1.5">
+      <span>{label}</span>
+      <span aria-hidden="true" className="text-muted-foreground/60">&middot;</span>
+      <span className="truncate font-mono text-[0.85em] max-sm:text-[0.9em] max-sm:whitespace-normal max-sm:break-words font-normal text-muted-foreground">{prettyFormula(formula)}</span>
+    </span>
   );
 }

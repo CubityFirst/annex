@@ -10,8 +10,9 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
+import { cleanSearchSnippet } from "@/lib/searchSnippet";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
-import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
+import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
@@ -47,7 +48,9 @@ interface QuickAction {
   run: () => void | Promise<void>;
 }
 
-function timeAgo(ms: number): string {
+/** Compact relative time ("just now", "5m ago", "2d ago") for recent-item
+ *  rows - shared with the dashboard's "Recently opened" list. */
+export function timeAgo(ms: number): string {
   const seconds = Math.floor((Date.now() - ms) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
@@ -61,7 +64,8 @@ function timeAgo(ms: number): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-const MARK_CLASS = "bg-yellow-200/80 dark:bg-yellow-700/50 text-foreground rounded-[2px] px-px not-italic";
+// Neutral highlight (no warm tint): a faint foreground wash plus weight.
+const MARK_CLASS = "bg-foreground/10 dark:bg-foreground/15 text-foreground font-medium rounded-[3px] px-0.5 not-italic";
 
 /** Highlights every query word inside plain text (used for titles/filenames). */
 function HighlightedText({ text, term }: { text: string; term: string }) {
@@ -80,9 +84,10 @@ function HighlightedText({ text, term }: { text: string; term: string }) {
 }
 
 function SearchSnippet({ html }: { html: string }) {
-  const parts = html.split(/(<mark>[\s\S]*?<\/mark>)/g);
+  // Raw markdown (task boxes, [[wikilinks]], **bold**…) reads as noise here.
+  const parts = cleanSearchSnippet(html).split(/(<mark>[\s\S]*?<\/mark>)/g);
   return (
-    <span className="text-xs text-muted-foreground line-clamp-2">
+    <span className="text-[13px] leading-[18px] text-muted-foreground line-clamp-2">
       {parts.map((part, i) =>
         part.startsWith("<mark>") ? (
           <mark key={i} className={MARK_CLASS}>{part.slice(6, -7)}</mark>
@@ -131,7 +136,7 @@ function FileKindIcon({ mime, className }: { mime: string; className?: string })
 function HitMeta({ folder, updatedAt }: { folder: string | null; updatedAt?: string }) {
   if (!folder && !updatedAt) return null;
   return (
-    <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+    <span className="ml-auto flex items-center gap-1 shrink-0 text-xs text-muted-foreground whitespace-nowrap">
       {folder && (
         <span className="flex items-center gap-0.5 max-w-28 truncate">
           <Folder className="h-2.5 w-2.5 shrink-0" />
@@ -143,6 +148,9 @@ function HitMeta({ folder, updatedAt }: { folder: string | null; updatedAt?: str
     </span>
   );
 }
+
+/** Dashboard-mode doc search fans out to at most this many sites. */
+const DASHBOARD_SEARCH_SITE_LIMIT = 8;
 
 /** Minimal site shape needed by the dashboard-mode site list. */
 export interface PaletteSite {
@@ -171,9 +179,29 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const [docs, setDocs] = useState<DocHit[]>([]);
   const [files, setFiles] = useState<FileHit[]>([]);
   const [folders, setFolders] = useState<FolderHit[]>([]);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [recent, setRecent] = useState<(RecentItem & { projectId: string; siteName?: string })[]>([]);
+  // Dashboard mode: doc hits gathered from each of the user's sites.
+  const [siteDocs, setSiteDocs] = useState<(DocHit & { siteId: string; siteName: string })[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Bottom fade on the result list: shown only while there is more to scroll
+  // to, so a row cut by the max-height reads as "continues below".
+  const [listEl, setListEl] = useState<HTMLDivElement | null>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  const updateMoreBelow = useCallback(() => {
+    if (!listEl) return;
+    setMoreBelow(listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight > 1);
+  }, [listEl]);
+  // Content only changes via this component's state (shouldFilter is off), so
+  // re-measuring after every render keeps the fade in sync; a ResizeObserver
+  // covers viewport-driven max-height changes.
+  useEffect(updateMoreBelow);
+  useEffect(() => {
+    if (!listEl || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(updateMoreBelow);
+    ro.observe(listEl);
+    return () => ro.disconnect();
+  }, [listEl, updateMoreBelow]);
   const navigate = useNavigate();
   const route = useSiteRoute();
 
@@ -184,8 +212,45 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     ? sites.filter(s => s.name.toLowerCase().includes(searchTerm.trim().toLowerCase()))
     : [];
   const resultCount = isDashboard
-    ? (searchTerm.trim() ? siteHits.length : 0)
+    ? (searchTerm.trim() ? siteHits.length + siteDocs.length : 0)
     : docs.length + files.length + folders.length;
+
+  // Dashboard mode has no single site to search, so fan the query out to the
+  // first few sites (same endpoint as in-site search) and merge the doc hits,
+  // labelled with their site. Capped so a big account doesn't fire dozens of
+  // requests per keystroke.
+  const searchAllSites = useCallback(
+    async (term: string) => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      const token = getToken();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const perSite = await Promise.all(sites.slice(0, DASHBOARD_SEARCH_SITE_LIMIT).map(async site => {
+        try {
+          const res = await fetch(`/api/search?projectId=${encodeURIComponent(site.id)}&q=${encodeURIComponent(term)}`, { headers, signal: ctrl.signal });
+          const json = await res.json() as { ok: boolean; data?: { docs?: DocHit[] } };
+          return json.ok && json.data?.docs
+            ? json.data.docs.slice(0, 4).map(d => ({ ...d, siteId: site.id, siteName: site.name }))
+            : [];
+        } catch {
+          return [];
+        }
+      }));
+      if (ctrl.signal.aborted) return;
+      // Direct title matches first (stable within each bucket), then the
+      // body-only matches, which show an excerpt explaining why they're here.
+      const needle = term.toLowerCase();
+      const hits = perSite.flat();
+      const ranked = [
+        ...hits.filter(d => d.title.toLowerCase().includes(needle)),
+        ...hits.filter(d => !d.title.toLowerCase().includes(needle)),
+      ];
+      setSiteDocs(ranked.slice(0, 10));
+      setLoading(false);
+    },
+    [sites],
+  );
 
   const search = useCallback(
     async (q: string) => {
@@ -230,11 +295,34 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   useEffect(() => {
     if (!open) {
       abortRef.current?.abort();
-      setQuery(""); setDocs([]); setFiles([]); setFolders([]); setLoading(false);
+      setQuery(""); setDocs([]); setFiles([]); setFolders([]); setSiteDocs([]); setLoading(false);
       return;
     }
-    setRecent(isPublic || !projectId ? [] : readRecentItems(projectId));
+    if (isPublic) setRecent([]);
+    else if (projectId) setRecent(readRecentItems(projectId).map(item => ({ ...item, projectId })));
+    else {
+      // Dashboard: the most recent items across every site, newest first.
+      setRecent(
+        sites
+          .flatMap(site => readRecentItems(site.id).map(item => ({ ...item, projectId: site.id, siteName: site.name })))
+          .sort((a, b) => b.accessedAt - a.accessedAt)
+          .slice(0, 5),
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-read only when the palette opens
   }, [open, isPublic, projectId]);
+
+  useEffect(() => {
+    if (!open || !isDashboard) return;
+    if (!searchTerm.trim() || sites.length === 0) {
+      abortRef.current?.abort();
+      setSiteDocs([]); setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const timer = setTimeout(() => { searchAllSites(searchTerm.trim()); }, 250);
+    return () => clearTimeout(timer);
+  }, [open, isDashboard, searchTerm, searchAllSites, sites.length]);
 
   useEffect(() => {
     if (!open || isDashboard) return;
@@ -275,7 +363,12 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     navigate(`/projects/${projectId}/folders/${folderId}`);
   }
 
-  function openRecent(item: RecentItem) {
+  function openRecent(item: RecentItem & { projectId: string }) {
+    if (isDashboard) {
+      close();
+      navigate(`/projects/${item.projectId}/${item.kind === "doc" ? "docs" : "files"}/${item.id}`);
+      return;
+    }
     if (item.kind === "doc") openDoc(item.id);
     else openFile(item.id);
   }
@@ -297,10 +390,10 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const actions: QuickAction[] = isPublic ? [] : isDashboard ? [
     ...(onCreateSite ? [{ id: "new-site", label: "New site", icon: Plus, keywords: "create project", run: () => { close(); onCreateSite(); } }] : []),
     ...(onCreateOrg ? [{ id: "new-org", label: "New organization", icon: Building2, keywords: "create org team group", run: () => { close(); onCreateOrg(); } }] : []),
-    { id: "user-settings", label: "User settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
+    { id: "user-settings", label: "Account settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
   ] : [
     ...(canEdit ? [{ id: "new-doc", label: "New document", icon: Plus, keywords: "create write page", run: createDoc }] : []),
-    { id: "file-manager", label: "File Manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
+    { id: "file-manager", label: "File manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
     ...(isAdmin ? [{ id: "members", label: "Members", icon: Users, keywords: "invite people team roles", run: () => { close(); navigate(`/projects/${projectId}/settings#members`); } }] : []),
     { id: "settings", label: "Site settings", icon: SlidersHorizontal, keywords: "configure publishing branding", run: () => { close(); navigate(`/projects/${projectId}/settings`); } },
     { id: "dashboard", label: "Go to dashboard", icon: House, keywords: "home sites switch", run: () => { close(); navigate("/"); } },
@@ -319,7 +412,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
-        placeholder={isDashboard ? "Search sites…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
+        placeholder={isDashboard ? "Search sites and documents…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
         value={query}
         onValueChange={setQuery}
       />
@@ -332,7 +425,9 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
               ? `${resultCount} result${resultCount === 1 ? "" : "s"} found.`
               : ""}
       </div>
-      <CommandList>
+      {/* Taller than the shared default so the dashboard's full action list
+          fits at common heights; still capped by the viewport. */}
+      <CommandList ref={setListEl} onScroll={updateMoreBelow} className="max-h-[min(360px,calc(100dvh-14vh-8rem))]">
         {showRecent && (
           <CommandGroup heading="Recently viewed">
             {recent.map(item => (
@@ -345,10 +440,16 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 {item.kind === "doc"
                   ? <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   : <FileKindIcon mime={item.mime ?? ""} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                <span className="font-medium text-sm flex-1 min-w-0 truncate">{item.title}</span>
-                <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
-                  <Clock className="h-2.5 w-2.5" />
-                  {timeAgo(item.accessedAt)}
+                <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
+                {/* "Site · time", matching the dashboard's Recently opened list. */}
+                <span className="ml-auto flex min-w-0 items-center gap-1 shrink-0 text-xs text-muted-foreground whitespace-nowrap">
+                  {item.siteName && (
+                    <>
+                      <span className="max-w-32 truncate">{item.siteName}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                  <span>{timeAgo(item.accessedAt)}</span>
                 </span>
               </CommandItem>
             ))}
@@ -366,7 +467,32 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
           </div>
         )}
         {showEmpty && (
-          <p className="py-6 text-center text-sm text-muted-foreground">No results found.</p>
+          <div className="px-4 pb-3 pt-5">
+            <p className="text-sm font-medium">No results found</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isDashboard
+                ? "This searches sites and documents. Open a site to search its files or filter by tag."
+                : "Try a different word, or type # to filter by tag."}
+            </p>
+          </div>
+        )}
+        {/* Dashboard search covers site names and doc titles/bodies but not
+            files or tags - give the user a direct way into a site, where the
+            full doc/file/tag search lives. */}
+        {showEmpty && isDashboard && sites.length > 0 && (
+          <CommandGroup heading="Search inside a site">
+            {sites.slice(0, 5).map(s => (
+              <CommandItem
+                key={`open-site:${s.id}`}
+                value={`open-site:${s.id}`}
+                onSelect={() => { close(); navigate(`/projects/${s.id}`); }}
+                className="flex items-center gap-2 py-2 min-w-0"
+              >
+                <ProjectSquareLogo projectId={s.id} logoSquareUpdatedAt={s.logo_square_updated_at} className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm truncate">Open <span className="font-medium">{s.name}</span></span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
         )}
         {isDashboard && siteHits.length > 0 && (
           <CommandGroup heading="Sites">
@@ -378,9 +504,33 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-2 py-2 min-w-0"
               >
                 <ProjectSquareLogo projectId={s.id} logoSquareUpdatedAt={s.logo_square_updated_at} className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={s.name} term={searchTerm} />
                 </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {isDashboard && hasTerm && siteDocs.length > 0 && (
+          <CommandGroup heading="Documents">
+            {siteDocs.map(d => (
+              <CommandItem
+                key={`site-doc:${d.siteId}:${d.doc_id}`}
+                value={`site-doc:${d.siteId}:${d.doc_id}`}
+                onSelect={() => { close(); navigate(`/projects/${d.siteId}/docs/${d.doc_id}`); }}
+                className="flex items-center gap-2 py-2 min-w-0"
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 self-start mt-[3px] text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-sm">
+                    <HighlightedText text={d.title} term={searchTerm} />
+                  </span>
+                  {/* Body-only match: one line of context showing the hit. */}
+                  {d.excerpt && !d.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) && (
+                    <SearchSnippet html={d.excerpt} />
+                  )}
+                </span>
+                <span className="ml-auto max-w-36 shrink-0 self-start mt-0.5 truncate text-xs text-muted-foreground">{d.siteName}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -397,14 +547,14 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 {d.tags ? (
                   <>
                     <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-medium text-sm flex-1 min-w-0 truncate">{d.title}</span>
+                    <span className="text-sm flex-1 min-w-0 truncate">{d.title}</span>
                     <TagChips tags={d.tags} highlight={searchTerm} />
                   </>
                 ) : (
                   <>
                     <span className="flex w-full items-center gap-1.5 min-w-0">
                       <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-medium text-sm truncate">
+                      <span className="text-sm truncate">
                         <HighlightedText text={d.title} term={searchTerm} />
                       </span>
                       <HitMeta folder={d.folder} updatedAt={d.updated_at} />
@@ -426,7 +576,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-1.5 py-2 min-w-0"
               >
                 <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={f.name} term={searchTerm} />
                 </span>
                 <HitMeta folder={f.parent} />
@@ -444,7 +594,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-1.5 py-2 min-w-0"
               >
                 <FileKindIcon mime={f.mime_type} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={f.name} term={searchTerm} />
                 </span>
                 <HitMeta folder={f.folder} updatedAt={f.updated_at} />
@@ -459,7 +609,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 key={`action:${a.id}`}
                 value={`action:${a.id}`}
                 onSelect={() => { void a.run(); }}
-                className="flex items-center gap-1.5 py-2 min-w-0"
+                className="flex items-center gap-2 py-2 min-w-0"
               >
                 <a.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="text-sm truncate">{a.label}</span>
@@ -467,6 +617,8 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             ))}
           </CommandGroup>
         )}
+        {/* Zero-height sticky fade pinned to the list's bottom edge. */}
+        <div aria-hidden className={cn("pointer-events-none sticky bottom-0 -mt-4 h-4 bg-gradient-to-t from-popover to-transparent transition-opacity", moreBelow ? "opacity-100" : "opacity-0")} />
       </CommandList>
       <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5">
         <div className="flex items-center gap-2 min-w-0">
@@ -484,19 +636,26 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             Tags
           </button>}
           {loading ? (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground" aria-hidden="true">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden="true">
               <Loader2 className="h-3 w-3 animate-spin" />
               Searching…
             </span>
           ) : hasTerm && resultCount > 0 ? (
-            <span className="text-[10px] text-muted-foreground" aria-hidden="true">
+            <span className="text-xs text-muted-foreground" aria-hidden="true">
               {resultCount} result{resultCount === 1 ? "" : "s"}
             </span>
+          ) : isDashboard ? (
+            // Keep the search scope visible once the placeholder is gone.
+            <span className="text-xs text-muted-foreground" aria-hidden="true">Searching all sites</span>
           ) : null}
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-[10px] text-muted-foreground whitespace-nowrap">
-          <span className="flex items-center gap-1"><Kbd>↑↓</Kbd> navigate</span>
-          <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+        <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
+          {!(showEmpty && !(isDashboard && sites.length > 0)) && (
+            <>
+              <span className="flex items-center gap-1"><Kbd>↑↓</Kbd> navigate</span>
+              <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+            </>
+          )}
           <span className="flex items-center gap-1"><Kbd>esc</Kbd> close</span>
         </div>
       </div>

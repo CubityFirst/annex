@@ -44,71 +44,89 @@
      (--ui-font). Defaults match the historic hard-coded stacks in body and
      wysiwyg/styles.css. Overridden at runtime by main.tsx (cookie boot) and
      DocsLayout (state from /api/me) based on the user's per-tier choice. */
-  --reading-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --editing-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --reading-font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --editing-font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ui-font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
+  /* Light palette - pure neutral greys (no hue tint). */
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.2 0 0);
+
+  --sidebar: oklch(0.972 0 0);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
+  --card-foreground: oklch(0.2 0 0);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
+  --popover-foreground: oklch(0.2 0 0);
 
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.23 0 0);
+  --primary-foreground: oklch(0.975 0 0);
 
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.23 0 0);
 
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.5 0 0);
 
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.2 0 0);
 
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.56 0.2 27);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.21 0.006 285.885);
+  --border: oklch(0.905 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.55 0 0);
 }
 
+/* Dark palette - layered neutral greys instead of one flat near-black:
+   sidebar (deepest) < background < card < popover, each a small lightness
+   step with zero chroma (no warm/cool tint). Text is a soft off-white rather
+   than pure white to cut glare on long reads. */
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
+  --background: oklch(0.182 0 0);
+  --foreground: oklch(0.925 0 0);
 
-  --card: oklch(0.141 0.005 285.823);
-  --card-foreground: oklch(0.985 0 0);
+  --sidebar: oklch(0.162 0 0);
 
-  --popover: oklch(0.141 0.005 285.823);
-  --popover-foreground: oklch(0.985 0 0);
+  --card: oklch(0.207 0 0);
+  --card-foreground: oklch(0.925 0 0);
 
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.21 0.006 285.885);
+  --popover: oklch(0.222 0 0);
+  --popover-foreground: oklch(0.925 0 0);
 
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.925 0 0);
+  --primary-foreground: oklch(0.19 0 0);
 
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
+  --secondary: oklch(0.255 0 0);
+  --secondary-foreground: oklch(0.925 0 0);
 
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.245 0 0);
+  --muted-foreground: oklch(0.715 0 0);
 
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.262 0 0);
+  --accent-foreground: oklch(0.945 0 0);
 
-  --border: oklch(0.274 0.006 286.033);
-  --input: oklch(0.274 0.006 286.033);
-  --ring: oklch(0.552 0.016 285.938);
+  /* Light enough for small red text to clear 4.5:1 on every dark surface;
+     solid destructive buttons therefore take dark text. */
+  --destructive: oklch(0.69 0.17 24);
+  --destructive-foreground: oklch(0.17 0 0);
+
+  --border: oklch(0.29 0 0);
+  /* Control outlines (inputs, checkboxes, radios, off switches) need ≥3:1
+     against the surface, so --input is much lighter than the hairline - but
+     no lighter than that, or idle inputs out-shout the buttons. 0.52 clears
+     3:1 on every dark surface (3.1:1 on popover, 3.2:1 on card, 3.4:1 on
+     background); hover/focus brighten it from there. */
+  --input: oklch(0.52 0 0);
+  --ring: oklch(0.62 0 0);
 }
 
 @theme inline {
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-background: var(--background);
+  --color-sidebar: var(--sidebar);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -133,9 +151,17 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-* {
-  border-color: var(--border);
-  scrollbar-color: var(--muted-foreground) var(--muted);
+/* In @layer base (not unlayered) so Tailwind's border-colour utilities -
+   border-input, border-destructive/30, data-[state=checked]:border-primary -
+   can override it; an unlayered rule beats every layered utility. */
+@layer base {
+  * {
+    border-color: var(--border);
+    /* Quiet scrollbars: a soft thumb on a transparent track instead of a
+       bright thumb on a filled gutter. */
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 [data-dev="true"]::before {
@@ -175,6 +201,13 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--ui-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--foreground) 22%, transparent);
 }
 
 /* Reading-mode wrapper used by DocPage and PublicDocPage on the <article>
@@ -368,5 +401,24 @@ body {
 @media print {
   .cm-mermaid {
     overflow: visible !important;
+  }
+}
+
+/* Shiki code blocks (CodeBlock + the editor's CodeFenceWidget): sit on the
+   card surface with a hairline border instead of the theme's own flat
+   background, so code reads as part of the page rather than a cold slab. */
+pre.shiki {
+  background-color: var(--card) !important;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  line-height: 1.65;
+}
+
+/* Docked side panel (DocPage's Markdown reference on desktop): the app's main
+   column shrinks by the panel's width so nothing sits underneath it. Keep the
+   width in sync with that SheetContent (md:w-[26rem]). */
+@media (min-width: 768px) {
+  html[data-side-panel="open"] [data-app-main] {
+    margin-right: 26rem;
   }
 }

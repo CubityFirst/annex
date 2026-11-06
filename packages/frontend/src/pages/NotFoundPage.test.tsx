@@ -18,6 +18,9 @@ describe("NotFoundPage", () => {
       "href",
       expect.stringContaining("mailto:"),
     );
+    // Global catch-all wears the marketing chrome: nav home link + shared footer.
+    expect(screen.getByRole("link", { name: /annex home/i })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
   });
 });
 
@@ -30,6 +33,9 @@ describe("NotFound404", () => {
     );
     expect(screen.getByText("Nothing here.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /go back to docs/i })).toHaveAttribute("href", "/docs");
+    // Bare by default (custom domains / public readers): no Annex nav or footer.
+    expect(screen.queryByRole("link", { name: /annex home/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
   });
 
   it("renders an external primary CTA as a new-tab anchor and honours a custom status", () => {

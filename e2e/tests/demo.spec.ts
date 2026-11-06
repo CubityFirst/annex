@@ -34,7 +34,8 @@ async function scrollUntilVisible(page: Page, locator: ReturnType<Page["locator"
 test.describe("demo sandbox", () => {
   test("landing page 'See a demo' links to /demo", async ({ page }) => {
     await page.goto("/");
-    const demoLink = page.locator('a:has-text("See a demo")');
+    // The hero and the closing CTA band both link to the demo.
+    const demoLink = page.locator('a:has-text("See a demo")').first();
     await expect(demoLink).toHaveAttribute("href", "/demo");
   });
 
@@ -135,22 +136,22 @@ test.describe("demo sandbox", () => {
     await expect(guidesRow).toBeVisible();
 
     await page.getByLabel("Actions for folder Guides").click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await page.getByRole("menuitem", { name: "Move to recycle bin" }).click();
     await expect(page.getByText(/will be moved to the recycle bin/)).toBeVisible();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("button", { name: "Move to recycle bin", exact: true }).click();
     await expect(page.getByText('Moved "Guides" to the recycle bin.')).toBeVisible();
     await expect(guidesRow).toHaveCount(0);
 
     // Client-side navigation only from here: a full reload reseeds the demo store.
     // The bin is a section of Site Settings.
-    await page.getByTitle("Site Settings").click();
+    await page.getByTitle("Site settings").click();
     await expect(page.getByRole("heading", { name: "Recycle bin" })).toBeVisible();
-    await expect(page.getByText("Guides", { exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Restore Guides" }).click();
     await expect(page.getByText('Restored "Guides"')).toBeVisible();
     await expect(page.getByText("The recycle bin is empty")).toBeVisible();
 
-    await page.getByRole("link", { name: "File Manager" }).click();
+    await page.getByRole("link", { name: "File manager" }).click();
     await expect(guidesRow).toBeVisible();
   });
 
@@ -172,7 +173,8 @@ test.describe("demo sandbox", () => {
     await page.getByRole("link", { name: /\/@demo-person$/ }).click();
     await page.waitForURL("**/@demo-person");
     await expect(page.getByRole("heading", { level: 1, name: "Demo User" })).toBeVisible();
-    await expect(page.getByRole("dialog").getByText("@demo-person", { exact: true })).toBeVisible();
+    // Opened directly (no background page), the profile renders as a full page.
+    await expect(page.getByText("@demo-person", { exact: true })).toBeVisible();
 
     await page.goBack();
     await page.getByRole("switch", { name: "Profile link" }).click();
@@ -199,6 +201,6 @@ test.describe("demo sandbox", () => {
     await enterDemo(page);
     await page.click('button:has-text("Exit demo")');
     await page.waitForURL((url) => url.pathname === "/");
-    await expect(page.getByText("See a demo")).toBeVisible();
+    await expect(page.getByText("See a demo").first()).toBeVisible();
   });
 });

@@ -130,7 +130,9 @@ test("registers and creates a site", async () => {
 
 test("'New drawing' creates a .excalidraw file and mounts the editor", async () => {
   await page.goto(`/projects/${projectId}`);
-  await page.getByRole("button", { name: "New drawing" }).click();
+  // Secondary create actions live behind the "New document" split button's chevron.
+  await page.getByRole("button", { name: "More create options" }).click();
+  await page.getByRole("menuitem", { name: "New drawing" }).click();
 
   // Navigates to the file page for the new drawing.
   await expect(page).toHaveURL(/\/projects\/.+\/files\/.+/, { timeout: 15000 });
@@ -188,5 +190,5 @@ test("drawing a shape and saving persists it", async () => {
 
 test("the drawing appears in the file listing", async () => {
   await page.goto(`/projects/${projectId}`);
-  await expect(page.getByText("Untitled.excalidraw").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("main").getByText("Untitled.excalidraw").first()).toBeVisible({ timeout: 10000 });
 });

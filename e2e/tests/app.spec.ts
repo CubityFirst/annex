@@ -120,7 +120,7 @@ test("registers a new account", async () => {
 
 test("shows the dashboard with no projects", async () => {
   await page.goto("/dashboard");
-  await expect(page.getByText("Your Sites")).toBeVisible();
+  await expect(page.getByText("Your sites")).toBeVisible();
   await expect(page.getByText("New site")).toBeVisible();
 });
 
@@ -189,28 +189,33 @@ test("preview shows the saved title and content", async () => {
 // ── Navigate back & verify file list ────────────────────────────────────────
 
 test("the document appears in the project file list", async () => {
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
-  await expect(page.getByText("My E2E Document")).toBeVisible({ timeout: 5000 });
+  // Scoped to <main>: the sidebar page tree also lists the doc.
+  await expect(page.getByRole("main").getByText("My E2E Document").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── FileManager: new folder ──────────────────────────────────────────────────
 
 test("creates a folder", async () => {
-  await page.getByRole("button", { name: "New folder" }).click();
-  const folderInput = page.getByPlaceholder("Folder name");
+  // Secondary create actions live behind the "New document" split button's chevron.
+  await page.getByRole("button", { name: "More create options" }).click();
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  const folderInput = page.getByLabel("Folder name", { exact: true });
   await expect(folderInput).toBeVisible({ timeout: 5000 });
   await folderInput.fill("E2E Folder");
   await page.getByRole("button", { name: "Create" }).click();
   // .first(): the folder renders twice (desktop table + CSS-hidden mobile card
   // list), and strict mode counts hidden matches too. Desktop row comes first.
-  await expect(page.getByText("E2E Folder").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("main").getByText("E2E Folder").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── FileManager: document inside folder ─────────────────────────────────────
 
 test("navigates into the folder and creates a document inside it", async () => {
-  await page.getByText("E2E Folder").first().click();
+  // Scoped to <main>: the sidebar page tree has a same-named folder toggle
+  // (it comes first in DOM order and only expands the tree).
+  await page.getByRole("main").getByText("E2E Folder").first().click();
 
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/projects\/.+\/docs\/.+/, { timeout: 10000 });
@@ -229,7 +234,7 @@ test("drags a document into a folder", async () => {
   // Navigate back to the project root file manager. Assert on the draggable
   // desktop row - bare getByText also matches the sidebar "Recently accessed"
   // link and the mobile card list, which strict mode rejects.
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
   await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 
@@ -243,8 +248,10 @@ test("drags a document into a folder", async () => {
   ).not.toBeVisible({ timeout: 5000 });
 
   // Enter the folder and confirm the doc is now inside.
-  await page.getByText("E2E Folder").first().click();
-  await expect(page.getByText("My E2E Document").first()).toBeVisible({ timeout: 5000 });
+  // Scoped to <main>: the sidebar page tree has a same-named folder toggle
+  // (it comes first in DOM order and only expands the tree).
+  await page.getByRole("main").getByText("E2E Folder").first().click();
+  await expect(page.getByRole("main").getByText("My E2E Document").first()).toBeVisible({ timeout: 5000 });
 });
 
 // ── FileManager: drag doc back to root via breadcrumb ────────────────────────
@@ -265,7 +272,7 @@ test("drags a document back to root via the breadcrumb", async () => {
   // Navigate to the project root and confirm the doc is back there. Assert on
   // the draggable desktop row - bare getByText also matches the sidebar
   // "Recently accessed" link, which strict mode rejects once the table renders.
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 });
 
@@ -292,8 +299,8 @@ test("renames a folder via the context menu", async () => {
 
   // Generous timeout: the rename PUT can be slow through the local wrangler
   // chain when other suites are hammering it in parallel.
-  await expect(page.getByText("E2E Renamed Folder").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("E2E Folder", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("main").getByText("E2E Renamed Folder").first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("main").getByText("E2E Folder", { exact: true })).not.toBeVisible();
 });
 
 // ── FileManager: right-click context menu - delete ───────────────────────────
@@ -303,10 +310,10 @@ test("deletes a document via the context menu", async () => {
   // "Recently accessed" link and the CSS-hidden mobile card list.
   const docRow = page.locator('[draggable="true"]', { hasText: "My E2E Document" });
   await docRow.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("menuitem", { name: "Move to recycle bin" }).click();
 
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 3000 });
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Move to recycle bin" }).click();
 
   await expect(docRow).not.toBeVisible({ timeout: 5000 });
 });
@@ -317,12 +324,12 @@ test("can favourite the project from the dashboard", async () => {
   await page.goto("/dashboard");
   const projectCard = page.locator(".group", { hasText: PROJECT_NAME });
   await expect(projectCard).toBeVisible({ timeout: 5000 });
-  await projectCard.getByRole("button", { name: "Add to favourites", exact: true }).click();
-  await expect(projectCard.getByRole("button", { name: "Remove from favourites", exact: true })).toBeVisible({ timeout: 5000 });
+  await projectCard.getByRole("button", { name: "Pin to top", exact: true }).click();
+  await expect(projectCard.getByRole("button", { name: "Unpin", exact: true })).toBeVisible({ timeout: 5000 });
   // Persisted server-side, not just an optimistic toggle.
   await page.reload();
   await expect(
-    page.locator(".group", { hasText: PROJECT_NAME }).getByRole("button", { name: "Remove from favourites", exact: true }),
+    page.locator(".group", { hasText: PROJECT_NAME }).getByRole("button", { name: "Unpin", exact: true }),
   ).toBeVisible({ timeout: 5000 });
 });
 

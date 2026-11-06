@@ -75,7 +75,7 @@ describe("OrgPage", () => {
     renderOrgPage();
 
     expect(await screen.findByRole("heading", { name: "Acme Inc" })).toBeInTheDocument();
-    expect(screen.getByText("owner")).toBeInTheDocument();
+    expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Handbook")).toBeInTheDocument();
     expect(screen.getByText("The team handbook")).toBeInTheDocument();
     expect(screen.getByText("3 docs")).toBeInTheDocument();

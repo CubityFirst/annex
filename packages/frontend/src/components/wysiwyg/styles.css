@@ -27,9 +27,11 @@
 
 /* WYSIWYG editor typography. Scoped to .cm-content so it does not leak into the rest of the app. */
 
+/* Same size and leading in editing as in reading, so pressing Edit doesn't
+   reflow the document. */
 .cm-wysiwyg .cm-content {
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.7;
 }
 /* Bump to 16px on narrow viewports so iOS doesn't auto-zoom when the editing/raw
    editor gains focus. Desktop keeps the tighter 15px. */
@@ -56,23 +58,38 @@
  * which excludes margins - using margin here causes click coordinates to map
  * to the wrong line.
  */
+/* More space above a heading than below it, so each heading visibly belongs
+   to the section it introduces (the markdown blank line supplies the gap
+   below). */
 .cm-wysiwyg .cm-content .cm-line.cm-h1 {
   font-size: 2em;
-  font-weight: 700;
+  font-weight: 650;
+  letter-spacing: -0.022em;
   line-height: 1.2;
-  padding: 0.5em 0 0.15em;
+  padding: 0.55em 0 0.3em;
+  text-wrap: balance;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-h2 {
-  font-size: 1.55em;
-  font-weight: 700;
+  font-size: 1.5em;
+  font-weight: 650;
+  letter-spacing: -0.018em;
   line-height: 1.25;
-  padding: 0.5em 0 0.15em;
+  padding: 0.95em 0 0.3em;
+  text-wrap: balance;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-h3 {
-  font-size: 1.3em;
+  font-size: 1.25em;
   font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.3;
-  padding: 0.4em 0 0.1em;
+  padding: 0.8em 0 0.3em;
+}
+/* Blank line directly under a heading: a small fixed step instead of a full
+   text line (see decorations/block/heading.ts). Height comes from font-size ×
+   line-height, so CodeMirror still measures it correctly. */
+.cm-wysiwyg .cm-content .cm-line.cm-heading-gap {
+  font-size: 6px;
+  line-height: 1;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-h4 {
   font-size: 1.15em;
@@ -135,7 +152,7 @@
   text-decoration: underline;
 }
 .cm-wysiwyg .cm-content .cm-inline-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   background-color: var(--muted);
   padding: 0.1em 0.3em;
   border-radius: 4px;
@@ -187,7 +204,7 @@
    font-size change, no padding-top/bottom on first/last (those were making
    lines variable-height and drifting click coords). */
 .cm-wysiwyg .cm-content .cm-line.cm-code-line {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   background-color: color-mix(in oklab, var(--muted) 40%, transparent);
   padding-left: 0.75em;
   padding-right: 0.75em;
@@ -238,7 +255,7 @@
    alignment. Same height as surrounding prose (no font-size change) so click
    coords stay in sync with the heightmap. */
 .cm-wysiwyg .cm-content .cm-line.cm-table-line {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Rendered table widget - padding (not margin) so the spacing lives inside
@@ -246,32 +263,45 @@
 .cm-wysiwyg .cm-content .cm-table-widget-root {
   padding: 0.5em 0;
 }
+/* Subtle 1px outer frame with rounded corners. `separate` + zero spacing is
+   what lets border-radius apply to a table (collapsed borders ignore it); the
+   inner rules below are single-sided, so nothing doubles up. Corner cells get
+   a matching radius so the header fill doesn't poke past the frame. */
 .cm-wysiwyg .cm-content .cm-wysiwyg-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
   margin: 0;
   font-size: 0.95em;
 }
-/* Direct hsl values (not CSS vars) so the borders render regardless of how
-   the surrounding theme defines `--border` / `--foreground`. Light mode uses
-   a darker grey so the rules are clearly visible against white; .dark
-   overrides drop back to the original faint-grey treatment. */
+.cm-wysiwyg .cm-content .cm-wysiwyg-table thead tr:first-child th:first-child {
+  border-top-left-radius: 5px;
+}
+.cm-wysiwyg .cm-content .cm-wysiwyg-table thead tr:first-child th:last-child {
+  border-top-right-radius: 5px;
+}
+/* Horizontal rules only - no vertical column lines, which made tables read
+   heavier than the surrounding page; the header fill, row rules and the outer
+   frame carry the structure. Direct hsl values (not CSS vars) so the rules
+   render regardless of how the surrounding theme defines `--border` /
+   `--foreground`. Light mode uses a darker grey so the rules are clearly
+   visible against white; .dark overrides drop back to a faint grey. */
 .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
 .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
   padding: 0.35em 0.75em;
   text-align: left;
   vertical-align: top;
+  /* Fixed-width digits so numbers line up down a column. */
+  font-variant-numeric: tabular-nums;
   border: 0;
-  /* Vertical column separator */
-  border-right: 1px solid hsl(0 0% 15% / 0.55);
-}
-.cm-wysiwyg .cm-content .cm-wysiwyg-table th:last-child,
-.cm-wysiwyg .cm-content .cm-wysiwyg-table td:last-child {
-  border-right: 0;
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
   font-weight: 600;
   /* Rule separating header from body */
-  border-bottom: 2px solid hsl(0 0% 15% / 0.75);
+  border-bottom: 1px solid hsl(0 0% 15% / 0.35);
+  background-color: color-mix(in oklab, var(--muted) 45%, transparent);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
   /* Rule between body rows */
@@ -280,18 +310,15 @@
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody tr:last-child td {
   border-bottom: 0;
 }
-.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
-.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
-  border-right-color: hsl(0 0% 50% / 0.35);
-}
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
-  border-bottom-color: hsl(0 0% 80% / 0.8);
+  /* A quiet header rule: lighter than the headings and callout borders. */
+  border-bottom-color: hsl(0 0% 100% / 0.22);
 }
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
   border-bottom-color: hsl(0 0% 50% / 0.35);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table-empty {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: pre;
 }
 
@@ -304,9 +331,17 @@
   display: inline-block;
   padding: 0;
 }
-.cm-wysiwyg .cm-content .cm-wysiwyg-image img {
+.cm-wysiwyg .cm-content .cm-wysiwyg-image img,
+.cm-wysiwyg .cm-content img.cm-wysiwyg-image {
   max-width: 100%;
-  border-radius: 4px;
+  border-radius: 10px;
+}
+/* Block images: the class (and its vertical padding, which must stay inside
+   the measured box for CM's heightmap) is on the <img> itself, so round the
+   visible picture with clip-path rather than border-radius. */
+.cm-wysiwyg .cm-content img.cm-wysiwyg-image--block {
+  border-radius: 0;
+  clip-path: inset(0.25em 0 round 10px);
 }
 
 /* Wikilink + standard link - inherit foreground color (white in dark mode),
@@ -341,7 +376,9 @@
 /* Lists */
 .cm-wysiwyg .cm-content .cm-list-bullet-marker {
   display: inline-block;
-  margin-right: 0.4em;
+  width: 1em;
+  text-align: center;
+  margin-right: 0.35em;
   color: var(--muted-foreground);
   font-weight: 600;
 }
@@ -426,7 +463,7 @@
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__val {
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.92em;
 }
 .cm-wysiwyg .cm-content .cm-frontmatter-card__empty {
@@ -467,27 +504,29 @@
   transform: rotate(-90deg);
 }
 .cm-wysiwyg .cm-content .cm-line.cm-callout-header-line {
-  border-left-width: 4px;
+  border-left-width: 3px;
   border-left-style: solid;
   padding-left: 0.75em;
-  padding-top: 0.3em;
+  padding-right: 0.75em;
+  padding-top: 0.5em;
   font-weight: 600;
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-callout-body {
-  border-left-width: 4px;
+  border-left-width: 3px;
   border-left-style: solid;
   padding-left: 0.75em;
+  padding-right: 0.75em;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-callout-body--last {
-  padding-bottom: 0.3em;
+  padding-bottom: 0.5em;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
 }
 /* When the header line itself is the last (single-line callout). */
 .cm-wysiwyg .cm-content .cm-line.cm-callout-header-line.cm-callout-body--last {
-  padding-bottom: 0.3em;
+  padding-bottom: 0.5em;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
 }
@@ -514,17 +553,19 @@
   --callout-tone-red: hsl(0 74% 44%);
   --callout-tone-purple: hsl(270 65% 50%);
 }
+/* Dark tones are deliberately desaturated (~45-60%) so callouts read as
+   calm accents on the dark surfaces instead of neon stripes. */
 .dark {
-  --callout-tone-zinc: hsl(220 9% 60%);
-  --callout-tone-cyan: hsl(190 90% 60%);
-  --callout-tone-blue: hsl(217 91% 65%);
-  --callout-tone-teal: hsl(174 70% 55%);
-  --callout-tone-green: hsl(142 71% 55%);
-  --callout-tone-yellow: hsl(48 96% 60%);
-  --callout-tone-amber: hsl(38 92% 60%);
-  --callout-tone-orange: hsl(25 95% 60%);
-  --callout-tone-red: hsl(0 84% 65%);
-  --callout-tone-purple: hsl(270 75% 65%);
+  --callout-tone-zinc: hsl(0 0% 62%);
+  --callout-tone-cyan: hsl(190 50% 64%);
+  --callout-tone-blue: hsl(217 60% 70%);
+  --callout-tone-teal: hsl(170 40% 60%);
+  --callout-tone-green: hsl(142 38% 60%);
+  --callout-tone-yellow: hsl(46 65% 64%);
+  --callout-tone-amber: hsl(36 70% 63%);
+  --callout-tone-orange: hsl(24 70% 64%);
+  --callout-tone-red: hsl(4 65% 67%);
+  --callout-tone-purple: hsl(268 45% 72%);
 }
 
 /* Callout tones */
@@ -538,6 +579,18 @@
 .cm-wysiwyg .cm-content .cm-callout-tone-orange { background-color: hsl(25 95% 53% / 0.1); border-left-color: var(--callout-tone-orange); color: var(--callout-tone-orange); }
 .cm-wysiwyg .cm-content .cm-callout-tone-red { background-color: hsl(0 84% 60% / 0.1); border-left-color: var(--callout-tone-red); color: var(--callout-tone-red); }
 .cm-wysiwyg .cm-content .cm-callout-tone-purple { background-color: hsl(270 75% 60% / 0.1); border-left-color: var(--callout-tone-purple); color: var(--callout-tone-purple); }
+
+/* Softer washes on dark surfaces. */
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-zinc { background-color: color-mix(in oklab, var(--callout-tone-zinc) 9%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-cyan { background-color: color-mix(in oklab, var(--callout-tone-cyan) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-blue { background-color: color-mix(in oklab, var(--callout-tone-blue) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-teal { background-color: color-mix(in oklab, var(--callout-tone-teal) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-green { background-color: color-mix(in oklab, var(--callout-tone-green) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-yellow { background-color: color-mix(in oklab, var(--callout-tone-yellow) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-amber { background-color: color-mix(in oklab, var(--callout-tone-amber) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-orange { background-color: color-mix(in oklab, var(--callout-tone-orange) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-red { background-color: color-mix(in oklab, var(--callout-tone-red) 8%, transparent); }
+.dark .cm-wysiwyg .cm-content .cm-callout-tone-purple { background-color: color-mix(in oklab, var(--callout-tone-purple) 8%, transparent); }
 
 /* The body lines should NOT inherit the accent text color (the header keeps it). */
 .cm-wysiwyg .cm-content .cm-line.cm-callout-body {
@@ -631,9 +684,39 @@
 /* Remote cursor labels */
 .cm-wysiwyg .cm-ySelectionInfo {
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   padding: 1px 4px;
   border-radius: 3px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* Empty-document hint (CodeMirror placeholder extension). */
+.cm-wysiwyg .cm-placeholder {
+  /* Same placeholder tone as the app's inputs (placeholder:/85), so
+     the hint can't be mistaken for real text. */
+  color: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  font-style: normal;
+}
+
+/* Revealed markdown syntax (e.g. the `#` of the heading being edited). */
+.cm-wysiwyg .cm-content .cm-md-syntax {
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+/* Phones: a smaller H1 so the title doesn't push the body below the fold. */
+@media (max-width: 640px) {
+  .cm-wysiwyg--reading .cm-content .cm-line.cm-h1 {
+    font-size: 1.75em;
+    padding-top: 0.25em;
+  }
+}
+
+/* Hanging indents for list lines are set inline per line by
+   decorations/block/list.ts; widgets inside must not inherit text-indent. */
+.cm-wysiwyg .cm-content .cm-list-bullet-marker,
+.cm-wysiwyg .cm-content .cm-task-checkbox {
+  text-indent: 0;
 }
