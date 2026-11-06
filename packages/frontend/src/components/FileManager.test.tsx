@@ -369,7 +369,13 @@ describe("FileManager", () => {
     fireEvent.keyDown(await screen.findByRole("button", { name: "More create options" }), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
     expect(await screen.findByText("Folders group docs, files and drawings.")).toBeTruthy();
+    // Create stays disabled until the name has a non-whitespace character.
+    const create = () => screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create().disabled).toBe(true);
+    fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "   " } });
+    expect(create().disabled).toBe(true);
     fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "Specs" } });
+    expect(create().disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByLabelText("Folder name")).toBeNull());
     expect(vi.mocked(apiFetchJson).mock.calls.some(([u]) => u === "/api/folders")).toBe(false);
@@ -404,10 +410,11 @@ describe("FileManager", () => {
     expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
   });
 
-  // Folder rows: the item count sits in the Size column (breakdown in the
-  // tooltip), and its other cells that don't apply or aren't known stay
-  // blank. Doc rows dash their Size.
-  it("puts the folder count in Size and blanks inapplicable folder cells", async () => {
+  // Folder rows: the item count sits beside the name (breakdown in the
+  // tooltip), and the cells that don't apply or aren't known (creator, byte
+  // size, last updated before the folder is opened) get the same muted dash
+  // as a doc's Size.
+  it("puts the folder count by the name and dashes inapplicable folder cells", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -420,15 +427,14 @@ describe("FileManager", () => {
     renderManager(null);
     await screen.findAllByLabelText("Open folder Specs");
     const cell = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!;
-    // Name is just the name - no inline count.
-    expect(cell("Open folder Specs", 0).textContent).toBe("Specs");
-    expect(cell("Open folder Specs", 2).textContent).toBe("1 item");
-    expect(cell("Open folder Specs", 2).querySelector('[title="1 doc"]')).toBeTruthy();
-    expect(cell("Open folder Blank", 2).textContent).toBe("Empty");
-    // A folder's author / last updated (never opened) are blank - no dash -
-    // with a screen-reader label.
-    for (const col of [1, 3]) {
-      expect(cell("Open folder Specs", col).querySelector('[aria-hidden="true"]')).toBeNull();
+    // Name carries the count as secondary text, with the breakdown tooltip.
+    expect(cell("Open folder Specs", 0).textContent).toBe("Specs1 item");
+    expect(cell("Open folder Specs", 0).querySelector('[title="1 doc"]')?.textContent).toBe("1 item");
+    expect(cell("Open folder Blank", 0).textContent).toBe("BlankEmpty");
+    // Created by / Size / Last updated (never opened): a muted dash with a
+    // screen-reader label.
+    for (const col of [1, 2, 3]) {
+      expect(cell("Open folder Specs", col).querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
       expect(cell("Open folder Specs", col).querySelector(".sr-only")?.textContent).toBeTruthy();
     }
     // A doc's size: a muted dash with a screen-reader label.

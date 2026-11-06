@@ -189,7 +189,7 @@ test("preview shows the saved title and content", async () => {
 // ── Navigate back & verify file list ────────────────────────────────────────
 
 test("the document appears in the project file list", async () => {
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
   // Scoped to <main>: the sidebar page tree also lists the doc.
   await expect(page.getByRole("main").getByText("My E2E Document").first()).toBeVisible({ timeout: 5000 });
@@ -234,7 +234,7 @@ test("drags a document into a folder", async () => {
   // Navigate back to the project root file manager. Assert on the draggable
   // desktop row - bare getByText also matches the sidebar "Recently accessed"
   // link and the mobile card list, which strict mode rejects.
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+$/, { timeout: 5000 });
   await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 
@@ -272,7 +272,7 @@ test("drags a document back to root via the breadcrumb", async () => {
   // Navigate to the project root and confirm the doc is back there. Assert on
   // the draggable desktop row - bare getByText also matches the sidebar
   // "Recently accessed" link, which strict mode rejects once the table renders.
-  await page.getByRole("link", { name: "File Manager" }).click();
+  await page.getByRole("link", { name: "File manager" }).click();
   await expect(page.locator('[draggable="true"]', { hasText: "My E2E Document" })).toBeVisible({ timeout: 10000 });
 });
 

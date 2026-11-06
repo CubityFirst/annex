@@ -9,10 +9,16 @@ import { cn } from "@/lib/utils";
 // `border-*` / `ring-*` overrides (e.g. ROLE_BADGE_CLASSES) without the pill
 // changing size. `default`, `secondary` and `outline` are kept as names for
 // existing call sites and all render as neutral.
+//
+// Two fixed heights so pills line up wherever they sit: `default` (24px,
+// text-xs) and `sm` (20px, 11px text) for dense rows and inline tags. The
+// height is set, not padded, so a call site's text-size override doesn't
+// change it. It's a min-height so the long "Image/Audio unavailable" pills can
+// still wrap on narrow screens instead of spilling out of the pill.
 const NEUTRAL = "bg-muted text-muted-foreground ring-border";
 
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors",
+  "inline-flex items-center gap-1 rounded-full border border-transparent font-medium ring-1 ring-inset transition-colors",
   {
     variants: {
       variant: {
@@ -24,8 +30,12 @@ const badgeVariants = cva(
         warning:     "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300",
         destructive: "bg-destructive/10 text-destructive ring-destructive/25",
       },
+      size: {
+        default: "min-h-6 px-2.5 text-xs",
+        sm:      "min-h-5 px-2 text-[11px]",
+      },
     },
-    defaultVariants: { variant: "neutral" },
+    defaultVariants: { variant: "neutral", size: "default" },
   },
 );
 
@@ -33,8 +43,8 @@ export interface BadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
+function Badge({ className, variant, size, ...props }: BadgeProps) {
+  return <span className={cn(badgeVariants({ variant, size }), className)} {...props} />;
 }
 
 export { Badge, badgeVariants };

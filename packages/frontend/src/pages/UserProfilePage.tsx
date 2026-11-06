@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SettingsEmptyState } from "@/components/settings/SettingsShell";
 import { getToken } from "@/lib/auth";
 import { formatInkSince } from "@/lib/inkDate";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
@@ -67,8 +68,11 @@ function Eyebrow({ children }: { children: ReactNode }) {
 
 /** Card grid shared by the profile's site lists (favourites, your/shared
  *  sites). Two columns max: the page is a centred ~704px column, so a third
- *  column would squeeze the cards and a short list would sit lopsided. */
-const SITE_GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2";
+ *  column would squeeze the cards. A lone card spans the full column instead
+ *  of leaving the right half empty. */
+function siteGrid(count: number): string {
+  return cn("grid grid-cols-1 gap-3", count > 1 && "sm:grid-cols-2");
+}
 /** Compact version of the dashboard's site card: same radius, border,
  *  surface, hover and title type, with the 32px mark and one header row. */
 const SITE_CARD =
@@ -288,7 +292,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {selfPrompt === "favourites" && (
             <section>
               <Eyebrow>Favourite sites</Eyebrow>
-              <ul className={SITE_GRID}>
+              <ul className={siteGrid(1)}>
                 <li>
                   {/* Same footprint as a site card; dashed = "add" target,
                       like the dashboard's "Add another site" tile. */}
@@ -312,7 +316,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {profile.favouriteSites.length > 0 && (
             <section>
               <Eyebrow>Favourite sites</Eyebrow>
-              <ul className={SITE_GRID}>
+              <ul className={siteGrid(profile.favouriteSites.length)}>
                 {profile.favouriteSites.map(site => {
                   const note = site.note?.trim();
                   return (
@@ -341,7 +345,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {profile.sharedProjects.length > 0 && (
             <section>
               <Eyebrow>{isSelf ? "Your sites" : "Sites you share"}</Eyebrow>
-              <ul className={SITE_GRID}>
+              <ul className={siteGrid(profile.sharedProjects.length)}>
                 {profile.sharedProjects.map(proj => (
                   <li key={proj.id}>
                     <button type="button" onClick={() => navigate(`/projects/${proj.id}`)} className={cn(SITE_CARD, "items-center")}>
@@ -358,15 +362,13 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           )}
 
           {/* Someone else's empty profile. (Your own gets the prompt row
-              above instead.) Solid, not dashed - dashed is for create targets. */}
+              above instead.) The design-system dashed empty-state card. */}
           {!isSelf && !profile.bio && profile.favouriteSites.length === 0 && profile.sharedProjects.length === 0 && (
-            <div className="flex flex-col items-center rounded-lg border border-border px-6 py-10 text-center">
-              <UserRound className="mb-2 size-5 text-muted-foreground" aria-hidden />
-              <p className="text-sm font-medium">Nothing to show yet</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {isInk ? `${displayName} hasn't added a bio or favourite sites.` : `${displayName} hasn't added any favourite sites.`}
-              </p>
-            </div>
+            <SettingsEmptyState
+              icon={UserRound}
+              title="Nothing to show yet"
+              hint={isInk ? `${displayName} hasn't added a bio or favourite sites.` : `${displayName} hasn't added any favourite sites.`}
+            />
           )}
 
           {isOther && (

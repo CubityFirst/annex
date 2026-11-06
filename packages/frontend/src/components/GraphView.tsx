@@ -524,7 +524,7 @@ export function GraphView({ data, onNodeClick, showControls = false, showLegend 
       )}
       {showLegend && (data.tagColors?.length ?? 0) > 0 && (
         <ul
-          aria-label="Tag color legend"
+          aria-label="Tag colour legend"
           className="pointer-events-none absolute left-2 top-2 flex max-w-[60%] flex-wrap gap-x-3 gap-y-1 rounded-md border bg-popover/80 px-2 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur"
         >
           {data.tagColors!.map(rule => (

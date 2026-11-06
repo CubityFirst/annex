@@ -52,6 +52,7 @@ import {
   DESTRUCTIVE_OUTLINE_BUTTON,
   DangerRow,
   SettingsEmptyRow,
+  SettingsEmptyState,
   SETTINGS_ROW_CARD,
   SettingsListStatusRow,
   SettingsRow,
@@ -85,6 +86,9 @@ const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
 /** Published location of docs/api/README.md (the public /v1 reference). */
 const API_REFERENCE_URL = "https://github.com/CubityFirst/annex/blob/main/docs/api/README.md";
+
+/** Inline code styling for API paths like /v1 in running text. */
+const INLINE_CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
 
 // Grouped outline for the settings nav. Section→group membership and
 // per-role visibility live in the per-render `settingsSections` array. Order
@@ -591,7 +595,7 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
         setMembers(prev => prev.filter(m => m.userId !== member.userId));
-        toast({ title: member.accepted ? `${member.name} removed.` : `Invite to ${member.email} canceled.` });
+        toast({ title: member.accepted ? `${member.name} removed.` : `Invite to ${member.email} cancelled.` });
       } else {
         toast({ title: member.accepted ? "Failed to remove member." : "Failed to cancel invite.", variant: "destructive" });
       }
@@ -809,9 +813,9 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean; data?: Project };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "AI summarization type updated." });
+        toast({ title: "AI summarisation type updated." });
       } else {
-        toast({ title: "Failed to update AI summarization type.", variant: "destructive" });
+        toast({ title: "Failed to update AI summarisation type.", variant: "destructive" });
       }
     } catch {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
@@ -920,9 +924,9 @@ export function SiteSettingsPage() {
       });
       const json = await res.json() as { ok: boolean; data?: Project };
       if (json.ok) {
-        toast({ title: "Tag colors saved." });
+        toast({ title: "Tag colours saved." });
       } else {
-        toast({ title: "Failed to save tag colors.", variant: "destructive" });
+        toast({ title: "Failed to save tag colours.", variant: "destructive" });
       }
     } catch {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
@@ -1513,7 +1517,7 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
           <div className="flex flex-col gap-4">
             <div id="branding">
-              <SettingsSectionHeader title="Branding" description="Customize how your published site looks and is shared." />
+              <SettingsSectionHeader title="Branding" description="Customise how your published site looks and is shared." />
             </div>
             {/* Square icon - used in the sites sidebar, favourites, profile cards.
                 Cropped client-side to 512x512 via AvatarCropDialog. */}
@@ -1926,7 +1930,7 @@ export function SiteSettingsPage() {
                   titleId="ai-features-label"
                   icon={<Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />}
                   title={<>AI features <PremiumBadge /></>}
-                  description="Enable AI-powered document summarization."
+                  description="Enable AI-powered document summarisation."
                 >
                   <Switch
                     checked={project.ai_enabled === 1}
@@ -1938,15 +1942,15 @@ export function SiteSettingsPage() {
                 {project.ai_enabled === 1 && (
                   <SettingsRow
                     icon={<Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                    title="AI summarization type"
-                    description="Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed."
+                    title="AI summarisation type"
+                    description="Automatic generates a summary when a page is loaded. Manual only summarises when the sparkle button is pressed."
                   >
                     <Select
                       value={project.ai_summarization_type ?? "manual"}
                       onValueChange={handleAiSummarizationTypeChange}
                       disabled={togglingAiType}
                     >
-                      <SelectTrigger className="w-32 shrink-0" aria-label="AI summarization type">
+                      <SelectTrigger className="w-32 shrink-0" aria-label="AI summarisation type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -2016,15 +2020,16 @@ export function SiteSettingsPage() {
                           <span className="inline-flex">
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
                               disabled={locked || reindexing}
                               onClick={handleReindex}
                               aria-label="Rebuild graph"
                               title={tip}
                             >
-                              <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
+                              <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} aria-hidden />
+                              Rebuild
                             </Button>
                           </span>
                         </TooltipTrigger>
@@ -2064,9 +2069,9 @@ export function SiteSettingsPage() {
                       aria-expanded={tagColorsOpen}
                     >
                       <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="text-sm font-medium">Tag colors</span>
+                        <span className="text-sm font-medium">Tag colours</span>
                         <span className="text-[13px] leading-snug text-muted-foreground">
-                          Color graph nodes by frontmatter tag.
+                          Colour graph nodes by frontmatter tag.
                         </span>
                       </span>
                       <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${tagColorsOpen ? "rotate-180" : ""}`} aria-hidden />
@@ -2092,7 +2097,7 @@ export function SiteSettingsPage() {
                                 type="button"
                                 className="w-9 h-9 sm:w-6 sm:h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 style={{ backgroundColor: rule.color }}
-                                aria-label="Pick color"
+                                aria-label="Pick colour"
                                 onClick={() => {
                                   const el = document.getElementById(`tag-color-${rule.id}`);
                                   if (el) (el as HTMLInputElement).click();
@@ -2101,7 +2106,7 @@ export function SiteSettingsPage() {
                               <input
                                 id={`tag-color-${rule.id}`}
                                 type="color"
-                                aria-label="Tag color"
+                                aria-label="Tag colour"
                                 className="sr-only"
                                 value={rule.color}
                                 onChange={e => updateTagRuleColor(rule.id, e.target.value)}
@@ -2186,7 +2191,7 @@ export function SiteSettingsPage() {
 
                       <div className="flex shrink-0 items-center gap-3">
                         {isPending ? (
-                          <Badge variant="outline" className="border-transparent text-xs font-medium bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
+                          <Badge variant="warning" className="font-medium">
                             Pending
                           </Badge>
                         ) : canChangeRole ? (
@@ -2334,7 +2339,12 @@ export function SiteSettingsPage() {
               {loadingLinks ? (
                 <SettingsEmptyRow icon={Link} action={createLinkButton}>Loading…</SettingsEmptyRow>
               ) : activeInviteLinks.length === 0 ? (
-                <SettingsEmptyRow icon={Link} action={createLinkButton}>No invite links yet.</SettingsEmptyRow>
+                <SettingsEmptyState
+                  icon={Link}
+                  title="No invite links yet"
+                  hint="Create a link anyone can use to join this site."
+                  action={createLinkButton}
+                />
               ) : (
                 <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                   <SettingsListStatusRow action={createLinkButton}>
@@ -2390,7 +2400,7 @@ export function SiteSettingsPage() {
               <SettingsSectionHeader
                 title="API keys"
                 description={<>
-                  Scoped keys for the <span className="font-medium text-foreground">/v1</span> REST API. Each key is
+                  Scoped keys for the <code className={INLINE_CODE}>/v1</code> REST API. Each key is
                   bound to this site and can never do more than your own role allows. Keep them secret — treat a key
                   like a password.
                 </>}
@@ -2466,7 +2476,12 @@ export function SiteSettingsPage() {
             {loadingKeys ? (
               <SettingsEmptyRow icon={KeyRound} action={newKeyButton}>Loading keys…</SettingsEmptyRow>
             ) : apiKeys.length === 0 ? (
-              <SettingsEmptyRow icon={KeyRound} action={newKeyButton}>No API keys yet. Create one to use the /v1 API.</SettingsEmptyRow>
+              <SettingsEmptyState
+                icon={KeyRound}
+                title="No API keys yet"
+                hint={<>Create one to use the <code className={INLINE_CODE}>/v1</code> API.</>}
+                action={newKeyButton}
+              />
             ) : (
               <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                 <SettingsListStatusRow action={newKeyButton}>
@@ -2533,7 +2548,7 @@ export function SiteSettingsPage() {
   -H "Authorization: Bearer annx_your_key_here"`}
               </pre>
               <p className="mt-2 text-xs text-muted-foreground">
-                Base URL <span className="font-mono">{window.location.origin}/api/v1</span>. See the{" "}
+                Base URL <code className={INLINE_CODE}>{window.location.origin}/api/v1</code>. See the{" "}
                 <a
                   href={API_REFERENCE_URL}
                   target="_blank"
@@ -2741,7 +2756,7 @@ function RolePermissions({ roles }: { roles: Role[] }) {
 
 function PremiumBadge() {
   return (
-    <Badge variant="outline" className="border-transparent px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
+    <Badge variant="warning" size="sm" className="text-[10px] font-semibold uppercase tracking-wider">
       Premium
     </Badge>
   );

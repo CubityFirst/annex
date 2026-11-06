@@ -99,7 +99,8 @@ type Row =
   | { kind: "doc"; doc: TreeDoc }
   | { kind: "file"; file: TreeFile };
 
-const ROW_CLASS = "h-8 w-full justify-start gap-1.5 px-2 text-sm font-normal";
+// 32px rows on desktop; 40px touch targets in the mobile drawer (below md).
+const ROW_CLASS = "h-8 max-md:h-10 w-full justify-start gap-1.5 px-2 text-sm font-normal";
 const rowTone = (active: boolean) => (active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground");
 
 export function SidebarPageTree({
@@ -117,7 +118,7 @@ export function SidebarPageTree({
   const fileMatch = useMatch("/projects/:projectId/files/:fileId");
   const activeDocId = docMatch?.params.docId ?? null;
   const activeFileId = fileMatch?.params.fileId ?? null;
-  // File Manager folder views (/folders/:id) mark that folder as the
+  // File manager folder views (/folders/:id) mark that folder as the
   // current location and open it, so the sidebar mirrors the breadcrumb.
   const folderMatch = useMatch("/projects/:projectId/folders/:folderId");
   const activeFolderId = folderMatch?.params.folderId ?? null;

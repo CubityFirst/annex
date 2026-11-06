@@ -330,18 +330,19 @@
   padding: calc(var(--section-y) * 0.75) 0;
   border-top: 1px solid var(--border);
 }
+/* Separate cards on a gap - the same card style as the feature grid
+   (.l-extras-grid / .l-extra) further down, so the page has one card voice. */
 .l-uses-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
+  gap: 14px;
 }
 .l-use {
-  padding: 28px 26px;
-  border-left: 1px solid var(--border);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 26px 24px;
 }
-.l-use:first-child { border-left: none; }
 /* Same icon tile as the feature grid (.l-extra-icon). */
 .l-use-icon { margin-bottom: 18px; }
 .l-use-title {
@@ -781,12 +782,15 @@
   max-width: 640px;
   margin: 0 0 24px;
 }
+/* Section headings: clearly above the 18px body (23px semibold, full text
+   colour), with 56px of air above and 12px down to their own copy. */
 .l-legal-body h2 {
-  font-size: 20px;
-  font-weight: 500;
-  color: #c9c9c9;
-  margin: 54px 0 14px;
-  letter-spacing: -0.01em;
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  margin: 56px 0 12px;
+  letter-spacing: -0.012em;
 }
 .l-legal-body h2:first-child { margin-top: 0; }
 /* Section anchors land below the fixed nav, not under it. */
@@ -794,14 +798,17 @@
 
 /* Sticky "On this page" rail (privacy / terms) - fills the otherwise empty
    right side on wide screens; hidden below 1024px. Same shape as the app's
-   settings rail: uppercase 11px label, hairline track, 2px active bar. */
+   settings rail (hairline track, 2px active bar), with the label in the same
+   mono eyebrow voice as the page's "Legal" label. The text column (40rem
+   measure) and the rail sit 96px apart and are centred as one block, so
+   there's no dead gutter between them. */
 .l-legal-toc { display: none; }
 @media (min-width: 1024px) {
   .l-legal-layout {
     display: grid;
-    grid-template-columns: minmax(0, 780px) 220px;
-    justify-content: space-between;
-    column-gap: 56px;
+    grid-template-columns: minmax(0, 40rem) 220px;
+    justify-content: center;
+    column-gap: 96px;
     align-items: start;
   }
   .l-legal-toc {
@@ -813,9 +820,9 @@
   }
 }
 .l-legal-toc-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text3);
   margin-bottom: 12px;
@@ -881,8 +888,6 @@
 /* ── Responsive ── */
 @media (max-width: 1000px) {
   .l-uses-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .l-use:nth-child(3) { border-left: none; }
-  .l-use:nth-child(n + 3) { border-top: 1px solid var(--border); }
   .l-extras-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
@@ -907,8 +912,20 @@
     scrollbar-width: none;
     margin-left: calc(var(--gutter) * -1);
     margin-right: calc(var(--gutter) * -1);
-    padding: 0 var(--gutter);
+    /* Symmetric gutters at both ends: left padding plus a trailing spacer of
+       the same width (end padding on a scrolling flex row isn't reliably
+       part of the scroll area). Auto margins on the first/last tab centre
+       the row when it fits, and collapse to 0 when it has to scroll, so a
+       row that just fits doesn't leave its slack all on the right. */
+    padding: 0 0 0 var(--gutter);
   }
+  .l-viewer-tabs::after {
+    content: "";
+    /* Minus the row's 4px gap, which also sits before the spacer. */
+    flex: 0 0 calc(var(--gutter) - 4px);
+  }
+  .l-viewer-tab:first-child { margin-left: auto; }
+  .l-viewer-tab:last-of-type { margin-right: auto; }
   .l-viewer-tabs::-webkit-scrollbar { display: none; }
   /* While more tabs sit off the right edge, fade the last 24px so the row
      reads as scrollable rather than clipped (see ProductViewer). */
@@ -945,8 +962,6 @@
   .l-show-media { aspect-ratio: 4 / 5; }
   .l-uses-grid,
   .l-extras-grid { grid-template-columns: minmax(0, 1fr); }
-  .l-use { border-left: none; }
-  .l-use + .l-use { border-top: 1px solid var(--border); }
   .l-hero-ctas { flex-direction: column; align-self: stretch; }
   .l-hero-ctas > * { width: 100%; }
 }

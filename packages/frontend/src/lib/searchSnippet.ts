@@ -35,6 +35,8 @@ export function cleanSearchSnippet(html: string): string {
   // Callout headers like "[!note]".
   s = s.replace(/\[![a-z]+\][+-]?/gi, "");
   s = s.replace(/\s+/g, " ").trim();
+  // A leading ellipsis hugs the first word ("…brackets", not "… brackets").
+  s = s.replace(/^(…|\.\.\.)\s+/, "$1");
 
   return s.replace(new RegExp(OPEN, "g"), "<mark>").replace(new RegExp(CLOSE, "g"), "</mark>");
 }

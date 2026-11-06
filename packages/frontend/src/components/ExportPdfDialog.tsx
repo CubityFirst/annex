@@ -55,36 +55,39 @@ export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, o
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-6 py-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-page-size" className="text-sm font-medium">Page size</Label>
-              <p className="text-xs text-muted-foreground">A4 is the default.</p>
+          <div className="flex flex-col gap-4">
+            <h3 className="pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Layout</h3>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="pdf-page-size" className="text-sm font-medium">Page size</Label>
+                <p className="text-xs text-muted-foreground">A4 is the default.</p>
+              </div>
+              <Select value={pageSize} onValueChange={v => setPageSize(v as PdfPageSize)}>
+                <SelectTrigger id="pdf-page-size" className="h-8 w-[90px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A3">A3</SelectItem>
+                  <SelectItem value="A4">A4</SelectItem>
+                  <SelectItem value="A5">A5</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={pageSize} onValueChange={v => setPageSize(v as PdfPageSize)}>
-              <SelectTrigger id="pdf-page-size" className="h-8 w-[90px] text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="A3">A3</SelectItem>
-                <SelectItem value="A4">A4</SelectItem>
-                <SelectItem value="A5">A5</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-theme" className="text-sm font-medium">Theme</Label>
-              <p className="text-xs text-muted-foreground">Light is recommended for printing.</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="pdf-theme" className="text-sm font-medium">Theme</Label>
+                <p className="text-xs text-muted-foreground">Light is recommended for printing.</p>
+              </div>
+              <Select value={theme} onValueChange={v => setTheme(v as PdfTheme)}>
+                <SelectTrigger id="pdf-theme" className="h-8 w-[90px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Light</SelectItem>
+                  <SelectItem value="dark">Dark</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={theme} onValueChange={v => setTheme(v as PdfTheme)}>
-              <SelectTrigger id="pdf-theme" className="h-8 w-[90px] text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">Light</SelectItem>
-                <SelectItem value="dark">Dark</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <Separator />
           <div className="flex flex-col gap-4">

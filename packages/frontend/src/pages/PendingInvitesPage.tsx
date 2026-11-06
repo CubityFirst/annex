@@ -4,6 +4,7 @@ import { BookOpen, Building2, Mail, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { SettingsEmptyState } from "@/components/settings/SettingsShell";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
@@ -25,11 +26,6 @@ interface PendingInvite {
   organizationId?: string;
   organizationName?: string;
 }
-
-/** Borderless, centred empty/error state: nothing here is clickable, so no
- *  dashed box (dashed outlines are reserved for create targets). */
-const EMPTY_STATE = "flex flex-col items-center justify-center px-6 py-14 text-center";
-const EMPTY_ICON_TILE = "mb-3 flex size-10 items-center justify-center rounded-full bg-muted";
 
 export function PendingInvitesPage() {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -108,32 +104,20 @@ export function PendingInvitesPage() {
       {/* Same centred max-w-5xl index container as the dashboard and the
           profile page; title, muted line, then a divider spanning the
           measure the list below shares. */}
-      <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pending invites</h1>
+      <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Invites</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Accept or decline invitations to sites and organizations.
+        Pending invitations to sites and organizations. Accept or decline each one.
       </p>
       <Separator className="mb-8 mt-7" />
 
       <div aria-live="polite" className="sr-only">{statusMessage}</div>
 
       {loadError ? (
-        <div role="alert" className={EMPTY_STATE}>
-          <span className={EMPTY_ICON_TILE}>
-            <Mail className="size-5 text-muted-foreground" aria-hidden="true" />
-          </span>
-          <p className="text-sm font-medium">Couldn&apos;t load invites</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">{loadError}</p>
+        <div role="alert">
+          <SettingsEmptyState icon={Mail} title="Couldn't load invites" hint={loadError} />
         </div>
       ) : invites.length === 0 ? (
-        <div className={EMPTY_STATE}>
-          <span className={EMPTY_ICON_TILE}>
-            <MailCheck className="size-5 text-muted-foreground" aria-hidden="true" />
-          </span>
-          <p className="text-sm font-medium">No pending invites</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            You&apos;re all caught up.
-          </p>
-        </div>
+        <SettingsEmptyState icon={MailCheck} title="No pending invites" hint="You're all caught up." />
       ) : (
         <ul className="divide-y divide-border rounded-lg border border-border bg-card">
           {invites.map(invite => {

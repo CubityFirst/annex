@@ -46,7 +46,7 @@ describe("SidebarPageTree", () => {
     expect(screen.getByRole("button", { name: "Deep" })).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("opens the folder being viewed in the File Manager and marks it as the current location", () => {
+  it("opens the folder being viewed in the File manager and marks it as the current location", () => {
     renderAt("/projects/p1/folders/f-deep");
     const nav = screen.getByRole("navigation", { name: "Site contents" });
     expect(within(nav).getByRole("button", { name: "Guides" })).toHaveAttribute("aria-expanded", "true");

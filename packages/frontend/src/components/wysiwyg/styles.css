@@ -291,6 +291,8 @@
   padding: 0.35em 0.75em;
   text-align: left;
   vertical-align: top;
+  /* Fixed-width digits so numbers line up down a column. */
+  font-variant-numeric: tabular-nums;
   border: 0;
   /* Vertical column separator */
   border-right: 1px solid hsl(0 0% 15% / 0.55);

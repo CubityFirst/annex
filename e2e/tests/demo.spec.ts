@@ -151,7 +151,7 @@ test.describe("demo sandbox", () => {
     await expect(page.getByText('Restored "Guides"')).toBeVisible();
     await expect(page.getByText("The recycle bin is empty")).toBeVisible();
 
-    await page.getByRole("link", { name: "File Manager" }).click();
+    await page.getByRole("link", { name: "File manager" }).click();
     await expect(guidesRow).toBeVisible();
   });
 

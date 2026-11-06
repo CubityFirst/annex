@@ -106,12 +106,12 @@ export function TagPage() {
           <Tag className="size-5 shrink-0 text-muted-foreground" aria-hidden />
           <h1 className="min-w-0 truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{decodedTag}</h1>
           {tagColor && (
-            // The tag's graph colour (Site settings → Graph view → Tag colors).
+            // The tag's graph colour (Site settings → Graph view → Tag colours).
             <span
               data-testid="tag-color-chip"
               role="img"
-              aria-label="Tag color"
-              title="Tag color"
+              aria-label="Tag colour"
+              title="Tag colour"
               className="size-3 shrink-0 rounded-full ring-1 ring-inset ring-foreground/15"
               style={{ backgroundColor: tagColor }}
             />

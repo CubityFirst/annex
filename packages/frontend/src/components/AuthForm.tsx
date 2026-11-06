@@ -143,18 +143,18 @@ export function AuthForm({
 
 /**
  * Split auth layout: form rail on the left, brand panel on wide screens.
- * The form block is pinned to a fixed top offset (not vertically centred) so
- * the wordmark sits at the same y on every auth screen - login, register,
- * check-email, verify-email - whatever the height of the form below it.
- * Every screen's block is a `w-full max-w-sm` column starting with the
- * wordmark, so they also share one left edge.
+ * On wide screens the form block is vertically centred in its column (and the
+ * brand panel's content in its own), so a short step like register or
+ * check-email doesn't sit high with the bottom half of the column empty.
+ * Phones/tablets keep a fixed top offset, so the form starts near the top and
+ * stays put when the on-screen keyboard opens. Every screen's block is a
+ * `w-full max-w-sm` column starting with the wordmark, so they share one
+ * left edge.
  */
-export const AUTH_TOP_CLASS = "pt-16 sm:pt-24 lg:pt-40";
-
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <div className={`relative flex w-full flex-col items-center justify-start px-6 pb-12 sm:px-10 lg:w-[30rem] lg:max-w-none lg:shrink-0 xl:w-[34rem] ${AUTH_TOP_CLASS}`}>
+      <div className="relative flex w-full flex-col items-center justify-start px-6 pb-12 pt-16 sm:px-10 sm:pt-24 lg:w-[30rem] lg:max-w-none lg:shrink-0 lg:justify-center lg:py-16 xl:w-[34rem]">
         {children}
       </div>
       <AuthBrandPanel />
@@ -165,14 +165,15 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 // Brand panel: the interactive dot field, the product line from the landing
 // page and the landing's hero product shot (at ~0.6 scale, fading out), so the
 // wide half of the screen carries the brand instead of reading as empty space.
-// The block is top-aligned on the same offset as the form, so the eyebrow sits
-// level with the wordmark.
+// The block is centred both ways (equal side margins, not a left-hugging
+// column with a wider right gap), level with the centred form.
 export function AuthBrandPanel() {
   return (
       <div className="relative hidden flex-1 overflow-hidden border-l border-border bg-sidebar lg:block" aria-hidden="true">
         <DotGrid />
         <div className="pointer-events-none absolute inset-0 bg-radial-[ellipse_70%_60%_at_45%_50%] from-sidebar via-sidebar/70 to-sidebar/0" />
-        <div className={`pointer-events-none absolute inset-0 flex flex-col justify-start px-14 pb-12 xl:px-20 ${AUTH_TOP_CLASS}`}>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-14 py-16 xl:px-20">
+         <div className="flex min-h-0 w-full max-w-[42rem] flex-col">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">An annex for your mind</p>
           <p className="mt-4 max-w-xl text-5xl font-light leading-[1.05] tracking-[-0.035em] text-foreground">
             A place to keep <span className="font-semibold">anything.</span>
@@ -185,7 +186,7 @@ export function AuthBrandPanel() {
               nothing reads as half-rendered. Same framing as the landing
               hero's .l-viewer-stage. min-h-0 lets it shrink on short
               screens; the crop then tightens and the fade stays on its edge. */}
-          <div className="mt-12 aspect-[2304/1250] min-h-0 w-full max-w-[42rem] overflow-hidden rounded-lg border border-border shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_65%,transparent)] [mask-image:linear-gradient(to_bottom,#000_65%,transparent)]">
+          <div className="mt-12 aspect-[2304/1250] min-h-0 w-full overflow-hidden rounded-lg border border-border shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_65%,transparent)] [mask-image:linear-gradient(to_bottom,#000_65%,transparent)]">
             <img
               src={heroShot}
               alt=""
@@ -196,6 +197,7 @@ export function AuthBrandPanel() {
               className="block h-full w-full object-cover object-top"
             />
           </div>
+         </div>
         </div>
       </div>
   );

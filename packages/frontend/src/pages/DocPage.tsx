@@ -35,10 +35,12 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
+import { folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
+import { restoreTrashEntry } from "@/lib/trash";
 import { pushRecentItem } from "@/lib/recentDocs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -141,6 +143,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// Shared row grid for the reference groups that show a rendered sample
+// (syntax | rendered | shortcut), so their columns line up across groups.
+const REF_SAMPLE_ROW = "grid grid-cols-[150px_1fr_auto] gap-3 px-3 py-2";
+
 // Reference entries: the syntax on its own line, the explanation underneath
 // as wrapping prose - aligned trailing comments inside a <pre> got clipped.
 function RefList({ items }: { items: [string, string][] }) {
@@ -168,9 +174,10 @@ function HeadingSamples() {
   return (
     <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
       {([["#", "Heading 1", "text-xl"], ["##", "Heading 2", "text-lg"], ["###", "Heading 3", "text-base"]] as const).map(([mark, label, size]) => (
-        <li key={mark} className="flex items-baseline gap-3 px-3 py-2">
-          <code className="w-8 shrink-0 font-mono text-xs text-muted-foreground">{mark}</code>
+        <li key={mark} className={cn(REF_SAMPLE_ROW, "items-baseline")}>
+          <code className="font-mono text-xs text-foreground/90">{mark}</code>
           <span className={cn("font-semibold tracking-tight", size)}>{label}</span>
+          <span aria-hidden="true" />
         </li>
       ))}
     </ul>
@@ -188,7 +195,7 @@ function EmphasisSamples() {
   return (
     <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
       {rows.map(([code, rendered, shortcut]) => (
-        <li key={code} className="grid grid-cols-[8.5rem_1fr_auto] items-center gap-3 px-3 py-2">
+        <li key={code} className={cn(REF_SAMPLE_ROW, "items-center")}>
           <code className="font-mono text-xs text-foreground/90">{code}</code>
           <span className="text-sm text-foreground">{rendered}</span>
           {shortcut ? <Kbd className="shrink-0">{shortcut}</Kbd> : <span aria-hidden="true" />}
@@ -412,6 +419,11 @@ export function DocPage() {
     return () => mq.removeEventListener("change", onChange);
   }, []);
   const [exportOpen, setExportOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [trashing, setTrashing] = useState(false);
   const [docSettingsOpen, setDocSettingsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [draft, setDraft] = useState("");
@@ -851,6 +863,101 @@ export function DocPage() {
     }
   }
 
+  // Move picker rows: every folder with its full ancestry label, sorted by
+  // path - same rows as the File Manager's and the file viewer's pickers.
+  const moveDestinations = useMemo(() => {
+    const all = moveFolders ?? [];
+    const byId = new Map(all.map(f => [f.id, f]));
+    return all
+      .map(f => ({ folder: f, label: folderPathLabel(all, f, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [moveFolders]);
+
+  function copyDocLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${docId}`);
+    toast({ title: "Link copied" });
+  }
+
+  async function openMove() {
+    setMoveOpen(true);
+    setMoveFolders(null);
+    const result = await apiFetchJson<MoveFolderLike[]>(`/api/folders?projectId=${projectId}&all=1`);
+    if (result.ok && result.data) setMoveFolders(result.data);
+    else {
+      setMoveFolders([]);
+      if (!result.redirected) toast({ title: "Couldn't load folders.", description: result.error, variant: "destructive" });
+    }
+  }
+
+  async function handleMoveTo(targetFolderId: string | null) {
+    if (!docId || !doc || moving) return;
+    setMoving(true);
+    try {
+      const result = await apiFetchJson(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: targetFolderId }),
+      });
+      if (result.ok) {
+        setDoc(prev => (prev && prev.id === docId ? { ...prev, folder_id: targetFolderId } : prev));
+        // Rebuild the breadcrumb trail for the new location - router state
+        // still describes the old folder. The navigation also refreshes the
+        // layout's sidebar tree.
+        const byId = new Map((moveFolders ?? []).map(f => [f.id, f]));
+        const chain: { id: string; name: string }[] = [];
+        const seen = new Set<string>();
+        for (let id = targetFolderId; id && !seen.has(id); id = byId.get(id)?.parent_id ?? null) {
+          seen.add(id);
+          const folder = byId.get(id);
+          if (!folder) break;
+          chain.unshift({ id: folder.id, name: folder.name });
+        }
+        navigate(location.pathname + location.hash, {
+          replace: true,
+          state: { ...(location.state ?? {}), folderPath: [{ id: null, name: projectName }, ...chain] },
+        });
+        setMoveOpen(false);
+        const dest = chain.at(-1);
+        toast({ title: dest ? `Moved to "${dest.name}".` : "Moved to the top level." });
+      } else if (!result.redirected) {
+        toast({ title: "Failed to move document.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  async function handleMoveToTrash() {
+    if (!docId || !doc || !projectId || trashing) return;
+    setTrashing(true);
+    const { id, title, folder_id } = doc;
+    try {
+      const result = await apiFetchJson<{ trashEntryId?: string }>(`/api/docs/${id}`, { method: "DELETE" });
+      if (result.ok) {
+        const entryId = result.data?.trashEntryId;
+        setTrashConfirmOpen(false);
+        navigate(folder_id ? `/projects/${projectId}/folders/${folder_id}` : `/projects/${projectId}`);
+        toast({
+          title: `Moved "${title}" to the recycle bin.`,
+          action: entryId ? {
+            label: "Undo",
+            onClick: () => {
+              void restoreTrashEntry(projectId, entryId).then(r => {
+                if (r.ok) navigate(`/projects/${projectId}/docs/${id}`);
+                else if (!r.redirected) toast({ title: `Couldn't restore "${title}".`, description: r.error, variant: "destructive" });
+              });
+            },
+          } : undefined,
+        });
+      } else if (!result.redirected) {
+        toast({ title: "Couldn't move the document to the recycle bin.", description: result.error, variant: "destructive" });
+        setTrashConfirmOpen(false);
+      }
+    } finally {
+      setTrashing(false);
+    }
+  }
+
   async function openHistory() {
     setHistoryOpen(true);
     setRevisions(null);
@@ -1046,7 +1153,9 @@ export function DocPage() {
       ? titleDraft.trim() !== "" || draft.trim() !== ""
       : draft !== doc.content || titleDraft.trim() !== doc.title;
     // At rest (existing doc, nothing changed) leaving edit mode loses nothing,
-    // so it's a quiet "Done"; once there are edits it becomes "Cancel".
+    // so it's a quiet "Done"; once there are edits it becomes "Cancel". A new
+    // doc has nothing to be done with, so it always says "Cancel" - but stays
+    // a quiet ghost until there's a title or body worth losing.
     const exitLabel = !isNewDoc && !isDirty ? "Done" : "Cancel";
     return (
       <div className="flex h-full flex-col">
@@ -1054,16 +1163,18 @@ export function DocPage() {
             breadcrumb in the app's top bar, with the editor actions at its
             right end - no separate edit bar stacked above the toolbar. */}
         {headerActionSlot && createPortal(
-          // -ml-1 + gap-1 + the input's px-1.5 reproduce the breadcrumb's own
-          // crumb spacing, so the title text doesn't shift when editing starts.
-          <div className="-ml-1 flex min-w-0 flex-1 items-center gap-1">
+          // The bar's gap-1 + the slot's pl-2, pulled back by -ml-0.5, then
+          // chevron + gap-1 and an unpadded input land the title text exactly
+          // where the reading-mode crumb text sits (crumb gap + chevron + gap +
+          // px-1.5), so it doesn't shift when editing starts.
+          <div className="-ml-0.5 flex min-w-0 flex-1 items-center gap-1">
             <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/50 md:block" aria-hidden="true" />
             <Input
               value={titleDraft}
               onChange={e => setTitleDraft(e.target.value)}
               placeholder="Document title"
               aria-label="Document title"
-              className="hidden h-8 w-auto min-w-48 max-w-lg flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-1.5 text-sm font-medium shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
+              className="hidden h-8 w-auto min-w-[12ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 text-sm font-medium shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
               autoFocus={isNewDoc}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -1112,7 +1223,7 @@ export function DocPage() {
               <span className="hidden xl:inline">Source</span>
             </Button>
             <Button
-              variant={exitLabel === "Done" ? "ghost" : "outline"}
+              variant={isDirty ? "outline" : "ghost"}
               size="sm"
               onClick={cancelEditing}
               aria-label={exitLabel}
@@ -1323,6 +1434,11 @@ export function DocPage() {
   const headings = extractHeadings(doc.content);
   const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || myPermission === "edit";
   const isAdmin = myRole === "admin" || myRole === "owner";
+  // Structural changes (move, recycle bin) need a project-level editor role - a
+  // per-doc edit share only covers content (the API ignores/refuses the rest).
+  // The site's home doc is pinned, as in the File Manager.
+  const isHomeDoc = (allDocs.find(d => d.id === docId) as { is_home?: number } | undefined)?.is_home === 1;
+  const canManageDoc = (myRole === "editor" || isAdmin) && !isHomeDoc;
 
   return (
     <div className="flex min-h-full">
@@ -1592,9 +1708,11 @@ export function DocPage() {
                               {projectPublishedAt ? "Public — inherited from site" : doc.published_at ? "Public" : "Private"}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {doc.published_at || projectPublishedAt
-                                ? "Anyone with the link can read this document."
-                                : "Only site members can see this document."}
+                              {projectPublishedAt && !doc.published_at
+                                ? "Anyone with the link can read this document while the site is published - no need to publish it on its own."
+                                : doc.published_at || projectPublishedAt
+                                  ? "Anyone with the link can read this document."
+                                  : "Only site members can see this document."}
                             </p>
                           </div>
                         </div>
@@ -1613,21 +1731,20 @@ export function DocPage() {
                           </Button>
                         )}
                       </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex flex-col gap-0.5">
-                          <Label className="text-sm font-medium">Publish this document on its own</Label>
-                          <p className="text-xs text-muted-foreground">
-                            {projectPublishedAt && !doc.published_at
-                              ? "Not needed while the site is published."
-                              : projectPublishedAt
+                      {/* While the site is published a per-doc Publish would be
+                          a dead control, so the row is dropped (the card above
+                          says why). Unpublish stays if the doc carries its own
+                          flag (it outlives the site's). */}
+                      {!(projectPublishedAt && !doc.published_at) && (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-col gap-0.5">
+                            <Label className="text-sm font-medium">Publish this document on its own</Label>
+                            <p className="text-xs text-muted-foreground">
+                              {projectPublishedAt
                                 ? "Also published on its own, so it stays public if the site is unpublished."
                                 : "Make just this document public while the rest of the site stays private."}
-                          </p>
-                        </div>
-                        {/* While the site is published a per-doc Publish would
-                            be a dead control - hide it. Unpublish stays if the
-                            doc carries its own flag (it outlives the site's). */}
-                        {!(projectPublishedAt && !doc.published_at) && (
+                            </p>
+                          </div>
                           <Button
                             variant={doc.published_at ? "outline" : "default"}
                             size="sm"
@@ -1637,8 +1754,8 @@ export function DocPage() {
                           >
                             {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                           </Button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                     <p className="-mb-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Display</p>
                     <div className="flex items-center justify-between gap-3">
@@ -1690,7 +1807,16 @@ export function DocPage() {
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[220px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
+              <DropdownMenuContent align="end" className="min-w-[220px] [&_svg]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground">
+                <DropdownMenuItem onSelect={copyDocLink}>
+                  <Link /> Copy link
+                </DropdownMenuItem>
+                {canManageDoc && (
+                  <DropdownMenuItem onSelect={() => { void openMove(); }}>
+                    <FolderInput /> Move to folder…
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem title="Export as PDF" onSelect={() => setExportOpen(true)}>
                   <FileDown /> Export as PDF
                 </DropdownMenuItem>
@@ -1717,8 +1843,84 @@ export function DocPage() {
                     </DropdownMenuItem>
                   </>
                 )}
+                {canManageDoc && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => setTrashConfirmOpen(true)}>
+                      <Trash2 /> Move to recycle bin
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
+            {canManageDoc && (
+              <>
+                {/* Move-to-folder picker - same rows as the File Manager's. */}
+                <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+                  <DialogContent className="sm:max-w-xs">
+                    <DialogHeader>
+                      <DialogTitle>Move "{doc.title}"</DialogTitle>
+                      <DialogDescription>Choose a destination folder.</DialogDescription>
+                    </DialogHeader>
+                    <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+                      {moveFolders === null ? (
+                        <div className="flex flex-col gap-1.5 py-1">
+                          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={moving || doc.folder_id === null}
+                            onClick={() => handleMoveTo(null)}
+                            className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          >
+                            <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                            <span className="truncate">{projectName} (home)</span>
+                          </button>
+                          {moveDestinations.map(({ folder: f, label }) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              disabled={moving || doc.folder_id === f.id}
+                              onClick={() => handleMoveTo(f.id)}
+                              title={label}
+                              className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            >
+                              <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                              <span className="truncate">{label}</span>
+                            </button>
+                          ))}
+                          {moveDestinations.length === 0 && (
+                            <p className="px-2 py-2 text-sm text-muted-foreground">No folders yet.</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <AlertDialog open={trashConfirmOpen} onOpenChange={open => { if (!trashing) setTrashConfirmOpen(open); }}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Move "{doc.title}" to the recycle bin?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        It can be restored from the recycle bin for 30 days.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={trashing}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={e => { e.preventDefault(); void handleMoveToTrash(); }}
+                        disabled={trashing}
+                      >
+                        {trashing ? "Moving…" : "Move to recycle bin"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
           );
           // Desktop: the reading actions live in the app top bar, exactly where

@@ -231,7 +231,7 @@ const DEMO_NOTES_TXT = `Project kickoff notes
 This is a plain demo file. In a real site you can upload images, audio,
 PDFs and arbitrary attachments alongside your documents.
 
-- Files live in the File Manager next to docs and folders
+- Files live in the file manager next to docs and folders
 - Drag and drop uploads work too
 - Images can be embedded in documents with standard markdown
 `;
@@ -247,9 +247,9 @@ This is a live, fully working copy of Annex. Everything you do here, from editin
 
 - [x] Open the demo
 - [ ] Edit this document (pencil icon, top right)
-- [ ] Browse the **File Manager** from the sidebar
+- [ ] Browse the **file manager** from the sidebar
 - [ ] Open the [[Editor tour]] for a feature walkthrough
-- [ ] Open **roadmap.excalidraw** in the File Manager and try the drawing editor
+- [ ] Open **roadmap.excalidraw** in the file manager and try the drawing editor
 - [ ] Press \`Ctrl+K\` and search for "coffee"
 - [ ] Roll some dice: \`dice: 2d6+1d4 Try your luck\`
 
@@ -257,11 +257,11 @@ This is a live, fully working copy of Annex. Everything you do here, from editin
 
 | Feature | Where to find it |
 | --- | --- |
-| Documents | The File Manager, or the sidebar's recent list |
+| Documents | The file manager, or the sidebar's recent list |
 | WYSIWYG editing | Pencil icon on any document |
 | Raw markdown mode | The \`</>\` toggle while editing |
 | Full-text search | \`Ctrl+K\` anywhere in a site |
-| Files & images | Upload via the File Manager |
+| Files & images | Upload via the file manager |
 
 Here's a sample image:
 

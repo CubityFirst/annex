@@ -147,8 +147,6 @@ function filesInSubtree(folderId: string, folders: NavFolder[], files: NavFile[]
   ];
 }
 
-const pluralize = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 /**
  * Generated landing page for a published site with no home doc: the site's
  * name and description over its top-level pages, folders and files in sidebar
@@ -170,25 +168,23 @@ function SiteIndex({
   docs: NavDoc[];
   files: NavFile[];
 }) {
-  type Row = { key: string; to: string; label: string; meta?: string; icon: React.ReactNode };
+  // No right-side meta on any row: the public nav payload carries no
+  // per-doc timestamp (GET /public/projects/:id selects id/slug/title/
+  // folder/position only), so doc rows can't have any, and meta on only the
+  // folder/file rows read as inconsistent.
+  type Row = { key: string; to: string; label: string; icon: React.ReactNode };
   const iconClass = "h-4 w-4 shrink-0 text-muted-foreground";
   const rows: Row[] = [];
   for (const folder of visibleChildFolders(null, folders, docs, files)) {
-    const folderDocs = flattenDocs(folders, docs, folder.id);
-    const folderFiles = filesInSubtree(folder.id, folders, files);
-    const target = folderDocs[0]?.id ?? folderFiles[0]?.id;
+    const target = flattenDocs(folders, docs, folder.id)[0]?.id ?? filesInSubtree(folder.id, folders, files)[0]?.id;
     if (!target) continue;
-    const meta = [
-      folderDocs.length > 0 ? pluralize(folderDocs.length, "page") : null,
-      folderFiles.length > 0 ? pluralize(folderFiles.length, "file") : null,
-    ].filter(Boolean).join(" · ");
-    rows.push({ key: folder.id, to: href(target), label: folder.name, meta, icon: <Folder className={iconClass} aria-hidden /> });
+    rows.push({ key: folder.id, to: href(target), label: folder.name, icon: <Folder className={iconClass} aria-hidden /> });
   }
   for (const doc of docs.filter(d => d.folder_id === null)) {
     rows.push({ key: doc.id, to: href(doc.id), label: doc.display_title ?? doc.title, icon: <FileText className={iconClass} aria-hidden /> });
   }
   for (const file of files.filter(f => f.folder_id === null)) {
-    rows.push({ key: file.id, to: href(file.id), label: file.name, meta: formatBytes(file.size), icon: <FileTypeIcon mimeType={file.mime_type} name={file.name} className={iconClass} /> });
+    rows.push({ key: file.id, to: href(file.id), label: file.name, icon: <FileTypeIcon mimeType={file.mime_type} name={file.name} className={iconClass} /> });
   }
 
   return (
@@ -209,7 +205,6 @@ function SiteIndex({
                 >
                   {r.icon}
                   <span className="min-w-0 flex-1 truncate font-medium text-foreground">{r.label}</span>
-                  {r.meta && <span className="shrink-0 text-xs text-muted-foreground">{r.meta}</span>}
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" aria-hidden />
                 </Link>
               </li>
@@ -354,6 +349,10 @@ function NavTree({
             {depth > 0 && (
               <span aria-hidden className={NESTED_ELBOW} />
             )}
+            {/* Spacer reserves the folder chevron column (w-2.5 + gap-2 = the
+                folder row's w-3 chevron + gap-1.5), so leaf icons line up
+                under folder icons - the app sidebar's rule. */}
+            <span aria-hidden className="w-2.5 shrink-0" />
             {doc.is_home === 1
               ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -375,6 +374,7 @@ function NavTree({
             {depth > 0 && (
               <span aria-hidden className={NESTED_ELBOW} />
             )}
+            <span aria-hidden className="w-2.5 shrink-0" />
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{file.name}</span>
           </button>
@@ -1174,16 +1174,17 @@ export function PublicDocPage() {
             </Suspense>
           </div>
         ) : (
-        // Thin, low-contrast reading scrollbar (the Radix bar replaces the native
-        // one): a border-toned thumb, shown only while the reader hovers or
-        // scrolls the page (type="hover"), firming up under the pointer. On
-        // phones / touch it shows only while scrolling (type="scroll"), like the
-        // app's native overlay scrollbars - "hover" left a resting thumb in the
-        // content gutter after a tap.
+        // The reading pane (not the window) scrolls, with a thin Radix bar in
+        // place of the native one. It shows only while the reader is actually
+        // scrolling (type="scroll", every device): "hover" kept a thumb parked
+        // at the window's right edge whenever the pointer sat over the page,
+        // which the app's screens never show. Thumb tinted like the app's
+        // quiet native scrollbars (index.css: muted-foreground at 35%),
+        // firming up under the pointer.
         <ScrollArea
-          type={typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px), (hover: none)").matches ? "scroll" : "hover"}
-          scrollHideDelay={400}
-          className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-border [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/40"
+          type="scroll"
+          scrollHideDelay={600}
+          className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-muted-foreground/35 [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/50"
         >
           {selectedFile ? (
             <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />

@@ -4,6 +4,19 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { GraphView, type GraphData } from "@/components/GraphView";
 
+/** Links as the canvas draws them: one per unordered pair of docs, so a
+ *  two-way pair (A→B and B→A) counts once and self-links don't count. */
+function countUniqueLinks(edges: GraphData["edges"]): number {
+  const pairs = new Set<string>();
+  for (const e of edges) {
+    const s = String(e.source);
+    const t = String(e.target);
+    if (s === t) continue;
+    pairs.add(s < t ? `${s}\u0000${t}` : `${t}\u0000${s}`);
+  }
+  return pairs.size;
+}
+
 export function GraphPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -76,7 +89,7 @@ export function GraphPage() {
   }
 
   const docCount = data.nodes.length;
-  const linkCount = data.edges.length;
+  const linkCount = countUniqueLinks(data.edges);
 
   return (
     <div className="relative h-full w-full">
@@ -97,7 +110,7 @@ export function GraphPage() {
           {docCount} {docCount === 1 ? "doc" : "docs"} · {linkCount} {linkCount === 1 ? "link" : "links"}
         </p>
         {legend.length > 0 && (
-          <ul aria-label="Tag color legend" className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+          <ul aria-label="Tag colour legend" className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
             {legend.map(rule => (
               <li key={rule.tag} className="flex min-w-0 items-center gap-1.5">
                 <span

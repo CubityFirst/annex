@@ -229,7 +229,7 @@ export function DashboardPage() {
                   onClick={(e) => handleToggleFavourite(e, project.id)}
                 >
                   <Star
-                    className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
+                    className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-foreground text-foreground" : "text-muted-foreground"}`}
                     strokeWidth={1.5}
                   />
                 </Button>
@@ -449,8 +449,13 @@ export function DashboardPage() {
                     ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     : <FileTypeIcon mimeType={item.mime ?? ""} name={item.title} className="h-4 w-4 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{timeAgo(item.accessedAt)}</span>
-                  <span className="hidden max-w-[12rem] shrink-0 truncate text-xs text-muted-foreground sm:inline">{item.project.name}</span>
+                  {/* "Site · time", matching the search palette's recent rows
+                      (phones drop the site to keep the title readable). */}
+                  <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+                    <span className="hidden max-w-[12rem] truncate sm:inline">{item.project.name}</span>
+                    <span aria-hidden="true" className="hidden sm:inline">·</span>
+                    <span className="tabular-nums">{timeAgo(item.accessedAt)}</span>
+                  </span>
                 </Link>
               </li>
             ))}

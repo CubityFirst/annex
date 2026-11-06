@@ -47,6 +47,7 @@ import {
   DangerRow,
   SETTINGS_ROW_CARD,
   SettingsEmptyRow,
+  SettingsEmptyState,
   SettingsShell,
   type SettingsGroupDef,
   type SettingsSectionDef,
@@ -1490,45 +1491,50 @@ export function UserSettingsPage() {
                           Change photo
                         </Button>
                       </PopoverAnchor>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            role="radiogroup"
-                            aria-label="Avatar preview background"
-                            aria-describedby="avatar-variant-hint"
-                            className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
-                          >
-                            {(["dark", "light"] as const).map(v => {
-                              const selected = avatarVariant === v;
-                              const Icon = v === "dark" ? Moon : Sun;
-                              return (
-                                <button
-                                  key={v}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={selected}
-                                  onClick={() => setAvatarVariant(v)}
-                                  className={cn(
-                                    "inline-flex h-11 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
-                                    selected
-                                      ? "bg-background font-medium text-foreground shadow-xs"
-                                      : "text-muted-foreground hover:text-foreground",
-                                  )}
-                                >
-                                  <Icon className="size-3.5" aria-hidden />
-                                  {v === "dark" ? "Dark" : "Light"}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-56 text-xs">
-                          Preview your avatar on dark or light backgrounds. Each can use a different photo.
-                        </TooltipContent>
-                      </Tooltip>
+                      {/* "Photo for" lead-in so the segments read as "which
+                          photo", not an app theme switch. */}
+                      <div className="flex items-center gap-2">
+                        <span aria-hidden className="whitespace-nowrap text-xs text-muted-foreground">Photo for</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div
+                              role="radiogroup"
+                              aria-label="Avatar preview background"
+                              aria-describedby="avatar-variant-hint"
+                              className="inline-flex shrink-0 rounded-md border border-border bg-muted/40 p-0.5"
+                            >
+                              {(["dark", "light"] as const).map(v => {
+                                const selected = avatarVariant === v;
+                                const Icon = v === "dark" ? Moon : Sun;
+                                return (
+                                  <button
+                                    key={v}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={selected}
+                                    onClick={() => setAvatarVariant(v)}
+                                    className={cn(
+                                      "inline-flex h-11 items-center gap-1 whitespace-nowrap rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
+                                      selected
+                                        ? "bg-background font-medium text-foreground shadow-xs"
+                                        : "text-muted-foreground hover:text-foreground",
+                                    )}
+                                  >
+                                    <Icon className="size-3.5" aria-hidden />
+                                    {v === "dark" ? "Dark" : "Light"}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-56 text-xs">
+                            Preview your avatar on dark or light backgrounds. Each can use a different photo.
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
                     <p id="avatar-variant-hint" className="col-span-2 text-xs text-muted-foreground sm:col-span-1 sm:col-start-2 sm:self-start">
-                      Optional: use a different photo on light backgrounds.
+                      Use a different photo on light backgrounds (optional).
                     </p>
                   </div>
                 </Popover>
@@ -1967,7 +1973,11 @@ export function UserSettingsPage() {
               </div>
             ) : favouriteSites.length === 0 ? (
               <div className="mt-3">
-                <SettingsEmptyRow icon={Star}>No favourites yet — 0 of 3 added.</SettingsEmptyRow>
+                <SettingsEmptyState
+                  icon={Star}
+                  title="No favourites yet"
+                  hint="Add up to 3 published sites to show on your profile."
+                />
               </div>
             ) : (
               <>
@@ -2658,7 +2668,7 @@ export function UserSettingsPage() {
           <section id="sessions">
             <h2 className="text-base font-semibold">Active sessions</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Devices currently signed in to your account. Revoke any you don&apos;t recognize.
+              Devices currently signed in to your account. Revoke any you don&apos;t recognise.
             </p>
 
             {sessionsLoading ? (

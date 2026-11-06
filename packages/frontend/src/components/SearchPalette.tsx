@@ -12,7 +12,7 @@ import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cleanSearchSnippet } from "@/lib/searchSnippet";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
-import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
+import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
@@ -64,7 +64,8 @@ export function timeAgo(ms: number): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-const MARK_CLASS = "bg-yellow-200/80 dark:bg-yellow-700/50 text-foreground rounded-[2px] px-px not-italic";
+// Neutral highlight (no warm tint): a faint foreground wash plus weight.
+const MARK_CLASS = "bg-foreground/10 dark:bg-foreground/15 text-foreground font-medium rounded-[3px] px-0.5 not-italic";
 
 /** Highlights every query word inside plain text (used for titles/filenames). */
 function HighlightedText({ text, term }: { text: string; term: string }) {
@@ -392,7 +393,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     { id: "user-settings", label: "Account settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
   ] : [
     ...(canEdit ? [{ id: "new-doc", label: "New document", icon: Plus, keywords: "create write page", run: createDoc }] : []),
-    { id: "file-manager", label: "File Manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
+    { id: "file-manager", label: "File manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
     ...(isAdmin ? [{ id: "members", label: "Members", icon: Users, keywords: "invite people team roles", run: () => { close(); navigate(`/projects/${projectId}/settings#members`); } }] : []),
     { id: "settings", label: "Site settings", icon: SlidersHorizontal, keywords: "configure publishing branding", run: () => { close(); navigate(`/projects/${projectId}/settings`); } },
     { id: "dashboard", label: "Go to dashboard", icon: House, keywords: "home sites switch", run: () => { close(); navigate("/"); } },
@@ -440,10 +441,15 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                   ? <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   : <FileKindIcon mime={item.mime ?? ""} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                 <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
-                {item.siteName && <span className="max-w-32 shrink-0 truncate text-[10px] text-muted-foreground">{item.siteName}</span>}
-                <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
-                  <Clock className="h-2.5 w-2.5" />
-                  {timeAgo(item.accessedAt)}
+                {/* "Site · time", matching the dashboard's Recently opened list. */}
+                <span className="ml-auto flex min-w-0 items-center gap-1 shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+                  {item.siteName && (
+                    <>
+                      <span className="max-w-32 truncate">{item.siteName}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                  <span>{timeAgo(item.accessedAt)}</span>
                 </span>
               </CommandItem>
             ))}

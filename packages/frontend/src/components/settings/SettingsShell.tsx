@@ -128,10 +128,38 @@ export function SettingsRow({
   );
 }
 
-/** Compact in-section empty state: a muted 16px icon and one muted line
- *  (ending in a full stop) in a 48px bordered row, with the list's action, if
- *  any, right-aligned in the same row. No dashed box - those are for
- *  page-level empties only. */
+/** Design-system "nothing here" state: a dashed card with a muted 20px icon,
+ *  a medium-weight line, an optional muted hint and an optional action
+ *  centred below. Use it whenever a list or section has nothing to show. */
+export const EMPTY_STATE_CARD = "flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-10 text-center";
+
+export function SettingsEmptyState({
+  icon: Icon,
+  title,
+  hint,
+  action,
+  className,
+}: {
+  icon: LucideIcon;
+  title: ReactNode;
+  hint?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn(EMPTY_STATE_CARD, className)}>
+      <Icon className="mb-2 size-5 text-muted-foreground" aria-hidden />
+      <p className="text-sm font-medium">{title}</p>
+      {hint && <p className="mt-0.5 text-pretty text-sm text-muted-foreground">{hint}</p>}
+      {action && <div className="mt-4 flex items-center justify-center gap-2">{action}</div>}
+    </div>
+  );
+}
+
+/** Compact in-section placeholder row: a muted 16px icon and one muted line
+ *  in a 48px bordered row, with the list's action, if any, right-aligned in
+ *  the same row. For transient states (loading) and rows inside populated
+ *  lists; a list with nothing in it uses SettingsEmptyState instead. */
 export function SettingsEmptyRow({ icon: Icon, action, children }: { icon: LucideIcon; action?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex min-h-12 items-center justify-between gap-4 rounded-lg border border-border px-4 py-2">
@@ -164,7 +192,7 @@ export function DangerRow({ title, description, action }: { title: ReactNode; de
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD, "border-destructive/30")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <p className="text-sm font-medium">{title}</p>
-        <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>
+        <p className="text-pretty text-[13px] leading-snug text-muted-foreground">{description}</p>
       </div>
       <div className="shrink-0">{action}</div>
     </div>
@@ -254,7 +282,12 @@ export function SettingsShell({ title, description, groups, sections, children }
             listed beneath it, indented. */}
         <aside className="hidden md:block w-48 shrink-0">
           <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
+            {/* Group eyebrows already head the outline; a second "On this
+                page" eyebrow above them would stack two label levels. Only
+                shown when no group renders an eyebrow of its own. */}
+            {resolved.every(group => group.separated) && (
+              <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
+            )}
             <div className="flex flex-col border-l border-border">
               {resolved.map((group, index) => {
                 const links = group.sections.map(section => {

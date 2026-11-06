@@ -108,10 +108,15 @@ type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText
 const DOCUMENTS_SECTION: Section = { id: "documents", label: "Documents", icon: FileText };
 const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 
-// App sidebar nav rows (File Manager, Graph, Recently accessed, the overview
+// App sidebar nav rows (File manager, Graph, Recently accessed, the overview
 // Sites list) - 14px text on the ghost sm button's 32px row, matching the page
-// tree's rows (SidebarPageTree ROW_CLASS) and the Search entry.
-const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal";
+// tree's rows (SidebarPageTree ROW_CLASS) and the Search entry. Below md (the
+// slide-over drawer) rows grow to 40px so they're comfortable touch targets.
+const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal max-md:h-10";
+
+// Create-dialog submit buttons stay disabled until Name has text; same muted
+// disabled look as the editor's Save so it reads as "not yet", not "broken".
+const MUTED_DISABLED_CLASS = "disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100";
 
 function RecentItemIcon({ item, className }: { item: RecentItem; className?: string }) {
   if (item.kind === "doc") return <FileText className={className} />;
@@ -745,7 +750,7 @@ export function DocsLayout() {
   const searchEntry = (
     <button
       onClick={openSearch}
-      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-sm font-normal text-muted-foreground")}
+      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-sm font-normal text-muted-foreground max-md:h-10")}
     >
       <span className="flex items-center gap-1.5">
         <Search className="h-3.5 w-3.5 shrink-0" />
@@ -910,13 +915,13 @@ export function DocsLayout() {
                   cn(
                     buttonVariants({ variant: "ghost", size: "sm" }),
                     SIDEBAR_ROW_CLASS,
-                    // Folder views are still the File Manager - keep it lit.
+                    // Folder views are still the File manager - keep it lit.
                     isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
                   )
                 }
               >
                 <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                File Manager
+                File manager
               </NavLink>
               {currentProject?.graph_enabled ? (
                 <NavLink
@@ -1160,7 +1165,7 @@ export function DocsLayout() {
       <Dialog open={creating} onOpenChange={open => { if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Create a new site</DialogTitle>
+            <DialogTitle>New site</DialogTitle>
             <DialogDescription>You can change any of this later in Site settings.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="flex flex-col gap-5 py-1">
@@ -1305,7 +1310,7 @@ export function DocsLayout() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || !name.trim()} className={MUTED_DISABLED_CLASS}>
                 {saving ? "Creating…" : "Create site"}
               </Button>
             </DialogFooter>
@@ -1350,7 +1355,7 @@ export function DocsLayout() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={orgSaving}>
+              <Button type="submit" disabled={orgSaving || !orgName.trim()} className={MUTED_DISABLED_CLASS}>
                 {orgSaving ? "Creating…" : "Create organization"}
               </Button>
             </DialogFooter>

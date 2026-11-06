@@ -134,8 +134,15 @@ export function RegisterPage() {
           value={password}
           autoComplete="new-password"
           onChange={e => setPassword(e.target.value)}
+          aria-describedby="password-hint"
           required
         />
+        {/* The real rule (auth worker routes/register.ts): zxcvbn score >= 3,
+            i.e. "Strong" on the meter below. There is no fixed length/character
+            rule, so don't invent one here. */}
+        <p id="password-hint" className="text-xs text-muted-foreground">
+          Must rate &ldquo;Strong&rdquo; or better on the strength meter. A phrase of a few unrelated words works well.
+        </p>
         {password && (
           <div className="space-y-1">
             <div

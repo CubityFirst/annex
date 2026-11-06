@@ -72,17 +72,17 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
   );
 }
 
-// Folder size shown in its row's Size column / card subtitle: one total
-// ("1 item", "7 items", "Empty") on desktop and mobile alike; the
+// Folder item count shown beside its row's name / in its card subtitle: one
+// total ("1 item", "7 items", "Empty") on desktop and mobile alike; the
 // doc/file/folder breakdown rides in the tooltip (folderCountLabel).
 function folderItemsLabel(c: FolderCounts | undefined): string {
   const n = c ? c.docs + c.files + c.folders : 0;
   return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
 }
 
-// Muted em dash for a doc/file cell without a value - one that doesn't apply
-// (a doc's byte size) or isn't known (an unknown author); the label is for
-// screen readers. Folder rows leave their inapplicable cells blank instead.
+// Muted em dash for a table cell without a value - one that doesn't apply
+// (a doc's or folder's byte size) or isn't known (an unknown author, a folder's
+// creator); the label is for screen readers.
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -96,7 +96,7 @@ function EmptyCell({ label }: { label: string }) {
 // folders already known), recorded whenever that folder's contents load. The
 // listing API doesn't send per-folder dates, so a folder row shows one in
 // "Last updated" only once its contents have been loaded this session and
-// stays blank otherwise. Module scope so it survives navigating up a level.
+// shows a muted dash otherwise. Module scope so it survives navigating up a level.
 const folderNewestCache = new Map<string, string>();
 
 function newestTimestamp(values: (string | undefined)[]): string | undefined {
@@ -1243,6 +1243,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
+                          {/* Item count as secondary text beside the name
+                              (full-subtree total, breakdown in the tooltip) -
+                              Size stays a byte-size column. */}
+                          <span
+                            className="ml-2 shrink-0 text-xs text-muted-foreground tabular-nums"
+                            title={folderCountLabel(counts) || "Empty folder"}
+                          >
+                            {folderItemsLabel(counts)}
+                          </span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1259,26 +1268,17 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
-                    // Folders have no author of their own - left blank (not a
-                    // dash) so it doesn't read as missing data next to docs.
-                    { content: <span className="sr-only">No author</span> },
-                    // No byte size either - Size shows what's inside instead
-                    // (full-subtree total, breakdown in the tooltip), a step
-                    // quieter than the byte sizes so it isn't read as one.
-                    {
-                      content: (
-                        <span className="text-sm text-muted-foreground/70 truncate" title={folderCountLabel(counts) || "Empty folder"}>
-                          {folderItemsLabel(counts)}
-                        </span>
-                      ),
-                      className: SIZE_CELL_CLASS,
-                    },
+                    // The listing API records no creator for folders, and a
+                    // folder has no byte size (its count sits by the name) -
+                    // both dash like a doc's Size.
+                    { content: <EmptyCell label="No author" /> },
+                    { content: <EmptyCell label="No size" />, className: SIZE_CELL_CLASS },
                     // Newest child edit, once this folder's contents have been
-                    // seen (see folderNewestCache); blank until then.
+                    // seen (see folderNewestCache); dashed until then.
                     {
                       content: folderNewest
                         ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
-                        : <span className="sr-only">No update time</span>,
+                        : <EmptyCell label="No update time" />,
                       className: UPDATED_CELL_CLASS,
                     },
                   ]}
@@ -1506,8 +1506,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
+                  {folderNewest && <span>{formatRelativeTime(folderNewest)} · </span>}
                   <span title={folderCountLabel(counts) || "Empty folder"}>{folderItemsLabel(counts)}</span>
-                  {folderNewest && <span> · {formatRelativeTime(folderNewest)}</span>}
                 </div>
               </div>
               {canEdit && renderKebab("Folder actions", (
@@ -1571,7 +1571,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm">{file.name}</div>
               <div className="truncate text-xs text-muted-foreground">
-                {formatBytes(file.size)} · {formatRelativeTime(file.updated_at ?? file.created_at)}
+                {formatRelativeTime(file.updated_at ?? file.created_at)} · {formatBytes(file.size)}
               </div>
             </div>
             {renderKebab("File actions", (
@@ -1758,7 +1758,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <Button type="button" variant="outline" onClick={() => setShowNewFolder(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={creatingFolder}>
+              <Button
+                type="submit"
+                disabled={creatingFolder || !newFolderName.trim()}
+                className="disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
+              >
                 {creatingFolder ? "Creating…" : "Create"}
               </Button>
             </DialogFooter>

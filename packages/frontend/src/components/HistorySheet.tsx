@@ -115,14 +115,12 @@ function AvatarCluster({ people }: { people: Person[] }) {
   );
 }
 
-// Presence-style "this is now" indicator for the pinned current-version row.
+// Quiet neutral "this is now" marker for the pinned current-version row -
+// centred in the avatar column so the row text lines up with revisions below.
 function LiveDot() {
   return (
     <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden="true">
-      <span className="relative flex size-2.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/50" />
-        <span className="relative inline-flex size-2.5 rounded-full bg-emerald-500" />
-      </span>
+      <span className="inline-flex size-2 rounded-full bg-muted-foreground" />
     </span>
   );
 }
@@ -227,7 +225,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                         </span>
                         {/* System note (generated, not written by a person):
                             muted with a small glyph. The author's own note
-                            below reads as plain upright text. */}
+                            below is plain muted text, one step below the name. */}
                         {rev.title && rev.title !== currentTitle && (
                           <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                             <Type className="size-3 shrink-0 opacity-70" aria-hidden="true" />
@@ -235,7 +233,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                           </span>
                         )}
                         {rev.changelog && (
-                          <span className="line-clamp-2 text-xs text-foreground/80" title={rev.changelog}>{rev.changelog}</span>
+                          <span className="line-clamp-2 text-xs font-normal text-muted-foreground" title={rev.changelog}>{rev.changelog}</span>
                         )}
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

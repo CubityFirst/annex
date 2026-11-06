@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
-import { DESTRUCTIVE_OUTLINE_BUTTON, SettingsEmptyRow, SettingsListStatusRow, SettingsSectionHeader } from "@/components/settings/SettingsShell";
+import { DESTRUCTIVE_OUTLINE_BUTTON, SettingsEmptyState, SettingsListStatusRow, SettingsSectionHeader } from "@/components/settings/SettingsShell";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { formatBytes, formatRelativeTime } from "@/lib/fileManager";
@@ -129,7 +129,11 @@ export function RecycleBin({ projectId }: { projectId: string }) {
           {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       ) : entries.length === 0 ? (
-        <SettingsEmptyRow icon={Trash2}>The recycle bin is empty.</SettingsEmptyRow>
+        <SettingsEmptyState
+          icon={Trash2}
+          title="The recycle bin is empty"
+          hint="Deleted docs, files and folders will appear here."
+        />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {/* The list action sits in the card's first row, like the invite-link

@@ -75,7 +75,27 @@ describe("GraphPage", () => {
     const summary = await screen.findByTestId("graph-summary");
     expect(summary).toHaveTextContent("2 docs · 1 link");
     // No tag colours configured: no legend.
-    expect(screen.queryByRole("list", { name: "Tag color legend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Tag colour legend" })).not.toBeInTheDocument();
+  });
+
+  it("counts a two-way link pair once and ignores self-links", async () => {
+    const data = {
+      nodes: [
+        { id: "d1", title: "Alpha", links: 2 },
+        { id: "d2", title: "Beta", links: 2 },
+        { id: "d3", title: "Gamma", links: 1 },
+      ],
+      edges: [
+        { source: "d1", target: "d2" },
+        { source: "d2", target: "d1" },
+        { source: "d2", target: "d3" },
+        { source: "d3", target: "d3" },
+      ],
+    };
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data }));
+    renderAt();
+    const summary = await screen.findByTestId("graph-summary");
+    expect(summary).toHaveTextContent("3 docs · 2 links");
   });
 
   it("lists only the tag colours that colour a node in the legend", async () => {
@@ -92,7 +112,7 @@ describe("GraphPage", () => {
     };
     vi.stubGlobal("fetch", mockFetch({ ok: true, data }));
     renderAt();
-    const legend = await screen.findByRole("list", { name: "Tag color legend" });
+    const legend = await screen.findByRole("list", { name: "Tag colour legend" });
     expect(legend).toHaveTextContent("lore");
     expect(legend).not.toHaveTextContent("unused");
   });

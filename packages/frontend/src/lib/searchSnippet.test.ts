@@ -11,7 +11,13 @@ describe("cleanSearchSnippet", () => {
     expect(cleanSearchSnippet("see [[Welcome to the Annex demo]] or [[guide|the <mark>Coffee</mark> guide]]"))
       .toBe("see Welcome to the Annex demo or the <mark>Coffee</mark> guide");
     expect(cleanSearchSnippet("… brackets: [[<mark>Coffee</mark> brewing…"))
-      .toBe("… brackets: <mark>Coffee</mark> brewing…");
+      .toBe("…brackets: <mark>Coffee</mark> brewing…");
+  });
+
+  it("removes the space after a leading ellipsis", () => {
+    expect(cleanSearchSnippet("… brackets and <mark>coffee</mark>…")).toBe("…brackets and <mark>coffee</mark>…");
+    expect(cleanSearchSnippet("...  <mark>coffee</mark> beans")).toBe("...<mark>coffee</mark> beans");
+    expect(cleanSearchSnippet("plain … middle")).toBe("plain … middle");
   });
 
   it("strips links, headings, emphasis and callout markers", () => {
