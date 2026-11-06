@@ -10,6 +10,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
+import { cleanSearchSnippet } from "@/lib/searchSnippet";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
 import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Clock, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -82,9 +83,10 @@ function HighlightedText({ text, term }: { text: string; term: string }) {
 }
 
 function SearchSnippet({ html }: { html: string }) {
-  const parts = html.split(/(<mark>[\s\S]*?<\/mark>)/g);
+  // Raw markdown (task boxes, [[wikilinks]], **bold**…) reads as noise here.
+  const parts = cleanSearchSnippet(html).split(/(<mark>[\s\S]*?<\/mark>)/g);
   return (
-    <span className="text-xs text-muted-foreground line-clamp-2">
+    <span className="text-[13px] leading-[18px] text-muted-foreground line-clamp-2">
       {parts.map((part, i) =>
         part.startsWith("<mark>") ? (
           <mark key={i} className={MARK_CLASS}>{part.slice(6, -7)}</mark>
@@ -519,7 +521,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                   </span>
                   {/* Body-only match: one line of context showing the hit. */}
                   {d.excerpt && !d.title.toLowerCase().includes(searchTerm.trim().toLowerCase()) && (
-                    <span className="[&>span]:line-clamp-1"><SearchSnippet html={d.excerpt} /></span>
+                    <SearchSnippet html={d.excerpt} />
                   )}
                 </span>
                 <span className="ml-auto max-w-36 shrink-0 self-start mt-[3px] truncate text-[10px] text-muted-foreground">{d.siteName}</span>

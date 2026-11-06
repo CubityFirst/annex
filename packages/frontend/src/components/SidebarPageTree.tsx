@@ -117,6 +117,10 @@ export function SidebarPageTree({
   const fileMatch = useMatch("/projects/:projectId/files/:fileId");
   const activeDocId = docMatch?.params.docId ?? null;
   const activeFileId = fileMatch?.params.fileId ?? null;
+  // File Manager folder views (/folders/:id) mark that folder as the
+  // current location and open it, so the sidebar mirrors the breadcrumb.
+  const folderMatch = useMatch("/projects/:projectId/folders/:folderId");
+  const activeFolderId = folderMatch?.params.folderId ?? null;
 
   // Children per parent, sorted once per data change (not per node render).
   // Items whose parent folder isn't in the list (e.g. a limited viewer's
@@ -147,6 +151,17 @@ export function SidebarPageTree({
   // Folder chain (nearest first) holding the open doc/file; null while the
   // item itself hasn't loaded yet, [] when it sits at the root.
   const activeAncestors = useMemo((): string[] | null => {
+    if (activeFolderId) {
+      // The open folder itself plus its parents.
+      if (!index.parentById.has(activeFolderId)) return null;
+      const chain: string[] = [];
+      let cur: string | null = activeFolderId;
+      while (cur && index.parentById.has(cur) && !chain.includes(cur)) {
+        chain.push(cur);
+        cur = index.parentById.get(cur) ?? null;
+      }
+      return chain;
+    }
     const item = activeDocId
       ? docs.find(d => d.id === activeDocId)
       : activeFileId ? files.find(f => f.id === activeFileId) : undefined;
@@ -158,7 +173,7 @@ export function SidebarPageTree({
       cur = index.parentById.get(cur) ?? null;
     }
     return chain;
-  }, [activeDocId, activeFileId, docs, files, index]);
+  }, [activeDocId, activeFileId, activeFolderId, docs, files, index]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => readExpanded(projectId));
   const [levelLimits, setLevelLimits] = useState<Record<string, number>>({});
@@ -167,7 +182,7 @@ export function SidebarPageTree({
   // the user collapses afterwards stays collapsed across refetches.
   const autoExpandedFor = useRef<string | null>(null);
   useEffect(() => {
-    const key = activeDocId ? `doc:${activeDocId}` : activeFileId ? `file:${activeFileId}` : null;
+    const key = activeDocId ? `doc:${activeDocId}` : activeFileId ? `file:${activeFileId}` : activeFolderId ? `folder:${activeFolderId}` : null;
     if (!key || autoExpandedFor.current === key || activeAncestors === null) return;
     autoExpandedFor.current = key;
     if (activeAncestors.every(id => expanded.has(id))) return;
@@ -175,7 +190,7 @@ export function SidebarPageTree({
     for (const id of activeAncestors) next.add(id);
     setExpanded(next);
     writeExpanded(projectId, next);
-  }, [activeDocId, activeFileId, activeAncestors, expanded, projectId]);
+  }, [activeDocId, activeFileId, activeFolderId, activeAncestors, expanded, projectId]);
 
   function toggle(folderId: string) {
     const next = new Set(expanded);
@@ -201,6 +216,7 @@ export function SidebarPageTree({
           if (row.kind === "folder") {
             const { folder } = row;
             const open = expanded.has(folder.id);
+            const current = folder.id === activeFolderId;
             const childrenId = `sidebar-tree-${folder.id}`;
             return (
               <div key={`f:${folder.id}`}>
@@ -209,7 +225,8 @@ export function SidebarPageTree({
                   onClick={() => toggle(folder.id)}
                   aria-expanded={open}
                   aria-controls={open ? childrenId : undefined}
-                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), ROW_CLASS, rowTone(false))}
+                  aria-current={current ? "location" : undefined}
+                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), ROW_CLASS, rowTone(current))}
                 >
                   <ChevronRight aria-hidden className={cn("size-3 -ml-0.5 transition-transform duration-150", open && "rotate-90")} />
                   {open

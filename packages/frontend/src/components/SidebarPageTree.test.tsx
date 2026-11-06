@@ -46,6 +46,17 @@ describe("SidebarPageTree", () => {
     expect(screen.getByRole("button", { name: "Deep" })).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("opens the folder being viewed in the File Manager and marks it as the current location", () => {
+    renderAt("/projects/p1/folders/f-deep");
+    const nav = screen.getByRole("navigation", { name: "Site contents" });
+    expect(within(nav).getByRole("button", { name: "Guides" })).toHaveAttribute("aria-expanded", "true");
+    const deep = within(nav).getByRole("button", { name: "Deep" });
+    expect(deep).toHaveAttribute("aria-expanded", "true");
+    expect(deep).toHaveAttribute("aria-current", "location");
+    expect(within(nav).getByRole("button", { name: "Guides" })).not.toHaveAttribute("aria-current");
+    expect(within(nav).getByRole("link", { name: "Inner doc" })).toBeInTheDocument();
+  });
+
   it("toggles folders and remembers expanded state per site", async () => {
     const { unmount } = renderAt("/projects/p1");
     await userEvent.click(screen.getByRole("button", { name: "Guides" }));
