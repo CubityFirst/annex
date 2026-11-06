@@ -698,12 +698,12 @@ export function DocPage() {
       if (result.ok) {
         setCollabFatal(false);
         setCollabFatalReason(null);
-        toast({ title: "Realtime sync restored." });
+        toast({ title: "Real-time sync restored." });
       } else {
-        toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+        toast({ title: "Couldn't restore real-time sync.", variant: "destructive" });
       }
     } catch {
-      toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+      toast({ title: "Couldn't restore real-time sync.", variant: "destructive" });
     } finally {
       setResettingCollab(false);
     }
@@ -1215,7 +1215,7 @@ export function DocPage() {
                 variant="destructive"
                 size="sm"
                 onClick={() => setResetConfirmOpen(true)}
-                title="Realtime sync is disabled – click to restore"
+                title="Real-time sync is disabled – click to restore"
                 className="gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -1315,19 +1315,19 @@ export function DocPage() {
         <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Congratulations! You broke it! Realtime sync disabled</AlertDialogTitle>
+              <AlertDialogTitle>Congratulations! You broke it! Real-time sync disabled</AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2">
-                  <p>{collabFatalReason || "This document has exceeded the realtime sync size limit."}</p>
+                  <p>{collabFatalReason || "This document has exceeded the real-time sync size limit."}</p>
                   <p>Your edits still save, but they won't sync live with other users until sync is restored.</p>
-                  <p>Restoring wipes the realtime sync state. Any unsaved in-progress edits from other users will be discarded, so save your own changes first if you don't want to lose them.</p>
+                  <p>Restoring wipes the real-time sync state. Any unsaved in-progress edits from other users will be discarded, so save your own changes first if you don't want to lose them.</p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
-                {resettingCollab ? "Restoring…" : "Restore realtime sync"}
+                {resettingCollab ? "Restoring…" : "Restore real-time sync"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

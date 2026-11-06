@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getToken } from "@/lib/auth";
@@ -9,6 +9,10 @@ interface Props {
   logoSquareUpdatedAt: string | null | undefined;
   /** Tailwind size classes for both the `<img>` and the BookOpen fallback (e.g. "h-4 w-4"). */
   className?: string;
+  /** Rendered when there's no logo (default: a BookOpen icon). When given,
+   *  nothing renders while an uploaded logo is still loading, so the
+   *  fallback never flashes before the image. */
+  fallback?: ReactNode;
 }
 
 // Module-scoped cache of resolved blob URLs keyed by `${projectId}|${updatedAt}`.
@@ -44,20 +48,22 @@ function fetchLogoBlobUrl(projectId: string, updatedAt: string): Promise<string 
   return p;
 }
 
-export function ProjectSquareLogo({ projectId, logoSquareUpdatedAt, className }: Props) {
+export function ProjectSquareLogo({ projectId, logoSquareUpdatedAt, className, fallback }: Props) {
   const [src, setSrc] = useState<string | null>(() => {
     if (!logoSquareUpdatedAt) return null;
     return blobUrlCache.get(`${projectId}|${logoSquareUpdatedAt}`) ?? null;
   });
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!logoSquareUpdatedAt) {
       setSrc(null);
+      setFailed(false);
       return;
     }
     let cancelled = false;
     fetchLogoBlobUrl(projectId, logoSquareUpdatedAt).then(url => {
-      if (!cancelled) setSrc(url);
+      if (!cancelled) { setSrc(url); setFailed(!url); }
     });
     return () => { cancelled = true; };
   }, [projectId, logoSquareUpdatedAt]);
@@ -65,5 +71,6 @@ export function ProjectSquareLogo({ projectId, logoSquareUpdatedAt, className }:
   if (logoSquareUpdatedAt && src) {
     return <img src={src} alt="" className={cn("shrink-0 rounded object-cover", className)} />;
   }
+  if (fallback !== undefined) return logoSquareUpdatedAt && !failed ? null : <>{fallback}</>;
   return <BookOpen className={cn("shrink-0", className)} />;
 }

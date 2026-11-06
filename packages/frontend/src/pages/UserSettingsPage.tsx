@@ -2213,7 +2213,7 @@ export function UserSettingsPage() {
 
                       <div>
                         <h4 className="text-sm font-semibold">Presence colour</h4>
-                        <p className="mt-0.5 text-xs text-muted-foreground">The colour your cursor appears in to others when collaborating in realtime. Leave default for an auto-picked colour.</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">The colour your cursor appears in to others when collaborating in real time. Leave default for an auto-picked colour.</p>
                         <div className="mt-3 flex items-center gap-3">
                           <ColorPicker
                             value={personalPresenceColor ?? "#888888"}
