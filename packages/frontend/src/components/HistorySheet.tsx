@@ -42,6 +42,15 @@ function formatDateTime(iso: string): string {
   return `${date} ${time}`;
 }
 
+// Row time: clock time inside Today/Yesterday/weekday groups (the group label
+// already says which day); a short date for older groups.
+function rowTime(iso: string): string {
+  const d = new Date(iso);
+  const days = Math.round((new Date(new Date().toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days < 7) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const seconds = Math.floor(diff / 1000);
@@ -156,7 +165,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
           <SheetTitle>
             History
             {revisions && revisions.length > 0 && (
-              <span className="ml-1.5 font-normal text-muted-foreground">· {revisions.length}{hasMore ? "+" : ""}</span>
+              <span className="ml-1.5 font-normal text-muted-foreground">· {revisions.length}{hasMore ? "+" : ""} {revisions.length === 1 && !hasMore ? "revision" : "revisions"}</span>
             )}
           </SheetTitle>
           <SheetDescription>Kept for 90 days. The latest revision is always retained.</SheetDescription>
@@ -209,14 +218,16 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                     >
                       <AvatarCluster people={people} />
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        {/* Fixed layout: name + time on the first line, then an
+                            optional rename line, then the note. */}
                         <span className="flex items-center gap-1.5 text-sm font-medium">
                           <span className="truncate">{displayName(people)}</span>
                           {selectedId === rev.id && <ViewingBadge />}
+                          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground" title={formatDateTime(rev.created_at)}>{rowTime(rev.created_at)}</span>
                         </span>
                         {rev.title && rev.title !== currentTitle && (
-                          <span className="truncate text-xs text-muted-foreground">“{rev.title}”</span>
+                          <span className="truncate text-xs text-muted-foreground">Titled “{rev.title}”</span>
                         )}
-                        <span className="text-xs text-muted-foreground" title={formatDateTime(rev.created_at)}>{timeAgo(rev.created_at)}</span>
                         {rev.changelog && (
                           <span className="text-xs text-foreground/70 italic line-clamp-2" title={rev.changelog}>{rev.changelog}</span>
                         )}

@@ -365,9 +365,8 @@ describe("FileManager", () => {
   it("cancels the new-folder dialog without creating anything", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
     renderManager(null);
-    // Secondary create actions sit in the toolbar's "New" menu (desktop and
-    // touch triggers both render in jsdom - either opens the same dialog).
-    fireEvent.keyDown((await screen.findAllByRole("button", { name: "New" }))[0], { key: "Enter" });
+    // Secondary create actions sit behind the split button's chevron.
+    fireEvent.keyDown(await screen.findByRole("button", { name: "More create options" }), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
     fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "Specs" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -404,22 +403,77 @@ describe("FileManager", () => {
     expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
   });
 
-  // Folders have no author/size/updated time of their own - every cell still
-  // shows something (count after the name, a muted dash elsewhere), never a blank.
-  it("fills every folder cell", async () => {
+  // Folder rows: the item count sits in the Size column (breakdown in the
+  // tooltip), and cells that don't apply stay blank rather than dashed. Doc
+  // rows leave Size blank too.
+  it("puts the folder count in Size and leaves inapplicable cells blank", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
-      data: { ...emptyContents, folders: [folder("f1", "Specs"), folder("f2", "Blank")], folderCounts: { f1: { docs: 1, files: 0, folders: 0 } } },
+      data: {
+        ...emptyContents,
+        folders: [folder("fc1", "Specs"), folder("fc2", "Blank")],
+        docs: [doc("d1", "Doc A")],
+        folderCounts: { fc1: { docs: 1, files: 0, folders: 0 } },
+      },
     });
     renderManager(null);
     await screen.findAllByLabelText("Open folder Specs");
-    const cellText = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!.textContent;
-    // The item count rides after the name; Size is a muted dash.
-    expect(cellText("Open folder Specs", 0)).toContain("Specs· 1 item");
-    expect(cellText("Open folder Blank", 0)).toContain("Blank· Empty");
-    expect(cellText("Open folder Specs", 2)).toContain("—");
-    expect(cellText("Open folder Specs", 1)).toContain("—");
-    expect(cellText("Open folder Specs", 3)).toContain("—");
+    const cell = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!;
+    // Name is just the name - no inline count.
+    expect(cell("Open folder Specs", 0).textContent).toBe("Specs");
+    expect(cell("Open folder Specs", 2).textContent).toBe("1 item");
+    expect(cell("Open folder Specs", 2).querySelector('[title="1 doc"]')).toBeTruthy();
+    expect(cell("Open folder Blank", 2).textContent).toBe("Empty");
+    // Author / last updated (folder never opened) / doc size: blank, no dash.
+    for (const [label, col] of [["Open folder Specs", 1], ["Open folder Specs", 3], ["Open Doc A", 2]] as const) {
+      expect(cell(label, col).textContent).not.toContain("—");
+      expect(cell(label, col).querySelector(".sr-only")).toBeTruthy();
+    }
+  });
+
+  // A folder row shows its newest child's edit time once that folder's
+  // contents have been loaded (e.g. the user opened it and came back up).
+  it("shows a visited folder's newest child date in Last updated", async () => {
+    const recent = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    vi.mocked(apiFetchJson).mockImplementation(async (url: string) => {
+      if (String(url).includes("/contents?folderId=fv1")) {
+        return {
+          ok: true, status: 200,
+          data: { ...emptyContents, docs: [{ ...doc("d1", "Old"), folder_id: "fv1" }, { ...doc("d2", "New"), folder_id: "fv1", updated_at: recent }] },
+        };
+      }
+      return { ok: true, status: 200, data: { ...emptyContents, folders: [folder("fv1", "Guides")], folderCounts: { fv1: { docs: 2, files: 0, folders: 0 } } } };
+    });
+    const { rerenderWith } = renderManager("fv1");
+    await screen.findAllByLabelText("Open New");
+    rerenderWith(null);
+    await screen.findAllByLabelText("Open folder Guides");
+    expect(desktopRow("Open folder Guides").querySelector('[data-col="3"]')!.textContent).toBe("2h ago");
+  });
+
+  // Creation is one split button: "New document" plus a chevron menu holding
+  // the secondary creates and Upload.
+  it("offers folder, drawing and upload from the create menu", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
+    renderManager(null);
+    expect(await screen.findByRole("button", { name: "New document" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload files" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More create options" }), { key: "Enter" });
+    for (const name of ["New folder", "New drawing", "Upload files"]) {
+      expect(await screen.findByRole("menuitem", { name })).toBeTruthy();
+    }
+  });
+
+  // Row download buttons fade in on hover/focus but stay in the DOM (and tab
+  // order); the kebab is always visible.
+  it("keeps row download buttons reachable while visually hover-only", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: { ...emptyContents, docs: [doc("d1", "Doc A")] } });
+    renderManager(null);
+    const download = await screen.findByRole("button", { name: "Download Doc A as markdown" });
+    expect(download.className).toContain("opacity-0");
+    expect(download.className).toContain("group-focus-within/row:opacity-100");
+    expect(download.getAttribute("tabindex")).not.toBe("-1");
+    expect(screen.getAllByLabelText("Actions for Doc A")[0].className).not.toContain("opacity-0");
   });
 
   // Header select-all is tri-state and covers every visible row except the

@@ -42,6 +42,7 @@ import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { createPortal } from "react-dom";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
 import { DocOutline } from "@/components/DocOutline";
@@ -306,7 +307,7 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, addDoc, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, addDoc, setBreadcrumbs, headerActionSlot, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
   // Mounted at /docs/new (no :docId param): the document doesn't exist server-side
   // yet - the editor opens on a synthesized empty doc and the first save POSTs it.
   const isNewDoc = !docId;
@@ -547,8 +548,12 @@ export function DocPage() {
       name: crumb.name,
       onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : `/projects/${projectId}`),
     }));
-    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId ?? "new", name: isNewDoc ? "New document" : doc.title }]);
-  }, [doc, docId, isNewDoc, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
+    // While editing, the doc's own crumb is replaced by the editable title
+    // field rendered into the top bar (see the editing branch below).
+    setBreadcrumbs(editing
+      ? [projectCrumb, ...folderCrumbs].map(c => ({ ...c, forceLink: true }))
+      : [projectCrumb, ...folderCrumbs, { id: docId ?? "new", name: isNewDoc ? "New document" : doc.title }]);
+  }, [doc, docId, isNewDoc, editing, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
 
   function generateSummary() {
     if (!doc || aiSummaryLoading) return;
@@ -981,19 +986,21 @@ export function DocPage() {
     const reserveOutline = true;
     return (
       <div className="flex h-full flex-col">
-        {/* Title + toolbar - inner row matches the editor's 44rem prose column so
-            the title aligns with the document content below. */}
-        <div className={cn("border-b border-border px-3 py-2 sm:px-6 sm:py-3", reserveOutline && "xl:pr-[16.5rem]")}>
-          <div className="mx-auto grid max-w-[44rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:gap-4">
-          <Input
-            value={titleDraft}
-            onChange={e => setTitleDraft(e.target.value)}
-            placeholder="Document title"
-            aria-label="Document title"
-            className="h-10 min-w-0 rounded-none border-0 border-b border-transparent bg-transparent px-0 text-xl md:text-[22px] font-semibold tracking-tight shadow-none placeholder:font-medium placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:border-border hover:border-border/60"
-            autoFocus={isNewDoc}
-          />
-          <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* One header for editing: the editable title continues the
+            breadcrumb in the app's top bar, with the editor actions at its
+            right end - no separate edit bar stacked above the toolbar. */}
+        {headerActionSlot && createPortal(
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+            <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/50 md:block" aria-hidden="true" />
+            <Input
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              placeholder="Document title"
+              aria-label="Document title"
+              className="hidden h-8 min-w-0 flex-1 rounded-md border-transparent bg-transparent px-1.5 text-sm font-medium shadow-none placeholder:font-normal placeholder:text-muted-foreground hover:bg-accent/60 focus-visible:border-border focus-visible:bg-card focus-visible:ring-0 md:block md:text-sm"
+              autoFocus={isNewDoc}
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             {realtimeEnabled && !isNewDoc && <EditorPresence editors={remoteEditors} />}
             {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
@@ -1031,12 +1038,24 @@ export function DocPage() {
               <X className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Cancel</span>
             </Button>
-            <Button size="sm" onClick={handleSaveClick} disabled={saving} className="gap-1.5">
+            <Button size="sm" onClick={handleSaveClick} disabled={saving || (isNewDoc && !draft.trim() && !titleDraft.trim())} className="gap-1.5">
               <Save className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
             </Button>
-          </div>
-          </div>
+            </div>
+          </div>,
+          headerActionSlot,
+        )}
+        {/* Phones: the top bar is too narrow for the title, so it gets its
+            own row above the toolbar. */}
+        <div className="border-b border-border px-5 py-2 md:hidden">
+          <Input
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            placeholder="Title"
+            aria-label="Document title (mobile)"
+            className="h-10 border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+          />
         </div>
 
         <div className={cn("flex flex-1 justify-center overflow-hidden px-6", reserveOutline && "xl:pr-[16.5rem]")}>
@@ -1215,7 +1234,7 @@ export function DocPage() {
   return (
     <div className="flex min-h-full">
       {/* Article */}
-      <div className="flex-1 min-w-0 px-5 py-6 sm:px-6 sm:py-10">
+      <div className="flex-1 min-w-0 px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
         {isEditor && (
           <input
             ref={coverInputRef}
@@ -1273,7 +1292,7 @@ export function DocPage() {
           <div className="flex items-center justify-end gap-2 max-md:float-right max-md:ml-3 max-md:mb-2 md:absolute md:-top-[9px] md:right-0">
           {/* Secondary tools: one quiet grouped strip. Edit (below) is the
               labelled primary action so authors don't have to decode glyphs. */}
-          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-xs [&>button]:size-10 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
+          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-input/60 bg-card p-0.5 shadow-xs [&>button]:size-9 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
             {headings.length > 0 && (
               <Button variant="ghost" size="icon" className="xl:hidden" title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
                 <ListTree className="h-4 w-4" />
@@ -1500,7 +1519,7 @@ export function DocPage() {
                           </Button>
                         )}
                       </div>
-                      <div className={cn("flex items-center justify-between gap-3", projectPublishedAt && "opacity-60")}>
+                      <div className="flex items-center justify-between gap-3">
                         <div className="flex flex-col gap-0.5">
                           <Label className="text-sm font-medium">Publish this document on its own</Label>
                           <p className="text-xs text-muted-foreground">
@@ -1597,7 +1616,7 @@ export function DocPage() {
             </DropdownMenu>
           </div>
           {isEditor && (
-            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3.5 md:h-9">
+            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3.5 max-sm:h-[42px] md:h-9">
               <Pencil className="h-3.5 w-3.5" />
               Edit
             </Button>
@@ -1616,7 +1635,8 @@ export function DocPage() {
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
               <p data-pdf-last-updated className="not-prose mb-2 text-[13px] text-muted-foreground max-md:flex max-md:min-h-10 max-md:items-center sm:-mt-2 sm:mb-3 sm:text-sm">
-                Last updated {timeAgo(doc.updated_at)} · {calcReadingTime(doc.content)}
+                <span className="whitespace-nowrap">Last updated {timeAgo(doc.updated_at)}</span>
+                <span className="hidden whitespace-nowrap sm:inline">&nbsp;· {calcReadingTime(doc.content)}</span>
               </p>
             )}
             {/* End the phone float row here so the document body never lays
@@ -1789,7 +1809,7 @@ export function DocPage() {
 
       {/* Outline rail - always present at xl (empty for heading-less docs)
           so the article column never shifts between docs or modes. */}
-      <aside className="hidden xl:block w-60 shrink-0 py-10 pl-2 pr-6" aria-hidden={headings.length === 0 || undefined}>
+      <aside className="hidden xl:block w-60 shrink-0 py-10 pl-0 pr-4" aria-hidden={headings.length === 0 || undefined}>
       {headings.length > 0 && (
         <>
           {/* Sticky offset equals the aside's top padding (py-10) so the rail

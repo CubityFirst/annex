@@ -46,10 +46,12 @@ import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, C
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { RecycleBin } from "@/components/RecycleBin";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import {
   DESTRUCTIVE_OUTLINE_BUTTON,
   DangerRow,
   SettingsEmptyRow,
+  SETTINGS_ROW_CARD,
   SettingsListStatusRow,
   SettingsRow,
   SettingsSectionHeader,
@@ -80,11 +82,14 @@ const ROLE_RANK: Record<Role, number> = { limited: -1, viewer: 0, editor: 1, adm
 
 const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
-// Grouped outline for the settings accordion. Section→group membership and
+// Grouped outline for the settings nav. Section→group membership and
 // per-role visibility live in the per-render `settingsSections` array. Order
-// here is the accordion order and matches DOM order. Features/People collapse
+// here is the outline order and matches DOM order. Features/People drop
 // away for non-admins (their only sections are admin-gated); Site (General)
 // and Danger zone remain for every member.
+/** Published location of docs/api/README.md (the public /v1 reference). */
+const API_REFERENCE_URL = "https://github.com/CubityFirst/annex/blob/main/docs/api/README.md";
+
 const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "site", label: "Site" },
   { id: "features", label: "Features" },
@@ -1494,58 +1499,65 @@ export function SiteSettingsPage() {
               <SettingsSectionHeader title="Branding" description="Customize how your published site looks and is shared." />
             </div>
             {/* Square icon - used in the projects sidebar, favourites, profile cards.
-                Cropped client-side to 512×512 via AvatarCropDialog. */}
-            {/* Each preview is sized to its own aspect (square 64px, wordmark
-                128x64): both 64px tall and top-aligned, and each card's text
-                starts 16px after its own preview. */}
-            <div className="flex items-start gap-4 rounded-lg border border-border bg-card p-4">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-                {project.logo_square_updated_at && logoPreviewUrls.square ? (
-                  <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
-                ) : (
-                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                )}
+                Cropped client-side to 512x512 via AvatarCropDialog. */}
+            {/* Both branding rows use the shared settings-row pattern: preview
+                + title/description on the left, actions right-aligned. Each
+                preview sits in a fixed 128px slot (the square artwork centred
+                in it, the 128x64 wordmark filling it) so both rows' text
+                columns start on one left edge. Below sm the actions wrap under
+                the text. */}
+            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex w-32 shrink-0 justify-center">
+                  <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                    {project.logo_square_updated_at && logoPreviewUrls.square ? (
+                      <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
+                    ) : (
+                      <ImageIcon className="size-6 text-muted-foreground" aria-hidden />
+                    )}
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <p className="text-sm font-medium">Square icon</p>
+                  <p className="text-[13px] leading-snug text-muted-foreground">
+                    Shown in the projects sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
+                  </p>
+                </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <p className="text-sm font-medium">Square icon</p>
-                <p className="text-[13px] leading-snug text-muted-foreground">
-                  Shown in the projects sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <input
-                    ref={squareLogoInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0];
-                      if (file) setSquareCropFile(file);
-                    }}
-                  />
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                <input
+                  ref={squareLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) setSquareCropFile(file);
+                  }}
+                />
+                {project.logo_square_updated_at && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="gap-1.5"
+                    className="text-muted-foreground hover:text-destructive"
                     disabled={uploadingLogo.square || removingLogo.square}
-                    onClick={() => squareLogoInputRef.current?.click()}
+                    onClick={() => handleLogoRemove("square")}
                   >
-                    <Upload className="h-3.5 w-3.5" />
-                    {uploadingLogo.square ? "Uploading…" : project.logo_square_updated_at ? "Change" : "Upload icon"}
+                    {removingLogo.square ? "Removing…" : "Remove"}
                   </Button>
-                  {project.logo_square_updated_at && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      disabled={uploadingLogo.square || removingLogo.square}
-                      onClick={() => handleLogoRemove("square")}
-                    >
-                      {removingLogo.square ? "Removing…" : "Remove"}
-                    </Button>
-                  )}
-                </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={uploadingLogo.square || removingLogo.square}
+                  onClick={() => squareLogoInputRef.current?.click()}
+                >
+                  <Upload className="size-3.5" aria-hidden />
+                  {uploadingLogo.square ? "Uploading…" : project.logo_square_updated_at ? "Change" : "Upload icon"}
+                </Button>
               </div>
             </div>
             {logoError.square && (
@@ -1556,54 +1568,56 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className="flex items-start gap-4 rounded-lg border border-border bg-card p-4">
-              <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-                {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
-                  <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
-                ) : (
-                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                )}
-              </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <p className="text-sm font-medium">Wordmark</p>
-                <p className="text-[13px] leading-snug text-muted-foreground">
-                  Shown in the top-left of your published site. PNG, JPG, WebP, or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <input
-                    ref={wideLogoInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0];
-                      if (file) handleWideLogoUpload(file);
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={uploadingLogo.wide || removingLogo.wide}
-                    onClick={() => wideLogoInputRef.current?.click()}
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    {uploadingLogo.wide ? "Uploading…" : project.logo_wide_updated_at ? "Change" : "Upload wordmark"}
-                  </Button>
-                  {project.logo_wide_updated_at && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      disabled={uploadingLogo.wide || removingLogo.wide}
-                      onClick={() => handleLogoRemove("wide")}
-                    >
-                      {removingLogo.wide ? "Removing…" : "Remove"}
-                    </Button>
+            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                  {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
+                    <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
+                  ) : (
+                    <ImageIcon className="size-6 text-muted-foreground" aria-hidden />
                   )}
                 </div>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <p className="text-sm font-medium">Wordmark</p>
+                  <p className="text-[13px] leading-snug text-muted-foreground">
+                    Shown in the top-left of your published site. PNG, JPG, WebP, or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                <input
+                  ref={wideLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleWideLogoUpload(file);
+                  }}
+                />
+                {project.logo_wide_updated_at && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-destructive"
+                    disabled={uploadingLogo.wide || removingLogo.wide}
+                    onClick={() => handleLogoRemove("wide")}
+                  >
+                    {removingLogo.wide ? "Removing…" : "Remove"}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={uploadingLogo.wide || removingLogo.wide}
+                  onClick={() => wideLogoInputRef.current?.click()}
+                >
+                  <Upload className="size-3.5" aria-hidden />
+                  {uploadingLogo.wide ? "Uploading…" : project.logo_wide_updated_at ? "Change" : "Upload wordmark"}
+                </Button>
               </div>
             </div>
             {logoError.wide && (
@@ -2516,8 +2530,16 @@ export function SiteSettingsPage() {
   -H "Authorization: Bearer annx_your_key_here"`}
               </pre>
               <p className="mt-2 text-xs text-muted-foreground">
-                Base URL <span className="font-mono">{window.location.origin}/api/v1</span>. See the full API reference for
-                endpoints, scopes and rate limits.
+                Base URL <span className="font-mono">{window.location.origin}/api/v1</span>. See the{" "}
+                <a
+                  href={API_REFERENCE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+                >
+                  full API reference
+                </a>{" "}
+                for endpoints, scopes and rate limits.
               </p>
             </div>
           </div>
@@ -2552,7 +2574,7 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
 
           <div id="danger" className="flex flex-col gap-4">
-            <SettingsSectionHeader title="Danger zone" danger />
+            <SettingsSectionHeader title="Danger zone" />
 
             {isOwner ? (
               <DangerRow

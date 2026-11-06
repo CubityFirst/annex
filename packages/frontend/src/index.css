@@ -108,8 +108,10 @@
   --accent: oklch(0.262 0 0);
   --accent-foreground: oklch(0.945 0 0);
 
-  --destructive: oklch(0.6 0.19 25);
-  --destructive-foreground: oklch(0.985 0 0);
+  /* Light enough for small red text to clear 4.5:1 on every dark surface;
+     solid destructive buttons therefore take dark text. */
+  --destructive: oklch(0.69 0.17 24);
+  --destructive-foreground: oklch(0.17 0 0);
 
   --border: oklch(0.29 0 0);
   /* Control outlines (inputs, checkboxes, radios, off switches) need ≥3:1

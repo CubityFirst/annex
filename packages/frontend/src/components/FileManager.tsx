@@ -42,10 +42,11 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 
-// The default avatar fallback (bg-accent) nearly vanishes against the table
-// surface - give the initials a visible disc and hairline ring here.
+// "Created by" chip: a 20px disc with 10px medium initials. The default
+// fallback (bg-accent, muted text) nearly vanishes against the table surface,
+// so the initials sit at foreground/80 on bg-muted inside a hairline ring.
 const AUTHOR_AVATAR_CLASS =
-  "h-6 w-6 shrink-0 ring-1 ring-border [&_[data-slot=avatar-fallback]]:bg-muted [&_[data-slot=avatar-fallback]]:text-[10px] [&_[data-slot=avatar-fallback]]:text-foreground/80";
+  "size-5 shrink-0 text-[10px] ring-1 ring-border [&_[data-slot=avatar-fallback]]:bg-muted [&_[data-slot=avatar-fallback]]:font-medium [&_[data-slot=avatar-fallback]]:tracking-normal [&_[data-slot=avatar-fallback]]:text-foreground/80";
 
 // "Created by" cell - the author/uploader avatar and name (role in the
 // tooltip), linking to the user's profile card when we have an id. The name
@@ -69,16 +70,16 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
   );
 }
 
-// Muted em dash for a cell with no value - every row fills every column, so
-// nothing reads as a rendering gap. The label is for screen readers.
-// Folder size shown on its row/card: one total ("1 item", "7 items", "Empty")
-// on desktop and mobile alike; the doc/file/folder breakdown rides in the
-// tooltip (folderCountLabel).
+// Folder size shown in its row's Size column / card subtitle: one total
+// ("1 item", "7 items", "Empty") on desktop and mobile alike; the
+// doc/file/folder breakdown rides in the tooltip (folderCountLabel).
 function folderItemsLabel(c: FolderCounts | undefined): string {
   const n = c ? c.docs + c.files + c.folders : 0;
   return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
 }
 
+// Muted em dash for a value that should exist but is missing (e.g. an
+// unknown author). The label is for screen readers.
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -86,6 +87,31 @@ function EmptyCell({ label }: { label: string }) {
       <span className="sr-only">{label}</span>
     </span>
   );
+}
+
+// A cell that genuinely doesn't apply to the row (a doc's byte size, a
+// folder's author) stays visually blank rather than repeating dashes down
+// the column; screen readers still get a label.
+function BlankCell({ label }: { label: string }) {
+  return <span className="sr-only">{label}</span>;
+}
+
+// Newest edit time seen among each folder's direct docs/files (plus any child
+// folders already known), recorded whenever that folder's contents load. The
+// listing API doesn't send per-folder dates, so a folder row shows one in
+// "Last updated" only once its contents have been loaded this session and
+// stays blank otherwise. Module scope so it survives navigating up a level.
+const folderNewestCache = new Map<string, string>();
+
+function newestTimestamp(values: (string | undefined)[]): string | undefined {
+  let best: string | undefined;
+  let bestMs = -Infinity;
+  for (const v of values) {
+    if (!v) continue;
+    const ms = Date.parse(v);
+    if (!Number.isNaN(ms) && ms > bestMs) { bestMs = ms; best = v; }
+  }
+  return best;
 }
 
 // Module-scope so the array identity is stable across renders - the table keys
@@ -154,8 +180,20 @@ const ROW_MENU_CLASS = `min-w-[200px] [&_[role=menuitem]]:pr-4 ${MENU_ICON_CLASS
 
 // Square 32px icon button for the desktop row actions column - 16px icons in
 // full-strength muted grey so the actions read without hovering the row.
-const ROW_ICON_BUTTON_CLASS =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const ROW_ICON_BUTTON_BASE =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const ROW_ICON_BUTTON_CLASS = `${ROW_ICON_BUTTON_BASE} transition-colors`;
+
+// Secondary row actions (download / AI summary) fade in only while the row is
+// hovered, holds focus, or has its menu open - the always-visible kebab
+// carries the row's actions otherwise. They stay in the tab order (focusing
+// one reveals it) and are always shown on touch pointers, which can't hover.
+const ROW_REVEAL_BUTTON_CLASS =
+  `${ROW_ICON_BUTTON_BASE} transition-[color,background-color,opacity] opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 group-data-[state=open]/rowmenu:opacity-100 group-has-[[data-row-menu][data-state=open]]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100`;
+
+// Empty placeholder that holds the download slot on rows without one
+// (folders), so the kebab column lines up on every row.
+const RowActionSlot = () => <span aria-hidden="true" className="h-8 w-8 shrink-0" />;
 
 // The same five actions repeat across the desktop context menu, the desktop
 // kebab, and the mobile kebab - render them once from a "kit" of menu-item
@@ -215,6 +253,25 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     files, setFiles,
     folderCounts, bumpFolderCount, path, loading, error: loadError, reload,
   } = useFolderContents(projectId, currentFolderId, projectName);
+
+  // Record this folder's newest child edit for its row's "Last updated" one
+  // level up (see folderNewestCache). The lists briefly still hold the
+  // previous folder's rows after navigating, so only record once every listed
+  // doc/file actually belongs to the folder being viewed.
+  useEffect(() => {
+    if (loading || currentFolderId === null) return;
+    const own = docs.every(d => d.folder_id === currentFolderId)
+      && files.every(f => f.folder_id === currentFolderId)
+      && folders.every(f => f.parent_id === currentFolderId);
+    if (!own) return;
+    const newest = newestTimestamp([
+      ...docs.map(d => d.updated_at),
+      ...files.map(f => f.updated_at ?? f.created_at),
+      ...folders.map(f => folderNewestCache.get(f.id)),
+    ]);
+    if (newest) folderNewestCache.set(currentFolderId, newest);
+    else folderNewestCache.delete(currentFolderId);
+  }, [loading, currentFolderId, docs, files, folders]);
 
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
@@ -897,6 +954,30 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     ? folderCountLabel(folderCounts.get(contextDeleteTarget.id))
     : "";
 
+  // The create menu behind the toolbar's split-button chevron (desktop) and
+  // its "New" button (touch). Upload lives here too; the desktop menu also
+  // points at drag-and-drop, which has no other visible affordance.
+  const createMenu = (touch: boolean) => (
+    <DropdownMenuContent align={touch ? "start" : "end"} className={`min-w-[200px] ${MENU_ICON_CLASS}${touch ? " [&_[role=menuitem]]:min-h-11" : ""}`}>
+      <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
+        <FolderPlus />
+        New folder
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={handleNewDrawing}>
+        <PenTool />
+        New drawing
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+        <Upload />
+        Upload files
+      </DropdownMenuItem>
+      {!touch && (
+        <p className="px-2 pb-1.5 pt-1 text-xs text-muted-foreground">Or drop files anywhere on this page.</p>
+      )}
+    </DropdownMenuContent>
+  );
+
   const contextKit: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
   const dropdownKit: MenuKit = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
 
@@ -1029,6 +1110,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           {sortedFolders.map((folder, folderIdx) => {
             const isDropTarget = dropTarget === folder.id;
             const counts = folderCounts.get(folder.id);
+            const folderNewest = folderNewestCache.get(folder.id);
             const folderRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
@@ -1072,9 +1154,6 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
-                          <span className="ml-1.5 shrink-0 whitespace-nowrap text-sm text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
-                            <span aria-hidden="true">· </span>{folderItemsLabel(counts)}
-                          </span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1091,14 +1170,31 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
-                    // Folders carry no author or edit time of their own.
-                    { content: <EmptyCell label="No author" /> },
-                    // Folders have no byte size - what's inside (full-subtree
-                    // totals) rides after the name instead.
-                    { content: <EmptyCell label="No size" /> },
-                    { content: <EmptyCell label="No update time" /> },
+                    // Folders have no author of their own.
+                    { content: <BlankCell label="No author" /> },
+                    // No byte size either - Size shows what's inside instead
+                    // (full-subtree total, breakdown in the tooltip).
+                    {
+                      content: (
+                        <span className="text-sm text-muted-foreground truncate" title={folderCountLabel(counts) || "Empty folder"}>
+                          {folderItemsLabel(counts)}
+                        </span>
+                      ),
+                    },
+                    // Newest child edit, once this folder's contents have been
+                    // seen (see folderNewestCache); blank until then.
+                    {
+                      content: folderNewest
+                        ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
+                        : <BlankCell label="No update time" />,
+                    },
                   ]}
-                  actionsCell={canEdit ? renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true) : null}
+                  actionsCell={canEdit ? (
+                    <>
+                      <RowActionSlot />
+                      {renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true)}
+                    </>
+                  ) : null}
                 />
             );
             if (!canEdit) return <div key={folder.id}>{folderRow}</div>;
@@ -1171,7 +1267,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     {
                       content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
-                    { content: <EmptyCell label="No size" /> },
+                    // Docs have no byte size - left blank, not dashed.
+                    { content: <BlankCell label="No size" /> },
                     {
                       content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
                     },
@@ -1183,7 +1280,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           type="button"
                           aria-label={`Summarise ${doc.title || "Untitled"} with AI`}
                           onClick={e => handleSummarize(e, doc)}
-                          className={ROW_ICON_BUTTON_CLASS}
+                          className={ROW_REVEAL_BUTTON_CLASS}
                           title="Summarise with AI"
                         >
                           <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -1193,7 +1290,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         type="button"
                         aria-label={`Download ${doc.title || "Untitled"} as markdown`}
                         onClick={e => handleDownloadDoc(e, doc)}
-                        className={ROW_ICON_BUTTON_CLASS}
+                        className={ROW_REVEAL_BUTTON_CLASS}
                         title="Download as markdown"
                       >
                         <Download className="h-4 w-4" aria-hidden="true" />
@@ -1270,7 +1367,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       type="button"
                       aria-label={`Download ${file.name}`}
                       onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                      className={ROW_ICON_BUTTON_CLASS}
+                      className={ROW_REVEAL_BUTTON_CLASS}
                       title="Download"
                     >
                       <Download className="h-4 w-4" aria-hidden="true" />
@@ -1295,6 +1392,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <div className="md:hidden rounded-lg border border-border bg-background overflow-hidden">
         {sortedFolders.map(folder => {
           const counts = folderCounts.get(folder.id);
+          const folderNewest = folderNewestCache.get(folder.id);
           return (
             <div
               key={folder.id}
@@ -1311,8 +1409,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
-                <div className="truncate text-xs text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
-                  {folderItemsLabel(counts)}
+                <div className="truncate text-xs text-muted-foreground">
+                  <span title={folderCountLabel(counts) || "Empty folder"}>{folderItemsLabel(counts)}</span>
+                  {folderNewest && <span> · {formatRelativeTime(folderNewest)}</span>}
                 </div>
               </div>
               {canEdit && renderKebab("Folder actions", (
@@ -1450,7 +1549,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         </div>
       )}
 
-      {/* Hidden file input backing the explicit Upload button (touch can't drag) */}
+      {/* Hidden file input backing the create menu's "Upload files" item (touch can't drag) */}
       <input
         type="file"
         multiple
@@ -1461,7 +1560,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
       {/* Toolbar - search on the left, actions right-aligned so the primary
           "New document" sits above the table's trailing columns. Below sm the
-          secondary create actions fold into one "New" menu. */}
+          actions drop to their own full-width row under the search. */}
       <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
         <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
@@ -1485,67 +1584,50 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           )}
         </div>
         {canEdit && (
-          <div className="flex w-full items-center justify-end gap-2 sm:ml-auto sm:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
             {selectedCount > 0 && (
-              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="mr-auto h-11 gap-1.5 px-3 sm:mr-0 sm:h-9" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 sm:h-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 {deleting ? "Deleting…" : `Delete (${selectedCount})`}
               </Button>
             )}
-            <Button variant="outline" aria-label="Upload files" title="Upload files" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="h-3.5 w-3.5" aria-hidden="true" />
-              Upload
-            </Button>
-            {/* "New ▾" holds the secondary create actions. Two triggers so the
-                touch menu can also carry Upload (no drag-and-drop there)
-                without the desktop menu repeating the Upload button. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" disabled={creatingDrawing}>
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  {creatingDrawing ? "Creating…" : "New"}
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className={`min-w-[180px] ${MENU_ICON_CLASS}`}>
-                <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
-                  <FolderPlus />
-                  New folder
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleNewDrawing}>
-                  <PenTool />
-                  New drawing
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-11 gap-1.5 px-3 sm:hidden" disabled={creatingDrawing}>
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  {creatingDrawing ? "Creating…" : "New"}
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className={`min-w-[180px] ${MENU_ICON_CLASS} [&_[role=menuitem]]:min-h-11`}>
-                <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
-                  <FolderPlus />
-                  New folder
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <Upload />
-                  Upload files
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleNewDrawing}>
-                  <PenTool />
-                  New drawing
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button aria-label="New document" title="New document" className="h-11 gap-1.5 px-4 sm:h-9 sm:px-3" onClick={handleNewDoc}>
-              <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sm:hidden">New doc</span>
-              <span className="hidden sm:inline">New document</span>
-            </Button>
+            {/* Creation controls. Desktop: one split button - "New document"
+                plus an attached chevron menu for the secondary creates and
+                Upload. Touch: a full-width two-column row, an outline
+                "New ⌄" menu beside the primary "New doc". Same menu either
+                way; the touch triggers render only below sm. */}
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-11 gap-1.5 px-3 sm:hidden" disabled={creatingDrawing}>
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    {creatingDrawing ? "Creating…" : "New"}
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                {createMenu(true)}
+              </DropdownMenu>
+              <Button aria-label="New document" title="New document" className="h-11 gap-1.5 px-4 sm:h-9 sm:rounded-r-none sm:px-3" onClick={handleNewDoc}>
+                <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sm:hidden">New doc</span>
+                <span className="hidden sm:inline">New document</span>
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label="More create options"
+                    title="More create options"
+                    className="hidden h-9 w-9 rounded-l-none border-l border-primary-foreground/20 px-0 sm:inline-flex"
+                    disabled={creatingDrawing}
+                  >
+                    {creatingDrawing
+                      ? <Spinner className="size-3.5" />
+                      : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                {createMenu(false)}
+              </DropdownMenu>
+            </div>
           </div>
         )}
       </div>

@@ -452,16 +452,17 @@ export function FilePage() {
         </div>
       </div>
 
-      {/* The image sits on a thin card "mat" (8-12px) - just enough that
-          dark-edged images don't merge into the page, without a heavy frame. */}
+      {/* One frame only: the image fills a bordered card whose rounded
+          corners clip it (no inner mat). The hairline border keeps dark-edged
+          images from merging into the page; letterboxing shows the card. */}
       {kind === "image" && (
-        <div className="mt-8 rounded-xl border border-border bg-card p-2 sm:p-3">
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}
             projectId={projectId}
             mimeType={file.mime_type}
-            className="max-h-[70vh] w-full rounded-md object-contain"
+            className="block max-h-[70vh] w-full object-contain"
           />
         </div>
       )}

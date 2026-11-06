@@ -366,7 +366,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
           </div>
         )}
         {showEmpty && (
-          <div className="px-6 pb-4 pt-7 text-center">
+          <div className="px-4 pb-3 pt-5">
             <p className="text-sm font-medium">No results found</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {isDashboard

@@ -542,7 +542,7 @@ export function OrgSettingsPage() {
           <>
             <Separator className="my-10" />
             <div id="danger" className="flex flex-col gap-4">
-              <SettingsSectionHeader title="Danger zone" danger />
+              <SettingsSectionHeader title="Danger zone" />
 
               {isOwner ? (
                 <DangerRow

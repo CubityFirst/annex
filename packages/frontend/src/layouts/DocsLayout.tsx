@@ -24,6 +24,7 @@ import {
   LogOut,
   UserRound,
   KeyRound,
+  FolderOpen,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -108,6 +109,9 @@ function RecentItemIcon({ item, className }: { item: RecentItem; className?: str
 export interface BreadcrumbItem {
   id: string | null;
   name: string;
+  /** Render as a link even when it's the last crumb (e.g. a doc in edit mode,
+   *  whose own title continues the bar as an editable field). */
+  forceLink?: boolean;
   onClick?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: () => void;
@@ -679,6 +683,22 @@ export function DocsLayout() {
   // Pages that don't publish their own breadcrumbs still get a titled top bar,
   // so every app route shares the same header (and the sidebar's header rule
   // lines up with something on the right).
+  async function signOut() {
+    // Best-effort: revoke the server-side session so the JWT is dead even if it
+    // gets exfiltrated from localStorage post-logout. We proceed with the local
+    // clear regardless of the network result.
+    if (getToken()) {
+      try {
+        await apiFetch("/api/me/sessions/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch { /* ignore */ }
+    }
+    clearToken();
+    navigate("/login");
+  }
+
   const fallbackCrumbs = ((): BreadcrumbItem[] => {
     const path = location.pathname;
     if (path === "/dashboard") return [{ id: null, name: "Dashboard" }];
@@ -817,7 +837,7 @@ export function DocsLayout() {
                     )
                   }
                 >
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                   File Manager
                 </NavLink>
                 {currentProject?.graph_enabled ? (
@@ -909,7 +929,7 @@ export function DocsLayout() {
                   </span>
                 </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64 [&_svg]:size-4 [&_svg]:text-muted-foreground">
+                <DropdownMenuContent side="top" align="start" sideOffset={8} collisionPadding={12} className="w-[232px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
                   <div className="flex items-center gap-2.5 px-2 py-2">
                     <UserAvatar userId={userId} name={userName} className="size-9 shrink-0 text-sm" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
                     <div className="min-w-0">
@@ -926,6 +946,10 @@ export function DocsLayout() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => navigate("/settings#two-factor")}>
                     <KeyRound /> Security &amp; sessions
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => { void signOut(); }}>
+                    <LogOut /> Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -944,21 +968,7 @@ export function DocsLayout() {
               <Settings className="h-4 w-4" />
             </button>
             <button
-              onClick={async () => {
-                // Best-effort: revoke the server-side session so the JWT is dead
-                // even if it gets exfiltrated from localStorage post-logout. We
-                // proceed with the local clear regardless of the network result.
-                if (getToken()) {
-                  try {
-                    await apiFetch("/api/me/sessions/logout", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                    });
-                  } catch { /* ignore */ }
-                }
-                clearToken();
-                navigate("/login");
-              }}
+              onClick={() => { void signOut(); }}
               title="Sign out"
               aria-label="Sign out"
               className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -1007,7 +1017,7 @@ export function DocsLayout() {
             <nav aria-label="Breadcrumb" className="flex items-center">
               <ol className="flex items-center gap-1">
                 {displayCrumbs.map((crumb, i) => {
-                  const isLast = i === displayCrumbs.length - 1;
+                  const isLast = i === displayCrumbs.length - 1 && !crumb.forceLink;
                   const clickable = !isLast && !!crumb.onClick;
                   return (
                     <li key={i} className="flex items-center gap-1 shrink-0">
@@ -1043,9 +1053,9 @@ export function DocsLayout() {
                 })}
               </ol>
             </nav>
-            {/* Right-aligned action slot. sticky+bg keeps it pinned to the right
-                edge (and masking) while long breadcrumbs scroll underneath. */}
-            <div ref={setHeaderActionEl} className="ml-auto shrink-0 sticky right-0 flex items-center gap-2 bg-background pl-2" />
+            {/* Action slot: fills the rest of the bar (pages portal right-aligned
+                actions or, while editing a doc, its title field + actions). */}
+            <div ref={setHeaderActionEl} className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 bg-background pl-2" />
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
@@ -1105,7 +1115,7 @@ export function DocsLayout() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="personal">
-                    <span className="flex items-center gap-2"><BookOpen className="size-3.5 text-muted-foreground" /> Personal</span>
+                    <span className="flex items-center gap-2"><UserRound className="size-3.5 text-muted-foreground" /> Personal</span>
                   </SelectItem>
                   {creatableOrgs.map(org => (
                     <SelectItem key={org.id} value={org.id}>
@@ -1133,7 +1143,7 @@ export function DocsLayout() {
                     type="button"
                     onClick={() => squareInputRef.current?.click()}
                     aria-label="Upload square icon"
-                    className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
+                    className="mx-4 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
                   >
                     {squarePreviewUrl
                       ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />

@@ -71,7 +71,6 @@ export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, o
               </SelectContent>
             </Select>
           </div>
-          <Separator />
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="pdf-theme" className="text-sm font-medium">Theme</Label>

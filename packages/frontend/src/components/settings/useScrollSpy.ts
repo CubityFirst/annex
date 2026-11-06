@@ -112,9 +112,9 @@ export function useScrollSpy(orderedIds: string[]): ScrollSpy {
 
   useEffect(() => {
     const ids = key ? key.split("|") : [];
-    // Seed to the first present section so the first group renders expanded on
-    // mount (avoids an all-collapsed flash before the first measurement),
-    // while preserving a still-valid prior selection across re-inits.
+    // Seed to the first present section so the outline has a marked item on
+    // mount (before the first measurement), while preserving a still-valid
+    // prior selection across re-inits.
     setActive(prev => (prev && ids.includes(prev) ? prev : (ids[0] ?? null)));
     if (pinnedRef.current && !ids.includes(pinnedRef.current)) pinnedRef.current = null;
 
@@ -190,7 +190,7 @@ export function useScrollSpy(orderedIds: string[]): ScrollSpy {
   const scrollTo = useCallback((id: string) => {
     const el = document.getElementById(id);
     if (!el) return;
-    // Mark active up front (so the owning group expands instantly) and pin it
+    // Mark active up front (so the outline marker moves instantly) and pin it
     // until the user scrolls on their own.
     pinnedRef.current = id;
     setActive(id);

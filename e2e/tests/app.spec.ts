@@ -197,8 +197,8 @@ test("the document appears in the project file list", async () => {
 // ── FileManager: new folder ──────────────────────────────────────────────────
 
 test("creates a folder", async () => {
-  // Secondary create actions live in the toolbar's "New" menu.
-  await page.getByRole("button", { name: "New", exact: true }).click();
+  // Secondary create actions live behind the "New document" split button's chevron.
+  await page.getByRole("button", { name: "More create options" }).click();
   await page.getByRole("menuitem", { name: "New folder" }).click();
   const folderInput = page.getByLabel("Folder name", { exact: true });
   await expect(folderInput).toBeVisible({ timeout: 5000 });

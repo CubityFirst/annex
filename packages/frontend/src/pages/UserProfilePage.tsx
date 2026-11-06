@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { CalendarDays, Clock, CodeXml, Flag, FlaskConical, Globe, Pencil, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, Clock, CodeXml, Flag, FlaskConical, Globe, Pencil, Star, UserRound } from "lucide-react";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
@@ -64,6 +64,29 @@ function Eyebrow({ children }: { children: ReactNode }) {
   return <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">{children}</h2>;
 }
 
+/** Card grid shared by the profile's site lists (favourites, your/shared sites). */
+const SITE_GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3";
+const SITE_CARD =
+  "flex h-full w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** 32px site mark: the square logo when there is one, else a muted icon tile. */
+function SiteMark({ siteId, logoUpdatedAt, fallback: Fallback }: { siteId: string; logoUpdatedAt?: string | null; fallback: typeof Globe }) {
+  if (logoUpdatedAt) {
+    return (
+      <img
+        src={`/api/public/projects/${siteId}/logo/square?v=${encodeURIComponent(logoUpdatedAt)}`}
+        alt=""
+        className="size-8 shrink-0 rounded-md object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40">
+      <Fallback className="size-4 text-muted-foreground" aria-hidden />
+    </span>
+  );
+}
+
 /**
  * Full-page public profile, used when /u/:userId or /@handle is opened
  * directly (not as an in-app modal over another page).
@@ -107,7 +130,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
   const tz = profile?.timezone ? getTimezoneGroup(profile.timezone) : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-8 sm:py-14">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
       {/* Header */}
       <header className="flex flex-col items-center text-center">
         <UserAvatar
@@ -227,31 +250,19 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {profile.favouriteSites.length > 0 && (
             <section>
               <Eyebrow>Favourite sites</Eyebrow>
-              <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+              <ul className={SITE_GRID}>
                 {profile.favouriteSites.map(site => {
                   const note = site.note?.trim();
                   return (
                     <li key={site.id}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/s/${site.vanitySlug ?? site.id}`)}
-                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-                      >
-                        {site.logoSquareUpdatedAt ? (
-                          <img
-                            src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
-                            alt=""
-                            className="size-6 shrink-0 rounded object-cover"
-                          />
-                        ) : (
-                          <span className="flex size-6 shrink-0 items-center justify-center">
-                            <Globe className="size-4 text-muted-foreground" aria-hidden />
-                          </span>
-                        )}
+                      <button type="button" onClick={() => navigate(`/s/${site.vanitySlug ?? site.id}`)} className={SITE_CARD}>
+                        <SiteMark siteId={site.id} logoUpdatedAt={site.logoSquareUpdatedAt} fallback={Globe} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{site.name}</span>
-                          {note && (
-                            <span className="mt-0.5 block whitespace-pre-wrap break-words text-xs text-muted-foreground">{note}</span>
+                          {note ? (
+                            <span className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{note}</span>
+                          ) : (
+                            <span className="mt-0.5 block text-xs text-muted-foreground">Published site</span>
                           )}
                         </span>
                       </button>
@@ -262,21 +273,23 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
             </section>
           )}
 
+          {/* On your own profile this list is every site you belong to (the
+              API intersects your memberships with the profile owner's, which
+              for yourself is all of them), so it reads "Your sites". */}
           {profile.sharedProjects.length > 0 && (
             <section>
-              <Eyebrow>Sites you share</Eyebrow>
-              <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+              <Eyebrow>{isSelf ? "Your sites" : "Sites you share"}</Eyebrow>
+              <ul className={SITE_GRID}>
                 {profile.sharedProjects.map(proj => (
                   <li key={proj.id}>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/projects/${proj.id}`)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-                    >
-                      <span className="truncate text-sm font-medium">{proj.name}</span>
-                      <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[proj.theirRole]}`}>
-                        {ROLE_LABELS[proj.theirRole]}
-                      </Badge>
+                    <button type="button" onClick={() => navigate(`/projects/${proj.id}`)} className={SITE_CARD}>
+                      <SiteMark siteId={proj.id} fallback={BookOpen} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{proj.name}</span>
+                        <Badge variant="outline" className={`mt-1.5 text-xs font-medium ${ROLE_BADGE_CLASSES[proj.theirRole]}`}>
+                          {ROLE_LABELS[proj.theirRole]}
+                        </Badge>
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -288,9 +301,24 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
             <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
               <UserRound className="mb-2 size-5 text-muted-foreground" aria-hidden />
               <p className="text-sm font-medium">Nothing to show yet</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {isSelf ? "Add a bio or favourite sites in settings." : `${displayName} hasn't added a bio or favourite sites.`}
-              </p>
+              {isSelf ? (
+                <>
+                  {/* Bio is an Ink perk, so only mention it to Ink users. */}
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {isInk ? "Add a bio or favourite sites to fill out your profile." : "Add favourite sites to fill out your profile."}
+                  </p>
+                  <Button asChild variant="outline" size="sm" className="mt-4 gap-1.5">
+                    <Link to={isInk ? "/settings#billing" : "/settings#favourites"}>
+                      <Star className="size-3.5" aria-hidden />
+                      {isInk ? "Edit your profile in Settings" : "Add favourite sites in Settings"}
+                    </Link>
+                  </Button>
+                </>
+              ) : (
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {isInk ? `${displayName} hasn't added a bio or favourite sites.` : `${displayName} hasn't added any favourite sites.`}
+                </p>
+              )}
             </div>
           )}
 

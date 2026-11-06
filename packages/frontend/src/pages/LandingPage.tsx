@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { InkSparkle } from "@/components/InkSparkle";
+import { INK_PERKS } from "@/lib/inkPerks";
 import { SiteFooter, SiteNav } from "@/components/SiteFooter";
 import shotRead from "@/assets/landing/write.webp";
 import shotEdit from "@/assets/landing/editor.webp";
@@ -269,13 +270,6 @@ const FREE_PERKS = [
   "Files, drawings and version history",
   "Public publishing and search",
   "Organizations, roles and the REST API",
-];
-
-const INK_PERKS = [
-  "Animated avatar ring in four styles",
-  "Custom collab cursor colour",
-  "A rainbow sparkle by your name",
-  "Sparkles when your dice roll a crit",
 ];
 
 const FAQ: { q: string; a: string }[] = [

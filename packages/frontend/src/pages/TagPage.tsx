@@ -48,8 +48,13 @@ export function TagPage() {
 
   if (!projectId || !tag) return null;
 
+  // Same reading layout as DocPage/FilePage (a 44rem column in a flex row,
+  // with the empty w-60 outline rail reserved at xl), so the header doesn't
+  // shift when you click a tag from a doc.
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-8 sm:py-10">
+    <div className="flex min-h-full">
+      <div className="min-w-0 flex-1 px-5 py-6 sm:px-6 sm:py-10">
+      <div data-testid="tag-column" className="mx-auto max-w-[44rem]">
       <div className="mb-6">
         <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Tag</p>
         <div className="flex items-center gap-2.5">
@@ -108,6 +113,10 @@ export function TagPage() {
           })}
         </ul>
       )}
+      </div>
+      </div>
+      {/* Empty rail matching the doc outline rail. */}
+      <div className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
     </div>
   );
 }

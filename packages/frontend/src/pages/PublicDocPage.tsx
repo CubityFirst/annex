@@ -1051,7 +1051,7 @@ export function PublicDocPage() {
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
-              <div className="flex-1 min-w-0 px-6 pt-6 pb-12 md:px-10 md:pt-12">
+              <div className="flex-1 min-w-0 px-4 pt-6 pb-24 sm:px-6 md:pt-12">
                 {(() => {
                   const cover = parseFrontmatter(data.doc.content).cover;
                   return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;

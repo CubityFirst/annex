@@ -347,7 +347,7 @@ export function WysiwygToolbar({
               size="sm"
               aria-label="Heading level"
               className={cn(
-                "h-9 sm:h-8 gap-1 px-2 text-xs font-medium w-[5.25rem] justify-between shrink-0",
+                "h-9 sm:h-8 gap-1.5 px-2 text-xs font-medium min-w-[4.75rem] justify-between shrink-0",
                 active.headingLevel > 0 && "bg-accent text-accent-foreground",
               )}
             >
@@ -516,9 +516,9 @@ export function WysiwygToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Find - pushed to the far end so the bar always ends on a tool,
-            never on a separator. */}
-        <span className="ml-auto" />
+        <ToolbarSeparator />
+
+        {/* Find - last group; the bar always ends on a tool, never a separator. */}
         <ToolButton title={`Find & replace (${modShortcut("F")})`} onAction={onFind}>
           <Search />
         </ToolButton>

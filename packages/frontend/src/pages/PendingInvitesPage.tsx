@@ -99,9 +99,10 @@ export function PendingInvitesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-8 sm:py-10">
-      {/* Same header rhythm as the settings pages: title, muted line, then a
-          divider spanning the one content measure the list below shares. */}
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+      {/* Same centred max-w-5xl index container as the dashboard and the
+          profile page; title, muted line, then a divider spanning the
+          measure the list below shares. */}
       <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Pending invites</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
         Accept or decline invitations to sites and organizations.

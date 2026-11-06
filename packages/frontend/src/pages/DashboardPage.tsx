@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { readRecentItems } from "@/lib/recentDocs";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
-import { BookOpen, Building2, ChevronDown, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Plus, Radio, Settings, Sparkles, Star, Users } from "lucide-react";
+import { BookOpen, Building2, ChevronDown, FileText, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Plus, Radio, Settings, Sparkles, Star, Users } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +35,15 @@ export function DashboardPage() {
   const navigate = useNavigate();
   // The site list lives in DocsLayout: it loads it for the sidebar and
   // refetches it with doc/member counts whenever the dashboard is entered.
-  const { openCreateSite, openCreateOrg, projects, setProjects } = useOutletContext<DocsLayoutContext>();
+  const { openCreateSite, openCreateOrg, projects, setProjects, headerActionSlot } = useOutletContext<DocsLayoutContext>();
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   function sortByFavourite(list: Project[]) {
     return [...list].sort((a, b) => b.is_favourite - a.is_favourite);
@@ -265,8 +276,32 @@ export function DashboardPage() {
     );
   }
 
+  const pageActions = (
+    <div className="flex shrink-0 items-center gap-2 self-start">
+      <Button variant="outline" size="sm" onClick={openCreateOrg} className="h-10 gap-1.5 sm:h-8">
+        <Building2 className="h-4 w-4" />
+        New organization
+      </Button>
+      {/* With sites present this carries the primary "New site"; with none,
+          the large empty-state card below does instead (only one "New site"
+          control is ever rendered). */}
+      {projects.length > 0 && (
+        <Button size="sm" onClick={openCreateSite} className="h-10 gap-1.5 sm:h-8">
+          <Plus className="h-4 w-4" />
+          New site
+        </Button>
+      )}
+    </div>
+  );
+
+  // Recently opened docs/files across all of the user's sites.
+  const recent = visibleProjects
+    .flatMap(p => readRecentItems(p.id).map(item => ({ ...item, project: p })))
+    .sort((a, b) => b.accessedAt - a.accessedAt)
+    .slice(0, 6);
+
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-10">
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
       <h1 className="sr-only">Dashboard</h1>
       {orgs.length > 0 && (
         <div className="mb-10">
@@ -318,28 +353,18 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      {isDesktop && headerActionSlot && createPortal(pageActions, headerActionSlot)}
+      <div className="mb-8 flex flex-col gap-4">
         <div>
           <h2 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Your sites</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Select a site to browse its documentation.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 self-start">
-          <Button variant="outline" size="sm" onClick={openCreateOrg} className="h-10 gap-1.5 sm:h-9">
-            <Building2 className="h-4 w-4" />
-            New organization
-          </Button>
-          {/* With sites present the header carries the primary "New site";
-              with none, the large empty-state card below does instead (only
-              one "New site" control is ever rendered). */}
-          {projects.length > 0 && (
-            <Button size="sm" onClick={openCreateSite} className="h-10 gap-1.5 sm:h-9">
-              <Plus className="h-4 w-4" />
-              New site
-            </Button>
-          )}
-        </div>
+        {/* Phones: actions under the heading. Desktop renders the same
+            buttons once, in the top bar (portal below) - never both, so each
+            label stays unique on the page. */}
+        {!isDesktop && pageActions}
       </div>
 
       <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
@@ -379,7 +404,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={openCreateSite}
-              className="group flex h-14 w-full flex-row items-center justify-center gap-2 self-start rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-auto sm:min-h-[7.5rem] sm:flex-col"
+              className="group flex h-14 w-full flex-row items-center justify-center gap-2 self-start rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-auto sm:min-h-[7.5rem] sm:flex-col sm:self-stretch"
             >
               <Plus className="h-5 w-5" />
               Add another site
@@ -405,6 +430,28 @@ export function DashboardPage() {
           </Card>
           )}
         </div>
+
+      {recent.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Recently opened</h2>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {recent.map(item => (
+              <li key={`${item.project.id}:${item.kind}:${item.id}`}>
+                <Link
+                  to={`/projects/${item.project.id}/${item.kind === "doc" ? "docs" : "files"}/${item.id}`}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none"
+                >
+                  {item.kind === "doc"
+                    ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    : <FileTypeIcon mimeType={item.mime ?? ""} name={item.title} className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                  <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
+                  <span className="hidden shrink-0 truncate text-muted-foreground sm:inline">{item.project.name}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {hiddenProjects.length > 0 && (
         <div className="mt-10">

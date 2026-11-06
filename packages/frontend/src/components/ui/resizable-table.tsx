@@ -448,7 +448,9 @@ export function ResizableTableRow({
       aria-label={ariaLabel}
       onKeyDown={onActivate || onKeyDown ? handleKeyDown : undefined}
       className={cn(
-        "flex items-center border-b last:border-b-0 h-10 select-none transition-colors hover:bg-muted/40",
+        // `group/row` lets cell content react to row hover/focus (e.g. row
+        // actions that fade in with `group-hover/row:`).
+        "group/row flex items-center border-b last:border-b-0 h-10 select-none transition-colors hover:bg-muted/40",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         className,
       )}

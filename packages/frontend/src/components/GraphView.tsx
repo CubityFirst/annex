@@ -412,15 +412,27 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               const label = n.title;
-              const padY = r + (showControls ? 7 : 4) / globalScale;
+              // Plate padding (screen px, zoom-compensated): ~6px either side
+              // and a little less above/below the text.
+              const platePadX = 6 / globalScale;
+              const platePadY = (showControls ? 4 : 3) / globalScale;
+              // Text sits far enough below the node that the plate's top edge
+              // keeps a clear gap from the node: an edge arriving at the node
+              // from below then visibly stops at the node rather than seeming
+              // to run into (pierce) the label.
+              const padY = r + platePadY + (showControls ? 8 : 5) / globalScale;
               // Solid backing plate in the page colour so links never strike
               // through a label (a glyph halo still leaves gaps between words).
               if (tokens.bg) {
                 const w = ctx.measureText(label).width;
-                const px = 4 / globalScale;
                 ctx.fillStyle = tokens.bg;
-                ctx.globalAlpha = 0.92;
-                ctx.fillRect((n.x ?? 0) - w / 2 - px, (n.y ?? 0) + padY - px / 2, w + px * 2, fontSize + px);
+                ctx.globalAlpha = 0.96;
+                ctx.fillRect(
+                  (n.x ?? 0) - w / 2 - platePadX,
+                  (n.y ?? 0) + padY - platePadY,
+                  w + platePadX * 2,
+                  fontSize + platePadY * 2,
+                );
               }
               // Muted labels by default; the hovered/selected page and the
               // hub read in full foreground.

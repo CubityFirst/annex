@@ -857,7 +857,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       name: seg[1] === DEMO_USER_ID ? s.userName : "Unknown",
       ...(seg[1] === DEMO_USER_ID && s.userHandle ? { handle: s.userHandle } : {}),
       createdAt: minutesAgo(60 * 24 * 7),
-      sharedProjects: [],
+      // The demo user owns the demo site, so their profile lists it.
+      sharedProjects: seg[1] === DEMO_USER_ID ? [{ id: PROJECT_ID, name: s.projectName, theirRole: "owner" }] : [],
       favouriteSites: [],
       personalPlan: "free",
     });

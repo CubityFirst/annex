@@ -286,7 +286,8 @@
 .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
   font-weight: 600;
   /* Rule separating header from body */
-  border-bottom: 2px solid hsl(0 0% 15% / 0.75);
+  border-bottom: 1px solid hsl(0 0% 15% / 0.35);
+  background-color: color-mix(in oklab, var(--muted) 45%, transparent);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
   /* Rule between body rows */
@@ -300,7 +301,8 @@
   border-right-color: hsl(0 0% 50% / 0.35);
 }
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
-  border-bottom-color: hsl(0 0% 80% / 0.8);
+  /* A quiet header rule: lighter than the headings and callout borders. */
+  border-bottom-color: hsl(0 0% 100% / 0.22);
 }
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
   border-bottom-color: hsl(0 0% 50% / 0.35);
@@ -364,7 +366,9 @@
 /* Lists */
 .cm-wysiwyg .cm-content .cm-list-bullet-marker {
   display: inline-block;
-  margin-right: 0.4em;
+  width: 1em;
+  text-align: center;
+  margin-right: 0.35em;
   color: var(--muted-foreground);
   font-weight: 600;
 }
@@ -694,4 +698,11 @@
     font-size: 1.75em;
     padding-top: 0.25em;
   }
+}
+
+/* Hanging indents for list lines are set inline per line by
+   decorations/block/list.ts; widgets inside must not inherit text-indent. */
+.cm-wysiwyg .cm-content .cm-list-bullet-marker,
+.cm-wysiwyg .cm-content .cm-task-checkbox {
+  text-indent: 0;
 }

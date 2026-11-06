@@ -67,6 +67,17 @@ describe("TagPage", () => {
     expect(screen.getByText("DOC PAGE")).toBeInTheDocument();
   });
 
+  it("uses the doc reading layout: a 44rem column beside an empty xl rail", () => {
+    renderTagPage([taggedDoc]);
+    const column = screen.getByTestId("tag-column");
+    expect(column).toHaveClass("mx-auto", "max-w-[44rem]");
+    const row = column.parentElement?.parentElement;
+    expect(row).toHaveClass("flex");
+    const rail = row?.lastElementChild;
+    expect(rail).toHaveClass("hidden", "w-60", "xl:block");
+    expect(rail).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("sets and clears breadcrumbs", () => {
     const { setBreadcrumbs, unmount } = renderTagPage([taggedDoc]);
     expect(setBreadcrumbs).toHaveBeenCalledWith([

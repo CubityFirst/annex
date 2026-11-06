@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, SquarePen, Mail, RotateCcw, Check, Star } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, Mail, RotateCcw, Check, Star } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
+import { INK_PERKS } from "@/lib/inkPerks";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
 import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -63,11 +64,12 @@ const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "n
   { id: "none", label: "None" },
 ];
 
-// Grouped outline for the settings accordion. Section→group membership lives
+// Grouped outline for the settings nav. Section→group membership lives
 // in the per-render `settingsSections` array (its visibility depends on
-// currentUser). Order here is the accordion order and matches DOM order.
+// currentUser). Order here is the outline order and matches DOM order.
 const USER_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "profile", label: "Profile" },
+  { id: "billing", label: "Billing" },
   { id: "appearance", label: "Appearance" },
   { id: "security", label: "Security" },
   { id: "danger", label: "Danger zone" },
@@ -1383,7 +1385,7 @@ export function UserSettingsPage() {
   const settingsSections: SettingsSectionDef[] = [
     { id: "account", label: "Account", group: "profile" },
     { id: "favourites", label: "Favourite sites", group: "profile" },
-    { id: "billing", label: "Billing", group: "profile" },
+    { id: "billing", label: "Billing", group: "billing" },
     { id: "reading-font", label: "Fonts", group: "appearance" },
     { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
     { id: "two-factor", label: "Two-factor & password", group: "security" },
@@ -1404,7 +1406,7 @@ export function UserSettingsPage() {
             <p className="mt-1 text-sm text-muted-foreground">Update your personal information.</p>
 
             {/* Avatar block: an 80px avatar with "Change photo" beside it, and
-                the compact "Preview on" Dark/Light selector directly under
+                the compact "Preview avatar on" Dark/Light selector directly under
                 the avatar. Both rows are left-aligned at every width. */}
             {userId && (
               <div className="mt-5 flex flex-col items-start gap-3">
@@ -1483,14 +1485,15 @@ export function UserSettingsPage() {
 
                   {/* Which avatar slot the preview shows and Upload/Remove
                       target: one image for dark backgrounds, one for light. */}
+                  <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] text-muted-foreground" aria-hidden>
-                      Preview on
+                      Preview avatar on
                     </span>
                     <div
                       role="radiogroup"
-                      aria-label="Avatar preview on"
-                      title="You can use a different avatar on dark and light backgrounds"
+                      aria-label="Avatar preview background"
+                      aria-describedby="avatar-variant-hint"
                       className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
                     >
                       {(["dark", "light"] as const).map(v => {
@@ -1517,6 +1520,10 @@ export function UserSettingsPage() {
                       })}
                     </div>
                   </div>
+                  <p id="avatar-variant-hint" className="text-[13px] leading-snug text-muted-foreground">
+                    Your avatar can differ on dark and light backgrounds.
+                  </p>
+                  </div>
                 </Popover>
 
                 {cropFile && (
@@ -1533,26 +1540,20 @@ export function UserSettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
-                      {/* The current email reads as normal text in a read-only
-                          field; changing it goes through the separate outline
-                          edit button (a password-confirmed dialog). Resend +
-                          verification status sit to its right. */}
-                      <Input id="email" value={email} readOnly className="min-w-0 flex-1" />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setChangeEmailOpen(true)}
-                            aria-label="Change email address"
-                            className="size-11 shrink-0 sm:size-9"
-                          >
-                            <SquarePen className="size-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">Change email address</TooltipContent>
-                      </Tooltip>
+                      {/* The current email is static text on a muted row (no
+                          input chrome - it isn't editable in place); changing
+                          it goes through the "Change" button, a
+                          password-confirmed dialog. Resend + verification
+                          status sit inside the row, after the address. The
+                          read-only input keeps the label association and the
+                          value the e2e specs read. */}
+                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1 rounded-md bg-muted/50 pl-3 pr-1 sm:min-h-9">
+                      <input
+                        id="email"
+                        value={email}
+                        readOnly
+                        className="min-w-0 flex-1 truncate bg-transparent text-sm text-foreground outline-none"
+                      />
                       {emailVerified === false && emailVerificationEnabled && (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1599,6 +1600,17 @@ export function UserSettingsPage() {
                           </PopoverContent>
                         </Popover>
                       )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setChangeEmailOpen(true)}
+                        aria-label="Change email address"
+                        className="h-11 shrink-0 sm:h-9"
+                      >
+                        Change
+                      </Button>
                     </div>
                     {pendingEmail && (
                       <div className="text-xs text-muted-foreground">
@@ -2095,11 +2107,7 @@ export function UserSettingsPage() {
                   </p>
                 </div>
                 <ul className="mt-4 flex flex-col gap-2 text-sm">
-                  {[
-                    "A short supporter bio on your profile",
-                    "An animated coloured ring around your avatar",
-                    "A custom presence colour in realtime collaboration",
-                  ].map(perk => (
+                  {INK_PERKS.map(perk => (
                     <li key={perk} className="flex items-start gap-2.5">
                       <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                       <span>{perk}</span>
@@ -2299,22 +2307,22 @@ export function UserSettingsPage() {
           <section id="reading-font">
             <h2 className="text-base font-semibold">Fonts</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Pick a font for each part of the app. Inline code always stays monospaced.
+              Pick a font for each part of the app: Reading is used for docs, Editing for the editor, and
+              Interface for menus and the rest of the UI. Inline code always stays monospaced.
             </p>
 
             <div className="mt-5 overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full table-fixed min-w-[30rem] text-sm">
                 <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-4 py-2.5 text-left align-top font-medium">Font</th>
-                    {([
-                      { label: "Reading", caption: "Docs" },
-                      { label: "Editing", caption: "Editor" },
-                      { label: "Interface", caption: "Menus & UI" },
-                    ] as const).map(col => (
-                      <th key={col.label} scope="col" className="w-20 px-1 py-2.5 text-center align-top">
-                        <span className="block font-medium">{col.label}</span>
-                        <span className="mt-0.5 block whitespace-nowrap text-[11px] font-normal leading-tight text-muted-foreground">{col.caption}</span>
+                    <th scope="col" className="px-4 py-2.5 text-left font-medium">Font</th>
+                    {/* The last column carries the row's 16px right inset
+                        (matching the Font column's left inset) and is widened
+                        by the same amount, so every radio column keeps an
+                        equal content width. */}
+                    {(["Reading", "Editing", "Interface"] as const).map(label => (
+                      <th key={label} scope="col" className="w-20 px-1 py-2.5 text-center font-medium last:w-[5.75rem] last:pr-4">
+                        {label}
                       </th>
                     ))}
                   </tr>
@@ -2335,7 +2343,7 @@ export function UserSettingsPage() {
                           </div>
                         </td>
                         {columns.map(col => (
-                          <td key={col.key} className="px-1 py-3 text-center">
+                          <td key={col.key} className="px-1 py-3 text-center last:pr-4">
                             <label className={cn(
                               "relative flex w-full min-h-[40px] items-center justify-center",
                               fontPrefsBusy ? "cursor-not-allowed opacity-50" : "cursor-pointer",
@@ -2730,7 +2738,7 @@ export function UserSettingsPage() {
 
           {/* Danger zone */}
           <section id="danger" className="flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
+            <h2 className="text-base font-semibold">Danger zone</h2>
             <DangerRow
               title="Delete your account"
               description="Permanently delete your account and its data. Transfer or delete any sites you own first."

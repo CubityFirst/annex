@@ -1,7 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { ChevronDown, type LucideIcon } from "lucide-react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { LucideIcon } from "lucide-react";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -17,14 +16,15 @@ export interface SettingsSectionDef {
   /** Pass the page's existing gate expression; default true. Hidden sections
    *  are dropped from the outline (and groups with no visible sections too). */
   visible?: boolean;
-  /** Render the link in the destructive colour (Danger zone). */
+  /** Render the outline link in the destructive colour (Danger zone). The
+   *  section heading itself stays in the normal foreground colour. */
   danger?: boolean;
 }
 
 export interface SettingsGroupDef {
   /** Group key referenced by SettingsSectionDef.group. */
   id: string;
-  /** Accordion header text. */
+  /** Outline group label. */
   label: string;
 }
 
@@ -61,25 +61,25 @@ export const DESTRUCTIVE_OUTLINE_BUTTON =
 /** Shared row-card chrome for every settings row (toggle, select, action). */
 export const SETTINGS_ROW_CARD = "rounded-lg border border-border bg-card px-4 py-3";
 
-/** Shared section heading + description. `id` anchors the outline link. */
+/** Shared section heading + description. `id` anchors the outline link.
+ *  Headings are always the normal foreground colour - including Danger zone,
+ *  whose red signals are limited to its outline link and its buttons. */
 export function SettingsSectionHeader({
   title,
   description,
   action,
-  danger,
   as: Heading = "h2",
 }: {
   title: ReactNode;
   description?: ReactNode;
   /** Optional right-aligned control (e.g. "New key"). */
   action?: ReactNode;
-  danger?: boolean;
   as?: "h2" | "h3";
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <Heading className={cn("text-base font-semibold", danger && "text-destructive")}>{title}</Heading>
+        <Heading className="text-base font-semibold">{title}</Heading>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -155,10 +155,11 @@ export function SettingsListStatusRow({ action, children }: { action?: ReactNode
 }
 
 /** A single danger-zone action: title + description, destructive-outline
- *  button on the right. Render inside <SettingsDangerZone>. */
+ *  button on the right, in the normal neutral row card. The button is the
+ *  row's only red element. */
 export function DangerRow({ title, description, action }: { title: ReactNode; description: ReactNode; action: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <p className="text-sm font-medium">{title}</p>
         <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>
@@ -176,29 +177,30 @@ interface SettingsShellProps {
   children: ReactNode;
 }
 
-/** Shared styling for every outline row. There is no full-height rail: only
- *  the current destination gets a marker - a short 2px bar beside its text
- *  (under the group label's text for nested rows, keeping the indentation
- *  readable) plus a restrained fill. */
+/** Shared styling for every outline row. Like the legal pages' "On this
+ *  page" list, the outline sits on a 1px hairline track and the current
+ *  destination is marked by exactly one thing: a 2px bar on that track (plus
+ *  foreground text). No fill. Nested rows only indent their text - the bar
+ *  always sits on the nav's left edge. */
 function outlineItemClass(active: boolean, danger: boolean | undefined, indent: boolean) {
   return cn(
-    "relative rounded-md py-1.5 pr-2 text-left text-sm transition-colors",
-    "before:absolute before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:content-['']",
-    indent ? "pl-6 before:left-4" : "pl-3 before:left-1",
+    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm transition-colors",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    indent ? "pl-6" : "pl-3.5",
     danger
       ? active
-        ? "bg-destructive/[0.07] font-medium text-destructive before:bg-destructive"
-        : "text-destructive/75 before:bg-transparent hover:bg-destructive/[0.05] hover:text-destructive"
+        ? "border-destructive font-medium text-destructive"
+        : "border-transparent text-destructive/80 hover:text-destructive"
       : active
-        ? "bg-accent/60 font-medium text-foreground before:bg-foreground"
-        : "text-muted-foreground before:bg-transparent hover:bg-accent/40 hover:text-foreground",
+        ? "border-foreground font-medium text-foreground"
+        : "border-transparent text-muted-foreground hover:text-foreground",
   );
 }
 
 /**
  * Shared chrome for every settings surface (user, site, org): a header, a
- * sticky grouped accordion outline that auto-expands the group of the section
- * you're scrolled to (and collapses the rest), a mobile "Jump to section"
+ * sticky grouped outline (every group always expanded, so items never move
+ * under the cursor while scrolling), a mobile "Jump to section"
  * select in place of the outline, and a content column holding the page's own
  * section JSX. Owns scroll-spy and hash deep-linking; knows nothing about
  * auth - pages pass pre-gated `visible` flags.
@@ -217,7 +219,7 @@ export function SettingsShell({ title, description, groups, sections, children }
 
   // Deep-link support (e.g. /settings#billing, /settings#sessions): on hash
   // change, scroll to the section once it has rendered. scrollTo also sets the
-  // section active, so the owning group expands. We re-run on idsKey changes so
+  // section active, so its outline link is marked. We re-run on idsKey changes so
   // a hash pointing at an initially-gated section (e.g. #theme before /api/me
   // resolves) still scrolls once that section appears - but honoredHash ensures
   // each hash is honored only once, so a later gate flip can't yank the user
@@ -237,68 +239,59 @@ export function SettingsShell({ title, description, groups, sections, children }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.hash, idsKey]);
 
-  const activeGroupId = resolved.find(group => group.sections.some(s => s.id === active))?.id ?? null;
-
   return (
     <div className="mx-auto w-full max-w-[64rem] px-4 py-8 sm:px-8 sm:py-10">
       <div className="flex gap-14">
-        {/* Grouped accordion outline - desktop only; below md the "Jump to
-            section" select under the header takes its place. */}
+        {/* Grouped outline - desktop only; below md the "Jump to section"
+            select under the header takes its place. Groups never collapse:
+            a group label is a plain jump to its first section, and its
+            sections are listed beneath it, indented. */}
         <aside className="hidden md:block w-48 shrink-0">
           <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
-            <div className="flex flex-col gap-px">
+            <div className="flex flex-col border-l border-border">
               {resolved.map(group => {
-                const isActiveGroup = group.id === activeGroupId;
                 // A group holding a single section would just repeat itself
-                // ("Danger zone › Danger zone"), so render it as one plain link.
+                // ("Danger zone > Danger zone"), so render it as one plain link.
                 if (group.sections.length === 1) {
                   const section = group.sections[0];
+                  const isActive = active === section.id;
                   return (
                     <button
                       key={group.id}
                       type="button"
                       onClick={() => scrollTo(section.id)}
-                      aria-current={isActiveGroup ? "true" : undefined}
-                      className={outlineItemClass(isActiveGroup, section.danger, false)}
+                      aria-current={isActive ? "true" : undefined}
+                      className={outlineItemClass(isActive, section.danger, false)}
                     >
                       {section.label}
                     </button>
                   );
                 }
                 return (
-                  <Collapsible key={group.id} open={isActiveGroup}>
-                    <CollapsibleTrigger
+                  <div key={group.id} role="group" aria-label={group.label} className="flex flex-col">
+                    <button
                       type="button"
                       onClick={() => scrollTo(group.sections[0].id)}
-                      aria-expanded={isActiveGroup}
-                      className={cn(
-                        "flex w-full items-center justify-between gap-2 rounded-md py-1.5 pl-3 pr-2 text-left text-sm transition-colors",
-                        isActiveGroup ? "font-medium text-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-                      )}
+                      className={outlineItemClass(false, false, false)}
                     >
                       {group.label}
-                      <ChevronDown
-                        className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", isActiveGroup && "rotate-180")}
-                      />
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="flex flex-col gap-px">
-                      {group.sections.map(section => {
-                        const isActive = active === section.id;
-                        return (
-                          <button
-                            key={section.id}
-                            type="button"
-                            onClick={() => scrollTo(section.id)}
-                            aria-current={isActive ? "true" : undefined}
-                            className={outlineItemClass(isActive, section.danger, true)}
-                          >
-                            {section.label}
-                          </button>
-                        );
-                      })}
-                    </CollapsibleContent>
-                  </Collapsible>
+                    </button>
+                    {group.sections.map(section => {
+                      const isActive = active === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => scrollTo(section.id)}
+                          aria-current={isActive ? "true" : undefined}
+                          className={outlineItemClass(isActive, section.danger, true)}
+                        >
+                          {section.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>
@@ -358,7 +351,7 @@ export function SettingsShell({ title, description, groups, sections, children }
               </Select>
             </div>
           )}
-          <Separator className="mb-10 mt-7" />
+          <Separator className="mb-6 mt-5 md:mb-10 md:mt-7" />
           {children}
         </div>
       </div>
