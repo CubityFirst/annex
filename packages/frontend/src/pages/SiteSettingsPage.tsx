@@ -1541,7 +1541,7 @@ export function SiteSettingsPage() {
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Square icon</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
-                    Shown in the site sidebar, favourites and profile cards. PNG, JPG, WebP or GIF, up to 2 MB. You'll crop it to a square.
+                    Shown in the site sidebar and on profile cards. PNG, JPG, WebP or GIF, up to 2 MB. You'll crop it to a square.
                   </p>
                 </div>
               </div>

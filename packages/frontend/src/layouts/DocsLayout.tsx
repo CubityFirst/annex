@@ -259,7 +259,7 @@ function ProjectSwitcher({
           <CommandList>
             <CommandEmpty>No sites found.</CommandEmpty>
             {favourites.length > 0 && (
-              <CommandGroup heading="Favourites">{favourites.map(renderSite)}</CommandGroup>
+              <CommandGroup heading="Pinned">{favourites.map(renderSite)}</CommandGroup>
             )}
             {[...orgGroups.entries()].map(([orgId, group]) => (
               <CommandGroup key={orgId} heading={group.name}>{group.sites.map(renderSite)}</CommandGroup>
@@ -1248,7 +1248,7 @@ export function DocsLayout() {
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium">Square icon</p>
-                    <p className="text-xs text-muted-foreground">Sidebar &amp; favourites</p>
+                    <p className="text-xs text-muted-foreground">Sidebar and profile cards</p>
                   </div>
                   <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => squareInputRef.current?.click()}>
                     {squareBlob ? "Change" : "Upload"}

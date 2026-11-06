@@ -1201,7 +1201,7 @@ export function DocPage() {
               onChange={e => setTitleDraft(e.target.value)}
               placeholder="Document title"
               aria-label="Document title"
-              className="hidden h-auto w-auto min-w-[4ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 pt-0.5 pb-px text-sm font-medium leading-5 shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground/70 enabled:hover:border-foreground/40 dark:enabled:hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
+              className="hidden h-auto w-auto min-w-[4ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 pt-0.5 pb-px text-sm font-medium leading-5 shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground/85 enabled:hover:border-foreground/40 dark:enabled:hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
               autoFocus={isNewDoc}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">

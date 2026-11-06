@@ -4,7 +4,7 @@ import { readRecentItems } from "@/lib/recentDocs";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { timeAgo } from "@/components/SearchPalette";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
-import { BookOpen, Building2, ChevronDown, FileText, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Plus, Radio, Settings, Sparkles, Star, Users } from "lucide-react";
+import { BookOpen, Building2, ChevronDown, FileText, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Pin, Plus, Radio, Settings, Sparkles, Users } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -141,8 +141,8 @@ export function DashboardPage() {
             (the footer row is taller than the pill it centres). */}
         <CardContent className="flex-1 pb-2.5 pt-2">
           {project.description && (
-            // Indented to the title's text edge (32px icon + 10px gap).
-            <p className="pl-[42px] text-sm text-muted-foreground line-clamp-3">{project.description}</p>
+            // Runs from the card padding: one left edge with the footer below.
+            <p className="text-sm text-muted-foreground line-clamp-3">{project.description}</p>
           )}
         </CardContent>
 
@@ -229,17 +229,19 @@ export function DashboardPage() {
                   variant="ghost"
                   size="icon"
                   className={FOOTER_SLOT}
-                  aria-label={project.is_favourite ? "Remove from favourites" : "Add to favourites"}
+                  aria-label={project.is_favourite ? "Unpin" : "Pin to top"}
                   onClick={(e) => handleToggleFavourite(e, project.id)}
                 >
-                  <Star
+                  {/* A per-member pin (sorts the site first) - not the
+                      profile's "Favourite sites" showcase, hence a pin. */}
+                  <Pin
                     className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-foreground/70 text-foreground/70" : "text-muted-foreground"}`}
                     strokeWidth={1.5}
                   />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {project.is_favourite ? "Remove from favourites" : "Add to favourites"}
+                {project.is_favourite ? "Unpin" : "Pin to top"}
               </TooltipContent>
             </Tooltip>
             <DropdownMenu>

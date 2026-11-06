@@ -82,9 +82,9 @@ describe("DashboardPage", () => {
       site({ id: "s2", name: "Beta", doc_count: 1, member_count: 1 }),
     ]);
     await screen.findByText("Beta");
-    await userEvent.click(screen.getAllByRole("button", { name: /favourite/i })[1]);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pin to top" })[1]);
     expect(fetchMock).toHaveBeenCalledWith("/api/projects/s2/favourite", expect.objectContaining({ method: "PATCH" }));
-    // Favourites sort first.
+    // Pinned sites sort first.
     const titles = screen.getAllByRole("heading", { level: 3 }).map(h => h.textContent);
     expect(titles).toEqual(["Beta", "Alpha"]);
   });

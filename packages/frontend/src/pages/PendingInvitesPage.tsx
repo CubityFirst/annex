@@ -110,7 +110,9 @@ export function PendingInvitesPage() {
       <p className="mt-1.5 text-sm text-muted-foreground">
         Pending invitations to sites and organizations. Accept or decline each one.
       </p>
-      <Separator className="mb-8 mt-7" />
+      {/* The hairline only earns its place above a list; an empty state just
+          gets the space. */}
+      {invites.length > 0 && !loadError ? <Separator className="mb-8 mt-7" /> : <div className="h-8" />}
 
       <div aria-live="polite" className="sr-only">{statusMessage}</div>
 

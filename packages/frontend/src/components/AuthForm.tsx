@@ -154,7 +154,7 @@ export function AuthForm({
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <div className="relative flex w-full flex-col items-center justify-start px-6 pb-12 pt-16 sm:px-10 sm:pt-24 lg:w-[30rem] lg:max-w-none lg:shrink-0 lg:justify-center lg:py-16 xl:w-[34rem]">
+      <div className="relative flex w-full flex-col items-center justify-start px-6 pb-12 pt-16 sm:px-10 sm:pt-24 lg:w-[30rem] lg:max-w-none lg:shrink-0 lg:justify-start lg:pt-[18vh] lg:pb-16 xl:w-[34rem]">
         {children}
       </div>
       <AuthBrandPanel />

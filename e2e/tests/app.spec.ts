@@ -324,12 +324,12 @@ test("can favourite the project from the dashboard", async () => {
   await page.goto("/dashboard");
   const projectCard = page.locator(".group", { hasText: PROJECT_NAME });
   await expect(projectCard).toBeVisible({ timeout: 5000 });
-  await projectCard.getByRole("button", { name: "Add to favourites", exact: true }).click();
-  await expect(projectCard.getByRole("button", { name: "Remove from favourites", exact: true })).toBeVisible({ timeout: 5000 });
+  await projectCard.getByRole("button", { name: "Pin to top", exact: true }).click();
+  await expect(projectCard.getByRole("button", { name: "Unpin", exact: true })).toBeVisible({ timeout: 5000 });
   // Persisted server-side, not just an optimistic toggle.
   await page.reload();
   await expect(
-    page.locator(".group", { hasText: PROJECT_NAME }).getByRole("button", { name: "Remove from favourites", exact: true }),
+    page.locator(".group", { hasText: PROJECT_NAME }).getByRole("button", { name: "Unpin", exact: true }),
   ).toBeVisible({ timeout: 5000 });
 });
 

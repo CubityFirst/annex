@@ -719,15 +719,14 @@
 .l-ack-list .l-ack-link {
   font-size: 15px;
   font-weight: 500;
-  /* Brighter + heavier than the muted licence tag, so the names read as
-     links without 39 resting underlines; the underline appears on
-     hover/focus only. */
+  /* A faint resting underline (border tone) marks the names as links
+     without a wall of bright underlines; it brightens on hover/focus. */
   color: var(--text);
   overflow-wrap: anywhere;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
-  text-decoration-color: transparent;
+  text-decoration-color: var(--border2);
   transition: text-decoration-color 0.15s;
 }
 .l-ack-list .l-ack-link:hover,
