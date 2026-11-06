@@ -1,3 +1,5 @@
+import { splitFormulaLabel } from "@/lib/dice";
+
 // Turns a raw markdown search excerpt (as returned by the FTS snippet, with
 // the matched words wrapped in <mark>…</mark>) into readable prose for the
 // search palette: wikilinks become their labels, links their text, and task
@@ -13,6 +15,18 @@ const M = `[${OPEN}${CLOSE}]*`;
 
 export function cleanSearchSnippet(html: string): string {
   let s = html.replace(/<mark>/g, OPEN).replace(/<\/mark>/g, CLOSE);
+
+  // Inline dice rolls (`dice: 2d6+1d4 Try your luck`) read as their label,
+  // or just the formula when unlabelled - never "dice: …" plus the label.
+  s = s.replace(/`dice:\s*([^`]*)`/gi, (_, notation: string) => {
+    const plain = notation.replace(new RegExp(`[${OPEN}${CLOSE}]`, "g"), "");
+    const { formula, label } = splitFormulaLabel(plain.trim());
+    return label ? (notation.includes(OPEN) && !label.includes(OPEN) ? notation.trim() : label) : formula;
+  });
+  // Block boundaries (list items, headings, quotes, paragraphs) become a
+  // " · " separator so adjacent items don't run together once newlines
+  // collapse.
+  s = s.replace(/\s*\n+\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|#{1,6}\s+|>\s+)?/g, " · ");
 
   // [[target|label]] -> label, [[target]] -> target (closing may be cut off
   // by the excerpt window, so a dangling opener is handled below).
@@ -39,6 +53,8 @@ export function cleanSearchSnippet(html: string): string {
   // Callout headers like "[!note]".
   s = s.replace(/\[![a-z]+\][+-]?/gi, "");
   s = s.replace(/\s+/g, " ").trim();
+  // No separator at either end, and never two in a row.
+  s = s.replace(/^(?:·\s*)+|(?:\s*·)+$/g, "").replace(/(?:\s*·\s*){2,}/g, " · ");
   // A leading ellipsis hugs the first word ("…brackets", not "… brackets").
   s = s.replace(/^(…|\.\.\.)\s+/, "$1");
 

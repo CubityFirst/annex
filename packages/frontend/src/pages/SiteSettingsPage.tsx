@@ -1541,7 +1541,7 @@ export function SiteSettingsPage() {
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Square icon</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
-                    Shown in the sites sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
+                    Shown in the site sidebar, favourites and profile cards. PNG, JPG, WebP or GIF, up to 2 MB. You'll crop it to a square.
                   </p>
                 </div>
               </div>
@@ -1601,7 +1601,7 @@ export function SiteSettingsPage() {
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Wordmark</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
-                    Shown in the top-left of your published site. PNG, JPG, WebP, or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
+                    Shown in the top-left of your published site. PNG, JPG, WebP or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
                   </p>
                 </div>
               </div>
@@ -2258,7 +2258,13 @@ export function SiteSettingsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button type="submit" disabled={inviting}>
+                  {/* Muted until the field holds a plausible email - the same
+                      rule as every create dialog's primary button. */}
+                  <Button
+                    type="submit"
+                    disabled={inviting || !/^[^\s@]+@[^\s@]+$/.test(inviteEmail.trim())}
+                    className={cn(!inviting && "disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100")}
+                  >
                     {inviting ? "Adding…" : "Add"}
                   </Button>
                 </div>
@@ -2343,7 +2349,7 @@ export function SiteSettingsPage() {
                   size="compact"
                   icon={Link}
                   title="No invite links yet"
-                  hint="Anyone with a link can join this site."
+                  hint="Create a link to share access without sending an email."
                   action={createLinkButton}
                 />
               ) : (
@@ -2550,7 +2556,7 @@ export function SiteSettingsPage() {
   -H "Authorization: Bearer annx_your_key_here"`}
               </pre>
               <p className="mt-2 text-xs text-muted-foreground">
-                Base URL <code className={INLINE_CODE}>{window.location.origin}/api/v1</code>. See the{" "}
+                Base URL <code className={INLINE_CODE}>{window.location.origin}/api/v1</code><span className="-ml-px">.</span> See the{" "}
                 <a
                   href={API_REFERENCE_URL}
                   target="_blank"

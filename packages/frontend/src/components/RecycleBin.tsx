@@ -109,7 +109,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
       <SettingsSectionHeader
         title="Recycle bin"
         description={<>
-          Deleted docs, files and folders are kept for {retentionDays} days, then permanently deleted.
+          Restore deleted docs, files and folders, or delete them for good.
           {listing && !listing.canPurge && " Only admins can delete items forever."}
         </>}
       />
@@ -132,7 +132,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
         <SettingsEmptyState
           icon={Trash2}
           title="The recycle bin is empty"
-          hint="Nothing here right now."
+          hint={`Deleted items stay here for ${retentionDays} days, then are permanently deleted.`}
         />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border bg-card">

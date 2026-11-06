@@ -287,7 +287,7 @@ const FAQ: { q: string; a: string }[] = [
     a: "Docs are stored as markdown. Site owners can export an entire site as a zip of .md files and attachments whenever they like.",
   },
   {
-    q: "What does \"early access\" mean?",
+    q: "What does “early access” mean?",
     a: "Live collaboration, AI summaries and custom domains are being rolled out gradually and are switched on per site while they mature.",
   },
   {

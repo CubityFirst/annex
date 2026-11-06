@@ -19,6 +19,12 @@ describe("cleanSearchSnippet", () => {
       .toBe("with a label: <mark>Coffee</mark> brewing guide. Images");
   });
 
+  it("separates list items and shows a dice roll once", () => {
+    expect(cleanSearchSnippet("…drawing editor\n- [ ] Press `Ctrl+K` and search for <mark>coffee</mark>\n- [ ] Roll some dice: `dice: 2d6+1d4 Try your luck`\n"))
+      .toBe("…drawing editor · Press Ctrl+K and search for <mark>coffee</mark> · Roll some dice: Try your luck");
+    expect(cleanSearchSnippet("roll `dice: 1d20+5`")).toBe("roll 1d20+5");
+  });
+
   it("removes the space after a leading ellipsis", () => {
     expect(cleanSearchSnippet("… brackets and <mark>coffee</mark>…")).toBe("…brackets and <mark>coffee</mark>…");
     expect(cleanSearchSnippet("...  <mark>coffee</mark> beans")).toBe("...<mark>coffee</mark> beans");

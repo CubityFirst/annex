@@ -609,7 +609,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 key={`action:${a.id}`}
                 value={`action:${a.id}`}
                 onSelect={() => { void a.run(); }}
-                className="flex items-center gap-1.5 py-2 min-w-0"
+                className="flex items-center gap-2 py-2 min-w-0"
               >
                 <a.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="text-sm truncate">{a.label}</span>

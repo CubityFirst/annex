@@ -157,24 +157,36 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // leaving the right column room; long syntax wraps instead of clipping.
 type RefRow = { code: string; result: React.ReactNode; shortcut?: string };
 
+// Long syntax (links, sized images…) won't fit beside a label in the docked
+// panel without breaking mid-token, so those rows stack: syntax on its own
+// line, label underneath.
+const REF_STACK_AT = 22;
+
 function RefTable({ rows, align = "center" }: { rows: RefRow[]; align?: "center" | "baseline" }) {
-  const hasShortcut = rows.some(r => r.shortcut);
+  // One fixed column template for every table in the sheet (syntax | result |
+  // shortcut), so the result column starts at the same x in every section.
   return (
-    <ul className={cn(
-      "grid gap-x-3 divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
-      hasShortcut
-        ? "grid-cols-[minmax(9.5rem,max-content)_minmax(7rem,1fr)_auto]"
-        : "grid-cols-[minmax(9.5rem,max-content)_minmax(7rem,1fr)]",
-    )}>
-      {rows.map(({ code, result, shortcut }) => (
-        <li key={code} className={cn("col-span-full grid grid-cols-subgrid px-3 py-2", align === "baseline" ? "items-baseline" : "items-center")}>
-          <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
-          {typeof result === "string"
-            ? <span className="text-[13px] leading-5 text-muted-foreground">{result}</span>
-            : <span className="text-sm text-foreground">{result}</span>}
-          {hasShortcut && (shortcut ? <Kbd className="shrink-0 justify-self-end">{shortcut}</Kbd> : <span aria-hidden="true" />)}
-        </li>
-      ))}
+    <ul className="grid grid-cols-[minmax(0,1fr)_8rem_3.5rem] gap-x-3 divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+      {rows.map(({ code, result, shortcut }) => {
+        const label = typeof result === "string"
+          ? <span className="text-[13px] leading-5 text-muted-foreground">{result}</span>
+          : <span className="text-sm text-foreground">{result}</span>;
+        if (code.length > REF_STACK_AT && !shortcut) {
+          return (
+            <li key={code} className="col-span-full flex flex-col gap-0.5 px-3 py-2">
+              <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
+              {label}
+            </li>
+          );
+        }
+        return (
+          <li key={code} className={cn("col-span-full grid grid-cols-subgrid px-3 py-2", align === "baseline" ? "items-baseline" : "items-center")}>
+            <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
+            {label}
+            {shortcut ? <Kbd className="shrink-0 justify-self-end">{shortcut}</Kbd> : <span aria-hidden="true" />}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1245,7 +1257,7 @@ export function DocPage() {
               title={exitLabel}
               className="gap-1.5"
             >
-              {exitLabel === "Cancel" && <X className="h-3.5 w-3.5" />}
+              {exitLabel === "Cancel" && <X className="h-3.5 w-3.5 sm:hidden" />}
               {exitLabel === "Done" && <Check className="h-3.5 w-3.5 sm:hidden" />}
               <span className="hidden sm:inline">{exitLabel}</span>
             </Button>
