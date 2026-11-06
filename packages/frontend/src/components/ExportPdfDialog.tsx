@@ -122,7 +122,7 @@ export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, o
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Tip: margins, scale, and other layout adjustments are available in the browser's print dialog.
+            Tip: margins, scale and other layout adjustments are available in the browser's print dialog.
           </p>
         </div>
         <DialogFooter>

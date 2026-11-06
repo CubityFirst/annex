@@ -693,7 +693,9 @@
 
 /* Empty-document hint (CodeMirror placeholder extension). */
 .cm-wysiwyg .cm-placeholder {
-  color: var(--muted-foreground);
+  /* Same muted placeholder tone as the app's inputs (placeholder:/70), so
+     the hint can't be mistaken for real text. */
+  color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
   font-style: normal;
 }
 

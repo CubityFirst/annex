@@ -2631,7 +2631,7 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
 
           <div id="danger" className="flex flex-col gap-4">
-            <SettingsSectionHeader title="Danger zone" />
+            <SettingsSectionHeader title="Danger zone" description="Irreversible actions for this site." />
 
             {isOwner ? (
               <DangerRow

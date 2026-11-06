@@ -8,7 +8,7 @@ import { SettingsEmptyState } from "@/components/settings/SettingsShell";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
-import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
+import { PAGE_PADDING, READING_CONTAINER } from "@/lib/pageContainer";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -102,7 +102,7 @@ export function PendingInvitesPage() {
 
   return (
     <div className={PAGE_PADDING}>
-    <div className={WIDE_CONTAINER}>
+    <div className={READING_CONTAINER}>
       {/* Same wide index container as the dashboard (lib/pageContainer);
           title, muted line, then a divider spanning the measure the list
           below shares. */}

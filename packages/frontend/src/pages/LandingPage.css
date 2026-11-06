@@ -128,6 +128,9 @@
   background: var(--accent);
   color: var(--bg);
   border: 1px solid var(--accent);
+  /* Dark-on-light renders thinner than light-on-dark: one step heavier so
+     it matches the outline button beside it. */
+  font-weight: 600;
 }
 .l-btn-primary:hover { opacity: 0.88; }
 .l-btn-primary svg,
@@ -807,7 +810,9 @@
   .l-legal-layout {
     display: grid;
     grid-template-columns: minmax(0, 40rem) 230px;
-    justify-content: center;
+    /* Start on the site container's edge, like Acknowledgements and the
+       nav logo; the "On this page" rail follows 96px after the text. */
+    justify-content: start;
     column-gap: 96px;
     align-items: start;
   }

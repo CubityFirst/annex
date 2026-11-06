@@ -325,7 +325,7 @@ export function LandingPage() {
             </h1>
             <p className="l-hero-sub">
               Annex is a calm, flexible docs workspace. Write in markdown, keep
-              your files and drawings alongside, and publish any of it to the web
+              your files and drawings alongside and publish any of it to the web
               when you're ready.
             </p>
             <div className="l-hero-ctas">

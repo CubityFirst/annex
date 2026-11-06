@@ -182,7 +182,7 @@ export function AuthBrandPanel() {
               A place to keep <span className="font-semibold">anything.</span>
             </p>
             <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">
-              Write in markdown, keep files and drawings alongside, and publish any of it to the web when you&rsquo;re ready.
+              Write in markdown, keep files and drawings alongside and publish any of it to the web when you&rsquo;re ready.
             </p>
           </div>
           {/* Fixed width (the capture is 1152 CSS px wide at 1x, so 54rem /
@@ -190,7 +190,7 @@ export function AuthBrandPanel() {
               right and bottom. The frame grows to the panel's bottom edge,
               capped at the image's own height on tall screens, and ONE mask on
               the frame (border included) fades it out before that edge. */}
-          <div className="mt-12 flex min-h-[10rem] w-[54rem] max-w-none flex-1 shrink-0 self-start overflow-hidden rounded-tl-lg border-l border-t border-border max-h-[33.75rem] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_60%,transparent)] [mask-image:linear-gradient(to_bottom,#000_60%,transparent)] xl:w-[57rem] xl:max-h-[35.625rem]">
+          <div className="mt-12 flex min-h-[10rem] w-[54rem] max-w-none flex-1 shrink-0 self-start overflow-hidden rounded-tl-lg border-l border-t border-border max-h-[33.75rem] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_60%,transparent),linear-gradient(to_right,#000_calc(100%_-_20rem),transparent_calc(100%_-_6rem))] [-webkit-mask-composite:source-in] [mask-image:linear-gradient(to_bottom,#000_60%,transparent),linear-gradient(to_right,#000_calc(100%_-_20rem),transparent_calc(100%_-_6rem))] [mask-composite:intersect] xl:w-[57rem] xl:max-h-[35.625rem]">
             <img
               src={heroShot}
               alt=""

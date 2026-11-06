@@ -30,6 +30,8 @@
   position: relative;
   z-index: 2;
   max-width: calc(680px + 2 * var(--gutter));
+  /* Centred copy so the block's visual weight sits on the page centre. */
+  text-align: center;
 }
 
 /* grid background, fading out toward the edges */
@@ -37,8 +39,8 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(232, 228, 222, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(232, 228, 222, 0.025) 1px, transparent 1px);
+    linear-gradient(rgba(229, 229, 229, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(229, 229, 229, 0.025) 1px, transparent 1px);
   background-size: 60px 60px;
   background-position: center;
   -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 40%, transparent 100%);
@@ -76,7 +78,7 @@
   font-weight: 300;
   line-height: 1.6;
   max-width: 560px;
-  margin-bottom: 40px;
+  margin: 0 auto 40px;
   text-wrap: pretty;
 }
 
@@ -86,6 +88,7 @@
   flex-wrap: wrap;
   gap: 24px;
   align-items: center;
+  justify-content: center;
 }
 /* Secondary link: a live link, not a muted aside - the readable secondary
    tone (as the footer/nav links) with a visible underline. Scoped under

@@ -130,6 +130,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
         </div>
       ) : entries.length === 0 ? (
         <SettingsEmptyState
+          size="compact"
           icon={Trash2}
           title="The recycle bin is empty"
           hint={`Deleted items stay here for ${retentionDays} days, then are permanently deleted.`}

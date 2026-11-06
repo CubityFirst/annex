@@ -11,7 +11,7 @@
 //     <div className={READING_CONTAINER | WIDE_CONTAINER}>…</div>
 //   </div>
 //
-// READING is the doc column itself (44rem). WIDE (61rem) keeps the same left
+// READING is the doc column itself (44rem). WIDE (59rem) keeps the same left
 // edge at xl and runs further right; below xl it is centred, since there's no
 // rail to offset against. Both rely on the container being a block child
 // (width auto) of the padded wrapper - don't add w-full, or the WIDE offset
@@ -29,5 +29,5 @@ const DOC_COLUMN_LEFT = "xl:ml-[max(0px,calc((100%_-_59rem)/2))]";
 /** The doc reading column (44rem / 704px): profile, tag lists, file headers. */
 export const READING_CONTAINER = `mx-auto max-w-[44rem] ${DOC_COLUMN_LEFT}`;
 
-/** Wide index pages (61rem / 976px): dashboard, invites, wide file previews. */
-export const WIDE_CONTAINER = `mx-auto max-w-[61rem] ${DOC_COLUMN_LEFT}`;
+/** Wide index pages (59rem / 944px - equal 120px margins at 1440): dashboard, wide file previews. */
+export const WIDE_CONTAINER = `mx-auto max-w-[59rem] ${DOC_COLUMN_LEFT}`;

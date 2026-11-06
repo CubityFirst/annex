@@ -25,9 +25,9 @@ export function PrivacyPage() {
                 If you subscribe to a paid plan (such as Annex Ink), we store identifiers that link
                 your account to our payment processor – specifically a Stripe customer ID, a Stripe
                 subscription ID, which plan you're on and its current status, the end of your current
-                billing period, any pending cancellation date, and the date your supporter status
+                billing period, any pending cancellation date and the date your supporter status
                 began. If an administrator grants you complimentary supporter status, we also store
-                that grant, when it starts and expires, and an internal note recording the reason.
+                that grant, when it starts and expires and an internal note recording the reason.
                 Card numbers and other payment details are collected directly by Stripe at checkout
                 and never reach our servers.
               </p>
@@ -38,9 +38,9 @@ export function PrivacyPage() {
               <p>
                 When you sign in, we also create a persistent session record so you can review and
                 revoke active sign-ins from your account settings. Each record stores the IP address
-                you signed in from, a coarse device type (phone, tablet, laptop, or desktop), a
+                you signed in from, a coarse device type (phone, tablet, laptop or desktop), a
                 short client label derived from your browser's user-agent (for example, “Chrome on
-                macOS”), and sign-in / last-used timestamps. We do not retain the full user-agent
+                macOS”) and sign-in / last-used timestamps. We do not retain the full user-agent
                 string. Each session expires 7 days after you sign in. When you sign out or revoke a
                 session it is immediately marked inactive and can no longer be used; inactive and
                 expired records are then permanently deleted within about 30 days.
@@ -48,7 +48,7 @@ export function PrivacyPage() {
 
               <h2>2. Content you create</h2>
               <p>
-                Documents, files, and workspaces you create are stored on our servers and belong to
+                Documents, files and workspaces you create are stored on our servers and belong to
                 you. We do not sell your content or share it with third parties except as required
                 to operate the service (e.g., backups, CDN delivery, the optional features
                 described below).
@@ -70,14 +70,14 @@ export function PrivacyPage() {
                 <li>It is necessary to investigate or resolve a security incident</li>
               </ul>
               <p>
-                We do not access private content for advertising, profiling, or to train
+                We do not access private content for advertising, profiling or to train
                 machine-learning models.
               </p>
 
               <h2>3. How we use your data</h2>
               <p>We use the information we collect to:</p>
               <ul>
-                <li>Provide, maintain, and improve Annex</li>
+                <li>Provide, maintain and improve Annex</li>
                 <li>Send transactional emails (account confirmation, password reset, invites)</li>
                 <li>Detect and prevent abuse or unauthorised access</li>
                 <li>Comply with legal obligations</li>
@@ -161,8 +161,8 @@ export function PrivacyPage() {
               <p>
                 When you delete your account, any active subscription is cancelled immediately and
                 we ask Stripe to delete the corresponding customer record, which removes the email,
-                payment methods, and billing history Stripe held about you. Stripe may retain a
-                record of past transactions for tax, accounting, or fraud-prevention purposes as
+                payment methods and billing history Stripe held about you. Stripe may retain a
+                record of past transactions for tax, accounting or fraud-prevention purposes as
                 required by their own legal obligations.
               </p>
 

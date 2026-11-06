@@ -48,6 +48,7 @@ import {
   SETTINGS_ROW_CARD,
   SettingsEmptyRow,
   SettingsEmptyState,
+  SettingsSectionHeader,
   SettingsShell,
   type SettingsGroupDef,
   type SettingsSectionDef,
@@ -1977,6 +1978,7 @@ export function UserSettingsPage() {
             ) : favouriteSites.length === 0 ? (
               <div className="mt-3">
                 <SettingsEmptyState
+                  size="compact"
                   icon={Star}
                   title="No favourites yet"
                   hint="Add up to 3 published sites to show on your profile."
@@ -2735,7 +2737,7 @@ export function UserSettingsPage() {
 
           {/* Danger zone */}
           <section id="danger" className="flex flex-col gap-4">
-            <h2 className="text-base font-semibold">Danger zone</h2>
+            <SettingsSectionHeader title="Danger zone" description="Irreversible actions for your account." />
             <DangerRow
               title="Delete your account"
               description="Permanently delete your account and its data. Transfer or delete sites you own first."

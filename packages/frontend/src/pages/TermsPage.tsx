@@ -37,10 +37,10 @@ export function TermsPage() {
               <h2>3. Acceptable use</h2>
               <p>You agree not to use Annex to:</p>
               <ul>
-                <li>Upload or share content that is unlawful, harmful, abusive, defamatory, or infringing</li>
-                <li>Distribute spam, malware, or phishing content</li>
+                <li>Upload or share content that is unlawful, harmful, abusive, defamatory or infringing</li>
+                <li>Distribute spam, malware or phishing content</li>
                 <li>Attempt to gain unauthorised access to our systems or other users' workspaces</li>
-                <li>Scrape, crawl, or systematically extract data without prior written permission</li>
+                <li>Scrape, crawl or systematically extract data without prior written permission</li>
                 <li>Interfere with or disrupt the integrity or performance of the service</li>
                 <li>Use the service in any way that violates applicable laws or regulations</li>
               </ul>
@@ -52,13 +52,13 @@ export function TermsPage() {
               <h2>4. Fair use</h2>
               <p>
                 Annex is intended for normal documentation and collaboration use. Storage, file
-                uploads, bandwidth, AI features, API requests, published sites, and other resources
+                uploads, bandwidth, AI features, API requests, published sites and other resources
                 are subject to reasonable limits, which we may set or change at our discretion to
                 keep the service reliable and fair for everyone.
               </p>
               <p>
                 If your usage significantly exceeds what is typical for your plan, or places an
-                unreasonable load on our infrastructure, we may throttle, limit, or suspend the
+                unreasonable load on our infrastructure, we may throttle, limit or suspend the
                 affected features or your account. Where practical, we will contact you first and
                 give you an opportunity to reduce your usage. This applies to free and paid
                 accounts alike.
@@ -67,7 +67,7 @@ export function TermsPage() {
               <h2>5. Your content</h2>
               <p>
                 You retain ownership of all content you create in Annex. By using the service, you
-                grant us a limited, non-exclusive licence to store, process, and display your
+                grant us a limited, non-exclusive licence to store, process and display your
                 content solely to provide the service to you and your invited collaborators.
               </p>
               <p>
@@ -126,7 +126,7 @@ export function TermsPage() {
               <h2>9. Limitation of liability</h2>
               <p>
                 To the fullest extent permitted by law, Annex and its operators are not liable for
-                any indirect, incidental, special, or consequential damages arising from your use
+                any indirect, incidental, special or consequential damages arising from your use
                 of the service. Our total liability for any claim shall not exceed the amount you
                 paid us in the three months preceding the claim.
               </p>
