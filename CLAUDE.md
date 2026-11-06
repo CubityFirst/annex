@@ -124,6 +124,16 @@ Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperativ
 
 - All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler d1 execute ...`)
 
+## Worker Config (cf)
+
+Each worker (`packages/{api,auth,admin,frontend}`) is configured by **`cloudflare.config.ts`** (Worker settings, bindings, vars, routes/domains, crons, DO `exports`) plus **`wrangler.config.ts`** (build settings: assets dir, source maps). That is what **`cf build` / `cf deploy`** and the Workers Builds deploy triggers read. Each package pins `cf` and `wrangler` (the Wrangler bundler must be installed per package, not hoisted).
+
+- **`wrangler.toml` is retained and must be kept in sync** - `pnpm dev` still runs `wrangler dev --persist-to ../../.wrangler/state` (`cf dev` can't share one persist dir across workers yet, and the api reads auth's DB via `AUTH_DB`), and the e2e suites/ops scripts use `npx wrangler d1 execute <db> --local`. **Any binding/var/route change goes in both files.**
+- D1 migrations: `pnpm migrate` / `node scripts/migrate.mjs <local|remote>` run `cf d1 migrations apply <DATABASE_ID>` (remote unless `--local`).
+- `annex-api`'s `DocCollabRoom` is declared as `exports.durableObject({ storage: "legacy-kv" })` - it was created with `new_classes` (KV-backed). Never change it to `"sqlite"`.
+- The frontend package depends on Vite, so `cf build` would run `vite build` instead of Wrangler; its deploy is `pnpm build && pnpm build:worker (cf-wrangler build) && cf deploy --prebuilt`.
+- Secrets are still set with `npx wrangler secret put <NAME> --name <worker>`; `cf deploy` keeps existing secrets.
+
 ## Local D1 State
 
 The dev servers use a shared wrangler state at the **monorepo root** (`/.wrangler/state`), not inside each package. This is set via `--persist-to ../../.wrangler/state` in each package's dev script.

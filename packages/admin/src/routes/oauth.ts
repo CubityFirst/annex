@@ -9,7 +9,7 @@ import type { AppEnv } from "../index";
 // and write is forwarded. Note the admin worker does write OTHER auth-DB
 // tables directly (users moderation, user_preferences badges, user_billing
 // grants, admin_audit_log) - see the AUTH_DB write-boundary note in
-// wrangler.toml / CLAUDE.md. `enforceAdmin` has already validated the
+// cloudflare.config.ts / CLAUDE.md. `enforceAdmin` has already validated the
 // session; the auth worker re-checks it as defence in depth.
 
 const oauthRouter = new Hono<AppEnv>();

@@ -190,19 +190,19 @@ secrets (a bare `secret put` is refused until the latest version is deployed):
 
 ```bash
 cd packages/api
-npx wrangler deploy
+pnpm run deploy        # cf deploy
 npx wrangler secret put R2_ACCESS_KEY_ID
 npx wrangler secret put R2_SECRET_ACCESS_KEY
 ```
 
 Enter each value at the interactive prompt (do **not** pipe it in via
 PowerShell - it appends a CRLF and corrupts the secret). Then set the two vars
-in `packages/api/wrangler.toml` (`R2_BUCKET_NAME` is already there):
+in `packages/api/cloudflare.config.ts` (`R2_BUCKET_NAME` is already there), and
+mirror them in `packages/api/wrangler.toml` `[vars]` (still used by local dev):
 
-```toml
-[vars]
-R2_BUCKET_NAME = "cubedocs-assets"
-R2_ACCOUNT_ID  = "<your-cloudflare-account-id>"
+```ts
+R2_BUCKET_NAME: bindings.text("cubedocs-assets"),
+R2_ACCOUNT_ID: bindings.text("<your-cloudflare-account-id>"),
 ```
 
 All four values must be present, or presigning stays off and video uses the

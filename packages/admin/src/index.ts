@@ -20,7 +20,7 @@ export interface Env {
   // schema change to users/sessions/user_billing/user_preferences columns
   // read by loadCurrentSession requires redeploying auth + api + admin.
   JWT_SECRET: string;
-  // IP-keyed rate limiters (Cloudflare ratelimit bindings - see wrangler.toml).
+  // IP-keyed rate limiters (Cloudflare ratelimit bindings - see cloudflare.config.ts).
   // RATE_LIMITER_ADMIN gates every authenticated admin API route;
   // RATE_LIMITER_ADMIN_HANDOFF gates the unauthenticated exchange proxy;
   // RATE_LIMITER_AVATAR gates the public avatar route on its own budget so
@@ -214,7 +214,7 @@ export { app };
 
 export default {
   fetch: app.fetch,
-  // Hourly cron (see wrangler.toml [triggers]): performs account deletions
+  // Hourly cron (see cloudflare.config.ts triggers): performs account deletions
   // scheduled from the Users page once their grace window has passed.
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(

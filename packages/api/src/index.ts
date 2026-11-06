@@ -62,7 +62,7 @@ export interface Env {
 }
 
 export default {
-  // Daily cron (see wrangler.toml [triggers]): revision retention. Keeps each
+  // Daily cron (see cloudflare.config.ts triggers): revision retention. Keeps each
   // doc's newest revision unconditionally; see pruneDocRevisions.
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(

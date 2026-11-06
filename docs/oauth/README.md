@@ -62,7 +62,7 @@ Annex secret is ever shared with a connected service.
    `auth` - e.g. `AAAA auth 100::` (a placeholder; the Worker route handles the
    request, the record just makes the hostname resolve to Cloudflare's edge).
    The `auth.cubityfir.st/oauth/*` and `/.well-known/*` routes in
-   `packages/auth/wrangler.toml` attach the auth worker to those paths only -
+   `packages/auth/cloudflare.config.ts` attach the auth worker to those paths only -
    nothing else on the auth worker is reachable at that host.
 
 3. **Apply the migration** (creates `oauth_clients` + `oauth_codes`):
@@ -76,9 +76,9 @@ Annex secret is ever shared with a connected service.
    `loadCurrentSession`, so the auth/api/admin triple-redeploy rule does *not*
    apply here - but auth, api, and frontend each changed):
    ```bash
-   cd packages/auth && npx wrangler deploy        # endpoints + routes + migration
-   cd packages/api && npx wrangler deploy          # /oauth/authorize proxy
-   cd packages/frontend && pnpm build && npx wrangler deploy   # /oauth/authorize SPA page
+   cd packages/auth && pnpm run deploy             # endpoints + routes (cf deploy)
+   cd packages/api && pnpm run deploy              # /oauth/authorize proxy
+   cd packages/frontend && pnpm run deploy         # /oauth/authorize SPA page
    ```
 
 5. **Smoke-test discovery + JWKS:**

@@ -58,8 +58,8 @@ Custom hostnames are created **non-wildcard** (`wildcard: false`) with **TXT DCV
 1. **Enable Cloudflare for SaaS** on the `yourannex.com` zone (paid add-on).
 2. **CNAME target**: create a proxied record `publish.yourannex.com AAAA 100::` (orange cloud) - the hostname customers point their CNAME at.
 3. **Fallback origin**: set the zone's SaaS fallback origin to `publish.yourannex.com` (the same proxied record doubles as the fallback origin, so the apex stays free). Must reach **Active**.
-4. **Worker route**: add `*/*` → `annex-frontend` on the `yourannex.com` zone (the "Workers as your fallback origin" pattern). This is declared in `packages/frontend/wrangler.toml` (`pattern="*/*" zone_name="yourannex.com"`), so deploying the frontend creates it.
-5. **Config** (`packages/api/wrangler.toml`): `CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"`, `CUSTOM_DOMAIN_CNAME_TARGET = "publish.yourannex.com"`, and `wrangler secret put CF_API_TOKEN` (token scoped to the **yourannex.com** zone with **SSL and Certificates: Edit**).
+4. **Worker route**: add `*/*` → `annex-frontend` on the `yourannex.com` zone (the "Workers as your fallback origin" pattern). This is declared in `packages/frontend/cloudflare.config.ts` (`triggers.fetch({ pattern: "*/*", zone: "yourannex.com" })`, mirrored in `wrangler.toml`), so deploying the frontend creates it.
+5. **Config** (`packages/api/cloudflare.config.ts`, mirrored in `wrangler.toml`): `CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"`, `CUSTOM_DOMAIN_CNAME_TARGET = "publish.yourannex.com"`, and `wrangler secret put CF_API_TOKEN` (token scoped to the **yourannex.com** zone with **SSL and Certificates: Edit**).
 6. Customers then add: a **CNAME** `their.domain → publish.yourannex.com`, plus the **TXT** ownership + SSL-DCV records shown in Site Settings.
 
 **Cleanup of the old shared-zone setup:** delete the stale `*/*` Worker route on the `cubityfir.st` zone (wrangler won't remove it - it only manages routes in the frontend toml, which now targets `yourannex.com`). No carve-out routes (`*.cubityfir.st/*` → None) are needed once `cubityfir.st` has no `*/*`.

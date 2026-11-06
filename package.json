@@ -8,7 +8,7 @@
     "build": "concurrently \"pnpm --filter frontend build\" \"pnpm --filter api build\" \"pnpm --filter auth build\" \"pnpm --filter @annex/admin build\"",
     "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @annex/admin deploy\"",
     "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @annex/admin typecheck\" \"pnpm --filter @annex/admin-frontend typecheck\" \"pnpm --filter @annex/mcp typecheck\"",
-"migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
+    "migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
     "migrations:local": "node scripts/migrate.mjs local",
     "migrations:remote": "node scripts/migrate.mjs remote",
     "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter frontend test\" \"pnpm --filter @annex/mcp test\" && pnpm test:e2e",
@@ -18,7 +18,7 @@
   "devDependencies": {
     "concurrently": "^9.0.0",
     "typescript": "^5.5.0",
-    "wrangler": "^4.101.0"
+    "wrangler": "^4.156.0"
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {

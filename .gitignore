@@ -2,6 +2,8 @@ node_modules/
 dist/
 dev-dist/
 .wrangler/
+# cf build output + generated types
+.cloudflare/
 .turbo/
 .dev.vars
 *.local

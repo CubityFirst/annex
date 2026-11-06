@@ -1,3 +1,11 @@
+# NOTE: `cf build` / `cf deploy` (and Workers Builds) read ./cloudflare.config.ts
+# (+ ./wrangler.config.ts for build settings) - that is the deploy source of truth.
+# This file is kept for Wrangler commands that still need a config: local dev
+# (`wrangler dev --persist-to ../../.wrangler/state`, because `cf dev` can't share
+# one persist dir across workers yet) and `npx wrangler d1 execute <db> --local`
+# used by the e2e suites and ops scripts. Keep every binding/var change mirrored
+# in both files.
+
 name = "annex-api"
 main = "src/index.ts"
 compatibility_date = "2026-02-24"

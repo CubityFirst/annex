@@ -2,11 +2,12 @@
   "name": "@annex/auth",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "pnpm exec wrangler dev --port 8788 --persist-to ../../.wrangler/state",
-    "migrate": "pnpm exec wrangler d1 migrations apply cubedocs-auth --local --persist-to ../../.wrangler/state",
+    "migrate": "cf d1 migrations apply db327d85-b8c2-4fed-adaa-25e748778c86 --local --persist-to ../../.wrangler/state",
     "build": "tsc",
-    "deploy": "pnpm exec wrangler deploy",
+    "deploy": "cf deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -18,7 +19,9 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "@types/zxcvbn": "^4.4.5",
+    "cf": "1.0.0-beta.26",
     "typescript": "^5.5.0",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "wrangler": "^4.156.0"
   }
 }
