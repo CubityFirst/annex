@@ -136,7 +136,7 @@ function FileKindIcon({ mime, className }: { mime: string; className?: string })
 function HitMeta({ folder, updatedAt }: { folder: string | null; updatedAt?: string }) {
   if (!folder && !updatedAt) return null;
   return (
-    <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+    <span className="ml-auto flex items-center gap-1 shrink-0 text-xs text-muted-foreground whitespace-nowrap">
       {folder && (
         <span className="flex items-center gap-0.5 max-w-28 truncate">
           <Folder className="h-2.5 w-2.5 shrink-0" />
@@ -442,7 +442,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                   : <FileKindIcon mime={item.mime ?? ""} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                 <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
                 {/* "Site · time", matching the dashboard's Recently opened list. */}
-                <span className="ml-auto flex min-w-0 items-center gap-1 shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+                <span className="ml-auto flex min-w-0 items-center gap-1 shrink-0 text-xs text-muted-foreground whitespace-nowrap">
                   {item.siteName && (
                     <>
                       <span className="max-w-32 truncate">{item.siteName}</span>
@@ -530,7 +530,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                     <SearchSnippet html={d.excerpt} />
                   )}
                 </span>
-                <span className="ml-auto max-w-36 shrink-0 self-start mt-[3px] truncate text-[10px] text-muted-foreground">{d.siteName}</span>
+                <span className="ml-auto max-w-36 shrink-0 self-start mt-0.5 truncate text-xs text-muted-foreground">{d.siteName}</span>
               </CommandItem>
             ))}
           </CommandGroup>

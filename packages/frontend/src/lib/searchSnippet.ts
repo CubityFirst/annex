@@ -16,9 +16,13 @@ export function cleanSearchSnippet(html: string): string {
 
   // [[target|label]] -> label, [[target]] -> target (closing may be cut off
   // by the excerpt window, so a dangling opener is handled below).
-  s = s.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2");
+  // When only the link target matched, show the target instead, so every
+  // result keeps a visible reason for matching ("Coffee brewing guide").
+  const hasMark = (t: string) => t.includes(OPEN);
+  s = s.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, (_, target: string, label: string) =>
+    hasMark(target) && !hasMark(label) ? target : label);
   s = s.replace(/\[\[([^\]]*)\]\]/g, "$1");
-  // ![alt](src) and [text](url) -> alt / text
+  // ![alt](src) and [text](url) -> alt / text (a URL is never worth showing).
   s = s.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1");
   // Task markers and list bullets at a line/sentence boundary.
   s = s.replace(new RegExp(`(^|\\s)[-*+]?\\s*\\[[ xX]\\]\\s+`, "g"), "$1");

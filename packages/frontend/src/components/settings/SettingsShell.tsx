@@ -343,7 +343,7 @@ export function SettingsShell({ title, description, groups, sections, children }
             own square sizing; switches/radios/OTP slots are excluded). */}
         <div
           className={cn(
-            "min-w-0 max-w-[44rem] flex-1 pb-[max(8rem,calc(100dvh-20rem))]",
+            "min-w-0 max-w-[44rem] flex-1 pb-[max(8rem,calc(100dvh-12rem))]",
             "max-sm:[&_input:not([type=checkbox],[type=radio],[type=file],[type=color],[data-input-otp])]:min-h-11",
             "max-sm:[&_button:not([aria-label],[role=switch],[role=radio],[role=checkbox])]:min-h-11",
             "max-sm:[&_button[role=combobox]]:min-h-11",

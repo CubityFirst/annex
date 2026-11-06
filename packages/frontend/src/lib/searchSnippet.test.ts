@@ -14,6 +14,11 @@ describe("cleanSearchSnippet", () => {
       .toBe("…brackets: <mark>Coffee</mark> brewing…");
   });
 
+  it("shows a wikilink's target when only the target matched", () => {
+    expect(cleanSearchSnippet("with a label: [[<mark>Coffee</mark> brewing guide|see the brewing guide]]. Images"))
+      .toBe("with a label: <mark>Coffee</mark> brewing guide. Images");
+  });
+
   it("removes the space after a leading ellipsis", () => {
     expect(cleanSearchSnippet("… brackets and <mark>coffee</mark>…")).toBe("…brackets and <mark>coffee</mark>…");
     expect(cleanSearchSnippet("...  <mark>coffee</mark> beans")).toBe("...<mark>coffee</mark> beans");

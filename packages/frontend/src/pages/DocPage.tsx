@@ -1308,8 +1308,16 @@ export function DocPage() {
 
         {/* Markdown reference - a side sheet so the document stays visible
             next to it while you look something up. */}
-        <Sheet open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
-          <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+        {/* Desktop: a side inspector with no scrim, so the document stays
+            visible and editable while you compare syntax; phones keep the
+            modal sheet. */}
+        <Sheet open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen} modal={!isDesktop}>
+          <SheetContent
+            side="right"
+            overlay={!isDesktop}
+            onInteractOutside={isDesktop ? (e) => e.preventDefault() : undefined}
+            className="w-full gap-0 sm:max-w-md md:w-[26rem] md:shadow-xl"
+          >
             <SheetHeader className="border-b border-border px-6 py-5">
               <SheetTitle>Markdown reference</SheetTitle>
               <SheetDescription>Supported syntax in this editor.</SheetDescription>
