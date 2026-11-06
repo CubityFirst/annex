@@ -64,7 +64,25 @@ function ProductViewer() {
   );
   const [inView, setInView] = useState(true);
   const viewer = useRef<HTMLDivElement>(null);
+  const tabRow = useRef<HTMLDivElement>(null);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  // True while tabs sit past the row's right edge (narrow phones) - drives the
+  // 24px right-edge fade so the row reads as scrollable, not clipped.
+  const [overflowEnd, setOverflowEnd] = useState(false);
+
+  useEffect(() => {
+    const row = tabRow.current;
+    if (!row) return;
+    const update = () => setOverflowEnd(row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
+    update();
+    row.addEventListener("scroll", update, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(row);
+    return () => {
+      row.removeEventListener("scroll", update);
+      ro?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const el = viewer.current;
@@ -105,7 +123,14 @@ function ProductViewer() {
       className={`l-viewer${inView ? "" : " is-offscreen"}`}
       style={{ "--l-autoplay": `${AUTOPLAY_MS}ms` } as CSSProperties}
     >
-      <div className="l-viewer-tabs" role="tablist" aria-label="Product tour" onKeyDown={onKeyDown}>
+      <div
+        ref={tabRow}
+        className="l-viewer-tabs"
+        role="tablist"
+        aria-label="Product tour"
+        data-overflow-end={overflowEnd || undefined}
+        onKeyDown={onKeyDown}
+      >
         {SHOTS.map((s, i) => (
           <button
             key={s.key}
@@ -182,6 +207,8 @@ const SHOWCASE: {
   src: string;
   mobile: string;
   alt: string;
+  /** Fade the bottom edge - the capture stops mid-page. */
+  fade?: boolean;
 }[] = [
   {
     eyebrow: "Write",
@@ -222,6 +249,7 @@ const SHOWCASE: {
     src: detailPublish,
     mobile: mobilePublish,
     alt: "A published Annex site in its public reading view",
+    fade: true,
   },
 ];
 
@@ -349,7 +377,7 @@ export function LandingPage() {
                   ))}
                 </ul>
               </div>
-              <div className="l-show-media">
+              <div className={`l-show-media${s.fade ? " l-show-media-fade" : ""}`}>
                 {/* Eager: three small webps, and a lazy one left an empty frame on
                     fast scrolls / full-page captures. The frame also carries a
                     skeleton background + fixed ratio so it never reads as broken. */}

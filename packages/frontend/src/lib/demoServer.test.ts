@@ -436,6 +436,17 @@ describe("demo server user prefs", () => {
     expect((await api("/users/by-handle/demo-person")).status).toBe(404);
   });
 
+  it("lists this browser as the one current session and refuses revoking", async () => {
+    const res = await api("/me/sessions");
+    expect(res.ok).toBe(true);
+    expect(res.data.sessions).toHaveLength(1);
+    const [session] = res.data.sessions;
+    expect(session.current).toBe(true);
+    expect(typeof session.clientLabel).toBe("string");
+    expect(session.createdAt).toBeLessThanOrEqual(Date.now());
+    expect((await post("/me/sessions/revoke-others")).error).toBe("Session management is disabled in the demo.");
+  });
+
   it("refuses avatar changes and account deletion with readable messages", async () => {
     expect((await post("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");
     expect((await del("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");

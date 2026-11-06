@@ -1,7 +1,13 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Download, Link, Check } from "lucide-react";
+import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
@@ -11,7 +17,8 @@ import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { describeFileType, fileKind, guessLanguage } from "@/lib/fileKind";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { fileContentEtag } from "@/lib/excalidraw";
-import { formatBytes } from "@/lib/fileManager";
+import { formatBytes, folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
+import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
 import { isLightTheme } from "@/lib/theme";
@@ -44,6 +51,32 @@ interface FileRecord {
 // chunk and tell the user to download for the rest.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 
+// The viewer column follows the doc page's container rule (DocPage): a 44rem
+// column centred in the content area, with a w-60 rail reserved on the right
+// at xl (docs keep their outline there). At xl the column keeps the doc
+// column's left edge but may run wider to the right (capped at 56rem), so
+// previews get room while the file title lines up with a doc title.
+const VIEWER_COLUMN_CLASS =
+  "mx-auto max-w-[44rem] xl:mr-0 xl:ml-[max(0px,calc((100%_-_44rem)/2))] xl:max-w-[56rem]";
+
+// Muted 16px menu icons, the destructive item keeping its red (same as the
+// File Manager's row menus).
+const MENU_CLASS =
+  "min-w-[200px] [&_[role=menuitem]]:pr-4 [&_svg:not([class*='size-'])]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground";
+
+// Content area + empty xl rail, mirroring DocPage's reading layout.
+function ViewerLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-full">
+      <div className="min-w-0 flex-1 px-5 py-6 sm:px-6 sm:py-10">
+        <div className={VIEWER_COLUMN_CLASS}>{children}</div>
+      </div>
+      {/* Empty rail matching the doc outline rail, so the column sits where a doc's does. */}
+      <div className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
+    </div>
+  );
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
     year: "numeric", month: "long", day: "numeric",
@@ -65,6 +98,27 @@ export function FilePage() {
   const [textTruncated, setTextTruncated] = useState(false);
   const [drawingDirty, setDrawingDirty] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // "⋯" menu (editors): rename / move / delete, mirroring the File Manager's
+  // file row actions and API calls.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
+
+  // Move picker rows: every folder with its full ancestry label, sorted by path.
+  const destinations = useMemo(() => {
+    const all = moveFolders ?? [];
+    const byId = new Map(all.map(f => [f.id, f]));
+    return all
+      .map(f => ({ folder: f, label: folderPathLabel(all, f, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+  }, [moveFolders]);
 
   useEffect(() => {
     if (!fileId) return;
@@ -173,19 +227,124 @@ export function FilePage() {
     }
   }
 
+  async function handleRename(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = renameName.trim();
+    if (!file || !trimmed || renaming) return;
+    setRenaming(true);
+    try {
+      const result = await apiFetchJson(`/api/files/${file.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (result.ok) {
+        setFile(f => (f && f.id === file.id ? { ...f, name: trimmed } : f));
+        // Keep the sidebar's "Recently accessed" entry in step with the new name.
+        if (projectId) pushRecentItem(projectId, { id: file.id, title: trimmed, kind: "file", mime: file.mime_type });
+        setRenameOpen(false);
+      } else if (!result.redirected) {
+        toast({ title: "Rename failed.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function openMove() {
+    setMoveOpen(true);
+    setMoveFolders(null);
+    const result = await apiFetchJson<MoveFolderLike[]>(`/api/folders?projectId=${projectId}&all=1`);
+    if (result.ok && result.data) setMoveFolders(result.data);
+    else {
+      setMoveFolders([]);
+      if (!result.redirected) toast({ title: "Couldn't load folders.", description: result.error, variant: "destructive" });
+    }
+  }
+
+  async function handleMoveTo(targetFolderId: string | null) {
+    if (!file || moving) return;
+    setMoving(true);
+    try {
+      const result = await apiFetchJson(`/api/files/${file.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: targetFolderId }),
+      });
+      if (result.ok) {
+        setFile(f => (f && f.id === file.id ? { ...f, folder_id: targetFolderId } : f));
+        // Rebuild the breadcrumb trail for the new location - the crumbs come
+        // from router state, which still describes the old folder.
+        const byId = new Map((moveFolders ?? []).map(f => [f.id, f]));
+        const chain: { id: string; name: string }[] = [];
+        const seen = new Set<string>();
+        for (let id = targetFolderId; id && !seen.has(id); id = byId.get(id)?.parent_id ?? null) {
+          seen.add(id);
+          const folder = byId.get(id);
+          if (!folder) break;
+          chain.unshift({ id: folder.id, name: folder.name });
+        }
+        navigate(location.pathname, {
+          replace: true,
+          state: { ...(location.state ?? {}), folderPath: [{ id: null, name: projectName }, ...chain] },
+        });
+        setMoveOpen(false);
+        const dest = chain.at(-1);
+        toast({ title: dest ? `Moved to "${dest.name}".` : "Moved to the top level." });
+      } else if (!result.redirected) {
+        toast({ title: "Failed to move file.", description: result.error, variant: "destructive" });
+      }
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!file || !projectId || deleting) return;
+    setDeleting(true);
+    const { id, name, folder_id } = file;
+    try {
+      const result = await apiFetchJson<{ trashEntryId?: string }>(`/api/files/${id}`, { method: "DELETE" });
+      if (result.ok) {
+        const entryId = result.data?.trashEntryId;
+        setDeleteOpen(false);
+        navigate(folder_id ? `/projects/${projectId}/folders/${folder_id}` : `/projects/${projectId}`);
+        toast({
+          title: `Moved "${name}" to the recycle bin.`,
+          action: entryId ? {
+            label: "Undo",
+            onClick: () => {
+              void restoreTrashEntry(projectId, entryId).then(r => {
+                if (r.ok) navigate(`/projects/${projectId}/files/${id}`);
+                else if (!r.redirected) toast({ title: `Couldn't restore "${name}".`, description: r.error, variant: "destructive" });
+              });
+            },
+          } : undefined,
+        });
+      } else if (!result.redirected) {
+        toast({ title: "Delete failed.", description: result.error, variant: "destructive" });
+        setDeleteOpen(false);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-10 text-sm text-muted-foreground sm:px-6">
-        <Spinner /> Loading…
-      </div>
+      <ViewerLayout>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner /> Loading…
+        </div>
+      </ViewerLayout>
     );
   }
 
   if (!file) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+      <ViewerLayout>
         <p className="text-sm text-destructive">File not found.</p>
-      </div>
+      </ViewerLayout>
     );
   }
 
@@ -194,7 +353,6 @@ export function FilePage() {
   // Drawings render as a live canvas filling the content area - editor+ get the
   // full editor + Save; everyone else gets a read-only (view-mode) canvas.
   if (kind === "drawing") {
-    const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
     const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
     return (
       <div className="flex h-full flex-col">
@@ -221,15 +379,15 @@ export function FilePage() {
     );
   }
 
-  // One viewer width for every kind (image/text/PDF/media) so the header -
-  // icon tile, title, actions - sits in exactly the same place from file to
-  // file. The header shares the container so its edges line up with the preview.
+  // One viewer column for every kind (image/text/PDF/media) so the header -
+  // title, metadata, actions - sits in exactly the same place from file to
+  // file, with the title on the same left edge as a doc title (see
+  // VIEWER_COLUMN_CLASS; the type icon rides in the metadata line rather than
+  // a leading tile, which would push the title off that edge). The header
+  // shares the column so its edges line up with the preview.
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+    <ViewerLayout>
       <div className="flex flex-wrap items-center gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
-          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 text-muted-foreground" />
-        </div>
         {/* min width lets the actions wrap onto their own line on phones
             instead of squeezing the title to a sliver. */}
         <div className="min-w-[12rem] flex-1">
@@ -237,9 +395,12 @@ export function FilePage() {
           {/* Each item carries a leading "·" in its left padding; the row is
               pulled left by that padding and clipped, so the first item on
               every line (including after a wrap) shows no stray separator. */}
-          <div className="mt-0.5 overflow-hidden">
-            <p className="-ml-4 flex flex-wrap text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
-              <span title={file.mime_type}>{describeFileType(file.mime_type, file.name)}</span>
+          <div className="mt-1 overflow-hidden">
+            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
+              <span title={file.mime_type} className="inline-flex items-center gap-1.5">
+                <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
+                {describeFileType(file.mime_type, file.name)}
+              </span>
               <span>{formatBytes(file.size)}</span>
               <span>Uploaded {formatDate(file.created_at)}</span>
             </p>
@@ -249,33 +410,58 @@ export function FilePage() {
           <Button
             variant="outline"
             className="gap-2"
-            aria-label={copiedLink ? "Copied" : "Copy markdown"}
+            aria-label={copiedLink ? "Copied" : "Copy embed"}
+            title="Copy markdown to embed this file in a doc"
             onClick={() => {
               navigator.clipboard.writeText(fileEmbedMarkdown(file));
               setCopiedLink(true);
               setTimeout(() => setCopiedLink(false), 2000);
             }}
           >
-            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Link className="h-4 w-4" aria-hidden="true" />}
-            {copiedLink ? "Copied!" : "Copy markdown"}
+            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Code className="h-4 w-4" aria-hidden="true" />}
+            {copiedLink ? "Copied!" : "Copy embed"}
           </Button>
           <Button onClick={handleDownload} disabled={downloading} className="gap-2">
             <Download className="h-4 w-4" />
             {downloading ? "Downloading…" : "Download"}
           </Button>
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className={MENU_CLASS}>
+                <DropdownMenuItem onClick={() => { setRenameName(file.name); setRenameOpen(true); }}>
+                  <Pencil />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { void openMove(); }}>
+                  <FolderInput />
+                  Move to folder…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Trash2 />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
-      {/* The image sits on a padded card "mat" so dark-edged images don't
-          merge into the frame or the page. */}
+      {/* The image sits on a thin card "mat" (8-12px) - just enough that
+          dark-edged images don't merge into the page, without a heavy frame. */}
       {kind === "image" && (
-        <div className="mt-8 rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="mt-8 rounded-xl border border-border bg-card p-2 sm:p-3">
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}
             projectId={projectId}
             mimeType={file.mime_type}
-            className="max-h-[70vh] w-full object-contain"
+            className="max-h-[70vh] w-full rounded-md object-contain"
           />
         </div>
       )}
@@ -325,7 +511,7 @@ export function FilePage() {
 
       {kind === "text" && textContent !== null && (
         <div className="mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6">
-          {/* Plain-file preview sits on the warm card surface (never the
+          {/* Plain-file preview sits on the card surface (never the
               highlighter theme's own background), framed like the other previews. */}
           <CodeBlock
             lang={guessLanguage(file.name)}
@@ -343,8 +529,102 @@ export function FilePage() {
       {/* Announce the transient copy confirmation to assistive tech (the button
           text swap alone isn't reliably announced). */}
       <div role="status" aria-live="polite" className="sr-only">
-        {copiedLink ? "Markdown copied to clipboard" : ""}
+        {copiedLink ? "Embed markdown copied to clipboard" : ""}
       </div>
-    </div>
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRename} className="flex flex-col">
+            <div className="grid gap-2">
+              <Label htmlFor="file-rename-name">Name</Label>
+              <Input
+                id="file-rename-name"
+                value={renameName}
+                onChange={e => setRenameName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renaming}>
+                {renaming ? "Renaming…" : "Rename"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move-to-folder picker - same rows as the File Manager's. */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Move "{file.name}"</DialogTitle>
+            <DialogDescription>Choose a destination folder.</DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+            {moveFolders === null ? (
+              <div className="flex flex-col gap-1.5 py-1">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={moving || file.folder_id === null}
+                  onClick={() => handleMoveTo(null)}
+                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                  <span className="truncate">{projectName} (home)</span>
+                </button>
+                {destinations.map(({ folder: f, label }) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    disabled={moving || file.folder_id === f.id}
+                    onClick={() => handleMoveTo(f.id)}
+                    title={label}
+                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+                {destinations.length === 0 && (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">No folders yet.</p>
+                )}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{file.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It will be moved to the recycle bin, where it can be restored for 30 days.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={e => { e.preventDefault(); void handleDelete(); }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </ViewerLayout>
   );
 }

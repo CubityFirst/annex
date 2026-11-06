@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { CalendarDays, Clock, CodeXml, Flag, FlaskConical, Globe, Settings, UserRound } from "lucide-react";
+import { CalendarDays, Clock, CodeXml, Flag, FlaskConical, Globe, Pencil, UserRound } from "lucide-react";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
@@ -199,8 +199,8 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
         )}
 
         {isSelf && (
-          <Button variant="outline" className="mt-5 gap-1.5" onClick={() => navigate("/settings")}>
-            <Settings className="size-4" aria-hidden />
+          <Button variant="outline" size="sm" className="mt-5 gap-1.5" onClick={() => navigate("/settings#account")}>
+            <Pencil className="size-3.5" aria-hidden />
             Edit profile
           </Button>
         )}

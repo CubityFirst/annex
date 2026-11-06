@@ -22,9 +22,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
+import {
+  DESTRUCTIVE_OUTLINE_BUTTON,
+  DangerRow,
+  SettingsEmptyRow,
+  SettingsSectionHeader,
+  SettingsShell,
+  type SettingsGroupDef,
+  type SettingsSectionDef,
+} from "@/components/settings/SettingsShell";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
-import { Building2, ChevronRight } from "lucide-react";
+import { ChevronRight, Globe } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
@@ -322,10 +330,7 @@ export function OrgSettingsPage() {
       <div>
         {/* General */}
         <div id="general" className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-base font-semibold">General</h3>
-            <p className="mt-1 text-sm text-muted-foreground">The organization's name.</p>
-          </div>
+          <SettingsSectionHeader title="General" description="The organization's name." />
           <div className="flex flex-col gap-2">
             <Label htmlFor="org-name">Name</Label>
             <div className="flex gap-2">
@@ -353,12 +358,7 @@ export function OrgSettingsPage() {
           <>
             <Separator className="my-10" />
             <div id="members" className="flex flex-col gap-6">
-              <div>
-                <h3 className="text-base font-semibold">Members</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Members of this organization get their role on every site in it.
-                </p>
-              </div>
+              <SettingsSectionHeader title="Members" description="Members of this organization get their role on every site in it." />
 
               {/* Member list */}
               <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
@@ -458,12 +458,10 @@ export function OrgSettingsPage() {
           <>
             <Separator className="my-10" />
             <div id="sites" className="flex flex-col gap-6">
-              <div>
-                <h3 className="text-base font-semibold">Sites</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Sites in this organization. Attaching a site you own grants every org member their role on it.
-                </p>
-              </div>
+              <SettingsSectionHeader
+                title="Sites"
+                description="Sites in this organization. Attaching a site you own grants every org member their role on it."
+              />
 
               {/* Attach */}
               <div className="flex flex-col gap-1.5">
@@ -479,7 +477,7 @@ export function OrgSettingsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleAttach} disabled={!attachId || attaching}>
+                  <Button variant="outline" onClick={handleAttach} disabled={!attachId || attaching}>
                     {attaching ? "Attaching…" : "Attach"}
                   </Button>
                 </div>
@@ -490,11 +488,7 @@ export function OrgSettingsPage() {
 
               {/* Attached list */}
               {sites.length === 0 ? (
-                <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
-                  <Building2 className="mb-2 size-5 text-muted-foreground" aria-hidden />
-                  <p className="text-sm font-medium">No sites attached yet</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Attach a site you own to share it with every member.</p>
-                </div>
+                <SettingsEmptyRow icon={Globe}>No sites attached yet.</SettingsEmptyRow>
               ) : (
                 <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
                   {sites.map(site => (
@@ -547,18 +541,17 @@ export function OrgSettingsPage() {
         {myRole !== null && (
           <>
             <Separator className="my-10" />
-            <div id="danger" className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
-              <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
+            <div id="danger" className="flex flex-col gap-4">
+              <SettingsSectionHeader title="Danger zone" danger />
 
               {isOwner ? (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Deleting this organization removes it for all members. The sites inside it are NOT deleted - they're
-                    detached and remain owned by their respective owners. This action cannot be undone.
-                  </p>
+                <DangerRow
+                  title="Delete this organization"
+                  description="Removes it for all members. Its sites aren't deleted — they're detached and stay with their owners. This cannot be undone."
+                  action={
                   <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="mt-3 self-start">Delete organization</Button>
+                      <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Delete organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -578,15 +571,16 @@ export function OrgSettingsPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </>
+                  }
+                />
               ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Leaving this organization removes your access to all of its sites. You'll need to be re-invited to regain it.
-                  </p>
+                <DangerRow
+                  title="Leave this organization"
+                  description="Removes your access to all of its sites. You'll need to be re-invited to get it back."
+                  action={
                   <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="mt-3 self-start">Leave organization</Button>
+                      <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Leave organization</Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -606,7 +600,8 @@ export function OrgSettingsPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </>
+                  }
+                />
               )}
             </div>
           </>

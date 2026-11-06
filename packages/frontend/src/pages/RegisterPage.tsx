@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthForm } from "@/components/AuthForm";
+import { AuthForm, AUTH_INPUT_CLASS } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
@@ -106,6 +106,7 @@ export function RegisterPage() {
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="name"
           type="text"
           placeholder="Your name"
@@ -117,6 +118,7 @@ export function RegisterPage() {
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="email"
           type="email"
           placeholder="you@example.com"
@@ -128,6 +130,7 @@ export function RegisterPage() {
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="password"
           type="password"
           value={password}
@@ -157,7 +160,10 @@ export function RegisterPage() {
           </div>
         )}
       </div>
-      <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      {/* Left-align the challenge widget to the form edge like every other field. */}
+      <div className="[&>div]:justify-start">
+        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </div>
     </AuthForm>
   );
 }

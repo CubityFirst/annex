@@ -742,6 +742,25 @@ const PASSTHROUGH_PREFIXES = [
 // data - every demo entity id starts with "demo-" (seeded ids and nextId ids
 // alike), which real ids (UUIDs) never do. Those requests are answered from
 // the in-memory store so publishing is browsable inside the demo.
+/** Session row for this browser, shaped like the real GET /me/sessions entry. */
+function demoCurrentSession() {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const deviceKind = /iPad|Tablet/i.test(ua) ? "tablet" : /Mobi|iPhone|Android/i.test(ua) ? "phone" : "laptop";
+  const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
+  const os = /Windows/.test(ua) ? "Windows" : /Mac OS X|Macintosh/.test(ua) ? (/iPhone|iPad/.test(ua) ? "iOS" : "macOS") : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : null;
+  const now = Date.now();
+  return {
+    id: "demo-session-current",
+    createdAt: now - 20 * 60_000,
+    lastUsedAt: now,
+    expiresAt: now + 30 * 24 * 60 * 60_000,
+    deviceKind,
+    clientLabel: os ? `${browser} on ${os}` : browser,
+    ip: null,
+    current: true,
+  };
+}
+
 function isDemoPublicRequest(url: URL): boolean {
   if (!url.pathname.startsWith("/api/public/")) return false;
   return url.pathname.includes("/demo-") || (url.searchParams.get("projectId")?.startsWith("demo-") ?? false);
@@ -814,6 +833,14 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     return ok();
   }
   if (seg[0] === "me" && seg[1] === "sessions" && seg[2] === "logout" && method === "POST") return ok();
+  // The demo visitor is "signed in" on exactly one device - this one - so the
+  // Active sessions list always shows the current session, never an empty state.
+  if (seg[0] === "me" && seg[1] === "sessions" && seg.length === 2 && method === "GET") {
+    return ok({ sessions: [demoCurrentSession()] });
+  }
+  if (seg[0] === "me" && seg[1] === "sessions" && (seg[2] === "revoke" || seg[2] === "revoke-others") && method === "POST") {
+    return blocked("Session management is disabled in the demo.");
+  }
   if (seg[0] === "avatar") return blocked("Avatar changes are disabled in the demo.");
   if (seg[0] === "billing") return blocked("Billing is disabled in the demo.");
   if (seg[0] === "users" && seg[2] === "report" && method === "POST") {

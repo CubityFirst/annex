@@ -147,7 +147,7 @@ function ToolToggle({
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
-          className="shrink-0 sm:min-w-[30px] sm:px-1 text-muted-foreground hover:text-foreground data-[state=on]:text-foreground [&_svg]:size-4"
+          className="shrink-0 sm:min-w-7 sm:px-0 text-muted-foreground hover:text-foreground data-[state=on]:text-foreground [&_svg]:size-4"
         >
           {children}
         </Toggle>
@@ -177,7 +177,7 @@ function ToolButton({
         <Button
           type="button"
           variant="ghost"
-          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-[30px] sm:px-1 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
+          className="h-9 min-w-9 px-2 sm:h-8 sm:min-w-7 sm:px-0 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
           onMouseDown={keepEditorFocus}
           onClick={onAction}
           aria-label={title}
@@ -347,7 +347,7 @@ export function WysiwygToolbar({
               size="sm"
               aria-label="Heading level"
               className={cn(
-                "h-9 sm:h-8 gap-1 px-2 text-xs font-medium w-[5.75rem] justify-between shrink-0",
+                "h-9 sm:h-8 gap-1 px-2 text-xs font-medium w-[5.25rem] justify-between shrink-0",
                 active.headingLevel > 0 && "bg-accent text-accent-foreground",
               )}
             >
@@ -490,7 +490,7 @@ export function WysiwygToolbar({
                   type="button"
                   variant="ghost"
                   aria-label="Insert callout"
-                  className="h-8 px-1 min-w-[30px] shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
+                  className="h-8 px-0 min-w-7 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4"
                 >
                   <MessageSquareQuote />
                 </Button>
@@ -516,9 +516,9 @@ export function WysiwygToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <ToolbarSeparator />
-
-        {/* Find */}
+        {/* Find - pushed to the far end so the bar always ends on a tool,
+            never on a separator. */}
+        <span className="ml-auto" />
         <ToolButton title={`Find & replace (${modShortcut("F")})`} onAction={onFind}>
           <Search />
         </ToolButton>

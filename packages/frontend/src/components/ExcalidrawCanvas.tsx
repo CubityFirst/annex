@@ -62,7 +62,7 @@ interface Props {
   saveSlot?: HTMLElement | null;
 }
 
-// Re-skin Excalidraw's UI chrome (not the drawing itself) with the app's warm
+// Re-skin Excalidraw's UI chrome (not the drawing itself) with the app's neutral
 // neutral tokens so its default purple accent doesn't clash with the brand.
 // Every selector doubles `.excalidraw.excalidraw` under our wrapper so it
 // strictly out-specifies Excalidraw 0.18's own rules (`.excalidraw` /

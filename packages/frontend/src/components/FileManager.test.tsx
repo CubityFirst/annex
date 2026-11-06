@@ -145,7 +145,7 @@ describe("FileManager", () => {
     renderManager(null);
     const pencil = (await screen.findAllByLabelText("Rename Doc A"))[0];
     fireEvent.click(pencil);
-    const input = await screen.findByLabelText("New name");
+    const input = await screen.findByLabelText("Name");
     fireEvent.change(input, { target: { value: "Doc A renamed" } });
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
 
@@ -156,7 +156,7 @@ describe("FileManager", () => {
     expect(screen.getAllByText("Doc A").length).toBeGreaterThan(0);
     expect(screen.queryByText("Doc A renamed")).toBeNull();
     // ...and the dialog stayed open for a retry.
-    expect(screen.getByLabelText("New name")).toBeTruthy();
+    expect(screen.getByLabelText("Name")).toBeTruthy();
   });
 
   // FM-M4 regression: mutations made from search results must be reflected in
@@ -184,7 +184,7 @@ describe("FileManager", () => {
 
     const pencil = (await screen.findAllByLabelText("Rename Alpha"))[0];
     fireEvent.click(pencil);
-    const input = await screen.findByLabelText("New name");
+    const input = await screen.findByLabelText("Name");
     fireEvent.change(input, { target: { value: "Alpha II" } });
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
 
@@ -289,19 +289,23 @@ describe("FileManager", () => {
       return { ok: true, status: 200 };
     });
     renderManager(null);
-    await screen.findAllByText("1 doc");
+    await screen.findAllByText("1 item");
 
     // Doc into Specs.
     fireEvent.dragStart(desktopRow("Open Doc A"), { dataTransfer: dataTransfer() });
     fireEvent.dragOver(desktopRow("Open folder Specs"), { dataTransfer: dataTransfer() });
     fireEvent.drop(desktopRow("Open folder Specs"), { dataTransfer: dataTransfer() });
-    await waitFor(() => expect(screen.getAllByText("2 docs").length).toBe(2)); // Specs badge, desktop + mobile
+    // Specs badge - desktop row and mobile card show the same total, with the
+    // breakdown in the tooltip.
+    await waitFor(() => expect(screen.getAllByText("2 items").length).toBe(2));
+    expect(screen.getAllByTitle("2 docs").length).toBe(2);
     fireEvent.dragEnd(desktopRow("Open folder Specs"));
 
     // Drafts (with its whole subtree) into Specs.
     fireEvent.dragStart(desktopRow("Open folder Drafts"), { dataTransfer: dataTransfer() });
     fireEvent.drop(desktopRow("Open folder Specs"), { dataTransfer: dataTransfer() });
-    await waitFor(() => expect(screen.getAllByText("4 docs, 1 file, 2 folders").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByTitle("4 docs, 1 file, 2 folders").length).toBe(2));
+    expect(screen.getAllByText("7 items").length).toBe(2);
     expect(putCalls().map(([u]) => u)).toEqual(["/api/docs/d1", "/api/folders/f2"]);
   });
 
@@ -361,7 +365,10 @@ describe("FileManager", () => {
   it("cancels the new-folder dialog without creating anything", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
     renderManager(null);
-    fireEvent.click(await screen.findByLabelText("New folder"));
+    // Secondary create actions sit in the toolbar's "New" menu (desktop and
+    // touch triggers both render in jsdom - either opens the same dialog).
+    fireEvent.keyDown((await screen.findAllByRole("button", { name: "New" }))[0], { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
     fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "Specs" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByLabelText("Folder name")).toBeNull());
@@ -397,8 +404,8 @@ describe("FileManager", () => {
     expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
   });
 
-  // Folders have no author/updated time of their own - every cell still
-  // shows something (count in Size, a muted dash elsewhere), never a blank.
+  // Folders have no author/size/updated time of their own - every cell still
+  // shows something (count after the name, a muted dash elsewhere), never a blank.
   it("fills every folder cell", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
@@ -407,10 +414,40 @@ describe("FileManager", () => {
     renderManager(null);
     await screen.findAllByLabelText("Open folder Specs");
     const cellText = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!.textContent;
-    expect(cellText("Open folder Specs", 2)).toBe("1 doc");
-    expect(cellText("Open folder Blank", 2)).toBe("Empty");
+    // The item count rides after the name; Size is a muted dash.
+    expect(cellText("Open folder Specs", 0)).toContain("Specs· 1 item");
+    expect(cellText("Open folder Blank", 0)).toContain("Blank· Empty");
+    expect(cellText("Open folder Specs", 2)).toContain("—");
     expect(cellText("Open folder Specs", 1)).toContain("—");
     expect(cellText("Open folder Specs", 3)).toContain("—");
+  });
+
+  // Header select-all is tri-state and covers every visible row except the
+  // (unselectable) home doc.
+  it("selects all visible rows from the header checkbox", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        ...emptyContents,
+        folders: [folder("f1", "Specs")],
+        docs: [{ ...doc("h1", "Home"), is_home: 1 }, doc("d1", "Doc A"), doc("d2", "Doc B")],
+      },
+    });
+    renderManager(null);
+    const header = await screen.findByRole("checkbox", { name: "Select all" });
+    expect(header.getAttribute("data-state")).toBe("unchecked");
+
+    fireEvent.click(screen.getAllByLabelText("Select Doc A")[0]);
+    expect(header.getAttribute("data-state")).toBe("indeterminate");
+
+    fireEvent.click(header);
+    expect(screen.getByLabelText("Delete 3 selected")).toBeTruthy();
+    const deselect = screen.getByRole("checkbox", { name: "Deselect all" });
+    expect(deselect.getAttribute("data-state")).toBe("checked");
+
+    fireEvent.click(deselect);
+    expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Select all" }).getAttribute("data-state")).toBe("unchecked");
   });
 
   // The search box also matches this folder's own folders and files by name

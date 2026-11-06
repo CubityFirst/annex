@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, type LucideIcon } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -44,6 +44,130 @@ export function resolveOutline(groups: SettingsGroupDef[], sections: SettingsSec
     .filter(group => group.sections.length > 0);
 }
 
+/**
+ * Outline text for a group: a group holding a single section shows that
+ * section's own label, so the outline always reads exactly like the heading
+ * it jumps to ("Members", not "People"; "API keys", not "Developer").
+ */
+export function groupOutlineLabel(group: ResolvedGroup): string {
+  return group.sections.length === 1 ? group.sections[0].label : group.label;
+}
+
+/** Destructive-outline button styling (pair with variant="outline"): red text
+ *  and border, red wash on hover. Solid red is reserved for confirm dialogs. */
+export const DESTRUCTIVE_OUTLINE_BUTTON =
+  "border-destructive/40 text-destructive hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive";
+
+/** Shared row-card chrome for every settings row (toggle, select, action). */
+export const SETTINGS_ROW_CARD = "rounded-lg border border-border bg-card px-4 py-3";
+
+/** Shared section heading + description. `id` anchors the outline link. */
+export function SettingsSectionHeader({
+  title,
+  description,
+  action,
+  danger,
+  as: Heading = "h2",
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  /** Optional right-aligned control (e.g. "New key"). */
+  action?: ReactNode;
+  danger?: boolean;
+  as?: "h2" | "h3";
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <Heading className={cn("text-base font-semibold", danger && "text-destructive")}>{title}</Heading>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * One settings row: label + 13px muted description on the left, its control
+ * on the right, in a bordered row card. Used by every settings page so toggle,
+ * select and action rows share one geometry.
+ */
+export function SettingsRow({
+  title,
+  titleId,
+  description,
+  icon,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  /** Id on the title element, for aria-labelledby on the control. */
+  titleId?: string;
+  description?: ReactNode;
+  /** Optional 16px leading icon; the description indents to align with the title text. */
+  icon?: ReactNode;
+  /** The control(s) shown on the right. */
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center justify-between gap-4", SETTINGS_ROW_CARD, className)}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div id={titleId} className="flex items-center gap-2 text-sm font-medium">
+          {icon}
+          {title}
+        </div>
+        {description && (
+          <div className={cn("text-[13px] leading-snug text-muted-foreground", icon && "pl-6")}>{description}</div>
+        )}
+      </div>
+      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+    </div>
+  );
+}
+
+/** Compact in-section empty state: a muted 16px icon and one muted line
+ *  (ending in a full stop) in a 48px bordered row, with the list's action, if
+ *  any, right-aligned in the same row. No dashed box - those are for
+ *  page-level empties only. */
+export function SettingsEmptyRow({ icon: Icon, action, children }: { icon: LucideIcon; action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-4 rounded-lg border border-border px-4 py-2">
+      <div className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
+        <Icon className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
+        <span className="min-w-0">{children}</span>
+      </div>
+      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+    </div>
+  );
+}
+
+/** First row of a populated list card: a muted one-line summary ("2 keys")
+ *  with the list's action right-aligned - the same slot the action occupies
+ *  in the list's SettingsEmptyRow, so it never moves. */
+export function SettingsListStatusRow({ action, children }: { action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-4 px-4 py-2">
+      <span className="min-w-0 text-sm text-muted-foreground">{children}</span>
+      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+    </div>
+  );
+}
+
+/** A single danger-zone action: title + description, destructive-outline
+ *  button on the right. Render inside <SettingsDangerZone>. */
+export function DangerRow({ title, description, action }: { title: ReactNode; description: ReactNode; action: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{action}</div>
+    </div>
+  );
+}
+
 interface SettingsShellProps {
   title: string;
   description?: ReactNode;
@@ -52,19 +176,22 @@ interface SettingsShellProps {
   children: ReactNode;
 }
 
-/** Shared styling for every outline row: the nav draws a 1px track and each
- *  row carries a 2px marker on it that turns solid at the current location. */
+/** Shared styling for every outline row. There is no full-height rail: only
+ *  the current destination gets a marker - a short 2px bar beside its text
+ *  (under the group label's text for nested rows, keeping the indentation
+ *  readable) plus a restrained fill. */
 function outlineItemClass(active: boolean, danger: boolean | undefined, indent: boolean) {
   return cn(
-    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm transition-colors",
-    indent ? "pl-6" : "pl-3",
+    "relative rounded-md py-1.5 pr-2 text-left text-sm transition-colors",
+    "before:absolute before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:content-['']",
+    indent ? "pl-6 before:left-4" : "pl-3 before:left-1",
     danger
       ? active
-        ? "border-destructive font-medium text-destructive"
-        : "border-transparent text-destructive/75 hover:text-destructive"
+        ? "bg-destructive/[0.07] font-medium text-destructive before:bg-destructive"
+        : "text-destructive/75 before:bg-transparent hover:bg-destructive/[0.05] hover:text-destructive"
       : active
-        ? "border-foreground font-medium text-foreground"
-        : "border-transparent text-muted-foreground hover:text-foreground",
+        ? "bg-accent/60 font-medium text-foreground before:bg-foreground"
+        : "text-muted-foreground before:bg-transparent hover:bg-accent/40 hover:text-foreground",
   );
 }
 
@@ -120,7 +247,7 @@ export function SettingsShell({ title, description, groups, sections, children }
         <aside className="hidden md:block w-48 shrink-0">
           <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
-            <div className="flex flex-col border-l border-border">
+            <div className="flex flex-col gap-px">
               {resolved.map(group => {
                 const isActiveGroup = group.id === activeGroupId;
                 // A group holding a single section would just repeat itself
@@ -135,7 +262,7 @@ export function SettingsShell({ title, description, groups, sections, children }
                       aria-current={isActiveGroup ? "true" : undefined}
                       className={outlineItemClass(isActiveGroup, section.danger, false)}
                     >
-                      {group.label}
+                      {section.label}
                     </button>
                   );
                 }
@@ -146,8 +273,8 @@ export function SettingsShell({ title, description, groups, sections, children }
                       onClick={() => scrollTo(group.sections[0].id)}
                       aria-expanded={isActiveGroup}
                       className={cn(
-                        "-ml-px flex w-full items-center justify-between gap-2 border-l-2 border-transparent py-1.5 pl-3 pr-2 text-left text-sm transition-colors",
-                        isActiveGroup ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                        "flex w-full items-center justify-between gap-2 rounded-md py-1.5 pl-3 pr-2 text-left text-sm transition-colors",
+                        isActiveGroup ? "font-medium text-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
                       )}
                     >
                       {group.label}
@@ -155,7 +282,7 @@ export function SettingsShell({ title, description, groups, sections, children }
                         className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", isActiveGroup && "rotate-180")}
                       />
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="flex flex-col">
+                    <CollapsibleContent className="flex flex-col gap-px">
                       {group.sections.map(section => {
                         const isActive = active === section.id;
                         return (
@@ -179,8 +306,20 @@ export function SettingsShell({ title, description, groups, sections, children }
         </aside>
 
         {/* Content column - one measure for header, divider and sections.
-            pb-32 leaves breathing room below the last section. */}
-        <div className="min-w-0 max-w-[44rem] flex-1 pb-32">
+            The bottom padding is most of a viewport tall so every section,
+            even a short trailing one (Sessions, Danger zone), can scroll up to
+            the scroll-spy reading line and a jump lands it at the top.
+            Below sm, text inputs, select triggers and text buttons grow to a
+            44px touch target (icon buttons carry an aria-label and keep their
+            own square sizing; switches/radios/OTP slots are excluded). */}
+        <div
+          className={cn(
+            "min-w-0 max-w-[44rem] flex-1 pb-[max(8rem,calc(100dvh-20rem))]",
+            "max-sm:[&_input:not([type=checkbox],[type=radio],[type=file],[type=color],[data-input-otp])]:min-h-11",
+            "max-sm:[&_button:not([aria-label],[role=switch],[role=radio],[role=checkbox])]:min-h-11",
+            "max-sm:[&_button[role=combobox]]:min-h-11",
+          )}
+        >
           <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">{title}</h1>
           {description && <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>}
           {orderedIds.length > 1 && (
@@ -202,7 +341,7 @@ export function SettingsShell({ title, description, groups, sections, children }
                         value={group.sections[0].id}
                         className={cn("min-h-10", group.sections[0].danger && "text-destructive focus:text-destructive")}
                       >
-                        {group.label}
+                        {group.sections[0].label}
                       </SelectItem>
                     ) : (
                       <SelectGroup key={group.id}>

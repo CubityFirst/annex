@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { pickActiveSection } from "./useScrollSpy";
-import { resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
+import { pickActiveSection, readingLine } from "./useScrollSpy";
+import { groupOutlineLabel, resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
 
 describe("pickActiveSection", () => {
   const ids = ["account", "favourites", "billing", "sessions", "danger"];
-  // 1000px viewport -> reading line at 350px; sweep zone is the last 650px.
+  // 1000px viewport -> reading line at min(20%, 160px) = 160px.
   const geo = (tops: Record<string, number>, scrollTop: number, maxScroll = 3000) => ({
     tops: new Map(Object.entries(tops)),
     viewportHeight: 1000,
@@ -12,9 +12,20 @@ describe("pickActiveSection", () => {
     scrollTop,
   });
 
+  it("puts the reading line near the top, capped for tall viewports", () => {
+    expect(readingLine(600)).toBe(120);
+    expect(readingLine(1000)).toBe(160);
+    expect(readingLine(2000)).toBe(160);
+  });
+
   it("returns the last section whose top has crossed the reading line", () => {
-    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 300, sessions: 900, danger: 1300 }, 900))).toBe("billing");
-    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 400, sessions: 900, danger: 1300 }, 900))).toBe("favourites");
+    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 150, sessions: 900, danger: 1300 }, 900))).toBe("billing");
+    expect(pickActiveSection(ids, geo({ account: -800, favourites: -100, billing: 200, sessions: 900, danger: 1300 }, 900))).toBe("favourites");
+  });
+
+  it("keeps a short section at the top active while the next one is in view below it", () => {
+    // Round-3 bug: Favourites scrolled to the top, Billing ~200px below it.
+    expect(pickActiveSection(ids, geo({ account: -900, favourites: 24, billing: 210, sessions: 1400, danger: 1800 }, 900))).toBe("favourites");
   });
 
   it("falls back to the first present section before anything crosses the line", () => {
@@ -25,15 +36,16 @@ describe("pickActiveSection", () => {
     expect(pickActiveSection(["billing", "account"], geo({ account: 0 }, 0))).toBe("account");
   });
 
-  it("pins the last section when the container is clamped at the bottom", () => {
-    // Danger zone's top never reaches the line - it's short and the page ends.
-    expect(pickActiveSection(ids, geo({ account: -2400, favourites: -1600, billing: -900, sessions: 200, danger: 700 }, 3000))).toBe("danger");
+  it("doesn't hand the highlight to a trailing section just because the page is clamped at the bottom", () => {
+    // Round-3 bug: API keys / Sessions at the top, Danger zone in the lower
+    // half of the viewport, scrolled all the way down -> Danger was selected.
+    expect(pickActiveSection(ids, geo({ account: -2400, favourites: -1600, billing: -900, sessions: 24, danger: 620 }, 3000))).toBe("sessions");
   });
 
-  it("sweeps the line down near the end so short trailing sections activate in order", () => {
-    // 300px of scroll left: line = 350 + (650 - 300) = 700. Sessions (top 500)
-    // has crossed it, Danger (top 1000) hasn't.
-    expect(pickActiveSection(ids, geo({ account: -2100, favourites: -1300, billing: -600, sessions: 500, danger: 1000 }, 2700))).toBe("sessions");
+  it("lets the last section win at the bottom only once it's in the upper half", () => {
+    expect(pickActiveSection(ids, geo({ account: -2400, favourites: -1600, billing: -900, sessions: -200, danger: 400 }, 3000))).toBe("danger");
+    // Same geometry but not at the bottom yet: the line rule applies.
+    expect(pickActiveSection(ids, geo({ account: -2400, favourites: -1600, billing: -900, sessions: -200, danger: 400 }, 2500))).toBe("sessions");
   });
 
   it("keeps the fixed line (first section) when the container doesn't scroll", () => {
@@ -85,5 +97,15 @@ describe("resolveOutline", () => {
     ];
     const resolved = resolveOutline(groups, sections);
     expect(resolved.map(g => g.id)).toEqual(["site", "danger"]);
+  });
+
+  it("labels a single-section group with its section's label so the outline matches the heading", () => {
+    const sections: SettingsSectionDef[] = [
+      { id: "general", label: "General", group: "site" },
+      { id: "publishing", label: "Publishing", group: "site" },
+      { id: "members", label: "Members", group: "people" },
+    ];
+    const resolved = resolveOutline(groups, sections);
+    expect(resolved.map(groupOutlineLabel)).toEqual(["Site", "Members"]);
   });
 });

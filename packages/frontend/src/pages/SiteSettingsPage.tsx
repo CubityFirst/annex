@@ -15,7 +15,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -47,7 +46,17 @@ import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, C
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { RecycleBin } from "@/components/RecycleBin";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
+import {
+  DESTRUCTIVE_OUTLINE_BUTTON,
+  DangerRow,
+  SettingsEmptyRow,
+  SettingsListStatusRow,
+  SettingsRow,
+  SettingsSectionHeader,
+  SettingsShell,
+  type SettingsGroupDef,
+  type SettingsSectionDef,
+} from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -1256,6 +1265,20 @@ export function SiteSettingsPage() {
   const canMintWriteKey = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["editor"];
   const canMintInviteKey = isAdminOrOwner;
 
+  // Usable invite links (active and not used up), and the list actions that
+  // sit in the first row of the invite-link / API-key list cards.
+  const activeInviteLinks = inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses));
+  const createLinkButton = (
+    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateLinkOpen(true)}>
+      <Plus className="size-3.5" aria-hidden /> Create link
+    </Button>
+  );
+  const newKeyButton = (
+    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateKeyOpen(true)}>
+      <Plus className="size-3.5" aria-hidden /> New key
+    </Button>
+  );
+
   return (
     <SettingsShell
       title="Site settings"
@@ -1265,6 +1288,7 @@ export function SiteSettingsPage() {
     >
       {/* General settings */}
       <div id="general" className="flex flex-col gap-5">
+        <SettingsSectionHeader title="General" description="The site's name and a short description of what it's about." />
         <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
           <Label htmlFor="settings-name">Name</Label>
           <div className="flex items-center">
@@ -1366,10 +1390,10 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
           <div className="flex flex-col gap-4">
             <div id="publishing">
-              <h3 className="text-base font-semibold">Publishing</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Control public access to this site. When published, anyone with the link can view all documents.
-              </p>
+              <SettingsSectionHeader
+                title="Publishing"
+                description="Control public access to this site. When published, anyone with the link can view all documents."
+              />
             </div>
             <div className="rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between gap-4 px-4 py-3">
@@ -1449,8 +1473,8 @@ export function SiteSettingsPage() {
                     : `${unpublishedDocCount} documents are marked unpublished`}
                 </AlertTitle>
                 <AlertDescription>
-                  This site is published, so every document - including{" "}
-                  {unpublishedDocCount === 1 ? "this one" : "these"} - is publicly
+                  This site is published, so every document — including{" "}
+                  {unpublishedDocCount === 1 ? "this one" : "these"} — is publicly
                   visible. A document's individual publish setting does not hide it
                   while the whole site is published. Unpublish the site if any of
                   these should stay private.
@@ -1467,22 +1491,20 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
           <div className="flex flex-col gap-4">
             <div id="branding">
-              <h3 className="text-base font-semibold">Branding</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Customize how your published site looks and is shared.
-              </p>
+              <SettingsSectionHeader title="Branding" description="Customize how your published site looks and is shared." />
             </div>
             {/* Square icon - used in the projects sidebar, favourites, profile cards.
                 Cropped client-side to 512×512 via AvatarCropDialog. */}
-            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
-              <div className="flex h-16 w-32 shrink-0 items-center justify-start">
-                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-                  {project.logo_square_updated_at && logoPreviewUrls.square ? (
-                    <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
-                  ) : (
-                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                  )}
-                </div>
+            {/* Each preview is sized to its own aspect (square 64px, wordmark
+                128x64): both 64px tall and top-aligned, and each card's text
+                starts 16px after its own preview. */}
+            <div className="flex items-start gap-4 rounded-lg border border-border bg-card p-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                {project.logo_square_updated_at && logoPreviewUrls.square ? (
+                  <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
+                ) : (
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                )}
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <p className="text-sm font-medium">Square icon</p>
@@ -1534,7 +1556,7 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
+            <div className="flex items-start gap-4 rounded-lg border border-border bg-card p-4">
               <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                 {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
                   <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
@@ -1778,7 +1800,7 @@ export function SiteSettingsPage() {
                     {domain.status !== "active" && domain.dnsRecords.length > 0 && (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-muted-foreground">
-                          Add these records at your DNS provider. We re-check while this page is open - propagation can take a few minutes, or click Refresh to check right away.
+                          Add these records at your DNS provider. We re-check while this page is open — propagation can take a few minutes, or click Refresh to check right away.
                         </p>
                         <div className="overflow-x-auto rounded-md border border-border">
                           <table className="w-full text-xs">
@@ -1864,41 +1886,29 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
           <div className="flex flex-col gap-4">
             <div id="features">
-              <h3 className="text-base font-semibold">Features</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Enable or disable features for this site.
-              </p>
+              <SettingsSectionHeader title="Features" description="Enable or disable features for this site." />
             </div>
             {!!(project.features & 2) && (
               <>
-                <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <p id="ai-features-label" className="text-sm font-medium flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      AI features <PremiumBadge />
-                    </p>
-                    <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
-                      Enable AI-powered document summarization.
-                    </p>
-                  </div>
+                <SettingsRow
+                  titleId="ai-features-label"
+                  icon={<Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                  title={<>AI features <PremiumBadge /></>}
+                  description="Enable AI-powered document summarization."
+                >
                   <Switch
                     checked={project.ai_enabled === 1}
                     onCheckedChange={handleToggleAi}
                     disabled={togglingAi}
                     aria-labelledby="ai-features-label"
                   />
-                </div>
+                </SettingsRow>
                 {project.ai_enabled === 1 && (
-                  <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <p className="text-sm font-medium flex items-center gap-2">
-                        <Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        AI summarization type
-                      </p>
-                      <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
-                        Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed.
-                      </p>
-                    </div>
+                  <SettingsRow
+                    icon={<Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                    title="AI summarization type"
+                    description="Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed."
+                  >
                     <Select
                       value={project.ai_summarization_type ?? "manual"}
                       onValueChange={handleAiSummarizationTypeChange}
@@ -1912,20 +1922,15 @@ export function SiteSettingsPage() {
                         <SelectItem value="manual">Manual</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
+                  </SettingsRow>
                 )}
               </>
             )}
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  Save changelog
-                </p>
-                <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
-                  Prompt editors to leave a note describing their changes when saving a document.
-                </p>
-              </div>
+            <SettingsRow
+              icon={<NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />}
+              title="Save changelog"
+              description="Prompt editors to leave a note describing their changes when saving a document."
+            >
               <Select
                 value={project.changelog_mode}
                 onValueChange={handleChangelogModeChange}
@@ -1940,24 +1945,19 @@ export function SiteSettingsPage() {
                   <SelectItem value="enforced">Enforced</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <House className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  Home document
-                </p>
-                <p className="pl-6 text-[13px] leading-snug text-muted-foreground">
-                  Pin a home document that visitors land on when the site URL has no document specified.
-                </p>
-              </div>
+            </SettingsRow>
+            <SettingsRow
+              icon={<House className="h-4 w-4 shrink-0 text-muted-foreground" />}
+              title="Home document"
+              description="Pin a home document that visitors land on when the site URL has no document specified."
+            >
               <Switch
                 checked={!!project.home_doc_id}
                 onCheckedChange={handleToggleHomeDoc}
                 disabled={togglingHomeDoc}
                 aria-label="Home document"
               />
-            </div>
+            </SettingsRow>
             <div className="rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
@@ -2107,12 +2107,7 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
 
           <div id="members" className="flex flex-col gap-6">
-            <div>
-              <h3 className="text-base font-semibold">Members</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Manage who has access to this site.
-              </p>
-            </div>
+            <SettingsSectionHeader title="Members" description="Manage who has access to this site." />
 
             {/* Member list */}
             {loadingMembers ? (
@@ -2225,12 +2220,13 @@ export function SiteSettingsPage() {
 
             {/* Invite links */}
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium">Invite links</h4>
+              <div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-medium">Invite links</h4>
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Anyone with a link can join with its role.</p>
+                </div>
+                {/* Opened by the "Create link" action in the link list card. */}
                 <Dialog open={createLinkOpen} onOpenChange={setCreateLinkOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">Create link</Button>
-                  </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Create invite link</DialogTitle>
@@ -2288,16 +2284,15 @@ export function SiteSettingsPage() {
               </div>
 
               {loadingLinks ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).length === 0 ? (
-                <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
-                  <Link className="mb-2 size-5 text-muted-foreground" aria-hidden />
-                  <p className="text-sm font-medium">No invite links yet.</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Create a link anyone can use to join with a set role.</p>
-                </div>
+                <SettingsEmptyRow icon={Link} action={createLinkButton}>Loading…</SettingsEmptyRow>
+              ) : activeInviteLinks.length === 0 ? (
+                <SettingsEmptyRow icon={Link} action={createLinkButton}>No invite links yet.</SettingsEmptyRow>
               ) : (
                 <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
-                  {inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).map(link => (
+                  <SettingsListStatusRow action={createLinkButton}>
+                    {activeInviteLinks.length === 1 ? "1 active link" : `${activeInviteLinks.length} active links`}
+                  </SettingsListStatusRow>
+                  {activeInviteLinks.map(link => (
                     <div key={link.id} className="flex items-center gap-3 px-4 py-3">
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <div className="flex items-center gap-2">
@@ -2355,21 +2350,15 @@ export function SiteSettingsPage() {
           <Separator className="my-10" />
 
           <div id="export" className="flex flex-col gap-4">
-            <div>
-              <h3 className="text-base font-semibold">Export</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Take a full copy of this site with you.</p>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">Download as .zip</p>
-                <p className="text-[13px] leading-snug text-muted-foreground">
-                  Every document and uploaded file in this site, with folders preserved.
-                </p>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="shrink-0">
+            <SettingsSectionHeader title="Export" description="Take a full copy of this site with you." />
+            <SettingsRow
+              title="Download as .zip"
+              description="Every document and uploaded file in this site, with folders preserved."
+            >
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
                 {exporting ? "Exporting…" : "Export site"}
               </Button>
-            </div>
+            </SettingsRow>
           </div>
         </>
       )}
@@ -2379,26 +2368,24 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
 
-          <div id="api-keys" className="flex flex-col gap-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold">API keys</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
+          <div id="api-keys" className="flex flex-col gap-4">
+            <div>
+              <SettingsSectionHeader
+                title="API keys"
+                description={<>
                   Scoped keys for the <span className="font-medium text-foreground">/v1</span> REST API. Each key is
-                  bound to this site and can never do more than your own role allows. Keep them secret - treat a key
+                  bound to this site and can never do more than your own role allows. Keep them secret — treat a key
                   like a password.
-                </p>
-              </div>
+                </>}
+              />
+              {/* Opened by the "New key" action in the key list card. */}
               <Dialog open={createKeyOpen} onOpenChange={open => { setCreateKeyOpen(open); if (!open) setCreateKeyError(null); }}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="shrink-0 gap-1.5"><Plus className="h-3.5 w-3.5" /> New key</Button>
-                </DialogTrigger>
                 <DialogContent>
                   <form onSubmit={handleCreateKey}>
                     <DialogHeader>
                       <DialogTitle>Create API key</DialogTitle>
                       <DialogDescription>
-                        The secret is shown once, right after creation. Store it somewhere safe - it can't be retrieved again.
+                        The secret is shown once, right after creation. Store it somewhere safe — it can't be retrieved again.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col gap-4 py-4">
@@ -2431,7 +2418,7 @@ export function SiteSettingsPage() {
                         )}
                       </div>
                       {canMintInviteKey && (
-                        <div className="flex items-start justify-between gap-4 rounded-md border border-border px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5">
                           <div className="flex flex-col gap-0.5">
                             <Label htmlFor="new-key-invite" className="cursor-pointer">Manage members</Label>
                             <p className="text-xs text-muted-foreground">
@@ -2457,17 +2444,17 @@ export function SiteSettingsPage() {
               </Dialog>
             </div>
 
-            {/* Key list */}
+            {/* Key list - the "New key" action lives in the card's first row,
+                matching the invite-links list. */}
             {loadingKeys ? (
-              <p className="text-sm text-muted-foreground">Loading keys…</p>
+              <SettingsEmptyRow icon={KeyRound} action={newKeyButton}>Loading keys…</SettingsEmptyRow>
             ) : apiKeys.length === 0 ? (
-              <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
-                <KeyRound className="mb-2 size-5 text-muted-foreground" aria-hidden />
-                <p className="text-sm font-medium">No API keys yet</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">Create one to use the /v1 API.</p>
-              </div>
+              <SettingsEmptyRow icon={KeyRound} action={newKeyButton}>No API keys yet. Create one to use the /v1 API.</SettingsEmptyRow>
             ) : (
               <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+                <SettingsListStatusRow action={newKeyButton}>
+                  {apiKeys.length === 1 ? "1 key" : `${apiKeys.length} keys`}
+                </SettingsListStatusRow>
                 {apiKeys.map(key => (
                   <div key={key.id} className="flex items-center gap-3 px-4 py-3">
                     <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -2564,18 +2551,17 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
 
-          <div id="danger" className="flex flex-col gap-1 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
-            <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
+          <div id="danger" className="flex flex-col gap-4">
+            <SettingsSectionHeader title="Danger zone" danger />
 
             {isOwner ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
-                </p>
-
+              <DangerRow
+                title="Delete this site"
+                description="Permanently remove the site with all of its documents, files and members. This cannot be undone."
+                action={
                 <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) { setDeleteError(null); setDeleteConfirm(""); setCopiedDeleteName(false); } }}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="mt-3 self-start">Delete site</Button>
+                    <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Delete site</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -2629,16 +2615,16 @@ export function SiteSettingsPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-              </>
+                }
+              />
             ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Leaving this site will remove your access. You will need to be re-invited to regain access.
-                </p>
-
+              <DangerRow
+                title="Leave this site"
+                description="Remove your own access. You'll need to be re-invited to get it back."
+                action={
                 <AlertDialog open={leaveOpen} onOpenChange={open => { setLeaveOpen(open); if (!open) setLeaveError(null); }}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="mt-3 self-start">Leave site</Button>
+                    <Button variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>Leave site</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -2664,7 +2650,8 @@ export function SiteSettingsPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-              </>
+                }
+              />
             )}
           </div>
         </>

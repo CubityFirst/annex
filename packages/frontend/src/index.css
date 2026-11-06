@@ -48,75 +48,74 @@
   --editing-font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ui-font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  /* Light palette - warm paper neutrals (hue ~75) matching the brand's
-     cream-on-ink look, so light mode reads as the same product as dark. */
-  --background: oklch(0.99 0.002 75);
-  --foreground: oklch(0.2 0.006 60);
+  /* Light palette - pure neutral greys (no hue tint). */
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.2 0 0);
 
-  --sidebar: oklch(0.972 0.004 75);
+  --sidebar: oklch(0.972 0 0);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.006 60);
+  --card-foreground: oklch(0.2 0 0);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.006 60);
+  --popover-foreground: oklch(0.2 0 0);
 
-  --primary: oklch(0.23 0.006 60);
-  --primary-foreground: oklch(0.975 0.004 75);
+  --primary: oklch(0.23 0 0);
+  --primary-foreground: oklch(0.975 0 0);
 
-  --secondary: oklch(0.955 0.004 75);
-  --secondary-foreground: oklch(0.23 0.006 60);
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.23 0 0);
 
-  --muted: oklch(0.955 0.004 75);
-  --muted-foreground: oklch(0.5 0.01 65);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.5 0 0);
 
-  --accent: oklch(0.94 0.005 75);
-  --accent-foreground: oklch(0.2 0.006 60);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.2 0 0);
 
   --destructive: oklch(0.56 0.2 27);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.905 0.006 75);
-  --input: oklch(0.88 0.006 75);
-  --ring: oklch(0.55 0.01 65);
+  --border: oklch(0.905 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.55 0 0);
 }
 
-/* Dark palette - "warm ink". Layered surfaces instead of one flat near-black:
+/* Dark palette - layered neutral greys instead of one flat near-black:
    sidebar (deepest) < background < card < popover, each a small lightness
-   step on the same warm hue as the landing page (#0e0e0e / #e8e4de). Text is
-   a soft cream rather than pure white to cut glare on long reads. */
+   step with zero chroma (no warm/cool tint). Text is a soft off-white rather
+   than pure white to cut glare on long reads. */
 .dark {
-  --background: oklch(0.182 0.004 75);
-  --foreground: oklch(0.925 0.009 80);
+  --background: oklch(0.182 0 0);
+  --foreground: oklch(0.925 0 0);
 
-  --sidebar: oklch(0.162 0.004 75);
+  --sidebar: oklch(0.162 0 0);
 
-  --card: oklch(0.207 0.004 75);
-  --card-foreground: oklch(0.925 0.009 80);
+  --card: oklch(0.207 0 0);
+  --card-foreground: oklch(0.925 0 0);
 
-  --popover: oklch(0.222 0.005 75);
-  --popover-foreground: oklch(0.925 0.009 80);
+  --popover: oklch(0.222 0 0);
+  --popover-foreground: oklch(0.925 0 0);
 
-  --primary: oklch(0.925 0.009 80);
-  --primary-foreground: oklch(0.19 0.004 75);
+  --primary: oklch(0.925 0 0);
+  --primary-foreground: oklch(0.19 0 0);
 
-  --secondary: oklch(0.255 0.005 75);
-  --secondary-foreground: oklch(0.925 0.009 80);
+  --secondary: oklch(0.255 0 0);
+  --secondary-foreground: oklch(0.925 0 0);
 
-  --muted: oklch(0.245 0.005 75);
-  --muted-foreground: oklch(0.715 0.012 75);
+  --muted: oklch(0.245 0 0);
+  --muted-foreground: oklch(0.715 0 0);
 
-  --accent: oklch(0.262 0.005 75);
-  --accent-foreground: oklch(0.945 0.008 80);
+  --accent: oklch(0.262 0 0);
+  --accent-foreground: oklch(0.945 0 0);
 
   --destructive: oklch(0.6 0.19 25);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.29 0.005 75);
+  --border: oklch(0.29 0 0);
   /* Control outlines (inputs, checkboxes, radios, off switches) need ≥3:1
      against the surface, so --input is much lighter than the hairline. */
-  --input: oklch(0.44 0.008 75);
-  --ring: oklch(0.62 0.012 75);
+  --input: oklch(0.5 0 0);
+  --ring: oklch(0.62 0 0);
 }
 
 @theme inline {
@@ -401,7 +400,7 @@ body {
 }
 
 /* Shiki code blocks (CodeBlock + the editor's CodeFenceWidget): sit on the
-   warm card surface with a hairline border instead of the theme's own flat
+   card surface with a hairline border instead of the theme's own flat
    background, so code reads as part of the page rather than a cold slab. */
 pre.shiki {
   background-color: var(--card) !important;

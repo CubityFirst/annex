@@ -51,6 +51,9 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
+        // Dismissed with Esc / click-outside (hinted in the palette footer),
+        // so no close button competing with the search input.
+        hideClose
         // Anchored near the top (not vertically centred) so the input stays
         // put while the result list grows and shrinks under it.
         className={cn("top-[14vh] translate-y-0 overflow-hidden p-0 sm:max-w-xl", className)}
@@ -71,7 +74,7 @@ function CommandInput({
     <div className="border-b border-border px-4">
       <div
         data-slot="command-input-wrapper"
-        className="flex h-14 items-center gap-3 pr-8"
+        className="flex h-14 items-center gap-3"
       >
         <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
         <CommandPrimitive.Input

@@ -51,8 +51,8 @@ export function pathUsesUserTheme(pathname: string): boolean {
 
 // Backdrop colours used for <html> itself so overscroll / pre-paint matches
 // the active theme (index.html hard-codes the dark one as the static default).
-const DARK_HTML_BG = "oklch(0.182 0.004 75)";
-const LIGHT_HTML_BG = "oklch(0.99 0.002 75)";
+const DARK_HTML_BG = "oklch(0.182 0 0)";
+const LIGHT_HTML_BG = "oklch(0.99 0 0)";
 const NEAR_WHITE = "oklch(0.985 0 0)";
 const NEAR_BLACK = "oklch(0.21 0.006 285.885)";
 // destructive stays a stock red, never tinted toward the base - recolouring

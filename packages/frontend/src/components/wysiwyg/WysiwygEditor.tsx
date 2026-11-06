@@ -66,7 +66,8 @@ const editorTheme = EditorView.theme({
   ".cm-scroller": {
     overflow: "auto",
     height: "100%",
-    padding: "16px",
+    // Vertical only: text starts flush with the toolbar / title column edge.
+    padding: "16px 0",
     boxSizing: "border-box",
   },
   ".cm-content": {

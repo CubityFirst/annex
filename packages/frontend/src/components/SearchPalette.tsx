@@ -366,14 +366,31 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
           </div>
         )}
         {showEmpty && (
-          <div className="px-6 py-8 text-center">
-            <p className="text-sm font-medium">No results found.</p>
+          <div className="px-6 pb-4 pt-7 text-center">
+            <p className="text-sm font-medium">No results found</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {isDashboard
                 ? "This searches site names. Open a site to search its docs and files."
                 : "Try a different word, or type # to filter by tag."}
             </p>
           </div>
+        )}
+        {/* Dashboard search only matches site names - give the user a direct
+            way into a site, where the full doc/file search lives. */}
+        {showEmpty && isDashboard && sites.length > 0 && (
+          <CommandGroup heading="Search inside a site">
+            {sites.slice(0, 5).map(s => (
+              <CommandItem
+                key={`open-site:${s.id}`}
+                value={`open-site:${s.id}`}
+                onSelect={() => { close(); navigate(`/projects/${s.id}`); }}
+                className="flex items-center gap-2 py-2 min-w-0"
+              >
+                <ProjectSquareLogo projectId={s.id} logoSquareUpdatedAt={s.logo_square_updated_at} className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm truncate">Open <span className="font-medium">{s.name}</span></span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
         )}
         {isDashboard && siteHits.length > 0 && (
           <CommandGroup heading="Sites">
@@ -496,14 +513,21 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
               Searching…
             </span>
           ) : hasTerm && resultCount > 0 ? (
-            <span className="text-[10px] text-muted-foreground" aria-hidden="true">
+            <span className="text-[11px] text-muted-foreground" aria-hidden="true">
               {resultCount} result{resultCount === 1 ? "" : "s"}
             </span>
+          ) : isDashboard ? (
+            // Keep the search scope visible once the placeholder is gone.
+            <span className="text-[11px] text-muted-foreground" aria-hidden="true">Searching site names</span>
           ) : null}
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-[10px] text-muted-foreground whitespace-nowrap">
-          <span className="flex items-center gap-1"><Kbd>↑↓</Kbd> navigate</span>
-          <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+        <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
+          {!(showEmpty && !(isDashboard && sites.length > 0)) && (
+            <>
+              <span className="flex items-center gap-1"><Kbd>↑↓</Kbd> navigate</span>
+              <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+            </>
+          )}
           <span className="flex items-center gap-1"><Kbd>esc</Kbd> close</span>
         </div>
       </div>

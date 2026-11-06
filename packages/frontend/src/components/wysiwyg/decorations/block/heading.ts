@@ -34,6 +34,17 @@ export const visitHeading: Visitor = ({ node, state, sel, reveal, decos, pass })
   if (slug) spec.attributes = { id: slug };
   decos.push(Decoration.line(spec).range(line.from));
 
+  // The conventional blank line after a heading would otherwise add a full
+  // line of space under it (and none when the author omits it), so headings
+  // sat at different distances from their content. Shrink that blank line
+  // so the heading-to-body gap is consistent either way.
+  if (line.number < state.doc.lines) {
+    const next = state.doc.line(line.number + 1);
+    if (next.text.trim() === "") {
+      decos.push(Decoration.line({ class: "cm-heading-gap" }).range(next.from));
+    }
+  }
+
   const cursorOnLine = reveal && cursorTouches(sel, line.from, line.to);
   if (cursorOnLine) {
     // Revealed for editing: keep the `#` markup visible but muted, so it reads

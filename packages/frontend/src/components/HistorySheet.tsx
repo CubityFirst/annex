@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronRight } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
 
@@ -150,14 +150,16 @@ interface Props {
 export function HistorySheet({ open, onOpenChange, revisions, selectedId, loading, onSelect, currentTitle, onSelectCurrent, hasMore, loadingMore, onLoadMore }: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-80 sm:w-96 flex flex-col gap-0 p-0">
-        <SheetHeader className="px-6 py-4 border-b border-border">
+      {/* Same width and header recipe as the Markdown reference sheet. */}
+      <SheetContent className="w-full sm:max-w-md flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 py-5 border-b border-border">
           <SheetTitle>
             History
             {revisions && revisions.length > 0 && (
               <span className="ml-1.5 font-normal text-muted-foreground">· {revisions.length}{hasMore ? "+" : ""}</span>
             )}
           </SheetTitle>
+          <SheetDescription>Kept for 90 days. The latest revision is always retained.</SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-auto">
           {revisions === null ? (
@@ -233,7 +235,6 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
               )}
-              <p className="px-6 pt-3 pb-2 text-xs text-muted-foreground">Revisions are kept for 90 days. The latest revision is always retained.</p>
             </div>
           )}
         </div>

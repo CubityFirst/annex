@@ -8,15 +8,21 @@
   --bg3: #1a1a1a;
   --border: #232323;
   --border2: #2e2e2e;
-  --text: #e8e4de;
-  --text2: #a39e98;
+  --text: #e8e8e8;
+  --text2: #a3a3a3;
   --text3: #8a8a8a;
-  --accent: #e8e4de;
+  /* Meaningful secondary copy (descriptions, captions, footer links). --text3
+     is kept for decorative labels/eyebrows only. */
+  --text-sub: #a8a8a8;
+  --accent: #e8e8e8;
   --ink: linear-gradient(110deg, hsl(45 100% 65%), hsl(320 80% 65%) 50%, hsl(200 80% 60%));
   --max: 1240px;
   --gutter: clamp(16px, 4vw, 56px);
   --nav-h: 72px;
   --radius: 6px;
+  /* One vertical rhythm for every landing section: the same padding above and
+     below each band, so every section boundary has the same breathing room. */
+  --section-y: clamp(80px, 10vw, 128px);
   /* Placeholder fill for screenshot frames before the image paints. */
   --skeleton: linear-gradient(180deg, #151515 0, #121212 40px, #101010 100%);
 
@@ -135,9 +141,9 @@
 
 /* ── HERO ── */
 .l-hero {
-  padding: calc(var(--nav-h) + clamp(64px, 9vw, 112px)) 0 clamp(64px, 8vw, 104px);
+  padding: calc(var(--nav-h) + clamp(64px, 9vw, 112px)) 0 var(--section-y);
   background:
-    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(232,228,222,0.045), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(232,232,232,0.045), transparent 70%),
     var(--bg);
 }
 .l-hero-inner {
@@ -158,12 +164,14 @@
   font-size: clamp(44px, 7.4vw, 96px);
   font-weight: 300;
   line-height: 1.02;
-  letter-spacing: -0.035em;
+  /* Light strokes need more air than bold ones at display sizes, or adjacent
+     letters merge ("rn" reading as "m"). */
+  letter-spacing: -0.03em;
   color: var(--text);
   margin: 0 0 28px;
   text-wrap: balance;
 }
-.l-hero-headline b { font-weight: 600; }
+.l-hero-headline b { font-weight: 600; letter-spacing: -0.02em; }
 .l-hero-sub {
   font-size: clamp(18px, 1.7vw, 21px);
   font-weight: 300;
@@ -183,7 +191,7 @@
   margin-top: 18px;
   font-size: 13px;
   font-family: 'DM Mono', monospace;
-  color: var(--text3);
+  color: var(--text-sub);
   letter-spacing: 0.02em;
 }
 
@@ -193,6 +201,7 @@
 }
 .l-viewer-tabs {
   display: flex;
+  scroll-padding-inline: var(--gutter);
   justify-content: center;
   gap: 4px;
   margin-bottom: 18px;
@@ -238,14 +247,17 @@
 @keyframes l-viewer-progress {
   to { transform: scaleX(1); }
 }
+/* The capture is the top of a taller page, so it would otherwise end on a
+   hard cut through a line of text - fade the whole frame (border included)
+   out over its last quarter so it reads as "and it keeps going". */
 .l-viewer-frame {
   border: 1px solid var(--border2);
   border-radius: 10px;
   overflow: hidden;
-  background: #0a0a0b;
-  box-shadow:
-    0 40px 120px -20px rgba(0,0,0,0.85),
-    0 0 0 1px rgba(255,255,255,0.02) inset;
+  background: #0a0a0a;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset;
+  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 75%, transparent 100%);
 }
 .l-viewer-chrome {
   display: flex;
@@ -282,7 +294,7 @@
   aspect-ratio: 16 / 10;
   background: var(--skeleton);
 }
-.l-viewer-host { color: #6f6b66; }
+.l-viewer-host { color: #6c6c6c; }
 /* <picture> wrappers (mobile <source>) shouldn't add a box of their own. */
 .l-viewer-stage picture,
 .l-show-media picture { display: contents; }
@@ -301,13 +313,13 @@
   margin-top: 18px;
   text-align: center;
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   min-height: 1.5em;
 }
 
 /* ── USES ── */
 .l-uses {
-  padding: clamp(64px, 8vw, 96px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
 }
 .l-uses-grid {
@@ -330,15 +342,15 @@
 }
 .l-use-items {
   font-size: 15px;
-  font-weight: 300;
-  color: var(--text3);
+  font-weight: 400;
+  color: var(--text-sub);
   line-height: 1.55;
 }
 
 /* ── SHOWCASE ── */
 .l-showcase {
   border-top: 1px solid var(--border);
-  padding: clamp(40px, 5vw, 64px) 0;
+  padding: var(--section-y) 0;
   scroll-margin-top: var(--nav-h);
 }
 .l-show {
@@ -346,10 +358,9 @@
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: clamp(40px, 6vw, 88px);
   align-items: center;
-  padding-top: clamp(40px, 5vw, 64px);
-  padding-bottom: clamp(40px, 5vw, 64px);
   scroll-margin-top: var(--nav-h);
 }
+.l-show + .l-show { margin-top: var(--section-y); }
 .l-show-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 .l-show-flip .l-show-copy { order: 2; }
 .l-show-eyebrow {
@@ -364,11 +375,11 @@
   font-size: clamp(32px, 3.6vw, 48px);
   font-weight: 300;
   line-height: 1.1;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.018em;
   color: var(--text);
   margin-bottom: 20px;
 }
-.l-show-title b { font-weight: 600; }
+.l-show-title b { font-weight: 600; letter-spacing: -0.02em; }
 .l-show-body {
   font-size: 18px;
   font-weight: 300;
@@ -383,7 +394,7 @@
   align-items: flex-start;
   gap: 12px;
   font-size: 16px;
-  color: #cdc9c3;
+  color: #cacaca;
   line-height: 1.5;
 }
 .l-checks svg {
@@ -406,10 +417,16 @@
   object-fit: cover;
   object-position: top left;
 }
+/* Captures that end mid-content (a page that keeps scrolling) fade out at the
+   bottom instead of stopping on a half-cut row. */
+.l-show-media-fade img {
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+}
 
 /* ── EXTRAS ── */
 .l-extras {
-  padding: clamp(64px, 8vw, 104px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
 }
 .l-extras-grid {
@@ -429,7 +446,7 @@
   background: #1f1f1f;
   border: 1px solid var(--border2);
   display: flex; align-items: center; justify-content: center;
-  color: #b3aea8;
+  color: #b0b0b0;
 }
 .l-extra-head {
   display: flex;
@@ -446,8 +463,8 @@
 }
 .l-extra-desc {
   font-size: 15px;
-  font-weight: 300;
-  color: var(--text3);
+  font-weight: 400;
+  color: var(--text-sub);
   line-height: 1.55;
 }
 .l-tag {
@@ -462,7 +479,7 @@
 
 /* ── PRICING ── */
 .l-pricing {
-  padding: clamp(72px, 9vw, 112px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
   text-align: center;
   scroll-margin-top: var(--nav-h);
@@ -471,12 +488,13 @@
   font-size: clamp(38px, 5vw, 64px);
   font-weight: 300;
   line-height: 1.08;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.024em;
   color: var(--text);
   margin-bottom: 20px;
 }
 .l-pricing-headline span {
   font-weight: 600;
+  letter-spacing: -0.02em;
   background: var(--ink);
   -webkit-background-clip: text;
   background-clip: text;
@@ -547,7 +565,7 @@
 }
 .l-plan-desc {
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   margin-bottom: 24px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border);
@@ -558,7 +576,7 @@
 
 /* ── FAQ ── */
 .l-faq {
-  padding: clamp(64px, 8vw, 104px) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--border);
 }
 .l-faq-inner { max-width: 760px; }
@@ -596,7 +614,7 @@
 .l-faq-more {
   margin-top: 28px;
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   text-align: center;
 }
 .l-faq-more a {
@@ -609,21 +627,21 @@
 
 /* ── CTA BAND ── */
 .l-cta-band {
-  padding: clamp(88px, 11vw, 136px) 0;
+  padding: var(--section-y) 0;
   text-align: center;
   border-top: 1px solid var(--border);
   background:
-    radial-gradient(ellipse 60% 70% at 50% 100%, rgba(232,228,222,0.04), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 50% 100%, rgba(232,232,232,0.04), transparent 70%),
     var(--bg);
 }
 .l-cta-band-headline {
   font-size: clamp(36px, 5vw, 60px);
   font-weight: 300;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.024em;
   color: var(--text);
   margin-bottom: 40px;
 }
-.l-cta-band-headline b { font-weight: 600; }
+.l-cta-band-headline b { font-weight: 600; letter-spacing: -0.02em; }
 
 /* ── FOOTER ── */
 .l-footer {
@@ -648,7 +666,7 @@
 }
 .l-footer-link {
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   transition: color 0.15s;
 }
 .l-footer-link:hover { color: var(--text); }
@@ -668,13 +686,21 @@
   min-width: 0;
   line-height: 1.5;
 }
-.l-ack-link {
+.l-ack-list .l-ack-link {
   font-size: 15px;
   color: var(--text2);
-  transition: color 0.15s;
   overflow-wrap: anywhere;
+  /* Reads as a link at rest: a faint underline that firms up on hover. */
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(163, 163, 163, 0.4);
+  transition: color 0.15s, text-decoration-color 0.15s;
 }
-.l-ack-link:hover { color: var(--text); }
+.l-ack-list .l-ack-link:hover {
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
 .l-ack-license {
   display: inline-block;
   margin-left: 6px;
@@ -701,7 +727,7 @@
 .l-legal-title {
   font-size: clamp(36px, 5vw, 60px);
   font-weight: 300;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.022em;
   color: var(--text);
   margin: 0 0 12px;
 }
@@ -716,37 +742,86 @@
   font-size: 18px;
   font-weight: 400;
   line-height: 30px;
-  color: #b3aea8;
+  color: #b0b0b0;
   max-width: 640px;
   margin: 0 0 24px;
 }
 .l-legal-body h2 {
   font-size: 20px;
   font-weight: 500;
-  color: #ccc8c2;
+  color: #c9c9c9;
   margin: 54px 0 14px;
   letter-spacing: -0.01em;
 }
 .l-legal-body h2:first-child { margin-top: 0; }
+/* Section anchors land below the fixed nav, not under it. */
+.l-legal-body h2 { scroll-margin-top: calc(var(--nav-h) + 32px); }
+
+/* Sticky "On this page" rail (privacy / terms) - fills the otherwise empty
+   right side on wide screens; hidden below 1024px. Same shape as the app's
+   settings rail: uppercase 11px label, hairline track, 2px active bar. */
+.l-legal-toc { display: none; }
+@media (min-width: 1024px) {
+  .l-legal-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 780px) 220px;
+    justify-content: space-between;
+    column-gap: 56px;
+    align-items: start;
+  }
+  .l-legal-toc {
+    display: block;
+    position: sticky;
+    top: calc(var(--nav-h) + 40px);
+    /* Start level with the page title, below the eyebrow label. */
+    margin-top: 4px;
+  }
+}
+.l-legal-toc-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.l-legal-toc-list {
+  border-left: 1px solid var(--border2);
+}
+.landing .l-legal-toc-link {
+  display: block;
+  margin-left: -1px;
+  padding: 6px 8px 6px 14px;
+  border-left: 2px solid transparent;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-sub);
+  transition: color 0.15s, border-color 0.15s;
+}
+.landing .l-legal-toc-link:hover { color: var(--text); }
+.landing .l-legal-toc-link[aria-current="true"] {
+  color: var(--text);
+  border-left-color: var(--text);
+}
 /* Body copy: regular weight + a lifted grey so long-form reading holds up on
-   the dark ground; ~68ch measure. */
+   the dark ground; a ~700px measure (~75 characters at 18px). */
 .l-legal-body p {
   font-size: 18px;
   font-weight: 400;
-  color: #b3aea8;
+  color: #b0b0b0;
   line-height: 30px;
-  max-width: 68ch;
+  max-width: 700px;
   margin: 0 0 18px;
 }
 .l-legal-body ul {
   margin: 0 0 18px;
   padding-left: 24px;
-  max-width: 68ch;
+  max-width: 700px;
 }
 .l-legal-body li {
   font-size: 18px;
   font-weight: 400;
-  color: #b3aea8;
+  color: #b0b0b0;
   line-height: 30px;
   margin-bottom: 6px;
   list-style: disc;
@@ -799,6 +874,12 @@
     padding: 0 var(--gutter);
   }
   .l-viewer-tabs::-webkit-scrollbar { display: none; }
+  /* While more tabs sit off the right edge, fade the last 24px so the row
+     reads as scrollable rather than clipped (see ProductViewer). */
+  .l-viewer-tabs[data-overflow-end] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
   /* Never let a tab squash and clip its label; tighten them so all five fit
      a 390px phone, and scroll (not clip) on anything narrower. */
   .l-viewer-tab {

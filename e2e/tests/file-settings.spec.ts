@@ -72,7 +72,9 @@ async function putDoc(p: Page, id: string, title: string, content: string) {
 }
 
 async function openDocSettings(p: Page) {
-  await p.getByRole("button", { name: "Document settings" }).click();
+  // Document settings lives in the doc toolbar's "More actions" menu.
+  await p.getByRole("button", { name: "More actions" }).click();
+  await p.getByRole("menuitem", { name: "Document settings" }).click();
   await expect(p.getByRole("dialog", { name: "Document settings" })).toBeVisible({ timeout: 5000 });
 }
 

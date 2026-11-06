@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AuthShell } from "@/components/AuthForm";
+import { AuthShell, AUTH_BUTTON_CLASS, AUTH_INPUT_CLASS } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +67,9 @@ export function VerifyEmailPage() {
   return (
     <AuthShell>
         <div className="w-full max-w-sm space-y-6">
-          <div className="flex flex-col items-center gap-2 text-center">
+          {/* Same heading block as the other auth screens: left-aligned, the
+              wordmark then the step as the <h1>. */}
+          <div className="flex flex-col items-start gap-2 text-left">
             <a href="/" aria-label="Annex home" className="mb-6 rounded-sm">
               <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />
             </a>
@@ -91,7 +93,7 @@ export function VerifyEmailPage() {
                   Your email has been verified. You can now sign in to your account.
                 </AlertDescription>
               </Alert>
-              <Button className="w-full" onClick={() => navigate("/login", { replace: true })}>
+              <Button className={`${AUTH_BUTTON_CLASS} w-full`} onClick={() => navigate("/login", { replace: true })}>
                 Go to sign in
               </Button>
             </>
@@ -104,7 +106,7 @@ export function VerifyEmailPage() {
                   Your email address has been updated. Use it the next time you sign in.
                 </AlertDescription>
               </Alert>
-              <Button className="w-full" onClick={() => navigate("/login", { replace: true })}>
+              <Button className={`${AUTH_BUTTON_CLASS} w-full`} onClick={() => navigate("/login", { replace: true })}>
                 Go to sign in
               </Button>
             </>
@@ -117,8 +119,8 @@ export function VerifyEmailPage() {
                   This email-change link is no longer valid. Request the change again from your account settings.
                 </AlertDescription>
               </Alert>
-              <p className="text-center text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
+              <p className="text-sm text-muted-foreground">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
                   Back to sign in
                 </a>
               </p>
@@ -132,8 +134,8 @@ export function VerifyEmailPage() {
                   That email address was claimed by another account before you confirmed. Request the change again from your account settings.
                 </AlertDescription>
               </Alert>
-              <p className="text-center text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
+              <p className="text-sm text-muted-foreground">
+                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
                   Back to sign in
                 </a>
               </p>
@@ -152,6 +154,7 @@ export function VerifyEmailPage() {
                   <Label htmlFor="resend-email">Email address</Label>
                   <Input
                     id="resend-email"
+                    className={AUTH_INPUT_CLASS}
                     type="email"
                     placeholder="you@example.com"
                     value={resendEmail}
@@ -169,14 +172,14 @@ export function VerifyEmailPage() {
                   </Alert>
                 )}
                 <Button
-                  className="w-full"
+                  className={`${AUTH_BUTTON_CLASS} w-full`}
                   onClick={handleResend}
                   disabled={resendState === "sending" || resendState === "sent" || !resendEmail.trim()}
                 >
                   {resendState === "sending" ? "Sending…" : "Resend verification email"}
                 </Button>
-                <p className="text-center text-sm text-muted-foreground">
-                  <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center px-1">
+                <p className="text-sm text-muted-foreground">
+                  <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
                     Back to sign in
                   </a>
                 </p>

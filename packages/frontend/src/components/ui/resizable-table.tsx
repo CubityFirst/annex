@@ -28,6 +28,11 @@ export interface CellDef {
 interface ResizableTableProps {
   columns: ColumnDef[];
   checkboxColumn?: boolean;
+  /**
+   * Content for the checkbox column's header cell (e.g. a tri-state
+   * select-all). Centred on the same 40px axis as each row's checkbox cell.
+   */
+  headerCheckbox?: React.ReactNode;
   storageKey?: string;
   /** Active sort (column index + direction), or null for none. */
   sort?: SortSpec | null;
@@ -190,7 +195,7 @@ function buildSegments(columns: ColumnDef[]): Segment[] {
 
 // ── ResizableTable ────────────────────────────────────────────────────────────
 
-export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, measureKey, actionsColumn, children }: ResizableTableProps) {
+export function ResizableTable({ columns, checkboxColumn = true, headerCheckbox, storageKey, sort, onSort, measureKey, actionsColumn, children }: ResizableTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = useMemo(() => buildSegments(columns), [columns]);
   // Segments the user has manually dragged this session. The auto-fit effect
@@ -336,7 +341,13 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
     <div ref={containerRef} role="grid" className="rounded-lg border border-border overflow-x-auto bg-background" style={initialStyle}>
     <div className="min-w-0 md:min-w-[700px]">
       <div role="row" className="group/thead flex items-center bg-muted/40 border-b h-10">
-        {checkboxColumn && <div role="columnheader" aria-colindex={1} className="w-10 shrink-0" />}
+        {checkboxColumn && (
+          // Same box as the row checkbox cell (w-10, flex-centred, full row
+          // height) so the header control sits on the row-checkbox axis.
+          <div role="columnheader" aria-colindex={1} className="flex w-10 shrink-0 items-center justify-center self-stretch">
+            {headerCheckbox}
+          </div>
+        )}
 
         {segments.map((seg, i) => {
           const wrapperStyle: React.CSSProperties = seg.isLast

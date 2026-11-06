@@ -111,19 +111,20 @@ function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], 
     .some(child => folderHasItems(child.id, folders, docs, files));
 }
 
-// Nested rows sit 4px (ml-1) right of their parent's guide line (the children
-// wrapper's border-l), so an active row's rounded highlight never touches or
-// overlaps the line; the elbow connector bridges that gap.
+// Nested rows sit 8px (ml-2) right of their parent's guide line (the children
+// wrapper's border-l), and the elbow connector spans exactly that gap - it
+// lives entirely OUTSIDE the row, so an active/hovered row's highlight starts
+// after the connector instead of swallowing most of it and leaving a stub.
 // When a folder or doc is the last child, we erase the guide below the item's
 // midpoint so the vertical line terminates rather than running past the last
-// item. The eraser covers exactly the guide's 1px column (inset + border = 5px
+// item. The eraser covers exactly the guide's 1px column (inset + border = 9px
 // left of the row), so it never notches the row's highlight.
 // For folders, the midpoint is top-4 (16px = half of the 32px button row height).
 // For docs, it's top-1/2 (50% of the single-row element height).
-const NESTED_INSET = "ml-1";
-const NESTED_ELBOW = "absolute -left-1 top-1/2 -translate-y-1/2 h-px w-3 bg-border";
-const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-5px] after:top-4 after:bottom-0 after:w-px after:bg-sidebar";
-const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-5px] after:top-1/2 after:bottom-0 after:w-px after:bg-sidebar";
+const NESTED_INSET = "ml-2";
+const NESTED_ELBOW = "absolute -left-2 top-1/2 -translate-y-1/2 h-px w-2 bg-border";
+const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-9px] after:top-4 after:bottom-0 after:w-px after:bg-sidebar";
+const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-9px] after:top-1/2 after:bottom-0 after:w-px after:bg-sidebar";
 
 function FolderNode({
   folder,
@@ -157,7 +158,7 @@ function FolderNode({
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         aria-controls={childrenId}
-        className={`relative w-full flex h-8 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
+        className={`relative w-full flex h-8 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-2 pr-2" : "px-2"}`}
       >
         {depth > 0 && (
           <span aria-hidden className={NESTED_ELBOW} />
@@ -234,7 +235,7 @@ function NavTree({
             onClick={onDocClick}
             className={({ isActive }) =>
               `relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-                depth > 0 ? `pl-3 ${NESTED_INSET}` : "pl-2"
+                depth > 0 ? `pl-2 ${NESTED_INSET}` : "pl-2"
               } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
             }
           >
@@ -256,7 +257,7 @@ function NavTree({
             key={file.id}
             onClick={() => onFileClick(file)}
             className={`relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-              depth > 0 ? `pl-3 ${NESTED_INSET} w-[calc(100%-0.25rem)]` : "pl-2 w-full"
+              depth > 0 ? `pl-2 ${NESTED_INSET} w-[calc(100%-0.5rem)]` : "pl-2 w-full"
             } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
           >
             {depth > 0 && (
@@ -660,6 +661,20 @@ export function PublicDocPage() {
       ? selectedFile.name
       : (currentNavDoc?.display_title ?? currentNavDoc?.title ?? data.doc.display_title ?? data.doc.title) || null;
   const searchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
+  // Folder ancestry of the current page (outermost first) so the breadcrumb
+  // mirrors the sidebar tree: Site › Guides › Editor tour.
+  const crumbFolders: NavFolder[] = (() => {
+    if (isGraph) return [];
+    const startId = selectedFile ? selectedFile.folder_id : currentNavDoc?.folder_id ?? null;
+    const byId = new Map((data.folders ?? []).map(f => [f.id, f]));
+    const chain: NavFolder[] = [];
+    let cur = startId ? byId.get(startId) : undefined;
+    while (cur && chain.length < 8) {
+      chain.unshift(cur);
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+    }
+    return chain;
+  })();
 
   const filteredDocs = searchQuery.trim()
     ? (data.docs ?? []).filter(d => (d.display_title ?? d.title).toLowerCase().includes(searchQuery.toLowerCase()))
@@ -674,12 +689,12 @@ export function PublicDocPage() {
       {/* Sidebar - only shown when the entire site is published */}
       {showNav && (
         <div className={cn(
-          "fixed inset-y-0 left-0 z-40 transition-transform duration-200",
+          "group/sidebar fixed inset-y-0 left-0 z-40 transition-transform duration-200",
           "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}>
         <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
-          <div className="flex h-16 shrink-0 items-center gap-2 px-4">
+          <div className="flex h-14 shrink-0 items-center gap-2 px-4">
             {isMember && (
               <button
                 onClick={() => navigate(`/projects/${data.project.id}`)}
@@ -835,7 +850,11 @@ export function PublicDocPage() {
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-colors after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 -right-3 z-10 hidden md:flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-sidebar text-muted-foreground hover:bg-accent hover:text-foreground transition-[color,background-color,opacity] after:absolute after:content-[''] after:inset-y-0 after:-left-3 after:right-0",
+            // Only shown on sidebar hover/focus while open (as in the app).
+            sidebarOpen && "md:opacity-0 md:group-hover/sidebar:opacity-100 md:hover:opacity-100 md:focus-visible:opacity-100",
+          )}
         >
           <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
         </button>
@@ -876,12 +895,12 @@ export function PublicDocPage() {
                   alt=""
                   className="h-5 w-5 shrink-0 rounded object-cover"
                 />
-                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+                <span className="text-sm font-semibold text-foreground truncate">{data.project.name}</span>
               </>
             ) : (
               <>
                 <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</span>
+                <span className="text-sm font-semibold text-foreground truncate">{data.project.name}</span>
               </>
             )}
             <Button
@@ -907,9 +926,10 @@ export function PublicDocPage() {
           </header>
         )}
         {showNav && (
-          // Desktop top bar. box-content h-16 + border-b puts its rule at
-          // 64px, level with the sidebar header's Separator.
-          <header className="hidden md:flex box-content h-16 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+          // Desktop top bar. Same 56px height and 24px inset as the app's top
+          // bar; box-content h-14 + border-b puts its rule level with the
+          // sidebar header's Separator.
+          <header className="hidden md:flex box-content h-14 shrink-0 items-center gap-2 border-b border-border px-6">
             {!sidebarOpen && (
               <Button
                 variant="ghost"
@@ -936,6 +956,12 @@ export function PublicDocPage() {
                   {data.project.name}
                 </span>
               )}
+              {pageTitle && crumbFolders.map(f => (
+                <span key={f.id} className="flex min-w-0 shrink items-center gap-1.5">
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                  <span className="truncate text-muted-foreground">{f.name}</span>
+                </span>
+              ))}
               {pageTitle && (
                 <>
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
@@ -971,12 +997,12 @@ export function PublicDocPage() {
                   alt=""
                   className="h-5 w-5 shrink-0 rounded object-cover"
                 />
-                <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+                <h1 className="text-sm font-semibold text-foreground truncate">{data.project.name}</h1>
               </>
             ) : (
               <>
                 <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+                <h1 className="text-sm font-semibold text-foreground truncate">{data.project.name}</h1>
               </>
             )}
           </header>
@@ -1012,19 +1038,25 @@ export function PublicDocPage() {
             </Suspense>
           </div>
         ) : (
-        // Thin, low-contrast reading scrollbar (the Radix bar replaces the native one).
-        <ScrollArea className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-muted-foreground/35 [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/50">
+        // Thin, low-contrast reading scrollbar (the Radix bar replaces the native
+        // one): a border-toned thumb, shown only while the reader hovers or
+        // scrolls the page (type="hover"), firming up under the pointer.
+        <ScrollArea
+          type="hover"
+          scrollHideDelay={400}
+          className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-border [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/40"
+        >
           {selectedFile ? (
             <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
-              <div className="flex-1 min-w-0 px-6 pt-8 pb-12 md:px-10 md:pt-12">
+              <div className="flex-1 min-w-0 px-6 pt-6 pb-12 md:px-10 md:pt-12">
                 {(() => {
                   const cover = parseFrontmatter(data.doc.content).cover;
                   return cover ? <DocCoverImage src={cover} projectId={projectId ?? ""} isPublic /> : null;
                 })()}
-                <div className="mx-auto max-w-3xl">
+                <div className="mx-auto max-w-[44rem]">
                   <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
                     {(() => {
                       const fm = parseFrontmatter(data.doc.content);
@@ -1033,7 +1065,7 @@ export function PublicDocPage() {
                       return showHeading && <h1>{headingTitle}</h1>;
                     })()}
                     {data.doc.showLastUpdated && (
-                      <p className="not-prose -mt-2 mb-3 text-sm text-muted-foreground sm:mb-6">
+                      <p className="not-prose -mt-2 mb-1 text-[13px] text-muted-foreground sm:mb-3 sm:text-sm">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
                       </p>
                     )}

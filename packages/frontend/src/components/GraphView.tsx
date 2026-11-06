@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from "react-force-graph-2d";
 import { Maximize2, Minus, Plus, X } from "lucide-react";
+import { converter, formatHex } from "culori";
 import { Button } from "@/components/ui/button";
 
 export interface GraphData {
@@ -14,8 +15,22 @@ interface GraphNode extends NodeObject {
   title: string;
   links: number;
   tags: string[];
+  /** Graph-unit radius, scaled by link count (see NODE_MIN_PX/NODE_MAX_PX). */
   radius: number;
   tagColor: string | null;
+}
+
+// On-screen node radius range (px) at the capped zoom: the least-linked page
+// gets NODE_MIN_PX, the most-linked NODE_MAX_PX, sqrt-scaled in between.
+const NODE_MIN_PX = 5;
+const NODE_MAX_PX = 11;
+// Full-size views never zoom-to-fit past this; node sizes are specified here.
+const FULL_VIEW_MAX_ZOOM = 2.4;
+// Opacity of nodes/labels unrelated to the hovered node.
+const FADED_ALPHA = 0.4;
+
+function endpointId(end: GraphLink["source"]): string {
+  return typeof end === "object" && end !== null ? String((end as GraphNode).id) : String(end);
 }
 
 type GraphLink = LinkObject<GraphNode>;
@@ -24,6 +39,14 @@ function readCssVar(name: string): string {
   if (typeof window === "undefined") return "";
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v;
+}
+
+// Canvas 2D may not parse oklch(); hand it a plain hex.
+const toRgb = converter("rgb");
+function toCanvasColor(css: string): string {
+  if (!css) return "";
+  const c = toRgb(css);
+  return c ? formatHex(c) : css;
 }
 
 function useThemeTokens() {
@@ -35,7 +58,7 @@ function useThemeTokens() {
       border: readCssVar("--border"),
       accent: readCssVar("--primary"),
       uiFont: readCssVar("--ui-font"),
-      bg: readCssVar("--background"),
+      bg: toCanvasColor(readCssVar("--background")),
     });
     update();
     // Watch class (theme) and style (font-var) on <html>; main.tsx/DocsLayout
@@ -96,6 +119,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
 
   const graph = useMemo(() => {
     const rules = data.tagColors ?? [];
+    const maxLinks = data.nodes.reduce((max, n) => Math.max(max, n.links), 0);
     const nodes: GraphNode[] = data.nodes.map(n => {
       const tags = n.tags ?? [];
       let tagColor: string | null = null;
@@ -110,7 +134,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
         title: n.title,
         links: n.links,
         tags,
-        radius: 3 + Math.sqrt(n.links) * 0.8,
+        radius: (NODE_MIN_PX + (NODE_MAX_PX - NODE_MIN_PX) * (maxLinks > 0 ? Math.sqrt(n.links / maxLinks) : 0)) / FULL_VIEW_MAX_ZOOM,
         tagColor,
       };
     });
@@ -135,6 +159,28 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
     }
     return map;
   }, [graph, data.edges]);
+
+  // Id-based neighbours, for fading everything unrelated to the hovered node.
+  const neighbourIds = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const e of data.edges) {
+      const s = String(e.source);
+      const t = String(e.target);
+      if (!map.has(s)) map.set(s, new Set());
+      if (!map.has(t)) map.set(t, new Set());
+      map.get(s)!.add(t);
+      map.get(t)!.add(s);
+    }
+    return map;
+  }, [data.edges]);
+
+  // The hub: the single most-linked page (first on ties), drawn in the accent
+  // colour so the graph has an obvious centre of gravity.
+  const hubId = useMemo(() => {
+    let best: GraphNode | null = null;
+    for (const n of graph.nodes) if (n.links > 0 && (!best || n.links > best.links)) best = n;
+    return best?.id ?? null;
+  }, [graph]);
 
   // The single id currently announced / highlighted (selection wins over hover).
   const currentId = selectedId ?? hoverId;
@@ -168,12 +214,14 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
     const fg = fgRef.current;
     if (!fg) return;
     const charge = fg.d3Force("charge") as unknown as { strength?: (n: number) => unknown } | null;
-    charge?.strength?.(-90);
+    // Full-size views spread the layout further so 13px labels have room
+    // at the capped zoom and never sit on top of a neighbouring node.
+    charge?.strength?.(showControls ? -260 : -90);
     const link = fg.d3Force("link") as unknown as {
       distance?: (n: number) => unknown;
       strength?: (n: number) => unknown;
     } | null;
-    link?.distance?.(40);
+    link?.distance?.(showControls ? 90 : 40);
     link?.strength?.(0.92);
 
     // Gravity - pull every node toward the origin so the graph stays bounded.
@@ -189,7 +237,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
     gravityFn.initialize = (nodes: SimNode[]) => { simNodes = nodes; };
     fg.d3Force("gravity", gravityFn as unknown as Parameters<typeof fg.d3Force>[1]);
     fg.d3ReheatSimulation();
-  }, [graph, width, height]);
+  }, [graph, width, height, showControls]);
 
   const showLabels = showControls || zoom > 1.6;
   const fittedRef = useRef(false);
@@ -202,7 +250,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
     if (!fg) return;
     fg.zoomToFit(400, fitPadding);
     setTimeout(() => {
-      const maxZoom = showControls ? 2.4 : 4;
+      const maxZoom = showControls ? FULL_VIEW_MAX_ZOOM : 4;
       if (fgRef.current && fgRef.current.zoom() > maxZoom) fgRef.current.zoom(maxZoom, 250);
     }, 420);
   };
@@ -210,6 +258,15 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
   const mutedColor = tokens.muted || "#888";
   const accentColor = tokens.accent || "#3b82f6";
   const uiFontStack = tokens.uiFont || "ui-sans-serif, system-ui, sans-serif";
+
+  // While a node is hovered/selected, it and its direct neighbours stay at full
+  // strength and everything else fades.
+  const focusSet = currentId ? new Set([currentId, ...(neighbourIds.get(currentId) ?? [])]) : null;
+  const isRelated = (id: string) => !focusSet || focusSet.has(id);
+  // Drawn radius in graph units. Full-size views stop growing nodes past the
+  // fit cap so zooming in reads as navigation, not a diagram of blobs.
+  const drawnRadius = (n: GraphNode, globalScale: number) =>
+    showControls ? (n.radius * Math.min(globalScale, FULL_VIEW_MAX_ZOOM)) / globalScale : n.radius;
 
   return (
     <div
@@ -275,14 +332,16 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
           linkCanvasObject={(link, ctx, globalScale) => {
             const src = link.source as GraphNode;
             const tgt = link.target as GraphNode;
+            const touchesFocus = !!currentId && (endpointId(link.source) === currentId || endpointId(link.target) === currentId);
             ctx.save();
-            // Raised from 0.3 so links clear the 3:1 non-text contrast minimum
-            // against the page background (WCAG 2.2 1.4.11).
-            ctx.globalAlpha = 0.6;
+            // 0.6 keeps links above the 3:1 non-text contrast minimum against
+            // the page background (WCAG 2.2 1.4.11); links of the hovered node
+            // strengthen, unrelated ones fade with their nodes.
+            ctx.globalAlpha = touchesFocus ? 0.9 : currentId ? 0.6 * FADED_ALPHA : 0.6;
             ctx.beginPath();
             ctx.moveTo(src.x ?? 0, src.y ?? 0);
             ctx.lineTo(tgt.x ?? 0, tgt.y ?? 0);
-            ctx.strokeStyle = mutedColor;
+            ctx.strokeStyle = touchesFocus ? fgColor : mutedColor;
             // Constant ~1.5px on screen regardless of zoom.
             ctx.lineWidth = 1.5 / Math.max(globalScale, 1);
             ctx.stroke();
@@ -327,40 +386,57 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
           }}
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;
-            // On full-size views cap the on-screen size (~26px diameter) so a
-            // zoomed-in small graph stays navigation, not a diagram of blobs.
-            const r = showControls ? Math.min(n.radius, 13 / globalScale) : n.radius;
-            const isHover = hoverId === n.id || selectedId === n.id;
-            const nodeColor = isHover ? accentColor : (n.tagColor ?? mutedColor);
+            const r = drawnRadius(n, globalScale);
+            const isHover = currentId === n.id;
+            const isHub = hubId === n.id;
+            const alpha = isRelated(n.id) ? 1 : FADED_ALPHA;
+            const nodeColor = isHover || isHub ? accentColor : (n.tagColor ?? mutedColor);
+            ctx.save();
+            // A soft halo marks the hub (and the hovered node) beyond colour alone.
+            if (isHub || isHover) {
+              ctx.beginPath();
+              ctx.arc(n.x ?? 0, n.y ?? 0, r + 3.5 / globalScale, 0, 2 * Math.PI);
+              ctx.fillStyle = accentColor;
+              ctx.globalAlpha = alpha * 0.22;
+              ctx.fill();
+            }
+            ctx.globalAlpha = alpha;
             ctx.beginPath();
             ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
             ctx.fillStyle = nodeColor;
             ctx.fill();
 
             if (showLabels || isHover) {
-              const fontSize = Math.max((showControls ? 14 : 10) / globalScale, 2);
+              const fontSize = Math.max((showControls ? 13 : 10) / globalScale, 2);
               ctx.font = `500 ${fontSize}px ${uiFontStack}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               const label = n.title;
-              const padY = r + (showControls ? 8 : 4) / globalScale;
-              // Halo in the page colour so labels stay legible over links.
+              const padY = r + (showControls ? 7 : 4) / globalScale;
+              // Solid backing plate in the page colour so links never strike
+              // through a label (a glyph halo still leaves gaps between words).
               if (tokens.bg) {
-                ctx.lineJoin = "round";
-                ctx.lineWidth = 4 / globalScale;
-                ctx.strokeStyle = tokens.bg;
-                ctx.strokeText(label, n.x ?? 0, (n.y ?? 0) + padY);
+                const w = ctx.measureText(label).width;
+                const px = 4 / globalScale;
+                ctx.fillStyle = tokens.bg;
+                ctx.globalAlpha = 0.92;
+                ctx.fillRect((n.x ?? 0) - w / 2 - px, (n.y ?? 0) + padY - px / 2, w + px * 2, fontSize + px);
               }
-              ctx.fillStyle = isHover ? accentColor : fgColor;
+              // Muted labels by default; the hovered/selected page and the
+              // hub read in full foreground.
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = isHover || isHub ? fgColor : mutedColor;
               ctx.fillText(label, n.x ?? 0, (n.y ?? 0) + padY);
             }
+            ctx.restore();
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const n = node as GraphNode;
             // On touch, floor the hit radius so low-link nodes still hit ~44px
             // diameter without pinch-zoom. minHit is in graph units (zoom-aware).
-            const minHit = coarse ? 22 / Math.max(zoom, 0.01) : 0;
-            const hitR = Math.max(n.radius + 2, minHit);
+            const k = Math.max(zoom, 0.01);
+            const minHit = coarse ? 22 / k : 0;
+            const hitR = Math.max(drawnRadius(n, k) + 2 / k, minHit);
             ctx.fillStyle = color;
             ctx.beginPath();
             ctx.arc(n.x ?? 0, n.y ?? 0, hitR, 0, 2 * Math.PI);
@@ -385,7 +461,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
         </div>
       )}
       {showControls && !coarse && (
-        <p className="pointer-events-none absolute bottom-4 left-4 text-xs text-muted-foreground/80">
+        <p className="pointer-events-none absolute bottom-4 left-4 rounded-md border border-border bg-popover/80 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
           Scroll to zoom &middot; drag to pan &middot; click a page to open it
         </p>
       )}

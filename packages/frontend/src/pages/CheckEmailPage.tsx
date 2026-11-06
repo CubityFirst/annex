@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Mail } from "lucide-react";
-import { AuthShell } from "@/components/AuthForm";
+import { AuthShell, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -32,11 +31,12 @@ export function CheckEmailPage() {
   return (
     <AuthShell>
         <div className="w-full max-w-sm space-y-6">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <a href="/" aria-label="Annex home" className="mb-4"><img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" /></a>
-            <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
-              <Mail className="size-5 text-foreground" aria-hidden="true" />
-            </span>
+          {/* Same heading block as AuthForm's wordmark screens (login,
+              register): left-aligned, wordmark then the step as the <h1>. */}
+          <div className="flex flex-col items-start gap-2 text-left">
+            <a href="/" aria-label="Annex home" className="mb-6 rounded-sm">
+              <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />
+            </a>
             <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
             <p className="text-sm text-muted-foreground">
               {email
@@ -66,22 +66,21 @@ export function CheckEmailPage() {
             </Alert>
           )}
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {email && (
               <Button
                 onClick={handleResend}
                 disabled={resendState === "sending" || cooldown}
-                className="w-full"
+                className={`${AUTH_BUTTON_CLASS} w-full`}
               >
                 {resendState === "sending" ? "Sending…" : cooldown ? "Email sent" : "Resend verification email"}
               </Button>
             )}
-            <a
-              href="/login"
-              className="text-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-            >
-              Back to sign in
-            </a>
+            <p className="text-sm text-muted-foreground">
+              <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
+                Back to sign in
+              </a>
+            </p>
           </div>
         </div>
     </AuthShell>

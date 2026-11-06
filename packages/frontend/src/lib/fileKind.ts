@@ -108,13 +108,29 @@ const KIND_LABELS: Record<FileKind, string> = {
   other: "file",
 };
 
-// Human label for a file's type ("SVG image", "TXT text file", "PDF document")
-// - shown in place of the raw MIME string, which stays available as a detail.
+// Text extensions whose format name reads better than the bare upper-cased
+// extension. `null` = plain text, where the extension adds nothing ("Text file",
+// not "TXT text file").
+const TEXT_FORMAT_NAMES: Record<string, string | null> = {
+  txt: null, text: null,
+  md: "Markdown", markdown: "Markdown",
+  log: "Log",
+};
+
+// Human label for a file's type ("SVG image", "Text file", "Markdown file",
+// "JSON file", "PDF document") - shown in place of the raw MIME string, which
+// stays available as a detail.
 export function describeFileType(mimeType: string | null | undefined, name = ""): string {
   const kind = fileKind(mimeType, name);
   if (kind === "pdf" || kind === "drawing") return KIND_LABELS[kind];
   const ext = extensionOf(baseName(name));
   const label = KIND_LABELS[kind];
   const sentence = label.charAt(0).toUpperCase() + label.slice(1);
-  return ext && ext.length <= 5 ? `${ext.toUpperCase()} ${label}` : sentence;
+  const shortExt = ext && ext.length <= 5 ? ext : "";
+  if (kind === "text") {
+    // The kind is already "text", so name the format: "JSON file", not "JSON text file".
+    const format = shortExt in TEXT_FORMAT_NAMES ? TEXT_FORMAT_NAMES[shortExt] : shortExt.toUpperCase();
+    return format ? `${format} file` : sentence;
+  }
+  return shortExt ? `${shortExt.toUpperCase()} ${label}` : sentence;
 }

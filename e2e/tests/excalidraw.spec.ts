@@ -130,7 +130,9 @@ test("registers and creates a site", async () => {
 
 test("'New drawing' creates a .excalidraw file and mounts the editor", async () => {
   await page.goto(`/projects/${projectId}`);
-  await page.getByRole("button", { name: "New drawing" }).click();
+  // Secondary create actions live in the toolbar's "New" menu.
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New drawing" }).click();
 
   // Navigates to the file page for the new drawing.
   await expect(page).toHaveURL(/\/projects\/.+\/files\/.+/, { timeout: 15000 });

@@ -119,8 +119,10 @@ test("sets up a project with two docs (root + folder)", async () => {
 
   // Folder + doc inside.
   await page.goto(`/projects/${projectId}`);
-  await page.getByRole("button", { name: "New folder" }).click();
-  const folderInput = page.getByPlaceholder("Folder name");
+  // Secondary create actions live in the toolbar's "New" menu.
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  const folderInput = page.getByLabel("Folder name", { exact: true });
   await expect(folderInput).toBeVisible({ timeout: 5000 });
   await folderInput.fill("Notes");
   await page.getByRole("button", { name: "Create" }).click();

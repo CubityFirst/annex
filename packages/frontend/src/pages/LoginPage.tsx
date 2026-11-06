@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { KeyRound, Smartphone, Hash } from "lucide-react";
 import { startWebauthnAuth } from "@/lib/webauthn";
@@ -7,7 +7,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AuthForm } from "@/components/AuthForm";
+import { AuthForm, AUTH_INPUT_CLASS, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
 import { Turnstile, type TurnstileHandle } from "@/components/Turnstile";
 import { clearToken, getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
@@ -451,7 +451,7 @@ export function LoginPage() {
         ) : (
           <Button
             type="button"
-            className="w-full"
+            className={`${AUTH_BUTTON_CLASS} w-full`}
             disabled={resendState === "sending"}
             onClick={handleResendVerification}
           >
@@ -480,6 +480,7 @@ export function LoginPage() {
         <div className="space-y-2">
           <Label htmlFor="new-password">New password</Label>
           <Input
+            className={AUTH_INPUT_CLASS}
             id="new-password"
             type="password"
             value={newPassword}
@@ -492,6 +493,7 @@ export function LoginPage() {
         <div className="space-y-2">
           <Label htmlFor="confirm-password">Confirm new password</Label>
           <Input
+            className={AUTH_INPUT_CLASS}
             id="confirm-password"
             type="password"
             value={confirmPassword}
@@ -528,6 +530,7 @@ export function LoginPage() {
           <div className="space-y-2">
             <Label htmlFor="backup-code">Backup code</Label>
             <Input
+              className={AUTH_INPUT_CLASS}
               id="backup-code"
               type="text"
               placeholder="XXXXX-XXXXX"
@@ -540,7 +543,7 @@ export function LoginPage() {
             <p className="text-xs text-muted-foreground">Enter one of your backup codes.</p>
           </div>
         ) : (
-          <div className="space-y-2 flex flex-col items-center">
+          <div className="space-y-2 flex flex-col items-start">
             <Label htmlFor="totp-code">Authenticator code</Label>
             <InputOTP
               id="totp-code"
@@ -551,7 +554,7 @@ export function LoginPage() {
               autoComplete="one-time-code"
               autoFocus
             >
-              <InputOTPGroup className="justify-center">
+              <InputOTPGroup>
                 <InputOTPSlot index={0} className="h-12 w-12" />
                 <InputOTPSlot index={1} className="h-12 w-12" />
                 <InputOTPSlot index={2} className="h-12 w-12" />
@@ -565,7 +568,7 @@ export function LoginPage() {
         )}
         <button
           type="button"
-          className="text-primary underline-offset-4 hover:underline text-xs self-center inline-flex min-h-11 items-center px-2 py-2"
+          className="text-primary underline-offset-4 hover:underline text-xs self-start -ml-2 inline-flex min-h-11 items-center px-2 py-2"
           onClick={() => {
             setUsingBackupCode(v => !v);
             setError(null);
@@ -607,7 +610,7 @@ export function LoginPage() {
           <Button
             type="button"
             disabled={loading}
-            className="justify-start"
+            className={`${AUTH_BUTTON_CLASS} justify-start`}
             onClick={async () => {
               if (!pendingUserId) return;
               setStep("webauthn");
@@ -620,7 +623,7 @@ export function LoginPage() {
           <Button
             type="button"
             variant="outline"
-            className="justify-start"
+            className={`${AUTH_BUTTON_CLASS} justify-start`}
             onClick={() => setStep("totp")}
           >
             <Smartphone className="size-4 mr-2" />
@@ -629,7 +632,7 @@ export function LoginPage() {
           <Button
             type="button"
             variant="outline"
-            className="justify-start"
+            className={`${AUTH_BUTTON_CLASS} justify-start`}
             onClick={() => { setUsingBackupCode(true); setStep("totp"); }}
           >
             <Hash className="size-4 mr-2" />
@@ -669,6 +672,7 @@ export function LoginPage() {
         {!loading && (
           <Button
             type="button"
+            className={AUTH_BUTTON_CLASS}
             onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
           >
             Try again
@@ -726,18 +730,18 @@ export function LoginPage() {
         )
       }
       devPanel={import.meta.env.DEV ? (
-        <div className="space-y-1">
+        <div className="grid grid-cols-[4.5rem_1fr_1fr] items-center gap-2">
           {(
             [
               { label: "Standard", free: "standard-free", ink: "standard-ink" },
               { label: "Admin", free: "admin-free", ink: "admin-ink" },
             ] as const
           ).map(({ label, free, ink }) => (
-            <div key={label} className="flex items-center gap-2">
-              <span className="w-16 text-sm text-muted-foreground">{label}</span>
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void handleDevLogin(free)}>Free</Button>
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void handleDevLogin(ink)}>Ink</Button>
-            </div>
+            <Fragment key={label}>
+              <span className="text-sm text-muted-foreground">{label}</span>
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={loading} onClick={() => void handleDevLogin(free)}>Free</Button>
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={loading} onClick={() => void handleDevLogin(ink)}>Ink</Button>
+            </Fragment>
           ))}
         </div>
       ) : undefined}
@@ -745,6 +749,7 @@ export function LoginPage() {
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="email"
           type="email"
           placeholder="you@example.com"
@@ -757,6 +762,7 @@ export function LoginPage() {
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
         <Input
+          className={AUTH_INPUT_CLASS}
           id="password"
           type="password"
           value={password}
@@ -765,7 +771,10 @@ export function LoginPage() {
           required
         />
       </div>
-      <Turnstile ref={turnstileRef} key="credentials" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      {/* Left-align the challenge widget to the form edge like every other field. */}
+      <div className="[&>div]:justify-start">
+        <Turnstile ref={turnstileRef} key="credentials" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </div>
     </AuthForm>
   );
 }

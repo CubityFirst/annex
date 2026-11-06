@@ -1,19 +1,21 @@
-import { SiteFooter, SiteNav } from "@/components/SiteFooter";
+import { useRef } from "react";
+import { LegalToc, SiteFooter, SiteNav } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 export function PrivacyPage() {
+  const bodyRef = useRef<HTMLDivElement>(null);
   return (
     <div className="landing">
       <SiteNav />
 
       <section className="l-legal">
-        <div className="site-wrap">
+        <div className="site-wrap l-legal-layout">
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Privacy policy</h1>
             <p className="l-legal-meta">Effective date: May 29, 2026</p>
 
-            <div className="l-legal-body">
+            <div className="l-legal-body" ref={bodyRef}>
               <h2>1. What we collect</h2>
               <p>
                 When you create an account, we collect your email address and a hashed password.
@@ -193,6 +195,7 @@ export function PrivacyPage() {
               </p>
             </div>
           </div>
+          <LegalToc bodyRef={bodyRef} />
         </div>
       </section>
 

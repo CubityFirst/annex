@@ -5,8 +5,8 @@
  *   pnpm dev
  *
  * Scenario (single owner, two sites):
- *   - Create Site A, upload an image to Site A, grab its "Copy markdown" link.
- *   - Create Site B, upload an image to Site B, grab its "Copy markdown" link.
+ *   - Create Site A, upload an image to Site A, grab its "Copy embed" link.
+ *   - Create Site B, upload an image to Site B, grab its "Copy embed" link.
  *   - Create a document in Site B and paste BOTH internal links plus a third
  *     "External URL" image (https://i.cubityfir.st/explorer_9LHgOrjobE.png).
  *   - View the doc in reading mode internal to Site B.
@@ -29,9 +29,9 @@
  *     test is hermetic / offline-deterministic. We are exercising the renderer
  *     branch that treats non-/api/files URLs as plain <img> and is NOT subject
  *     to the permission lock - not third-party network availability.
- *   - The doc body is built from the exact "Copy markdown" string format
+ *   - The doc body is built from the exact "Copy embed" string format
  *     (`![<name>](/api/files/<id>/content)` - see FilePage.tsx). On Chromium we
- *     additionally click the real "Copy markdown" button and assert the
+ *     additionally click the real "Copy embed" button and assert the
  *     clipboard contents match that format; Firefox can't read the clipboard
  *     under Playwright, so there we only assert the visible "Copied!" feedback.
  */
@@ -267,13 +267,13 @@ test("registers, creates Site A + Site B, uploads an image to each, and a doc in
   expect(docId).toBeTruthy();
 });
 
-test("the 'Copy markdown' button copies the canonical /api/files link", async ({ browserName }) => {
+test("the 'Copy embed' button copies the canonical /api/files link", async ({ browserName }) => {
   for (const [projectId, fileId, fileName] of [
     [projectAId, fileAId, FILE_A_NAME],
     [projectBId, fileBId, FILE_B_NAME],
   ] as const) {
     await page.goto(`/projects/${projectId}/files/${fileId}`);
-    const copyBtn = page.getByRole("button", { name: /copy markdown/i });
+    const copyBtn = page.getByRole("button", { name: /copy embed/i });
     await expect(copyBtn).toBeVisible({ timeout: 10000 });
     await copyBtn.click();
 
@@ -292,7 +292,7 @@ test("the 'Copy markdown' button copies the canonical /api/files link", async ({
 
 test("internal reading view locks the Site A image; Site B + external render", async () => {
   // "Paste both links" + the external URL into the Site B document. This is
-  // exactly the markdown the FilePage "Copy markdown" button produces.
+  // exactly the markdown the FilePage "Copy embed" button produces.
   const content = [
     "# File Permission Lock",
     "",

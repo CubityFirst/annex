@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { TermsPage } from "./TermsPage";
 
@@ -39,6 +39,18 @@ describe("TermsPage", () => {
     renderPage();
     expect(screen.getByRole("link", { name: "Privacy" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Acknowledgements" })).toBeInTheDocument();
+  });
+
+  it("lists every section in the 'On this page' rail, linked to its heading", () => {
+    renderPage();
+    const toc = screen.getByRole("navigation", { name: /on this page/i });
+    const links = within(toc).getAllByRole("link");
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(links).toHaveLength(headings.length);
+    // Numbering is dropped from the rail; each link targets its heading's id.
+    const payments = within(toc).getByRole("link", { name: "Payments, subscriptions, and refunds" });
+    const target = document.getElementById(payments.getAttribute("href")!.slice(1));
+    expect(target?.textContent).toMatch(/^7\. Payments/);
   });
 
   it("exposes a contact mailto link", () => {

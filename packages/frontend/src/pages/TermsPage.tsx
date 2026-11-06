@@ -1,19 +1,21 @@
-import { SiteFooter, SiteNav } from "@/components/SiteFooter";
+import { useRef } from "react";
+import { LegalToc, SiteFooter, SiteNav } from "@/components/SiteFooter";
 import "./LandingPage.css";
 
 export function TermsPage() {
+  const bodyRef = useRef<HTMLDivElement>(null);
   return (
     <div className="landing">
       <SiteNav />
 
       <section className="l-legal">
-        <div className="site-wrap">
+        <div className="site-wrap l-legal-layout">
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Terms of service</h1>
             <p className="l-legal-meta">Effective date: September 29, 2026</p>
 
-            <div className="l-legal-body">
+            <div className="l-legal-body" ref={bodyRef}>
               <h2>1. Acceptance</h2>
               <p>
                 By creating an account or using Annex, you agree to these Terms of Service. If you
@@ -142,6 +144,7 @@ export function TermsPage() {
               </p>
             </div>
           </div>
+          <LegalToc bodyRef={bodyRef} />
         </div>
       </section>
 

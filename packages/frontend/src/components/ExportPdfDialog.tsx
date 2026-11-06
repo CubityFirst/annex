@@ -16,12 +16,20 @@ import { Separator } from "@/components/ui/separator";
 import { runPdfExport, type PdfPageSize, type PdfTheme } from "@/lib/pdf-export";
 
 interface Props {
-  trigger: ReactNode;
+  /** Optional trigger; omit and pass `open`/`onOpenChange` to control it from a menu. */
+  trigger?: ReactNode;
   documentName?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function ExportPdfDialog({ trigger, documentName }: Props) {
-  const [open, setOpen] = useState(false);
+export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, onOpenChange }: Props) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const [pageSize, setPageSize] = useState<PdfPageSize>("A4");
   const [theme, setTheme] = useState<PdfTheme>("light");
   const [includeTitle, setIncludeTitle] = useState(true);
@@ -38,8 +46,8 @@ export function ExportPdfDialog({ trigger, documentName }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      {trigger !== undefined && <DialogTrigger asChild>{trigger}</DialogTrigger>}
+      <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
         <DialogHeader>
           <DialogTitle>Export as PDF</DialogTitle>
           <DialogDescription>

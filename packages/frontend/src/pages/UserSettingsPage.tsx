@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useNavigate, useOutletContext, Link } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import zxcvbn from "zxcvbn";
@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, SquarePen, Mail, RotateCcw, Check } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, SquarePen, Mail, RotateCcw, Check, Star } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -41,7 +41,14 @@ import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_E
 import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { normalizeHandle, handleProblem, HANDLE_MAX_LENGTH, HANDLE_PROBLEM_MESSAGES, type HandleProblem } from "@/lib/handle";
-import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
+import {
+  DESTRUCTIVE_OUTLINE_BUTTON,
+  DangerRow,
+  SettingsEmptyRow,
+  SettingsShell,
+  type SettingsGroupDef,
+  type SettingsSectionDef,
+} from "@/components/settings/SettingsShell";
 import { getAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
@@ -131,6 +138,24 @@ function SecurityStatus({ ok, on, off, title }: { ok: boolean; on: string; off: 
       {ok ? <LockKeyhole className="size-3" aria-hidden="true" /> : <LockOpen className="size-3" aria-hidden="true" />}
       {ok ? on : off}
     </span>
+  );
+}
+
+// Header row of a security row card: title + status pill + description on the
+// left, the outline action(s) right-aligned (stacked below on narrow screens),
+// matching the Account/Danger zone row geometry.
+function SecurityRowHeader({ title, status, description, action }: { title: string; status?: ReactNode; description: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium">{title}</h3>
+          {status}
+        </div>
+        <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>
+      </div>
+      {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
+    </div>
   );
 }
 
@@ -767,9 +792,9 @@ export function UserSettingsPage() {
         if (json.error === "invalid_totp") return "Invalid authenticator code.";
         // Stale client MFA state (enrolled in another tab): the string routes
         // to a toast via runWithTwoFA since no 2FA dialog is open.
-        if (json.error === "mfa_required") return "Two-factor authentication is required - reload the page and try again.";
+        if (json.error === "mfa_required") return "Two-factor authentication is required — reload the page and try again.";
         if (json.error === "send_failed") {
-          toast({ title: "Couldn't send the confirmation email - try again", variant: "destructive" });
+          toast({ title: "Couldn't send the confirmation email — try again", variant: "destructive" });
           return undefined;
         }
         if (res.status === 409) {
@@ -781,7 +806,7 @@ export function UserSettingsPage() {
           return undefined;
         }
         if (res.status === 429) {
-          toast({ title: "Too many attempts - try again in a minute", variant: "destructive" });
+          toast({ title: "Too many attempts — try again in a minute", variant: "destructive" });
           return undefined;
         }
         if (res.status === 401) {
@@ -812,11 +837,11 @@ export function UserSettingsPage() {
       } else if (json.error === "no_pending_change") {
         // The pending change expired server-side - clear the stale UI.
         setPendingEmail(null);
-        toast({ title: "This email change has expired - request it again", variant: "destructive" });
+        toast({ title: "This email change has expired — request it again", variant: "destructive" });
       } else if (json.error === "too_soon" || json.error === "rate_limited") {
         toast({ title: "Give it a few minutes before resending", variant: "destructive" });
       } else if (json.error === "send_failed") {
-        toast({ title: "Couldn't send the email - try again in a few minutes", variant: "destructive" });
+        toast({ title: "Couldn't send the email — try again in a few minutes", variant: "destructive" });
       } else {
         toast({ title: "Could not re-send confirmation email", variant: "destructive" });
       }
@@ -1357,12 +1382,12 @@ export function UserSettingsPage() {
 
   const settingsSections: SettingsSectionDef[] = [
     { id: "account", label: "Account", group: "profile" },
-    { id: "favourites", label: "Favourites", group: "profile" },
+    { id: "favourites", label: "Favourite sites", group: "profile" },
     { id: "billing", label: "Billing", group: "profile" },
     { id: "reading-font", label: "Fonts", group: "appearance" },
     { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
     { id: "two-factor", label: "Two-factor & password", group: "security" },
-    { id: "sessions", label: "Sessions", group: "security" },
+    { id: "sessions", label: "Active sessions", group: "security" },
     { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
 
@@ -1378,156 +1403,156 @@ export function UserSettingsPage() {
             <h2 className="text-base font-semibold">Account</h2>
             <p className="mt-1 text-sm text-muted-foreground">Update your personal information.</p>
 
-            <form onSubmit={handleSaveName} className="mt-5 flex flex-col gap-4">
-              {/* Below sm the avatar stacks above full-width fields so the
-                  email never clips; side by side from sm up. */}
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                {userId && (
-                  <>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      onChange={handleAvatarChange}
-                    />
-                    <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
-                    <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
-                          <UserAvatar userId={userId} name={name || "?"} className="size-24 [&_[data-slot=avatar-fallback]]:text-[2.375rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
-                          <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                            {avatarUploading
-                              ? <Loader2 className="size-6 text-white animate-spin" />
-                              : <Camera className="size-6 text-white" />}
-                          </div>
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-40 p-1"
-                        align="center"
-                        // The visible "Change photo" button toggles this same
-                        // popover; don't let its press count as an outside
-                        // click (which would close and instantly reopen it).
-                        onInteractOutside={e => {
-                          if (changePhotoButtonRef.current?.contains(e.target as Node)) e.preventDefault();
-                        }}
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="w-full justify-start"
-                          disabled={avatarUploading}
-                          onClick={() => avatarInputRef.current?.click()}
-                        >
-                          <Upload className="size-3.5 mr-2" />
-                          Upload photo
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="w-full justify-start text-destructive hover:text-destructive"
-                          disabled={avatarUploading}
-                          onClick={handleRemoveAvatar}
-                        >
-                          <Trash2 className="size-3.5 mr-2" />
-                          Remove photo
-                        </Button>
-                      </PopoverContent>
-                      {/* Visible entry point to the same Upload/Remove popover
-                          (the avatar itself is the hidden-affordance trigger);
-                          the popover anchors here so it never covers it. */}
-                      <PopoverAnchor asChild>
-                        <Button
-                          ref={changePhotoButtonRef}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-10 sm:h-8"
-                          aria-haspopup="dialog"
-                          aria-expanded={avatarPopoverOpen}
-                          disabled={avatarUploading}
-                          onClick={() => setAvatarPopoverOpen(open => !open)}
-                        >
-                          <Camera className="size-3.5" aria-hidden />
-                          Change photo
-                        </Button>
-                      </PopoverAnchor>
-                    </Popover>
-
-                      {/* Which avatar slot the preview shows and Upload/Remove
-                          target: one image for dark backgrounds, one for light. */}
-                      <div className="mt-1 flex flex-col items-center gap-1.5">
-                        <span id="avatar-variant-label" className="text-xs leading-tight text-muted-foreground">
-                          Avatar preview
-                        </span>
-                        <div
-                          role="radiogroup"
-                          aria-labelledby="avatar-variant-label"
-                          title="You can use a different avatar on dark and light backgrounds"
-                          className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
-                        >
-                          {(["dark", "light"] as const).map(v => {
-                            const selected = avatarVariant === v;
-                            const Icon = v === "dark" ? Moon : Sun;
-                            return (
-                              <button
-                                key={v}
-                                type="button"
-                                role="radio"
-                                aria-checked={selected}
-                                onClick={() => setAvatarVariant(v)}
-                                className={cn(
-                                  "inline-flex h-9 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7",
-                                  selected
-                                    ? "bg-background font-medium text-foreground shadow-xs"
-                                    : "text-muted-foreground hover:text-foreground",
-                                )}
-                              >
-                                <Icon className="size-3.5" aria-hidden />
-                                {v === "dark" ? "Dark" : "Light"}
-                              </button>
-                            );
-                          })}
+            {/* Avatar block: an 80px avatar with "Change photo" beside it, and
+                the compact "Preview on" Dark/Light selector directly under
+                the avatar. Both rows are left-aligned at every width. */}
+            {userId && (
+              <div className="mt-5 flex flex-col items-start gap-3">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
+                  <div className="flex items-center gap-4">
+                    <PopoverTrigger asChild>
+                      <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
+                        <UserAvatar userId={userId} name={name || "?"} className="size-20 [&_[data-slot=avatar-fallback]]:text-[1.875rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
+                        <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                          {avatarUploading
+                            ? <Loader2 className="size-5 text-white animate-spin" />
+                            : <Camera className="size-5 text-white" />}
                         </div>
-                      </div>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-40 p-1"
+                      align="start"
+                      // The visible "Change photo" button toggles this same
+                      // popover; don't let its press count as an outside
+                      // click (which would close and instantly reopen it).
+                      onInteractOutside={e => {
+                        if (changePhotoButtonRef.current?.contains(e.target as Node)) e.preventDefault();
+                      }}
+                    >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start"
+                        disabled={avatarUploading}
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        <Upload className="size-3.5 mr-2" />
+                        Upload photo
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start text-destructive hover:text-destructive"
+                        disabled={avatarUploading}
+                        onClick={handleRemoveAvatar}
+                      >
+                        <Trash2 className="size-3.5 mr-2" />
+                        Remove photo
+                      </Button>
+                    </PopoverContent>
+
+                    {/* Visible entry point to the same Upload/Remove popover
+                        (the avatar itself is the hidden-affordance trigger);
+                        the popover anchors here so it never covers it. */}
+                    <PopoverAnchor asChild>
+                      <Button
+                        ref={changePhotoButtonRef}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-haspopup="dialog"
+                        aria-expanded={avatarPopoverOpen}
+                        disabled={avatarUploading}
+                        onClick={() => setAvatarPopoverOpen(open => !open)}
+                      >
+                        <Camera className="size-3.5" aria-hidden />
+                        Change photo
+                      </Button>
+                    </PopoverAnchor>
+                  </div>
+
+                  {/* Which avatar slot the preview shows and Upload/Remove
+                      target: one image for dark backgrounds, one for light. */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] text-muted-foreground" aria-hidden>
+                      Preview on
+                    </span>
+                    <div
+                      role="radiogroup"
+                      aria-label="Avatar preview on"
+                      title="You can use a different avatar on dark and light backgrounds"
+                      className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
+                    >
+                      {(["dark", "light"] as const).map(v => {
+                        const selected = avatarVariant === v;
+                        const Icon = v === "dark" ? Moon : Sun;
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setAvatarVariant(v)}
+                            className={cn(
+                              "inline-flex h-9 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
+                              selected
+                                ? "bg-background font-medium text-foreground shadow-xs"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            <Icon className="size-3.5" aria-hidden />
+                            {v === "dark" ? "Dark" : "Light"}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
+                </Popover>
 
-                    {cropFile && (
-                      <AvatarCropDialog
-                        file={cropFile}
-                        onApply={handleCropApply}
-                        onClose={() => setCropFile(null)}
-                      />
-                    )}
-                  </>
+                {cropFile && (
+                  <AvatarCropDialog
+                    file={cropFile}
+                    onApply={handleCropApply}
+                    onClose={() => setCropFile(null)}
+                  />
                 )}
+              </div>
+            )}
 
-                <div className="flex w-full min-w-0 flex-1 flex-col gap-4">
+            <form onSubmit={handleSaveName} className="mt-6 flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
-                      {/* The edit icon lives inside the field (mirroring the
-                          InlineSaveControls affordance on the display-name input);
-                          resend + verification status sit outside to its right. */}
-                      <div className="relative min-w-0 flex-1">
-                        <Input id="email" value={email} disabled className="pr-11 sm:pr-9" />
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => setChangeEmailOpen(true)}
-                              aria-label="Change email address"
-                              className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-9"
-                            >
-                              <SquarePen className="size-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Change email address</TooltipContent>
-                        </Tooltip>
-                      </div>
+                      {/* The current email reads as normal text in a read-only
+                          field; changing it goes through the separate outline
+                          edit button (a password-confirmed dialog). Resend +
+                          verification status sit to its right. */}
+                      <Input id="email" value={email} readOnly className="min-w-0 flex-1" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setChangeEmailOpen(true)}
+                            aria-label="Change email address"
+                            className="size-11 shrink-0 sm:size-9"
+                          >
+                            <SquarePen className="size-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Change email address</TooltipContent>
+                      </Tooltip>
                       {emailVerified === false && emailVerificationEnabled && (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1627,110 +1652,116 @@ export function UserSettingsPage() {
                       </InlineSaveControls>
                     </div>
                   </div>
-                </div>
-              </div>
             </form>
 
-            <div className="mt-6 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="timezone">Timezone</Label>
-                  {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
-                  {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Select
-                    value={timezonePrivate ? "" : (timezone ?? "")}
-                    onValueChange={async val => {
-                      const iana = val || null;
-                      setTimezone(iana);
-                      setTimezonePrivate(false);
-                      await saveTimezone(iana);
-                    }}
-                    disabled={timezonePrivate || timezoneSaving}
-                  >
-                    <SelectTrigger id="timezone" className="h-10 flex-1 sm:h-9">
-                      <SelectValue placeholder="Select timezone…">
-                        {!timezonePrivate && timezone && (() => {
-                          const g = getTimezoneGroup(timezone);
-                          return g ? formatTimezoneLabel(g) : timezone;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      {TIMEZONE_GROUPS.map(g => (
-                        <SelectItem key={g.iana} value={g.iana}>{formatTimezoneLabel(g)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-10 shrink-0 self-start font-normal sm:h-9 sm:self-auto"
-                    disabled={timezonePrivate || timezoneSaving}
-                    onClick={async () => {
-                      const g = detectTimezoneGroup();
-                      if (g) {
-                        setTimezone(g.iana);
-                        setTimezonePrivate(false);
-                        await saveTimezone(g.iana);
-                      }
-                    }}
-                  >
-                    Auto-detect
-                  </Button>
-                </div>
-                {!timezonePrivate && timezone && (() => {
-                  const g = getTimezoneGroup(timezone);
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      Currently {formatTimeInZone(timezone)} - {g?.offset ?? timezone}
+            {/* Profile-card visibility rows: bordered row cards, matching the
+                site-settings row pattern. Each reveals its detail inline. */}
+            <div className="mt-6 flex flex-col gap-3">
+              <div className="rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <Label htmlFor="tz-visible">Show my timezone on my profile card</Label>
+                    <p className="text-[13px] leading-snug text-muted-foreground">
+                      {timezonePrivate
+                        ? "Off — nobody sees your local time."
+                        : "People who open your card see your local time."}
                     </p>
-                  );
-                })()}
-              </div>
-
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <Label htmlFor="tz-visible">Show my timezone on my profile card</Label>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    People who open your card see your local time.
-                  </p>
-                </div>
-                <Switch
-                  id="tz-visible"
-                  checked={!timezonePrivate}
-                  disabled={timezoneSaving}
-                  onCheckedChange={async visible => {
-                    if (!visible) {
-                      setTimezonePrivate(true);
-                      setTimezone(null);
-                      await saveTimezone(null);
-                    } else {
-                      const g = detectTimezoneGroup();
-                      if (g) {
-                        setTimezone(g.iana);
-                        setTimezonePrivate(false);
-                        await saveTimezone(g.iana);
+                  </div>
+                  <Switch
+                    id="tz-visible"
+                    checked={!timezonePrivate}
+                    disabled={timezoneSaving}
+                    onCheckedChange={async visible => {
+                      if (!visible) {
+                        setTimezonePrivate(true);
+                        setTimezone(null);
+                        await saveTimezone(null);
                       } else {
-                        setTimezonePrivate(false);
+                        const g = detectTimezoneGroup();
+                        if (g) {
+                          setTimezone(g.iana);
+                          setTimezonePrivate(false);
+                          await saveTimezone(g.iana);
+                        } else {
+                          setTimezonePrivate(false);
+                        }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </div>
+                {!timezonePrivate && (
+                  <div className="flex flex-col gap-1.5 border-t border-border px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="timezone">Timezone</Label>
+                      {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                      {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Select
+                        value={timezone ?? ""}
+                        onValueChange={async val => {
+                          const iana = val || null;
+                          setTimezone(iana);
+                          setTimezonePrivate(false);
+                          await saveTimezone(iana);
+                        }}
+                        disabled={timezoneSaving}
+                      >
+                        <SelectTrigger id="timezone" className="flex-1">
+                          <SelectValue placeholder="Select timezone…">
+                            {timezone && (() => {
+                              const g = getTimezoneGroup(timezone);
+                              return g ? formatTimezoneLabel(g) : timezone;
+                            })()}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {TIMEZONE_GROUPS.map(g => (
+                            <SelectItem key={g.iana} value={g.iana}>{formatTimezoneLabel(g)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 self-start sm:self-auto"
+                        disabled={timezoneSaving}
+                        onClick={async () => {
+                          const g = detectTimezoneGroup();
+                          if (g) {
+                            setTimezone(g.iana);
+                            setTimezonePrivate(false);
+                            await saveTimezone(g.iana);
+                          }
+                        }}
+                      >
+                        Auto-detect
+                      </Button>
+                    </div>
+                    {timezone && (() => {
+                      const g = getTimezoneGroup(timezone);
+                      return (
+                        <p className="text-[13px] text-muted-foreground">
+                          Currently {formatTimeInZone(timezone)} — {g?.offset ?? timezone}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
+              <div className="rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex min-w-0 flex-col gap-0.5">
                     <Label htmlFor="profile-link-toggle">Profile link</Label>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <p className="text-[13px] leading-snug text-muted-foreground">
                       Pick a username so signed-in people can open your profile at <span className="font-mono">/@username</span>.
                     </p>
                     {handleLocked && (
-                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <p className="mt-0.5 flex items-center gap-1 text-[13px] text-muted-foreground">
                         <LockKeyhole className="size-3 shrink-0" />
-                        Managed by an Annex admin - you can't change it.
+                        Managed by an Annex admin — you can't change it.
                       </p>
                     )}
                   </div>
@@ -1748,7 +1779,7 @@ export function UserSettingsPage() {
                   const message = handleError ?? (changed && draftProblem ? HANDLE_PROBLEM_MESSAGES[draftProblem] : null);
                   const link = currentHandle ? `${window.location.origin}/@${currentHandle}` : null;
                   return (
-                    <form onSubmit={handleSaveHandle} className="flex flex-col gap-1.5">
+                    <form onSubmit={handleSaveHandle} className="flex flex-col gap-1.5 border-t border-border px-4 py-3">
                       <Label htmlFor="profile-handle" className="sr-only">Username</Label>
                       <div className="flex items-center">
                         <InlineSaveControls
@@ -1910,8 +1941,16 @@ export function UserSettingsPage() {
                 <div className="h-11 rounded-md bg-muted/40 animate-pulse" />
                 <div className="h-11 rounded-md bg-muted/40 animate-pulse" />
               </div>
-            ) : favouriteSites.length === 0 ? null : (
-              <ul className="mt-4 flex flex-col gap-2">
+            ) : favouriteSites.length === 0 ? (
+              <div className="mt-3">
+                <SettingsEmptyRow icon={Star}>No favourites yet — 0 of 3 added.</SettingsEmptyRow>
+              </div>
+            ) : (
+              <>
+              <p className="mt-3 text-[13px] text-muted-foreground">
+                {favouriteSites.length} of 3 added{favouriteSites.length >= 3 && " — remove one to add another"}.
+              </p>
+              <ul className="mt-2 flex flex-col gap-2">
                 {favouriteSites.map(site => {
                   const slug = site.vanitySlug ?? site.id;
                   const removing = favouriteRemovingId === site.id;
@@ -1929,7 +1968,7 @@ export function UserSettingsPage() {
                   return (
                     <li
                       key={site.id}
-                      className="flex flex-col gap-2 rounded-md border bg-card px-3 py-2"
+                      className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-2"
                     >
                       <div className="flex items-center gap-3">
                         {site.logoSquareUpdatedAt ? (
@@ -2019,6 +2058,7 @@ export function UserSettingsPage() {
                   );
                 })}
               </ul>
+              </>
             )}
           </section>
 
@@ -2106,7 +2146,7 @@ export function UserSettingsPage() {
                     </div>
                   </div>
                   {personalPlanStatus !== "granted" && (
-                    <Button variant="outline" onClick={() => startCheckoutOrPortal("/api/billing/portal")} disabled={billingBusy}>
+                    <Button variant="outline" size="sm" onClick={() => startCheckoutOrPortal("/api/billing/portal")} disabled={billingBusy}>
                       {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Manage subscription</>}
                     </Button>
                   )}
@@ -2268,13 +2308,13 @@ export function UserSettingsPage() {
                   <tr>
                     <th className="px-4 py-2.5 text-left align-top font-medium">Font</th>
                     {([
-                      { label: "Reading", caption: "Docs you read" },
-                      { label: "Editing", caption: "While editing" },
+                      { label: "Reading", caption: "Docs" },
+                      { label: "Editing", caption: "Editor" },
                       { label: "Interface", caption: "Menus & UI" },
                     ] as const).map(col => (
-                      <th key={col.label} scope="col" className="w-[6.5rem] px-1 py-2.5 text-center align-top">
+                      <th key={col.label} scope="col" className="w-20 px-1 py-2.5 text-center align-top">
                         <span className="block font-medium">{col.label}</span>
-                        <span className="mt-0.5 block text-[11px] font-normal leading-tight text-muted-foreground">{col.caption}</span>
+                        <span className="mt-0.5 block whitespace-nowrap text-[11px] font-normal leading-tight text-muted-foreground">{col.caption}</span>
                       </th>
                     ))}
                   </tr>
@@ -2295,7 +2335,7 @@ export function UserSettingsPage() {
                           </div>
                         </td>
                         {columns.map(col => (
-                          <td key={col.key} className="px-2 py-3 text-center">
+                          <td key={col.key} className="px-1 py-3 text-center">
                             <label className={cn(
                               "relative flex w-full min-h-[40px] items-center justify-center",
                               fontPrefsBusy ? "cursor-not-allowed opacity-50" : "cursor-pointer",
@@ -2353,7 +2393,7 @@ export function UserSettingsPage() {
               <section id="theme">
                 <h2 className="text-base font-semibold">Theme</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Choose how the app looks. Custom derives a full palette - surfaces, borders and accents - from a single colour.
+                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   {([
@@ -2401,186 +2441,88 @@ export function UserSettingsPage() {
 
           {/* Security section */}
           <section id="two-factor">
-            <h2 className="text-base font-semibold flex items-center gap-2">
-              Security
-              {!totpLoading && !webauthnLoading && (
-                <SecurityStatus ok={twoFactorProtected} on="2FA on" off="2FA off" title={twoFactorProtected ? "2FA is enabled" : "2FA is disabled"} />
-              )}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">Two-factor authentication and your password.</p>
+            <h2 className="text-base font-semibold">Two-factor &amp; password</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Protect sign-in with a second factor, and change your password.</p>
 
-            {/* TOTP subsection */}
-            <div className="mt-5">
-              <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                Authenticator app
-                {!totpLoading && (
-                  <SecurityStatus ok={totpEnabled} on="Enabled" off="Not set up" title={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} />
-                )}
-              </h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Use a TOTP authenticator app (Google Authenticator, Authy, 1Password, etc.) as a second factor.
-              </p>
-            </div>
-
-            {totpLoading ? (
-              <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
-            ) : totpEnabled ? (
-              <div className="mt-3 flex gap-2 flex-wrap">
-                <Button variant="outline" onClick={() => setConfirmBackupCodesOpen(true)} disabled={twoFABusy || backupCodesLoading}>
-                  {backupCodesLoading ? "Generating…" : "Generate backup codes"}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={handleDisableTOTP}
-                  disabled={twoFABusy}
-                >
-                  Disable authenticator app
-                </Button>
-              </div>
-            ) : setupStep === "idle" ? (
-              <div className="mt-3">
-                <Button onClick={handleSetupStart} disabled={setupLoading}>
-                  {setupLoading ? "Loading…" : "Set up authenticator app"}
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-col gap-5 max-w-sm">
-                <div>
-                  <p className="text-sm font-medium mb-2">
-                    Scan this QR code with your authenticator app
-                    <span className="block text-muted-foreground font-normal mt-0.5">
-                      (Google Authenticator, Authy, 1Password, etc.)
-                    </span>
-                  </p>
-                  {pendingUri && (
-                    <div className="inline-block rounded-lg border p-3 bg-white">
-                      <QRCode value={pendingUri} size={160} />
-                    </div>
+            <div className="mt-5 flex flex-col gap-3">
+              {/* Authenticator app */}
+              <div className="rounded-lg border border-border bg-card">
+                <SecurityRowHeader
+                  title="Authenticator app"
+                  status={!totpLoading && (
+                    <SecurityStatus ok={totpEnabled} on="Enabled" off="Not set up" title={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} />
                   )}
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Can&apos;t scan? Enter this key manually:</p>
-                  <code className="text-xs bg-muted rounded px-2 py-1 select-all break-all">
-                    {pendingSecret}
-                  </code>
-                </div>
-
-                <form onSubmit={handleSetupVerify} className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Enter the 6-digit code from your app</Label>
-                    <InputOTP
-                      maxLength={6}
-                      value={setupCode}
-                      onChange={setSetupCode}
-                      autoComplete="one-time-code"
-                    >
-                      <InputOTPGroup>
-                        <InputOTPSlot index={0} />
-                        <InputOTPSlot index={1} />
-                        <InputOTPSlot index={2} />
-                        <InputOTPSlot index={3} />
-                        <InputOTPSlot index={4} />
-                        <InputOTPSlot index={5} />
-                      </InputOTPGroup>
-                    </InputOTP>
-                  </div>
-                  {!twoFactorProtected && (
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="totp-enrollment-password">Current password</Label>
-                      <Input
-                        id="totp-enrollment-password"
-                        type="password"
-                        value={securityEnrollmentPassword}
-                        onChange={e => setSecurityEnrollmentPassword(e.target.value)}
-                        autoComplete="current-password"
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <Button type="submit" disabled={setupLoading || setupCode.length !== 6 || (!twoFactorProtected && !securityEnrollmentPassword)}>
-                      {setupLoading ? "Verifying…" : "Enable 2FA"}
+                  description="Use a TOTP authenticator app (Google Authenticator, Authy, 1Password, etc.) as a second factor."
+                  action={totpLoading ? (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
+                  ) : totpEnabled ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setConfirmBackupCodesOpen(true)} disabled={twoFABusy || backupCodesLoading}>
+                        {backupCodesLoading ? "Generating…" : "Generate backup codes"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={DESTRUCTIVE_OUTLINE_BUTTON}
+                        onClick={handleDisableTOTP}
+                        disabled={twoFABusy}
+                      >
+                        Disable authenticator app
+                      </Button>
+                    </>
+                  ) : setupStep === "idle" ? (
+                    <Button variant="outline" size="sm" onClick={handleSetupStart} disabled={setupLoading}>
+                      {setupLoading ? "Loading…" : "Set up authenticator app"}
                     </Button>
-                    <Button type="button" variant="outline" onClick={handleCancelSetup}>
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </div>
-            )}
+                  ) : null}
+                />
+                {!totpLoading && !totpEnabled && setupStep !== "idle" && (
+                  <div className="flex max-w-sm flex-col gap-5 border-t border-border px-4 py-4">
+                    <div>
+                      <p className="text-sm font-medium mb-2">
+                        Scan this QR code with your authenticator app
+                        <span className="block text-muted-foreground font-normal mt-0.5">
+                          (Google Authenticator, Authy, 1Password, etc.)
+                        </span>
+                      </p>
+                      {pendingUri && (
+                        <div className="inline-block rounded-lg border p-3 bg-white">
+                          <QRCode value={pendingUri} size={160} />
+                        </div>
+                      )}
+                    </div>
 
-            {/* WebAuthn subsection */}
-            <div className="mt-6 pt-5 border-t">
-              <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                Passkeys / security keys
-                {!webauthnLoading && (
-                  <SecurityStatus ok={webauthnCredentials.length > 0} on="Enabled" off="Not set up" title={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} />
-                )}
-              </h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Use a hardware security key (YubiKey, etc.) or platform passkey as a second factor.
-              </p>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Can&apos;t scan? Enter this key manually:</p>
+                      <code className="text-xs bg-muted rounded px-2 py-1 select-all break-all">
+                        {pendingSecret}
+                      </code>
+                    </div>
 
-              {webauthnLoading ? (
-                <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
-              ) : (
-                <div className="mt-3 flex flex-col gap-3">
-                  {webauthnCredentials.length > 0 && (
-                    <ul className="flex flex-col gap-2 max-w-sm">
-                      {webauthnCredentials.map(cred => {
-                        const isProcessing = processingKeyId === cred.id;
-                        return (
-                          <li key={cred.id} className="rounded-md border px-3 py-2 text-sm">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Key className="size-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate font-medium">{cred.name}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">
-                                  {new Date(cred.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
-                                </span>
-                              </div>
-                              {isProcessing ? (
-                                <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
-                              ) : (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                  onClick={() => handleDeleteKey(cred.id)}
-                                  disabled={processingKeyId !== null || twoFABusy}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-
-                  {addingKey ? (
-                    <form onSubmit={handleRegisterKey} className="flex flex-col gap-3 max-w-sm">
+                    <form onSubmit={handleSetupVerify} className="flex flex-col gap-3">
                       <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="key-name">Key name (optional)</Label>
-                        <Input
-                          id="key-name"
-                          value={newKeyName}
-                          onChange={e => setNewKeyName(e.target.value)}
-                          placeholder="Security Key"
-                          maxLength={64}
-                          autoFocus
-                        />
+                        <Label>Enter the 6-digit code from your app</Label>
+                        <InputOTP
+                          maxLength={6}
+                          value={setupCode}
+                          onChange={setSetupCode}
+                          autoComplete="one-time-code"
+                        >
+                          <InputOTPGroup>
+                            <InputOTPSlot index={0} />
+                            <InputOTPSlot index={1} />
+                            <InputOTPSlot index={2} />
+                            <InputOTPSlot index={3} />
+                            <InputOTPSlot index={4} />
+                            <InputOTPSlot index={5} />
+                          </InputOTPGroup>
+                        </InputOTP>
                       </div>
                       {!twoFactorProtected && (
                         <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="key-enrollment-password">Current password</Label>
+                          <Label htmlFor="totp-enrollment-password">Current password</Label>
                           <Input
-                            id="key-enrollment-password"
+                            id="totp-enrollment-password"
                             type="password"
                             value={securityEnrollmentPassword}
                             onChange={e => setSecurityEnrollmentPassword(e.target.value)}
@@ -2591,46 +2533,130 @@ export function UserSettingsPage() {
                         </div>
                       )}
                       <div className="flex gap-2">
-                        <Button type="submit" disabled={registerLoading || (!twoFactorProtected && !securityEnrollmentPassword)}>
-                          {registerLoading ? "Follow the browser prompt…" : "Register key"}
+                        <Button type="submit" disabled={setupLoading || setupCode.length !== 6 || (!twoFactorProtected && !securityEnrollmentPassword)}>
+                          {setupLoading ? "Verifying…" : "Enable 2FA"}
                         </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => { setAddingKey(false); setNewKeyName(""); setSecurityEnrollmentPassword(""); }}
-                          disabled={registerLoading}
-                        >
+                        <Button type="button" variant="outline" onClick={handleCancelSetup}>
                           Cancel
                         </Button>
                       </div>
                     </form>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-fit"
-                      onClick={() => setAddingKey(true)}
-                    >
+                  </div>
+                )}
+              </div>
+
+              {/* Passkeys / security keys */}
+              <div className="rounded-lg border border-border bg-card">
+                <SecurityRowHeader
+                  title="Passkeys / security keys"
+                  status={!webauthnLoading && (
+                    <SecurityStatus ok={webauthnCredentials.length > 0} on="Enabled" off="Not set up" title={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} />
+                  )}
+                  description="Use a hardware security key (YubiKey, etc.) or platform passkey as a second factor."
+                  action={webauthnLoading ? (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
+                  ) : !addingKey ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setAddingKey(true)}>
                       Add security key
                     </Button>
-                  )}
-                </div>
-              )}
-            </div>
+                  ) : null}
+                />
+                {!webauthnLoading && (webauthnCredentials.length > 0 || addingKey) && (
+                  <div className="flex flex-col gap-3 border-t border-border px-4 py-4">
+                    {webauthnCredentials.length > 0 && (
+                      <ul className="flex flex-col gap-2 max-w-sm">
+                        {webauthnCredentials.map(cred => {
+                          const isProcessing = processingKeyId === cred.id;
+                          return (
+                            <li key={cred.id} className="rounded-md border border-border bg-background/40 py-1 pl-3 pr-1 text-sm">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Key className="size-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate font-medium">{cred.name}</span>
+                                  <span className="text-xs text-muted-foreground shrink-0">
+                                    {new Date(cred.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                                  </span>
+                                </div>
+                                {isProcessing ? (
+                                  <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    aria-label={`Remove ${cred.name}`}
+                                    title="Remove key"
+                                    onClick={() => handleDeleteKey(cred.id)}
+                                    disabled={processingKeyId !== null || twoFABusy}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {addingKey && (
+                      <form onSubmit={handleRegisterKey} className="flex flex-col gap-3 max-w-sm">
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="key-name">Key name (optional)</Label>
+                          <Input
+                            id="key-name"
+                            value={newKeyName}
+                            onChange={e => setNewKeyName(e.target.value)}
+                            placeholder="Security Key"
+                            maxLength={64}
+                            autoFocus
+                          />
+                        </div>
+                        {!twoFactorProtected && (
+                          <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="key-enrollment-password">Current password</Label>
+                            <Input
+                              id="key-enrollment-password"
+                              type="password"
+                              value={securityEnrollmentPassword}
+                              onChange={e => setSecurityEnrollmentPassword(e.target.value)}
+                              autoComplete="current-password"
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <Button type="submit" disabled={registerLoading || (!twoFactorProtected && !securityEnrollmentPassword)}>
+                            {registerLoading ? "Follow the browser prompt…" : "Register key"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => { setAddingKey(false); setNewKeyName(""); setSecurityEnrollmentPassword(""); }}
+                            disabled={registerLoading}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </div>
 
-            {/* Change password subsection */}
-            <div className="mt-6 pt-5 border-t">
-              <h3 className="text-sm font-semibold">Change password</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Update the password used to sign in to your account.
-              </p>
-              <Button
-                variant="outline"
-                className="mt-3"
-                onClick={() => { resetPasswordDialog(); setChangePasswordOpen(true); }}
-              >
-                Change password
-              </Button>
+              {/* Change password */}
+              <div className="rounded-lg border border-border bg-card">
+                <SecurityRowHeader
+                  title="Change password"
+                  description="Update the password used to sign in to your account."
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(true); }}>
+                      Change password
+                    </Button>
+                  }
+                />
+              </div>
             </div>
           </section>
 
@@ -2648,28 +2674,27 @@ export function UserSettingsPage() {
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
             ) : sessions.length === 0 ? (
-              <div className="mt-4 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-6 text-center">
-                <Monitor className="mb-2 size-5 text-muted-foreground" aria-hidden />
-                <p className="text-sm font-medium">No active sessions</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">Devices you sign in on will appear here.</p>
+              <div className="mt-4">
+                <SettingsEmptyRow icon={Monitor}>No other devices are signed in.</SettingsEmptyRow>
               </div>
             ) : (
-              <ul className="mt-4 space-y-2">
-                {sessions.map(s => (
-                  <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+              <ul className="mt-4 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+                {/* Current session first, so "this device" is always on top. */}
+                {[...sessions].sort((a, b) => Number(b.current) - Number(a.current)).map(s => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <DeviceIcon kind={s.deviceKind} />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-medium">{s.clientLabel ?? "Unknown device"}</p>
                           {s.current && (
-                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                            <span className="inline-flex h-6 items-center rounded-full bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-300">
                               This device
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {s.ip ? `${s.ip} · ` : ""}signed in {formatRelative(s.createdAt)}
+                        <p className="mt-0.5 text-[13px] text-muted-foreground">
+                          {s.ip ? `${s.ip} · Signed in` : "Signed in"} {formatRelative(s.createdAt)}
                         </p>
                       </div>
                     </div>
@@ -2691,7 +2716,8 @@ export function UserSettingsPage() {
             {sessions.some(s => !s.current) && (
               <Button
                 variant="outline"
-                className="mt-4"
+                size="sm"
+                className="mt-3"
                 disabled={revokingOthers}
                 onClick={handleRevokeOthers}
               >
@@ -2703,19 +2729,23 @@ export function UserSettingsPage() {
           <Separator className="my-10" />
 
           {/* Danger zone */}
-          <section id="danger" className="rounded-lg border border-destructive/30 bg-destructive/[0.04] p-5">
+          <section id="danger" className="flex flex-col gap-4">
             <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Permanently delete your account. You must transfer or delete any sites you own first.
-            </p>
-            <Button
-              variant="destructive"
-              className="mt-4"
-              disabled={deletingAccount || twoFABusy}
-              onClick={handleDeleteButtonClick}
-            >
-              {deletingAccount ? "Deleting…" : "Delete account"}
-            </Button>
+            <DangerRow
+              title="Delete your account"
+              description="Permanently delete your account and its data. Transfer or delete any sites you own first."
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={DESTRUCTIVE_OUTLINE_BUTTON}
+                  disabled={deletingAccount || twoFABusy}
+                  onClick={handleDeleteButtonClick}
+                >
+                  {deletingAccount ? "Deleting…" : "Delete account"}
+                </Button>
+              }
+            />
           </section>
 
           <AlertDialog open={ownedSitesOpen} onOpenChange={setOwnedSitesOpen}>

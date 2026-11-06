@@ -35,13 +35,14 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
 import { DocOutline } from "@/components/DocOutline";
 import { useToast } from "@/hooks/use-toast";
@@ -135,6 +136,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">{title}</p>
       {children}
     </div>
+  );
+}
+
+// Reference entries: the syntax on its own line, the explanation underneath
+// as wrapping prose - aligned trailing comments inside a <pre> got clipped.
+function RefList({ items }: { items: [string, string][] }) {
+  return (
+    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+      {items.map(([code, desc]) => (
+        <li key={code} className="flex flex-col gap-1 px-3 py-2">
+          <code className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{code}</code>
+          {desc && <span className="text-[13px] leading-5 text-muted-foreground">{desc}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -339,6 +355,8 @@ export function DocPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [outlineSheetOpen, setOutlineSheetOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [docSettingsOpen, setDocSettingsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -940,7 +958,7 @@ export function DocPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-[44rem] px-6 py-10">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </div>
     );
@@ -948,7 +966,7 @@ export function DocPage() {
 
   if (!doc) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-[44rem] px-6 py-10">
         <p className="text-sm text-destructive">Document not found.</p>
       </div>
     );
@@ -957,22 +975,25 @@ export function DocPage() {
   if (editing) {
     // Reserve the reading view's outline rail (xl, w-60) so the writing column
     // keeps the same left edge when switching between reading and editing.
-    const reserveOutline = extractHeadings(doc.content).length > 0;
+    // Always reserve the outline rail (xl): the reading view keeps it even for
+    // heading-less docs, so every doc - new, editing, reading - shares one
+    // column position.
+    const reserveOutline = true;
     return (
       <div className="flex h-full flex-col">
-        {/* Title + toolbar - inner row matches the editor's max-w-3xl column so
+        {/* Title + toolbar - inner row matches the editor's 44rem prose column so
             the title aligns with the document content below. */}
         <div className={cn("border-b border-border px-3 py-2 sm:px-6 sm:py-3", reserveOutline && "xl:pr-[16.5rem]")}>
-          <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 sm:gap-4">
+          <div className="mx-auto grid max-w-[44rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:gap-4">
           <Input
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
             placeholder="Document title"
             aria-label="Document title"
-            className="h-10 min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-md border-0 bg-transparent px-0 sm:px-4 text-2xl md:text-2xl font-medium tracking-tight shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:border-transparent"
+            className="h-10 min-w-0 rounded-none border-0 border-b border-transparent bg-transparent px-0 text-xl md:text-[22px] font-semibold tracking-tight shadow-none placeholder:font-medium placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:border-border hover:border-border/60"
             autoFocus={isNewDoc}
           />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {realtimeEnabled && !isNewDoc && <EditorPresence editors={remoteEditors} />}
             {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
@@ -1019,7 +1040,7 @@ export function DocPage() {
         </div>
 
         <div className={cn("flex flex-1 justify-center overflow-hidden px-6", reserveOutline && "xl:pr-[16.5rem]")}>
-          <div className="relative w-full max-w-3xl overflow-hidden">
+          <div className="relative w-full max-w-[44rem] overflow-hidden">
             <WysiwygEditor
               key={collabFatal ? "fallback" : "collab"}
               mode={rawMode ? "raw" : "editing"}
@@ -1077,18 +1098,18 @@ export function DocPage() {
                   <Code>{`# H1\n## H2\n### H3`}</Code>
                 </Section>
                 <Section title="Emphasis">
-                  <Code>{`**bold**       Ctrl+B\n*italic*       Ctrl+I\n__underline__  Ctrl+U\n~~strikethrough~~`}</Code>
+                  <RefList items={[[`**bold**`, `Ctrl+B`], [`*italic*`, `Ctrl+I`], [`__underline__`, `Ctrl+U`], [`~~strikethrough~~`, ``]]} />
                 </Section>
                 <Section title="Links & images">
-                  <Code>{`[link text](https://example.com)\n[email me](mailto:hello@example.com)\n[call](tel:+15551234567)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
+                  <RefList items={[[`[link text](https://example.com)`, ``], [`[email me](mailto:hello@example.com)`, ``], [`[call](tel:+15551234567)`, ``], [`![alt text](https://example.com/img.png)`, ``], [`![alt](img.png){width=300}`, `fixed width (px)`], [`![alt](img.png){width=50%}`, `percentage width`], [`![alt](img.png){width=400 height=200}`, `width and height`]]} />
                   <p className="text-xs text-muted-foreground mt-1">Allowed URL schemes: <span className="font-mono">http</span>, <span className="font-mono">https</span>, <span className="font-mono">mailto</span>, <span className="font-mono">tel</span>. Other schemes are stripped.</p>
                 </Section>
                 <Section title="Audio embeds">
-                  <Code>{`![song.mp3](song.mp3)                         full player (default)\n![song.mp3](song.mp3){size=full}              same as default\n![song.mp3](song.mp3){size=small}             inline chip\n![song.mp3](/api/files/<id>/content)          uploaded file`}</Code>
+                  <RefList items={[[`![song.mp3](song.mp3)`, `full player (default)`], [`![song.mp3](song.mp3){size=full}`, `same as default`], [`![song.mp3](song.mp3){size=small}`, `inline chip`], [`![song.mp3](/api/files/<id>/content)`, `uploaded file`]]} />
                   <p className="text-xs text-muted-foreground mt-1">Recognized extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
                 </Section>
                 <Section title="Document links">
-                  <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>
+                  <RefList items={[[`[[My Document]]`, `link by title`], [`[[My Document|custom label]]`, `link with display text`], [`[[My Document#section]]`, `link to a heading anchor`], [`[[My Document#section|see this]]`, `anchor link with label`]]} />
                 </Section>
                 <Section title="Lists">
                   <Code>{`- unordered item\n- another item\n\n1. ordered item\n2. another item`}</Code>
@@ -1097,7 +1118,9 @@ export function DocPage() {
                   <Code>{`- [x] done\n- [ ] not done`}</Code>
                 </Section>
                 <Section title="Tables">
-                  <Code>{`| Col A | Col B |\n|-------|-------|\n| one   | two   |`}</Code>
+                  <Code>{`| Col A | Col B |
+|-------|-------|
+| one   | two   |`}</Code>
                 </Section>
                 <Section title="Code">
                   <Code>{`\`inline code\`\n\n\`\`\`typescript\nconst x = 42;\n\`\`\``}</Code>
@@ -1119,7 +1142,7 @@ export function DocPage() {
                   <Code>{`---`}</Code>
                 </Section>
                 <Section title="Dice roller">
-                  <Code>{`\`dice: 1d20\`             standard roll\n\`dice: 2d6+1d4+3\`       compound expression\n\`dice: 4d6kh3\`          keep highest 3\n\`dice: 4d6kl3\`          keep lowest 3\n\`dice: 2d8r1\`           reroll 1s (unlimited)\n\`dice: 2d8r<3\`          reroll less than 3\n\`dice: 2d8r>5\`          reroll greater than 5\n\`dice: 2d8r1r3\`         reroll 1s and 3s\n\`dice: 4d6kh3r1\`        keep highest 3, reroll 1s\n\`dice: 2d10ro<2\`        reroll once if less than 2\n\`dice: 2dF\`             fate/fudge dice (-1, 0, +1)\n\`dice: 1d[2,4,6,8]\`    custom numeric faces\n\`dice: 1d[fire,ice]\`   random string table\n\`dice: 2d6[Fire]\`      inline label\n\`dice: 2d6%4\`          modulus\n\`dice: 2d6**2\`         exponentiation\n\`dice: floor(2d6/3)\`   math function\n\`dice: (2d6+1d4)*2\`    grouping with parentheses\n\`dice: 1d20 Attack Roll\`         overall label\n\`dice: 1d20+5 \\ +5 for initiative\` label with separator`}</Code>
+                  <RefList items={[[`\`dice: 1d20\``, `standard roll`], [`\`dice: 2d6+1d4+3\``, `compound expression`], [`\`dice: 4d6kh3\``, `keep highest 3`], [`\`dice: 4d6kl3\``, `keep lowest 3`], [`\`dice: 2d8r1\``, `reroll 1s (unlimited)`], [`\`dice: 2d8r<3\``, `reroll less than 3`], [`\`dice: 2d8r>5\``, `reroll greater than 5`], [`\`dice: 2d8r1r3\``, `reroll 1s and 3s`], [`\`dice: 4d6kh3r1\``, `keep highest 3, reroll 1s`], [`\`dice: 2d10ro<2\``, `reroll once if less than 2`], [`\`dice: 2dF\``, `fate/fudge dice (-1, 0, +1)`], [`\`dice: 1d[2,4,6,8]\``, `custom numeric faces`], [`\`dice: 1d[fire,ice]\``, `random string table`], [`\`dice: 2d6[Fire]\``, `inline label`], [`\`dice: 2d6%4\``, `modulus`], [`\`dice: 2d6**2\``, `exponentiation`], [`\`dice: floor(2d6/3)\``, `math function`], [`\`dice: (2d6+1d4)*2\``, `grouping with parentheses`], [`\`dice: 1d20 Attack Roll\``, `overall label`], [`\`dice: 1d20+5 \\ +5 for initiative\` label with separator`, ``]]} />
                   <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
                 </Section>
                 </MajorSection>
@@ -1221,7 +1244,7 @@ export function DocPage() {
             so the absolutely-positioned top-right action toolbar can never
             overlap it. */}
         {viewingRevision && (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-[44rem]">
             <HistoryBanner
               editorName={(() => {
                 if (viewingRevision.contributors) {
@@ -1243,9 +1266,11 @@ export function DocPage() {
             />
           </div>
         )}
-        <div className="mx-auto max-w-3xl md:relative">
+        <div className="mx-auto max-w-[44rem] md:relative">
           {/* Top-right actions */}
-          <div className="mb-3 flex items-center justify-end gap-2 md:absolute md:-top-[9px] md:right-0 md:mb-0">
+          {/* Phones: float right so "Last updated" shares the row (the meta
+              line below is given the same 40px height). */}
+          <div className="flex items-center justify-end gap-2 max-md:float-right max-md:ml-3 max-md:mb-2 md:absolute md:-top-[9px] md:right-0">
           {/* Secondary tools: one quiet grouped strip. Edit (below) is the
               labelled primary action so authors don't have to decode glyphs. */}
           <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-xs [&>button]:size-10 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
@@ -1254,28 +1279,16 @@ export function DocPage() {
                 <ListTree className="h-4 w-4" />
               </Button>
             )}
-            {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
-              <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
-                <Sparkles className="h-4 w-4 text-violet-500" />
-              </Button>
-            )}
             <ExportPdfDialog
-              trigger={
-                <Button variant="ghost" size="icon" title="Export as PDF">
-                  <FileDown className="h-4 w-4" />
-                </Button>
-              }
+              open={exportOpen}
+              onOpenChange={setExportOpen}
               documentName={parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).title ?? doc.title}
             />
           {isEditor && (
             <>
-              {!viewingRevision && !parseFrontmatter(doc.content).cover && (
-                <Button variant="ghost" size="icon" title="Add header image" onClick={() => coverInputRef.current?.click()} disabled={coverBusy}>
-                  <ImagePlus className="h-4 w-4" />
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" title="View history" onClick={openHistory}>
+              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="!w-auto gap-1.5 !px-2.5">
                 <History className="h-4 w-4" />
+                <span className="hidden sm:inline">History</span>
               </Button>
               <HistorySheet
                 open={historyOpen}
@@ -1292,9 +1305,6 @@ export function DocPage() {
               />
               {isAdmin && (
                 <>
-                  <Button variant="ghost" size="icon" title="Manage limited viewer access" onClick={openShareDialog}>
-                    <Users className="h-4 w-4" />
-                  </Button>
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
@@ -1442,13 +1452,10 @@ export function DocPage() {
                   </Dialog>
                 </>
               )}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" title="Document settings">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+              <Dialog open={docSettingsOpen} onOpenChange={setDocSettingsOpen}>
+                {/* Opened from a menu: focus the dialog itself rather than
+                    painting a focus ring on its first icon button. */}
+                <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                   <DialogHeader>
                     <DialogTitle>Document settings</DialogTitle>
                     <DialogDescription>Who can read this document, and how its page is displayed.</DialogDescription>
@@ -1493,12 +1500,12 @@ export function DocPage() {
                           </Button>
                         )}
                       </div>
-                      <div className="flex items-center justify-between gap-3">
+                      <div className={cn("flex items-center justify-between gap-3", projectPublishedAt && "opacity-60")}>
                         <div className="flex flex-col gap-0.5">
-                          <Label className="text-sm font-medium">Publish this document</Label>
+                          <Label className="text-sm font-medium">Publish this document on its own</Label>
                           <p className="text-xs text-muted-foreground">
                             {projectPublishedAt
-                              ? "Only takes effect if the site is unpublished."
+                              ? "Not needed while the whole site is published."
                               : "Make just this document public while the rest of the site stays private."}
                           </p>
                         </div>
@@ -1506,8 +1513,9 @@ export function DocPage() {
                           variant={doc.published_at || projectPublishedAt ? "outline" : "default"}
                           size="sm"
                           className="shrink-0"
-                          disabled={togglingPublish}
+                          disabled={togglingPublish || (!!projectPublishedAt && !doc.published_at)}
                           onClick={handleTogglePublish}
+                          title={projectPublishedAt && !doc.published_at ? "The whole site is already public" : undefined}
                         >
                           {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                         </Button>
@@ -1520,7 +1528,7 @@ export function DocPage() {
                           Show page heading
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Display the document title as a heading at the top of the page.
+                          Adds the title above the content. Leave off if the doc starts with its own heading.
                         </p>
                       </div>
                       <Switch
@@ -1550,6 +1558,43 @@ export function DocPage() {
               </Dialog>
             </>
           )}
+            {/* Occasional tools live in one labelled menu instead of a row of
+                look-alike glyphs. Items keep their old titles for tests. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" title="More actions" aria-label="More actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[220px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
+                <DropdownMenuItem title="Export as PDF" onSelect={() => setExportOpen(true)}>
+                  <FileDown /> Export as PDF
+                </DropdownMenuItem>
+                {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
+                  <DropdownMenuItem title="Generate AI summary" disabled={aiSummaryLoading} onSelect={() => { void generateSummary(); }}>
+                    <Sparkles /> Generate AI summary
+                  </DropdownMenuItem>
+                )}
+                {isEditor && !viewingRevision && !parseFrontmatter(doc.content).cover && (
+                  <DropdownMenuItem title="Add header image" disabled={coverBusy} onSelect={() => coverInputRef.current?.click()}>
+                    <ImagePlus /> Add header image
+                  </DropdownMenuItem>
+                )}
+                {isEditor && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {isAdmin && (
+                      <DropdownMenuItem title="Manage limited viewer access" onSelect={() => { void openShareDialog(); }}>
+                        <Users /> Manage access
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem title="Document settings" onSelect={() => setDocSettingsOpen(true)}>
+                      <Settings /> Document settings
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           {isEditor && (
             <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3.5 md:h-9">
@@ -1558,6 +1603,9 @@ export function DocPage() {
             </Button>
           )}
           </div>
+          {/* Without the meta line there's nothing to sit beside the floated
+              actions on phones, so clear them instead of indenting the title. */}
+          {(viewingRevision || doc.show_last_updated === 0) && <div className="max-md:clear-both" />}
 
           <article data-pdf-print-target className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
             {(() => {
@@ -1567,10 +1615,13 @@ export function DocPage() {
               return showHeading && <h1 data-pdf-title>{headingTitle}</h1>;
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
-              <p data-pdf-last-updated className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+              <p data-pdf-last-updated className="not-prose mb-2 text-[13px] text-muted-foreground max-md:flex max-md:min-h-10 max-md:items-center sm:-mt-2 sm:mb-3 sm:text-sm">
                 Last updated {timeAgo(doc.updated_at)} · {calcReadingTime(doc.content)}
               </p>
             )}
+            {/* End the phone float row here so the document body never lays
+                out beside the floated actions. */}
+            <div aria-hidden="true" className="max-md:clear-both" />
             {!viewingRevision && aiEnabled && (aiSummaryLoading || doc.ai_summary) && (
               <div data-pdf-ai-summary className="not-prose mb-6 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/30">
                 <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
@@ -1736,10 +1787,14 @@ export function DocPage() {
         </Sheet>
       )}
 
-      {/* Outline */}
+      {/* Outline rail - always present at xl (empty for heading-less docs)
+          so the article column never shifts between docs or modes. */}
+      <aside className="hidden xl:block w-60 shrink-0 py-10 pl-2 pr-6" aria-hidden={headings.length === 0 || undefined}>
       {headings.length > 0 && (
-        <aside className="hidden xl:block w-60 shrink-0 py-10 pl-2 pr-6">
-          <div className="sticky top-6">
+        <>
+          {/* Sticky offset equals the aside's top padding (py-10) so the rail
+              doesn't jump when scrolling starts. */}
+          <div className="sticky top-10">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               Outline
             </p>
@@ -1758,8 +1813,9 @@ export function DocPage() {
               />
             </ScrollArea>
           </div>
-        </aside>
+        </>
       )}
+      </aside>
     </div>
   );
 }

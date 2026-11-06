@@ -238,6 +238,7 @@ test("by default the limited user does NOT see the doc in the file list", async 
 
 test("owner grants the limited user VIEW access on the doc", async () => {
   await ownerPage.goto(`/projects/${projectId}/docs/${docId}`);
+  await ownerPage.getByRole("button", { name: "More actions" }).click();
   await ownerPage.getByTitle("Manage limited viewer access").click();
 
   const dialog = ownerPage.getByRole("dialog", { name: "Document access" });
@@ -284,6 +285,7 @@ test("with VIEW share - limited user does NOT see the Edit affordance", async ()
 
 test("owner uplifts the share from VIEW to EDIT", async () => {
   await ownerPage.goto(`/projects/${projectId}/docs/${docId}`);
+  await ownerPage.getByRole("button", { name: "More actions" }).click();
   await ownerPage.getByTitle("Manage limited viewer access").click();
 
   const dialog = ownerPage.getByRole("dialog", { name: "Document access" });

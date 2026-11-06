@@ -266,7 +266,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-8 sm:py-10">
+    <div className="px-4 py-6 sm:px-6 sm:py-10">
       <h1 className="sr-only">Dashboard</h1>
       {orgs.length > 0 && (
         <div className="mb-10">
@@ -371,6 +371,19 @@ export function DashboardPage() {
               <CardFooter />
               </Link>
             </Card>
+          )}
+          {projects.length > 0 && (
+            // Quiet ghost tile so a short list still reads as a grid. Worded
+            // differently from the header's "New site" so that label stays
+            // unique on the page.
+            <button
+              type="button"
+              onClick={openCreateSite}
+              className="group flex h-14 w-full flex-row items-center justify-center gap-2 self-start rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-auto sm:min-h-[7.5rem] sm:flex-col"
+            >
+              <Plus className="h-5 w-5" />
+              Add another site
+            </button>
           )}
           {projects.length === 0 && (
           <Card asChild>

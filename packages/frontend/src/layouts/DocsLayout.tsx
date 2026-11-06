@@ -22,6 +22,8 @@ import {
   BookOpen,
   Settings,
   LogOut,
+  UserRound,
+  KeyRound,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -43,7 +45,7 @@ import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { UserAvatar } from "@/components/UserAvatar";
-import { UserProfileCard } from "@/components/UserProfileCard";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
 // A row of GET /api/projects. doc_count / member_count are only present when
@@ -862,6 +864,9 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-1">
               {searchEntry}
+              {visibleProjects.length > 0 && (
+                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Sites</p>
+              )}
               {visibleProjects.map(p => (
                 <Button
                   key={p.id}
@@ -880,11 +885,15 @@ export function DocsLayout() {
 
         <Separator />
 
-        {/* Footer */}
-        <div className="p-2">
-          <div className="flex items-center gap-2 px-2 py-1.5">
+        {/* Footer - fixed height so the divider doesn't jump when the
+            role sub-line appears inside a site. */}
+        <div className="flex h-16 items-center p-2">
+          <div className="flex w-full items-center gap-2 px-2 py-1.5">
             {userId && userName ? (
-              <UserProfileCard userId={userId} name={userName}>
+              // Own-account menu: a small popover anchored above the user row
+              // (the full profile card modal is for viewing other people).
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   aria-label="Open profile"
@@ -899,7 +908,27 @@ export function DocsLayout() {
                     )}
                   </span>
                 </button>
-              </UserProfileCard>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64 [&_svg]:size-4 [&_svg]:text-muted-foreground">
+                  <div className="flex items-center gap-2.5 px-2 py-2">
+                    <UserAvatar userId={userId} name={userName} className="size-9 shrink-0 text-sm" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{userName}</p>
+                      {currentProject && <p className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"} of {currentProject.name}</p>}
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => navigate(`/u/${userId}`)}>
+                    <UserRound /> View your public profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate("/settings")}>
+                    <Settings /> Account settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate("/settings#two-factor")}>
+                    <KeyRound /> Security &amp; sessions
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <>
                 <div className="size-7 shrink-0 rounded-full bg-muted" />
@@ -1095,7 +1124,9 @@ export function DocsLayout() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Branding <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <div className="grid gap-3 sm:grid-cols-2">
+              {/* One tile per row: side by side the captions wrapped unevenly
+                  and the two upload actions fell on different baselines. */}
+              <div className="grid gap-2">
                 {/* Square icon - cropped to 512×512 via AvatarCropDialog. */}
                 <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                   <button
@@ -1108,13 +1139,13 @@ export function DocsLayout() {
                       ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
                       : <Image className="size-5 text-muted-foreground" />}
                   </button>
-                  <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium">Square icon</p>
                     <p className="text-xs text-muted-foreground">Sidebar &amp; favourites</p>
-                    <button type="button" className="mt-0.5 self-start text-xs font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline" onClick={() => squareInputRef.current?.click()}>
-                      {squareBlob ? "Change image" : "Upload image"}
-                    </button>
                   </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => squareInputRef.current?.click()}>
+                    {squareBlob ? "Change" : "Upload"}
+                  </Button>
                   <input
                     ref={squareInputRef}
                     type="file"
@@ -1142,13 +1173,13 @@ export function DocsLayout() {
                       ? <img src={widePreviewUrl} alt="" className="max-h-full max-w-full object-contain" />
                       : <Image className="size-5 text-muted-foreground" />}
                   </button>
-                  <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium">Wordmark</p>
-                    <p className="text-xs text-muted-foreground">Published site header</p>
-                    <button type="button" className="mt-0.5 self-start text-xs font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline" onClick={() => wideInputRef.current?.click()}>
-                      {wideFile ? "Change image" : "Upload image"}
-                    </button>
+                    <p className="text-xs text-muted-foreground">Site header</p>
                   </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => wideInputRef.current?.click()}>
+                    {wideFile ? "Change" : "Upload"}
+                  </Button>
                   <input
                     ref={wideInputRef}
                     type="file"

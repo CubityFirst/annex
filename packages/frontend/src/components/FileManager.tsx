@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, FilePlus, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown } from "lucide-react";
+import { Folder, FileText, FilePlus, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
+import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +71,14 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
 
 // Muted em dash for a cell with no value - every row fills every column, so
 // nothing reads as a rendering gap. The label is for screen readers.
+// Folder size shown on its row/card: one total ("1 item", "7 items", "Empty")
+// on desktop and mobile alike; the doc/file/folder breakdown rides in the
+// tooltip (folderCountLabel).
+function folderItemsLabel(c: FolderCounts | undefined): string {
+  const n = c ? c.docs + c.files + c.folders : 0;
+  return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
+}
+
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -94,8 +103,33 @@ const FILE_COLUMNS = [
 const FILE_COLUMNS_STORAGE_KEY = "file-columns-v2";
 
 // Higher-contrast checkbox border for the listing (the shared default is too
-// faint against the table surface).
-const ROW_CHECKBOX_CLASS = "border-foreground/30 data-[state=checked]:border-primary";
+// faint against the table surface): the same full-strength grey as the
+// row action icons.
+const ROW_CHECKBOX_CLASS = "border-muted-foreground data-[state=checked]:border-primary";
+
+// Header select-all box. A local primitive rather than the shared Checkbox
+// because the shared one always draws a check - the indeterminate (partial
+// selection) state needs a dash. Styles mirror the shared box + row override.
+function SelectAllCheckbox({ checked, onCheckedChange, disabled }: {
+  checked: boolean | "indeterminate";
+  onCheckedChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <CheckboxPrimitive.Root
+      aria-label={checked === true ? "Deselect all" : "Select all"}
+      title={checked === true ? "Deselect all" : "Select all"}
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={onCheckedChange}
+      className="peer size-4 shrink-0 rounded-[4px] border border-muted-foreground shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
+    >
+      <CheckboxPrimitive.Indicator className="grid place-content-center text-current transition-none">
+        {checked === "indeterminate" ? <Minus className="size-3.5" /> : <Check className="size-3.5" />}
+      </CheckboxPrimitive.Indicator>
+    </CheckboxPrimitive.Root>
+  );
+}
 
 // A row stays highlighted while its right-click menu (the ContextMenuTrigger
 // wrapper, `group/rowmenu`) or its kebab (`data-row-menu`) is open, so it's
@@ -110,12 +144,18 @@ const ROW_SELECTED_CLASS = "bg-accent/50";
 const MENU_ICON_CLASS =
   "[&_svg:not([class*='size-'])]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground";
 
+// Trailing actions column: up to three (with AI) / two 32px buttons, 4px
+// gaps, and the cell's 8px right padding.
+const ACTIONS_COL = 2 * 32 + 4 + 8;
+const ACTIONS_COL_WITH_AI = 3 * 32 + 2 * 4 + 8;
+
 // Shared sizing for the per-row menus (context menu + kebabs).
 const ROW_MENU_CLASS = `min-w-[200px] [&_[role=menuitem]]:pr-4 ${MENU_ICON_CLASS}`;
 
-// Small square icon button for the desktop row actions column.
+// Square 32px icon button for the desktop row actions column - 16px icons in
+// full-strength muted grey so the actions read without hovering the row.
 const ROW_ICON_BUTTON_CLASS =
-  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 // The same five actions repeat across the desktop context menu, the desktop
 // kebab, and the mobile kebab - render them once from a "kit" of menu-item
@@ -820,9 +860,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <Link />
         Copy link
       </M.Item>
-      <M.Item onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Markdown copied" }); }}>
+      <M.Item title="Copy markdown to embed this file in a doc" onClick={() => { navigator.clipboard.writeText(fileEmbedMarkdown(file)); toast({ title: "Embed copied", description: "Paste it into a doc to embed this file." }); }}>
         <Code />
-        Copy markdown
+        Copy embed
       </M.Item>
       <M.Item onClick={() => downloadFile(file)}>
         <Download />
@@ -920,7 +960,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               ? ROW_ICON_BUTTON_CLASS
               : "inline-flex items-center justify-center h-10 w-10 -mr-1.5 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
-            <MoreVertical className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            <MoreVertical className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         {/* Menu items render in a portal, but React still bubbles their clicks
@@ -949,15 +989,46 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       </>
     );
 
+    // Header select-all: every visible folder/doc/file except the home doc
+    // (which can't be binned or moved). Partial selection shows a dash.
+    const selectableDocs = sortedDocs.filter(d => !isHomeDoc(d));
+    const selectableTotal = sortedFolders.length + selectableDocs.length + sortedFiles.length;
+    const visibleSelected =
+      sortedFolders.filter(f => selectedFolders.has(f.id)).length +
+      selectableDocs.filter(d => selectedDocs.has(d.id)).length +
+      sortedFiles.filter(f => selectedFiles.has(f.id)).length;
+    const allSelected = selectableTotal > 0 && visibleSelected === selectableTotal;
+    const headerChecked: boolean | "indeterminate" = allSelected ? true : visibleSelected > 0 ? "indeterminate" : false;
+    const toggleSelectAll = () => {
+      if (allSelected) {
+        setSelectedFolders(new Set());
+        setSelectedDocs(new Set());
+        setSelectedFiles(new Set());
+      } else {
+        setSelectedFolders(new Set(sortedFolders.map(f => f.id)));
+        setSelectedDocs(new Set(selectableDocs.map(d => d.id)));
+        setSelectedFiles(new Set(sortedFiles.map(f => f.id)));
+      }
+      lastCheckedFolderIndex.current = null;
+      lastCheckedDocIndex.current = null;
+      lastCheckedFileIndex.current = null;
+    };
+
     return (
       <>
       {/* Desktop: resizable table (md+) */}
       <div className="hidden md:block">
-      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey={FILE_COLUMNS_STORAGE_KEY} sort={sort} onSort={handleSort} actionsColumn={aiEnabled ? 104 : 72}>
+      <ResizableTable
+        columns={FILE_COLUMNS}
+        checkboxColumn={canEdit}
+        headerCheckbox={canEdit ? (
+          <SelectAllCheckbox checked={headerChecked} onCheckedChange={toggleSelectAll} disabled={selectableTotal === 0} />
+        ) : undefined}
+        storageKey={FILE_COLUMNS_STORAGE_KEY} sort={sort} onSort={handleSort} actionsColumn={aiEnabled ? ACTIONS_COL_WITH_AI : ACTIONS_COL}>
         <>
           {sortedFolders.map((folder, folderIdx) => {
             const isDropTarget = dropTarget === folder.id;
-            const countLabel = folderCountLabel(folderCounts.get(folder.id));
+            const counts = folderCounts.get(folder.id);
             const folderRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
@@ -1001,6 +1072,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
+                          <span className="ml-1.5 shrink-0 whitespace-nowrap text-sm text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
+                            <span aria-hidden="true">· </span>{folderItemsLabel(counts)}
+                          </span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1019,14 +1093,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     },
                     // Folders carry no author or edit time of their own.
                     { content: <EmptyCell label="No author" /> },
-                    // The Size column shows what's inside (full-subtree totals).
-                    {
-                      content: (
-                        <span className="text-sm text-muted-foreground truncate" title={countLabel || "Empty folder"}>
-                          {countLabel || "Empty"}
-                        </span>
-                      ),
-                    },
+                    // Folders have no byte size - what's inside (full-subtree
+                    // totals) rides after the name instead.
+                    { content: <EmptyCell label="No size" /> },
                     { content: <EmptyCell label="No update time" /> },
                   ]}
                   actionsCell={canEdit ? renderKebab(`Actions for folder ${folder.name}`, folderActionItems(dropdownKit, folder), true) : null}
@@ -1117,7 +1186,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           className={ROW_ICON_BUTTON_CLASS}
                           title="Summarise with AI"
                         >
-                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                          <Sparkles className="h-4 w-4" aria-hidden="true" />
                         </button>
                       )}
                       <button
@@ -1127,7 +1196,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         className={ROW_ICON_BUTTON_CLASS}
                         title="Download as markdown"
                       >
-                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                        <Download className="h-4 w-4" aria-hidden="true" />
                       </button>
                       {renderKebab(`Actions for ${doc.title || "Untitled"}`, docActionItems(dropdownKit, doc), true)}
                     </>
@@ -1204,7 +1273,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className={ROW_ICON_BUTTON_CLASS}
                       title="Download"
                     >
-                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      <Download className="h-4 w-4" aria-hidden="true" />
                     </button>
                     {renderKebab(`Actions for ${file.name}`, fileActionItems(dropdownKit, file), true)}
                   </>
@@ -1225,7 +1294,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       {/* Mobile: card list (below md) - same data, tappable rows + kebab actions */}
       <div className="md:hidden rounded-lg border border-border bg-background overflow-hidden">
         {sortedFolders.map(folder => {
-          const countLabel = folderCountLabel(folderCounts.get(folder.id));
+          const counts = folderCounts.get(folder.id);
           return (
             <div
               key={folder.id}
@@ -1242,9 +1311,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{folder.name}</div>
-                {countLabel && (
-                  <div className="truncate text-xs text-muted-foreground">{countLabel}</div>
-                )}
+                <div className="truncate text-xs text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
+                  {folderItemsLabel(counts)}
+                </div>
               </div>
               {canEdit && renderKebab("Folder actions", (
                 <>
@@ -1401,7 +1470,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             aria-label="Search files and documents"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
+            className="h-11 pl-9 pr-10 sm:h-9 sm:pr-8"
           />
           {searchQuery && (
             <button
@@ -1418,32 +1487,46 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         {canEdit && (
           <div className="flex w-full items-center justify-end gap-2 sm:ml-auto sm:w-auto">
             {selectedCount > 0 && (
-              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="mr-auto h-10 gap-1.5 px-3 sm:mr-0 sm:h-9" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="mr-auto h-11 gap-1.5 px-3 sm:mr-0 sm:h-9" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 {deleting ? "Deleting…" : `Delete (${selectedCount})`}
               </Button>
             )}
-            <Button variant="outline" aria-label="New folder" title="New folder" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" onClick={() => setShowNewFolder(true)}>
-              <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-              New folder
-            </Button>
             <Button variant="outline" aria-label="Upload files" title="Upload files" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" onClick={() => fileInputRef.current?.click()}>
               <Upload className="h-3.5 w-3.5" aria-hidden="true" />
               Upload
             </Button>
-            <Button variant="outline" aria-label="New drawing" title="New drawing" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" onClick={handleNewDrawing} disabled={creatingDrawing}>
-              <PenTool className="h-3.5 w-3.5" aria-hidden="true" />
-              {creatingDrawing ? "Creating…" : "New drawing"}
-            </Button>
+            {/* "New ▾" holds the secondary create actions. Two triggers so the
+                touch menu can also carry Upload (no drag-and-drop there)
+                without the desktop menu repeating the Upload button. */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-10 gap-1.5 px-3 sm:hidden" disabled={creatingDrawing}>
+                <Button variant="outline" className="hidden h-9 gap-1.5 px-3 sm:inline-flex" disabled={creatingDrawing}>
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  New
+                  {creatingDrawing ? "Creating…" : "New"}
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className={`min-w-[180px] ${MENU_ICON_CLASS}`}>
+                <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
+                  <FolderPlus />
+                  New folder
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleNewDrawing}>
+                  <PenTool />
+                  New drawing
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="h-11 gap-1.5 px-3 sm:hidden" disabled={creatingDrawing}>
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  {creatingDrawing ? "Creating…" : "New"}
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className={`min-w-[180px] ${MENU_ICON_CLASS} [&_[role=menuitem]]:min-h-11`}>
                 <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
                   <FolderPlus />
                   New folder
@@ -1458,7 +1541,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button aria-label="New document" title="New document" className="h-10 gap-1.5 px-4 sm:h-9 sm:px-3" onClick={handleNewDoc}>
+            <Button aria-label="New document" title="New document" className="h-11 gap-1.5 px-4 sm:h-9 sm:px-3" onClick={handleNewDoc}>
               <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
               <span className="sm:hidden">New doc</span>
               <span className="hidden sm:inline">New document</span>
@@ -1511,16 +1594,17 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <DialogTitle>New folder</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateFolder} className="flex flex-col">
-            <Label htmlFor="new-folder-name" className="sr-only">Folder name</Label>
-            <Input
-              id="new-folder-name"
-              placeholder="Folder name"
-              aria-label="Folder name"
-              value={newFolderName}
-              onChange={e => setNewFolderName(e.target.value)}
-              autoFocus
-              required
-            />
+            <div className="grid gap-2">
+              <Label htmlFor="new-folder-name">Folder name</Label>
+              <Input
+                id="new-folder-name"
+                placeholder="e.g. Meeting notes"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowNewFolder(false)}>
                 Cancel
@@ -1540,15 +1624,16 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <DialogTitle>Rename</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col">
-            <Label htmlFor="rename-name" className="sr-only">New name</Label>
-            <Input
-              id="rename-name"
-              aria-label="New name"
-              value={renameName}
-              onChange={e => setRenameName(e.target.value)}
-              autoFocus
-              required
-            />
+            <div className="grid gap-2">
+              <Label htmlFor="rename-name">Name</Label>
+              <Input
+                id="rename-name"
+                value={renameName}
+                onChange={e => setRenameName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRenameTarget(null)}>
                 Cancel
