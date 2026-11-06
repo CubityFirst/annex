@@ -9,7 +9,7 @@ Generalizes the single-purpose admin handoff (`admin_handoffs`, 0009).
 - **Issuer** = `https://auth.cubityfir.st` (dedicated identity host, decoupled
   from the app origin which may migrate). The auth worker serves
   `/oauth/{token,userinfo,jwks}` + `/.well-known/openid-configuration` there
-  directly via two `wrangler.toml` routes (`auth.cubityfir.st/oauth/*`,
+  directly via two routes in `packages/auth/cloudflare.config.ts` (`auth.cubityfir.st/oauth/*`,
   `/.well-known/*`). Needs a **proxied** DNS record for `auth.cubityfir.st` on
   the `cubityfir.st` zone.
 - **authorization_endpoint** = `https://docs.cubityfir.st/oauth/authorize` - a

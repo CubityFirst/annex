@@ -2,10 +2,11 @@
   "name": "@annex/admin",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "concurrently \"cd frontend && pnpm dev\" \"pnpm exec wrangler dev --port 8789 --persist-to ../../.wrangler/state\"",
     "build": "cd frontend && pnpm build",
-    "deploy": "pnpm build && pnpm exec wrangler deploy",
+    "deploy": "pnpm build && cf deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
