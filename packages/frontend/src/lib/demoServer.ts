@@ -361,7 +361,7 @@ function seed(): Store {
     changelogMode: "off",
     aiEnabled: 0,
     aiSummarizationType: "manual",
-    graphEnabled: 0,
+    graphEnabled: 1,
     publishedGraphEnabled: 0,
     homeDocId: null,
     isFavourite: 1,
@@ -967,7 +967,8 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     if (sub === "graph" && seg[3] === "reindex" && method === "POST") {
       return ok({ nextAvailableAt: new Date(Date.now() + 10 * 60_000).toISOString() });
     }
-    if (sub === "graph" && method === "GET") return ok(buildDemoGraph(s));
+    // Mirrors the real API: the graph is refused while the feature is off.
+    if (sub === "graph" && method === "GET") return s.graphEnabled ? ok(buildDemoGraph(s)) : blocked("Graph view is turned off for this site.");
     if (sub === "export") return blocked("Site export is disabled in the demo.");
     if (sub === "api-keys" || sub === "invite-links" || sub === "domain" || sub === "logo" || sub === "folder-shares") {
       return method === "GET" ? notFound() : blocked("Not available in the demo.");
@@ -1133,6 +1134,16 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   }
 
   // --- files ---
+  // GET /files?projectId=…[&folderId=…] - same filter semantics as the real
+  // API (folderId present but empty = root only; absent = every file).
+  if (seg[0] === "files" && seg.length === 1 && method === "GET") {
+    let files = [...s.files];
+    if (url.searchParams.has("folderId")) {
+      const folderId = url.searchParams.get("folderId") || null;
+      files = files.filter(f => f.folder_id === folderId);
+    }
+    return ok(files.map(f => fileListing(s, f)));
+  }
   if (seg[0] === "files" && seg.length === 1 && method === "POST") {
     const form = await readFormBody(input, init);
     const file = form?.get("file");

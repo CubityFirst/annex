@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useScrollSpy } from "./useScrollSpy";
@@ -24,33 +24,35 @@ export interface SettingsSectionDef {
 export interface SettingsGroupDef {
   /** Group key referenced by SettingsSectionDef.group. */
   id: string;
-  /** Outline group label. */
+  /** Outline group label (an eyebrow above the group's links). For a
+   *  `separated` group it is only the accessible name - not shown. */
   label: string;
+  /** Set apart after a thin divider, with no eyebrow label (e.g. Danger
+   *  zone). Its links keep the normal indent. Defaults to true when every
+   *  section in the group is `danger`, false otherwise. */
+  separated?: boolean;
 }
 
 export interface ResolvedGroup extends SettingsGroupDef {
   sections: SettingsSectionDef[];
+  separated: boolean;
 }
 
 /**
  * Build the outline: drop `visible: false` sections, attach each remaining
  * section to its group preserving declared order, and drop groups left empty
- * (e.g. admin-only groups for a viewer). Pure for unit-testing.
+ * (e.g. admin-only groups for a viewer). A group made only of danger
+ * sections is `separated` unless the page says otherwise. Pure for
+ * unit-testing.
  */
 export function resolveOutline(groups: SettingsGroupDef[], sections: SettingsSectionDef[]): ResolvedGroup[] {
   const visible = sections.filter(s => s.visible !== false);
   return groups
-    .map(group => ({ ...group, sections: visible.filter(s => s.group === group.id) }))
+    .map(group => {
+      const own = visible.filter(s => s.group === group.id);
+      return { ...group, sections: own, separated: group.separated ?? (own.length > 0 && own.every(s => s.danger)) };
+    })
     .filter(group => group.sections.length > 0);
-}
-
-/**
- * Outline text for a group: a group holding a single section shows that
- * section's own label, so the outline always reads exactly like the heading
- * it jumps to ("Members", not "People"; "API keys", not "Developer").
- */
-export function groupOutlineLabel(group: ResolvedGroup): string {
-  return group.sections.length === 1 ? group.sections[0].label : group.label;
 }
 
 /** Destructive-outline button styling (pair with variant="outline"): red text
@@ -180,14 +182,13 @@ interface SettingsShellProps {
 /** Shared styling for every outline link. Like the legal pages' "On this
  *  page" list, the outline sits on a 1px hairline track and the current
  *  destination is marked by exactly one thing: a 2px bar on that track (plus
- *  foreground text). No fill, no weight change. Links inside a group indent
- *  their text under the group's eyebrow label - the bar always sits on the
- *  nav's left edge. */
-function outlineItemClass(active: boolean, danger: boolean | undefined, indent: boolean) {
+ *  foreground text). No fill, no weight change. Every link sits at one indent,
+ *  under its group's eyebrow label - the bar always sits on the nav's left
+ *  edge. */
+function outlineItemClass(active: boolean, danger: boolean | undefined) {
   return cn(
-    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm font-normal transition-colors",
+    "-ml-px border-l-2 py-1.5 pl-6 pr-2 text-left text-sm font-normal transition-colors",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-    indent ? "pl-6" : "pl-3.5",
     danger
       ? active
         ? "border-destructive text-destructive"
@@ -225,7 +226,7 @@ export function SettingsShell({ title, description, groups, sections, children }
   // Deep-link support (e.g. /settings#billing, /settings#sessions): on hash
   // change, scroll to the section once it has rendered. scrollTo also sets the
   // section active, so its outline link is marked. We re-run on idsKey changes so
-  // a hash pointing at an initially-gated section (e.g. #theme before /api/me
+  // a hash pointing at an initially-gated section (e.g. #members before the role
   // resolves) still scrolls once that section appears - but honoredHash ensures
   // each hash is honored only once, so a later gate flip can't yank the user
   // back to the hash after they've scrolled away.
@@ -249,31 +250,37 @@ export function SettingsShell({ title, description, groups, sections, children }
       <div className="flex gap-14">
         {/* Grouped outline - desktop only; below md the "Jump to section"
             select under the header takes its place. Groups never collapse:
-            a group label is a plain jump to its first section, and its
-            sections are listed beneath it, indented. */}
+            a group label is a non-interactive eyebrow and its sections are
+            listed beneath it, indented. */}
         <aside className="hidden md:block w-48 shrink-0">
           <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
             <div className="flex flex-col border-l border-border">
               {resolved.map((group, index) => {
-                // ~8px above each group (and above a plain link that follows
-                // a group) so groups read as blocks; none above the first row.
-                const prevIsGroup = index > 0 && resolved[index - 1].sections.length > 1;
-                // A group holding a single section would just repeat itself
-                // ("Danger zone > Danger zone"), so render it as one plain link.
-                if (group.sections.length === 1) {
-                  const section = group.sections[0];
+                const links = group.sections.map(section => {
                   const isActive = active === section.id;
                   return (
                     <button
-                      key={group.id}
+                      key={section.id}
                       type="button"
                       onClick={() => scrollTo(section.id)}
                       aria-current={isActive ? "true" : undefined}
-                      className={cn(outlineItemClass(isActive, section.danger, false), prevIsGroup && "mt-2")}
+                      className={outlineItemClass(isActive, section.danger)}
                     >
                       {section.label}
                     </button>
+                  );
+                });
+                // A separated group (Danger zone) is set apart by a 16px gap
+                // and a hairline instead of an eyebrow; every other group -
+                // even a single-section one - gets its label, so all links
+                // share one indent and a label never reads as a stray link.
+                if (group.separated) {
+                  return (
+                    <div key={group.id} role="group" aria-label={group.label} className="flex flex-col">
+                      {index > 0 && <div aria-hidden className="mb-2 ml-3.5 mr-2 mt-4 h-px bg-border" />}
+                      {links}
+                    </div>
                   );
                 }
                 return (
@@ -286,20 +293,7 @@ export function SettingsShell({ title, description, groups, sections, children }
                     <p id={`settings-outline-group-${group.id}`} className={OUTLINE_GROUP_LABEL}>
                       {group.label}
                     </p>
-                    {group.sections.map(section => {
-                      const isActive = active === section.id;
-                      return (
-                        <button
-                          key={section.id}
-                          type="button"
-                          onClick={() => scrollTo(section.id)}
-                          aria-current={isActive ? "true" : undefined}
-                          className={outlineItemClass(isActive, section.danger, true)}
-                        >
-                          {section.label}
-                        </button>
-                      );
-                    })}
+                    {links}
                   </div>
                 );
               })}
@@ -336,20 +330,29 @@ export function SettingsShell({ title, description, groups, sections, children }
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  {resolved.map(group =>
-                    group.sections.length === 1 ? (
-                      <SelectItem
-                        key={group.id}
-                        value={group.sections[0].id}
-                        className={cn("min-h-10", group.sections[0].danger && "text-destructive focus:text-destructive")}
-                      >
-                        {group.sections[0].label}
-                      </SelectItem>
+                  {resolved.map((group, index) =>
+                    group.separated ? (
+                      <SelectGroup key={group.id} aria-label={group.label}>
+                        {index > 0 && <SelectSeparator />}
+                        {group.sections.map(section => (
+                          <SelectItem
+                            key={section.id}
+                            value={section.id}
+                            className={cn("min-h-10 pl-4", section.danger && "text-destructive focus:text-destructive")}
+                          >
+                            {section.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     ) : (
                       <SelectGroup key={group.id}>
                         <SelectLabel>{group.label}</SelectLabel>
                         {group.sections.map(section => (
-                          <SelectItem key={section.id} value={section.id} className="min-h-10 pl-4">
+                          <SelectItem
+                            key={section.id}
+                            value={section.id}
+                            className={cn("min-h-10 pl-4", section.danger && "text-destructive focus:text-destructive")}
+                          >
                             {section.label}
                           </SelectItem>
                         ))}

@@ -67,6 +67,7 @@
   letter-spacing: -0.022em;
   line-height: 1.2;
   padding: 0.55em 0 0.3em;
+  text-wrap: balance;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-h2 {
   font-size: 1.5em;
@@ -74,6 +75,7 @@
   letter-spacing: -0.018em;
   line-height: 1.25;
   padding: 0.95em 0 0.3em;
+  text-wrap: balance;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-h3 {
   font-size: 1.25em;
@@ -497,7 +499,8 @@
   border-left-width: 3px;
   border-left-style: solid;
   padding-left: 0.75em;
-  padding-top: 0.3em;
+  padding-right: 0.75em;
+  padding-top: 0.5em;
   font-weight: 600;
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
@@ -506,15 +509,16 @@
   border-left-width: 3px;
   border-left-style: solid;
   padding-left: 0.75em;
+  padding-right: 0.75em;
 }
 .cm-wysiwyg .cm-content .cm-line.cm-callout-body--last {
-  padding-bottom: 0.3em;
+  padding-bottom: 0.5em;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
 }
 /* When the header line itself is the last (single-line callout). */
 .cm-wysiwyg .cm-content .cm-line.cm-callout-header-line.cm-callout-body--last {
-  padding-bottom: 0.3em;
+  padding-bottom: 0.5em;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
 }

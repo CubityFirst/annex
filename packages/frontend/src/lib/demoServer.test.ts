@@ -377,7 +377,15 @@ describe("demo server published site", () => {
 });
 
 describe("demo server graph", () => {
+  it("refuses the graph while the feature is off, like the real API", async () => {
+    await patch("/projects/demo-site", { graphEnabled: false });
+    expect((await api("/projects/demo-site/graph")).ok).toBe(false);
+    await patch("/projects/demo-site", { graphEnabled: true });
+    expect((await api("/projects/demo-site/graph")).ok).toBe(true);
+  });
+
   it("derives edges from wikilinks between docs", async () => {
+    await patch("/projects/demo-site", { graphEnabled: true });
     const aId = await createDoc("Graph source doc");
     const bId = await createDoc("Graph target doc");
     await put(`/docs/${aId}`, { content: "Links to [[Graph target doc]] and [[Graph target doc|again]]." });

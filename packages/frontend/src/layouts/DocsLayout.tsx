@@ -41,7 +41,8 @@ import {
   LayoutGrid,
   X,
 } from "lucide-react";
-import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
+import { readRecentItems, onRecentItemsUpdated, RECENT_DISPLAY_LIMIT, type RecentItem } from "@/lib/recentDocs";
+import { SidebarPageTree, onSiteTreeChanged, type TreeFile } from "@/components/SidebarPageTree";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
@@ -86,12 +87,20 @@ interface Doc {
   display_title?: string | null;
   folder_id?: string | null;
   tags?: string | null;
+  is_home?: number;
+  sidebar_position?: number | null;
 }
 
 interface Folder {
   id: string;
   name: string;
   parent_id: string | null;
+}
+
+// Swap in a refetched list only when it differs, so an unchanged refresh keeps
+// the old array identity (and memoised consumers don't recompute).
+function keepIfSame<T>(prev: T[], next: T[]): T[] {
+  return prev.length === next.length && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
 }
 
 type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText };
@@ -301,6 +310,8 @@ export function DocsLayout() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  // Sidebar page tree only (not part of the outlet context).
+  const [files, setFiles] = useState<TreeFile[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   // DOM node of the top-bar action slot, exposed via context so a page can
   // portal an action (e.g. drawing Save) into the title bar.
@@ -338,6 +349,7 @@ export function DocsLayout() {
   // current user
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
@@ -376,14 +388,23 @@ export function DocsLayout() {
   // Recently accessed docs/files for the current project. Re-read on route
   // change AND when DocPage / FilePage push a new entry - pushes happen
   // after the fetch resolves, so they land later than the pathname change.
+  // The open doc/file is left out: it's already highlighted in the page tree,
+  // and dropping it keeps the list from reshuffling on every navigation.
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const openItemMatch = useMatch("/projects/:projectId/:kind/:itemId");
+  const openItemKey = openItemMatch && (openItemMatch.params.kind === "docs" || openItemMatch.params.kind === "files")
+    ? `${openItemMatch.params.kind === "docs" ? "doc" : "file"}:${openItemMatch.params.itemId}`
+    : null;
+  const visibleRecentItems = recentItems
+    .filter(item => `${item.kind}:${item.id}` !== openItemKey)
+    .slice(0, RECENT_DISPLAY_LIMIT);
   useEffect(() => {
-    setRecentItems(projectId ? readRecentItems(projectId) : []);
+    setRecentItems(projectId ? readRecentItems(projectId, RECENT_DISPLAY_LIMIT + 1) : []);
   }, [projectId, location.pathname]);
   useEffect(() => {
     if (!projectId) return;
     return onRecentItemsUpdated(updatedProjectId => {
-      if (updatedProjectId === projectId) setRecentItems(readRecentItems(projectId));
+      if (updatedProjectId === projectId) setRecentItems(readRecentItems(projectId, RECENT_DISPLAY_LIMIT + 1));
     });
   }, [projectId]);
 
@@ -406,11 +427,12 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; emailVerified: boolean; emailVerificationEnabled: boolean; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; email?: string | null; emailVerified: boolean; emailVerificationEnabled: boolean; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
           setUserId(result.data.userId);
+          setUserEmail(typeof result.data.email === "string" && result.data.email ? result.data.email : null);
           setPersonalPlan(result.data.personalPlan ?? "free");
           setPersonalPlanStyle(result.data.personalPlanStyle ?? null);
           setPersonalPresenceColor(result.data.personalPresenceColor ?? null);
@@ -471,25 +493,75 @@ export function DocsLayout() {
       .catch(() => {});
   }, [onDashboard]);
 
+  // Site docs/folders (outlet context + sidebar page tree) and files (tree
+  // only). Loaded when the site changes, then refreshed on every navigation
+  // within it, when the window regains focus, and on notifySiteTreeChanged()
+  // so the tree picks up creates/renames/moves/deletes. Refreshes keep the
+  // previous data on screen (no flicker) and keep the previous array identity
+  // when nothing changed, so consumers memoised on `docs`/`folders` (DocPage's
+  // editor context) don't churn. The sequence number drops stale responses.
+  const [treeRefresh, setTreeRefresh] = useState(0);
   useEffect(() => {
-    if (!projectId) { setDocs([]); setFolders([]); return; }
+    const bump = () => setTreeRefresh(n => n + 1);
+    const onVisible = () => { if (document.visibilityState === "visible") bump(); };
+    const off = onSiteTreeChanged(bump);
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      off();
+      window.removeEventListener("focus", bump);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+  const treeProjectRef = useRef<string | null>(null);
+  const treeFetchSeq = useRef(0);
+  const isLimitedViewer = currentProject?.role === "limited";
+  useEffect(() => {
+    if (!projectId) {
+      treeProjectRef.current = null;
+      setDocs([]); setFolders([]); setFiles([]);
+      return;
+    }
     if (!getToken()) return;
+    if (treeProjectRef.current !== projectId) {
+      treeProjectRef.current = projectId;
+      setDocs([]); setFolders([]); setFiles([]);
+    }
+    const seq = ++treeFetchSeq.current;
+    const current = () => seq === treeFetchSeq.current;
     apiFetchJson<Doc[]>(`/api/docs?projectId=${projectId}`)
       .then(result => {
         // apiFetch already triggered window.location.replace - don't fight it
         // by also calling React Router navigate.
-        if (result.redirected) return;
+        if (result.redirected || !current()) return;
         if (result.status === 403 || result.status === 404) {
           navigate("/dashboard", { replace: true });
           return;
         }
-        if (result.ok && result.data) setDocs(result.data);
+        const next = result.ok ? result.data : undefined;
+        if (next) setDocs(prev => keepIfSame(prev, next));
       })
       .catch(() => {});
     apiFetchJson<Folder[]>(`/api/folders?projectId=${projectId}&all=1`)
-      .then(result => { if (result.ok && result.data) setFolders(result.data); })
+      .then(result => {
+        const next = result.ok ? result.data : undefined;
+        if (current() && next) setFolders(prev => keepIfSame(prev, next));
+      })
       .catch(() => {});
-  }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Limited viewers can't list files (403) - don't ask. Until the site row
+    // (and so the role) has loaded we do ask; a 403 just leaves the tree
+    // without files.
+    if (isLimitedViewer) {
+      setFiles([]);
+    } else {
+      apiFetchJson<TreeFile[]>(`/api/files?projectId=${projectId}`)
+        .then(result => {
+          const next = result.ok ? result.data : undefined;
+          if (current() && next) setFiles(prev => keepIfSame(prev, next));
+        })
+        .catch(() => {});
+    }
+  }, [navigate, projectId, location.pathname, treeRefresh, isLimitedViewer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lazily load the orgs the user can place a new site under, the first time
   // the dialog opens. The API only lets admin+ create sites in an org, so we
@@ -702,8 +774,8 @@ export function DocsLayout() {
   const fallbackCrumbs = ((): BreadcrumbItem[] => {
     const path = location.pathname;
     if (path === "/dashboard") return [{ id: null, name: "Home" }];
-    if (path === "/settings") return [{ id: null, name: "Account" }];
-    if (path === "/invites/pending") return [{ id: null, name: "Account", onClick: () => navigate("/settings") }, { id: "invites", name: "Invites" }];
+    if (path === "/settings") return [{ id: null, name: "Account settings" }];
+    if (path === "/invites/pending") return [{ id: null, name: "Account settings", onClick: () => navigate("/settings") }, { id: "invites", name: "Invites" }];
     if (/^\/u\//.test(path)) return [{ id: null, name: "Profile" }];
     const siteSettings = path.match(/^\/projects\/([^/]+)\/settings$/);
     if (siteSettings && currentProject) {
@@ -755,10 +827,12 @@ export function DocsLayout() {
         />
       )}
       <aside className={cn(
-        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 shadow-2xl shadow-black/40 md:shadow-none",
+        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 md:shadow-none",
         // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
+        // The drop shadow only exists while open - parked off-canvas it would
+        // bleed ~30px onto the page's left edge.
         "fixed inset-y-0 left-0 transition-transform duration-200",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        sidebarOpen ? "translate-x-0 shadow-2xl shadow-black/40" : "-translate-x-full",
         // Desktop: static-flow column (relative, so it keeps its place in the row
         // and anchors the toggle button) whose width collapses instead of translating.
         "md:relative md:inset-auto md:translate-x-0 md:transition-[width] md:duration-200",
@@ -854,13 +928,15 @@ export function DocsLayout() {
               </div>
             </nav>
 
-            {recentItems.length > 0 && (
+            <SidebarPageTree key={projectId} projectId={projectId} docs={docs} folders={folders} files={files} />
+
+            {visibleRecentItems.length > 0 && (
               <div className="mt-4">
                 <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
                   Recently accessed
                 </p>
                 <nav className="flex flex-col gap-0.5">
-                  {recentItems.map(item => (
+                  {visibleRecentItems.map(item => (
                     <NavLink
                       key={`${item.kind}:${item.id}`}
                       to={item.kind === "doc"
@@ -934,7 +1010,9 @@ export function DocsLayout() {
                     <UserAvatar userId={userId} name={userName} className="size-9 shrink-0 text-sm" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{userName}</p>
-                      {currentProject && <p className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"} of {currentProject.name}</p>}
+                      {userEmail
+                        ? <p className="truncate text-xs text-muted-foreground" title={userEmail}>{userEmail}</p>
+                        : currentProject && <p className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"} of {currentProject.name}</p>}
                     </div>
                   </div>
                   <DropdownMenuSeparator />
@@ -995,7 +1073,7 @@ export function DocsLayout() {
                 type="button"
                 onClick={() => setSidebarOpen(true)}
                 aria-label="Open navigation menu"
-                className="md:hidden shrink-0 mr-1 flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="md:hidden shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Menu className="h-5 w-5" />
               </button>
@@ -1048,7 +1126,7 @@ export function DocsLayout() {
               type="button"
               onClick={() => setSearchOpen(true)}
               aria-label="Search"
-              className="md:hidden ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="md:hidden ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <Search className="h-5 w-5" />
             </button>
@@ -1212,8 +1290,7 @@ export function DocsLayout() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={saving} className="gap-1.5">
-                <Plus className="size-4" />
+              <Button type="submit" disabled={saving}>
                 {saving ? "Creating…" : "Create site"}
               </Button>
             </DialogFooter>

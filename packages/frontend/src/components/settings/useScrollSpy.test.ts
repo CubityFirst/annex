@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pickActiveSection, readingLine } from "./useScrollSpy";
-import { groupOutlineLabel, resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
+import { resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
 
 describe("pickActiveSection", () => {
   const ids = ["account", "favourites", "billing", "sessions", "danger"];
@@ -99,13 +99,30 @@ describe("resolveOutline", () => {
     expect(resolved.map(g => g.id)).toEqual(["site", "danger"]);
   });
 
-  it("labels a single-section group with its section's label so the outline matches the heading", () => {
+  it("keeps single-section groups as labelled groups and separates an all-danger group", () => {
     const sections: SettingsSectionDef[] = [
       { id: "general", label: "General", group: "site" },
-      { id: "publishing", label: "Publishing", group: "site" },
       { id: "members", label: "Members", group: "people" },
+      { id: "danger", label: "Danger Zone", group: "danger", danger: true },
     ];
     const resolved = resolveOutline(groups, sections);
-    expect(resolved.map(groupOutlineLabel)).toEqual(["Site", "Members"]);
+    expect(resolved.map(g => [g.label, g.sections.map(s => s.id)])).toEqual([
+      ["Site", ["general"]],
+      ["People", ["members"]],
+      ["Danger Zone", ["danger"]],
+    ]);
+    expect(resolved.map(g => g.separated)).toEqual([false, false, true]);
+  });
+
+  it("lets a group opt out of (or into) separation explicitly", () => {
+    const sections: SettingsSectionDef[] = [
+      { id: "general", label: "General", group: "site" },
+      { id: "danger", label: "Danger Zone", group: "danger", danger: true },
+    ];
+    const resolved = resolveOutline(
+      [{ id: "site", label: "Site", separated: true }, { id: "danger", label: "Danger Zone", separated: false }],
+      sections,
+    );
+    expect(resolved.map(g => g.separated)).toEqual([true, false]);
   });
 });

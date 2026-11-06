@@ -45,6 +45,7 @@ import { normalizeHandle, handleProblem, HANDLE_MAX_LENGTH, HANDLE_PROBLEM_MESSA
 import {
   DESTRUCTIVE_OUTLINE_BUTTON,
   DangerRow,
+  SETTINGS_ROW_CARD,
   SettingsEmptyRow,
   SettingsShell,
   type SettingsGroupDef,
@@ -67,10 +68,12 @@ const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "n
 // Grouped outline for the settings nav. Section→group membership lives
 // in the per-render `settingsSections` array (its visibility depends on
 // currentUser). Order here is the outline order and matches DOM order.
+// Danger zone is an all-danger group, so SettingsShell sets it apart after a
+// divider with no eyebrow.
 const USER_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "profile", label: "Profile" },
-  { id: "billing", label: "Billing" },
-  { id: "appearance", label: "Appearance" },
+  { id: "plan", label: "Plan" },
+  { id: "preferences", label: "Preferences" },
   { id: "security", label: "Security" },
   { id: "danger", label: "Danger zone" },
 ];
@@ -1385,9 +1388,8 @@ export function UserSettingsPage() {
   const settingsSections: SettingsSectionDef[] = [
     { id: "account", label: "Account", group: "profile" },
     { id: "favourites", label: "Favourite sites", group: "profile" },
-    { id: "billing", label: "Billing", group: "billing" },
-    { id: "reading-font", label: "Fonts", group: "appearance" },
-    { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
+    { id: "billing", label: "Billing", group: "plan" },
+    { id: "appearance", label: "Appearance", group: "preferences" },
     { id: "two-factor", label: "Two-factor & password", group: "security" },
     { id: "sessions", label: "Active sessions", group: "security" },
     { id: "danger", label: "Danger zone", group: "danger", danger: true },
@@ -1395,7 +1397,7 @@ export function UserSettingsPage() {
 
   return (
     <SettingsShell
-      title="Settings"
+      title="Account settings"
       description="Manage your account preferences."
       groups={USER_SETTINGS_GROUPS}
       sections={settingsSections}
@@ -1485,6 +1487,8 @@ export function UserSettingsPage() {
                           Change photo
                         </Button>
                       </PopoverAnchor>
+                      <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground" aria-hidden="true">Photo for</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
@@ -1504,14 +1508,14 @@ export function UserSettingsPage() {
                                   aria-checked={selected}
                                   onClick={() => setAvatarVariant(v)}
                                   className={cn(
-                                    "inline-flex h-9 items-center gap-1 rounded-[5px] px-2 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
+                                    "inline-flex h-11 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
                                     selected
                                       ? "bg-background font-medium text-foreground shadow-xs"
                                       : "text-muted-foreground hover:text-foreground",
                                   )}
                                 >
                                   <Icon className="size-3.5" aria-hidden />
-                                  {v === "dark" ? "Dark" : "Light"}
+                                  {v === "dark" ? "Dark backgrounds" : "Light backgrounds"}
                                 </button>
                               );
                             })}
@@ -1521,6 +1525,8 @@ export function UserSettingsPage() {
                           Preview your avatar on dark or light backgrounds. Each can use a different photo.
                         </TooltipContent>
                       </Tooltip>
+                      </div>
+                      
                       <span id="avatar-variant-hint" className="sr-only">
                         Your avatar can differ on dark and light backgrounds.
                       </span>
@@ -2269,18 +2275,78 @@ export function UserSettingsPage() {
 
           <Separator className="my-10" />
 
-          {/* Fonts - picks the prose font used in document reading and
-              editing views. Free for all users (not Ink-gated); OpenDyslexic
-              is an accessibility option. Each column is a radio across the
-              three font rows; code lines stay monospace either way. */}
-          <section id="reading-font">
-            <h2 className="text-base font-semibold">Fonts</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+          {/* Appearance - the theme (when available) first, then fonts. */}
+          <section id="appearance">
+            <h2 className="text-base font-semibold">Appearance</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Choose how the app looks and which fonts it uses.</p>
+
+            {/* Theme - admins always see this; other users see it when the
+                custom-theming Flagship flag is enabled for them. Dark is the
+                default; Light drops .dark; Custom derives a palette from one
+                colour. Server enforces the same logic. */}
+            {(currentUser?.isAdmin || customThemingEnabled) && (
+              <div className={cn("mt-5", SETTINGS_ROW_CARD)}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <p id="theme-label" className="text-sm font-medium">Theme</p>
+                    <p className="text-[13px] leading-snug text-muted-foreground">
+                      Custom derives a full palette — surfaces, borders and accents — from a single colour.
+                    </p>
+                  </div>
+                  <div role="group" aria-labelledby="theme-label" className="flex shrink-0 flex-wrap gap-2">
+                    {([
+                      { mode: "dark", label: "Dark", icon: Moon },
+                      { mode: "light", label: "Light", icon: Sun },
+                      { mode: "custom", label: "Custom", icon: null },
+                    ] as const).map(opt => {
+                      const active = theme === opt.mode;
+                      const Icon = opt.icon;
+                      return (
+                        <button
+                          key={opt.mode}
+                          type="button"
+                          disabled={themePrefsBusy}
+                          onClick={() => saveTheme({ mode: opt.mode })}
+                          aria-pressed={active}
+                          className={cn(
+                            "flex h-11 items-center gap-2 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 sm:h-8",
+                            active ? "border-foreground bg-accent" : "border-border hover:bg-accent",
+                          )}
+                        >
+                          {Icon && <Icon className="size-4" aria-hidden />}
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {theme === "custom" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+                    <ColorPicker
+                      value={customColor ?? DEFAULT_CUSTOM_COLOR}
+                      disabled={themePrefsBusy}
+                      onChange={(next) => updateTheme({ mode: "custom", customColor: next })}
+                      onCommit={(next) => saveTheme({ mode: "custom", customColor: next })}
+                    />
+                    <span className="text-xs text-muted-foreground tabular-nums">{customColor ?? DEFAULT_CUSTOM_COLOR}</span>
+                    <span className="text-xs text-muted-foreground">Lighter/darker shades are derived from this for the whole site.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Fonts - picks the prose font used in document reading and
+                editing views. Free for all users (not Ink-gated); OpenDyslexic
+                is an accessibility option. Each column is a radio across the
+                three font rows; code lines stay monospace either way. */}
+            <h3 className="mt-6 text-sm font-medium">Fonts</h3>
+            <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
               Pick a font for each part of the app: Reading is used for docs, Editing for the editor, and
-              Interface for menus and the rest of the UI. Inline code always stays monospaced.
+              Interface for menus and the rest of the UI.
+              Inline code always stays monospaced.
             </p>
 
-            <div className="mt-5 overflow-x-auto rounded-lg border border-border bg-card">
+            <div className="mt-3 overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full table-fixed min-w-[30rem] text-sm">
                 <thead className="bg-muted/40">
                   <tr>
@@ -2363,61 +2429,6 @@ export function UserSettingsPage() {
           </section>
 
           <Separator className="my-10" />
-
-          {/* Theme - admins always see this; other users see it when the
-              custom-theming Flagship flag is enabled for them. Dark is the
-              default; Light drops .dark; Custom derives a palette from one
-              colour. Server enforces the same logic. */}
-          {(currentUser?.isAdmin || customThemingEnabled) && (
-            <>
-              <section id="theme">
-                <h2 className="text-base font-semibold">Theme</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {([
-                    { mode: "dark", label: "Dark", icon: Moon },
-                    { mode: "light", label: "Light", icon: Sun },
-                    { mode: "custom", label: "Custom", icon: null },
-                  ] as const).map(opt => {
-                    const active = theme === opt.mode;
-                    const Icon = opt.icon;
-                    return (
-                      <button
-                        key={opt.mode}
-                        type="button"
-                        disabled={themePrefsBusy}
-                        onClick={() => saveTheme({ mode: opt.mode })}
-                        aria-pressed={active}
-                        className={cn(
-                          "flex items-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors disabled:opacity-50",
-                          active ? "border-foreground bg-accent" : "border-border hover:bg-accent",
-                        )}
-                      >
-                        {Icon && <Icon className="size-4" />}
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {theme === "custom" && (
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <ColorPicker
-                      value={customColor ?? DEFAULT_CUSTOM_COLOR}
-                      disabled={themePrefsBusy}
-                      onChange={(next) => updateTheme({ mode: "custom", customColor: next })}
-                      onCommit={(next) => saveTheme({ mode: "custom", customColor: next })}
-                    />
-                    <span className="text-xs text-muted-foreground tabular-nums">{customColor ?? DEFAULT_CUSTOM_COLOR}</span>
-                    <span className="text-xs text-muted-foreground">Lighter/darker shades are derived from this for the whole site.</span>
-                  </div>
-                )}
-              </section>
-
-              <Separator className="my-10" />
-            </>
-          )}
 
           {/* Security section */}
           <section id="two-factor">

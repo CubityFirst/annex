@@ -127,9 +127,10 @@ test("sets up a project with two docs (root + folder)", async () => {
   await folderInput.fill("Notes");
   await page.getByRole("button", { name: "Create" }).click();
   // .first(): folders render twice (desktop table + CSS-hidden mobile cards).
-  await expect(page.getByText("Notes").first()).toBeVisible({ timeout: 5000 });
+  // Scoped to <main>: the sidebar page tree has a same-named folder toggle.
+  await expect(page.getByRole("main").getByText("Notes").first()).toBeVisible({ timeout: 5000 });
 
-  await page.getByText("Notes").first().click();
+  await page.getByRole("main").getByText("Notes").first().click();
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
   await page.getByRole("button", { name: "Save" }).click();

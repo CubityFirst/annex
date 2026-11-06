@@ -82,20 +82,19 @@ const ROLE_RANK: Record<Role, number> = { limited: -1, viewer: 0, editor: 1, adm
 
 const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
-// Grouped outline for the settings nav. Section→group membership and
-// per-role visibility live in the per-render `settingsSections` array. Order
-// here is the outline order and matches DOM order. Features/People drop
-// away for non-admins (their only sections are admin-gated); Site (General)
-// and Danger zone remain for every member.
 /** Published location of docs/api/README.md (the public /v1 reference). */
 const API_REFERENCE_URL = "https://github.com/CubityFirst/annex/blob/main/docs/api/README.md";
 
+// Grouped outline for the settings nav. Section→group membership and
+// per-role visibility live in the per-render `settingsSections` array. Order
+// here is the outline order and matches DOM order. Admin-only sections drop
+// away for other members; Site (General), People & access (API keys) and
+// Danger zone remain for every member. Danger zone is an all-danger group,
+// so SettingsShell sets it apart after a divider with no eyebrow.
 const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "site", label: "Site" },
-  { id: "features", label: "Features" },
-  { id: "people", label: "People" },
+  { id: "people", label: "People & access" },
   { id: "content", label: "Content" },
-  { id: "developer", label: "Developer" },
   { id: "danger", label: "Danger zone" },
 ];
 
@@ -1258,11 +1257,11 @@ export function SiteSettingsPage() {
     { id: "branding", label: "Branding", group: "site", visible: isAdminOrOwner },
     { id: "custom-link", label: "Custom link", group: "site", visible: isAdminOrOwner && customLinkEnabled },
     { id: "custom-domain", label: "Custom domain", group: "site", visible: isAdminOrOwner && customLinkEnabled },
-    { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
+    { id: "features", label: "Features", group: "site", visible: isAdminOrOwner },
     { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
+    { id: "api-keys", label: "API keys", group: "people", visible: myRole !== null },
     { id: "recycle-bin", label: "Recycle bin", group: "content", visible: canEditContent },
     { id: "export", label: "Export", group: "content", visible: isAdminOrOwner },
-    { id: "api-keys", label: "API keys", group: "developer", visible: myRole !== null },
     { id: "danger", label: "Danger zone", group: "danger", visible: myRole !== null, danger: true },
   ];
 
@@ -1296,7 +1295,15 @@ export function SiteSettingsPage() {
     >
       {/* General settings */}
       <div id="general" className="flex flex-col gap-5">
-        <SettingsSectionHeader title="General" description="The site's name and a short description of what it's about." />
+        {/* Name and Description are explicit saves: editing a field slides in
+            its Cancel/Save (✓) controls, Enter submits, and a "✓ Saved" flashes
+            beside the label. The hint makes that discoverable while pristine. */}
+        <SettingsSectionHeader
+          title="General"
+          description={isAdminOrOwner
+            ? "The site's name and a short description of what it's about. Edit a field, then press Enter or ✓ to save."
+            : "The site's name and a short description of what it's about."}
+        />
         <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <Label htmlFor="settings-name">Name</Label>
@@ -1507,7 +1514,7 @@ export function SiteSettingsPage() {
             <div id="branding">
               <SettingsSectionHeader title="Branding" description="Customize how your published site looks and is shared." />
             </div>
-            {/* Square icon - used in the projects sidebar, favourites, profile cards.
+            {/* Square icon - used in the sites sidebar, favourites, profile cards.
                 Cropped client-side to 512x512 via AvatarCropDialog. */}
             {/* Both branding rows use the shared settings-row pattern: preview
                 + title/description on the left, actions right-aligned. Each
@@ -1529,7 +1536,7 @@ export function SiteSettingsPage() {
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Square icon</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
-                    Shown in the projects sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
+                    Shown in the sites sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
                   </p>
                 </div>
               </div>
@@ -1699,7 +1706,7 @@ export function SiteSettingsPage() {
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
+                      Lowercase letters, numbers, and hyphens only. 3–50 characters. The original site link will continue to work.
                     </p>
                   </div>
                   {slugError && (
@@ -2255,7 +2262,7 @@ export function SiteSettingsPage() {
                     <DialogHeader>
                       <DialogTitle>Create invite link</DialogTitle>
                       <DialogDescription>
-                        Anyone with the link can join this project with the selected role.
+                        Anyone with the link can join this site with the selected role.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col gap-4 py-2">
@@ -2352,37 +2359,6 @@ export function SiteSettingsPage() {
                 </div>
               )}
             </div>
-          </div>
-        </>
-      )}
-
-      {/* Recycle bin - editors and up */}
-      {canEditContent && projectId && (
-        <>
-          <Separator className="my-10" />
-
-          <div id="recycle-bin">
-            <RecycleBin projectId={projectId} />
-          </div>
-        </>
-      )}
-
-      {/* Export - a safe, read-only action, so it lives with Content rather
-          than under the red Danger zone heading. */}
-      {isAdminOrOwner && (
-        <>
-          <Separator className="my-10" />
-
-          <div id="export" className="flex flex-col gap-4">
-            <SettingsSectionHeader title="Export" description="Take a full copy of this site with you." />
-            <SettingsRow
-              title="Download as .zip"
-              description="Every document and uploaded file in this site, with folders preserved."
-            >
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
-                {exporting ? "Exporting…" : "Export site"}
-              </Button>
-            </SettingsRow>
           </div>
         </>
       )}
@@ -2575,6 +2551,37 @@ export function SiteSettingsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </>
+      )}
+
+      {/* Recycle bin - editors and up */}
+      {canEditContent && projectId && (
+        <>
+          <Separator className="my-10" />
+
+          <div id="recycle-bin">
+            <RecycleBin projectId={projectId} />
+          </div>
+        </>
+      )}
+
+      {/* Export - a safe, read-only action, so it lives with Content rather
+          than under the red Danger zone heading. */}
+      {isAdminOrOwner && (
+        <>
+          <Separator className="my-10" />
+
+          <div id="export" className="flex flex-col gap-4">
+            <SettingsSectionHeader title="Export" description="Take a full copy of this site with you." />
+            <SettingsRow
+              title="Download as .zip"
+              description="Every document and uploaded file in this site, with folders preserved."
+            >
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+                {exporting ? "Exporting…" : "Export site"}
+              </Button>
+            </SettingsRow>
+          </div>
         </>
       )}
 

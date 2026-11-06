@@ -144,6 +144,9 @@ function HitMeta({ folder, updatedAt }: { folder: string | null; updatedAt?: str
   );
 }
 
+/** Dashboard-mode doc search fans out to at most this many sites. */
+const DASHBOARD_SEARCH_SITE_LIMIT = 8;
+
 /** Minimal site shape needed by the dashboard-mode site list. */
 export interface PaletteSite {
   id: string;
@@ -171,7 +174,9 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const [docs, setDocs] = useState<DocHit[]>([]);
   const [files, setFiles] = useState<FileHit[]>([]);
   const [folders, setFolders] = useState<FolderHit[]>([]);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [recent, setRecent] = useState<(RecentItem & { projectId: string; siteName?: string })[]>([]);
+  // Dashboard mode: doc hits gathered from each of the user's sites.
+  const [siteDocs, setSiteDocs] = useState<(DocHit & { siteId: string; siteName: string })[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const navigate = useNavigate();
@@ -184,8 +189,37 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     ? sites.filter(s => s.name.toLowerCase().includes(searchTerm.trim().toLowerCase()))
     : [];
   const resultCount = isDashboard
-    ? (searchTerm.trim() ? siteHits.length : 0)
+    ? (searchTerm.trim() ? siteHits.length + siteDocs.length : 0)
     : docs.length + files.length + folders.length;
+
+  // Dashboard mode has no single site to search, so fan the query out to the
+  // first few sites (same endpoint as in-site search) and merge the doc hits,
+  // labelled with their site. Capped so a big account doesn't fire dozens of
+  // requests per keystroke.
+  const searchAllSites = useCallback(
+    async (term: string) => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      const token = getToken();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const perSite = await Promise.all(sites.slice(0, DASHBOARD_SEARCH_SITE_LIMIT).map(async site => {
+        try {
+          const res = await fetch(`/api/search?projectId=${encodeURIComponent(site.id)}&q=${encodeURIComponent(term)}`, { headers, signal: ctrl.signal });
+          const json = await res.json() as { ok: boolean; data?: { docs?: DocHit[] } };
+          return json.ok && json.data?.docs
+            ? json.data.docs.slice(0, 4).map(d => ({ ...d, siteId: site.id, siteName: site.name }))
+            : [];
+        } catch {
+          return [];
+        }
+      }));
+      if (ctrl.signal.aborted) return;
+      setSiteDocs(perSite.flat().slice(0, 10));
+      setLoading(false);
+    },
+    [sites],
+  );
 
   const search = useCallback(
     async (q: string) => {
@@ -230,11 +264,34 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   useEffect(() => {
     if (!open) {
       abortRef.current?.abort();
-      setQuery(""); setDocs([]); setFiles([]); setFolders([]); setLoading(false);
+      setQuery(""); setDocs([]); setFiles([]); setFolders([]); setSiteDocs([]); setLoading(false);
       return;
     }
-    setRecent(isPublic || !projectId ? [] : readRecentItems(projectId));
+    if (isPublic) setRecent([]);
+    else if (projectId) setRecent(readRecentItems(projectId).map(item => ({ ...item, projectId })));
+    else {
+      // Dashboard: the most recent items across every site, newest first.
+      setRecent(
+        sites
+          .flatMap(site => readRecentItems(site.id).map(item => ({ ...item, projectId: site.id, siteName: site.name })))
+          .sort((a, b) => b.accessedAt - a.accessedAt)
+          .slice(0, 5),
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-read only when the palette opens
   }, [open, isPublic, projectId]);
+
+  useEffect(() => {
+    if (!open || !isDashboard) return;
+    if (!searchTerm.trim() || sites.length === 0) {
+      abortRef.current?.abort();
+      setSiteDocs([]); setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const timer = setTimeout(() => { searchAllSites(searchTerm.trim()); }, 250);
+    return () => clearTimeout(timer);
+  }, [open, isDashboard, searchTerm, searchAllSites, sites.length]);
 
   useEffect(() => {
     if (!open || isDashboard) return;
@@ -275,7 +332,12 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     navigate(`/projects/${projectId}/folders/${folderId}`);
   }
 
-  function openRecent(item: RecentItem) {
+  function openRecent(item: RecentItem & { projectId: string }) {
+    if (isDashboard) {
+      close();
+      navigate(`/projects/${item.projectId}/${item.kind === "doc" ? "docs" : "files"}/${item.id}`);
+      return;
+    }
     if (item.kind === "doc") openDoc(item.id);
     else openFile(item.id);
   }
@@ -297,7 +359,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const actions: QuickAction[] = isPublic ? [] : isDashboard ? [
     ...(onCreateSite ? [{ id: "new-site", label: "New site", icon: Plus, keywords: "create project", run: () => { close(); onCreateSite(); } }] : []),
     ...(onCreateOrg ? [{ id: "new-org", label: "New organization", icon: Building2, keywords: "create org team group", run: () => { close(); onCreateOrg(); } }] : []),
-    { id: "user-settings", label: "User settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
+    { id: "user-settings", label: "Account settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
   ] : [
     ...(canEdit ? [{ id: "new-doc", label: "New document", icon: Plus, keywords: "create write page", run: createDoc }] : []),
     { id: "file-manager", label: "File Manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
@@ -319,7 +381,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
-        placeholder={isDashboard ? "Search sites…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
+        placeholder={isDashboard ? "Search sites and docs…" : tagMode ? "Filter by tag…" : "Search docs and files… or type # for tags"}
         value={query}
         onValueChange={setQuery}
       />
@@ -346,6 +408,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                   ? <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   : <FileKindIcon mime={item.mime ?? ""} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                 <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
+                {item.siteName && <span className="max-w-32 shrink-0 truncate text-[10px] text-muted-foreground">{item.siteName}</span>}
                 <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
                   <Clock className="h-2.5 w-2.5" />
                   {timeAgo(item.accessedAt)}
@@ -370,7 +433,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             <p className="text-sm font-medium">No results found</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {isDashboard
-                ? "This searches site names. Open a site to search its docs and files."
+                ? "This searches site names and doc titles. Open a site to search its files and tags."
                 : "Try a different word, or type # to filter by tag."}
             </p>
           </div>
@@ -405,6 +468,24 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 <span className="text-sm truncate">
                   <HighlightedText text={s.name} term={searchTerm} />
                 </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {isDashboard && hasTerm && siteDocs.length > 0 && (
+          <CommandGroup heading="Documents">
+            {siteDocs.map(d => (
+              <CommandItem
+                key={`site-doc:${d.siteId}:${d.doc_id}`}
+                value={`site-doc:${d.siteId}:${d.doc_id}`}
+                onSelect={() => { close(); navigate(`/projects/${d.siteId}/docs/${d.doc_id}`); }}
+                className="flex items-center gap-2 py-2 min-w-0"
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-sm flex-1 min-w-0 truncate">
+                  <HighlightedText text={d.title} term={searchTerm} />
+                </span>
+                <span className="ml-auto max-w-36 shrink-0 truncate text-[10px] text-muted-foreground">{d.siteName}</span>
               </CommandItem>
             ))}
           </CommandGroup>

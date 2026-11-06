@@ -190,5 +190,5 @@ test("drawing a shape and saving persists it", async () => {
 
 test("the drawing appears in the file listing", async () => {
   await page.goto(`/projects/${projectId}`);
-  await expect(page.getByText("Untitled.excalidraw").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("main").getByText("Untitled.excalidraw").first()).toBeVisible({ timeout: 10000 });
 });

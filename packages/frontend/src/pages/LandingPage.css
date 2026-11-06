@@ -143,7 +143,8 @@
 
 /* ── HERO ── */
 .l-hero {
-  padding: calc(var(--nav-h) + clamp(64px, 9vw, 112px)) 0 var(--section-y);
+  /* Tighter top so the product preview starts inside the first viewport. */
+  padding: calc(var(--nav-h) + clamp(40px, 5vw, 72px)) 0 var(--section-y);
   background:
     radial-gradient(ellipse 70% 50% at 50% 38%, rgba(232,232,232,0.045), transparent 70%),
     var(--bg);
@@ -199,7 +200,7 @@
 
 /* ── PRODUCT VIEWER ── */
 .l-viewer {
-  margin-top: clamp(56px, 7vw, 88px);
+  margin-top: clamp(32px, 3.5vw, 48px);
 }
 .l-viewer-tabs {
   display: flex;
@@ -321,7 +322,8 @@
 
 /* ── USES ── */
 .l-uses {
-  padding: var(--section-y) 0;
+  /* A light, text-only strip: tighter than a full feature section. */
+  padding: calc(var(--section-y) * 0.75) 0;
   border-top: 1px solid var(--border);
 }
 .l-uses-grid {
@@ -912,7 +914,7 @@
     padding: 8px 11px;
     font-size: 12.5px;
     letter-spacing: 0.02em;
-    min-height: 40px;
+    min-height: 44px;
   }
   .l-viewer-chrome { height: 32px; }
   .l-viewer-dots { display: none; }

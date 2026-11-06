@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import { notifySiteTreeChanged } from "@/components/SidebarPageTree";
 import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
@@ -79,10 +80,9 @@ function folderItemsLabel(c: FolderCounts | undefined): string {
   return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
 }
 
-// Muted em dash for any cell without a value - one that doesn't apply to the
-// row (a doc's byte size, a folder's author) or isn't known (an unknown
-// author, a folder not yet opened). Same treatment everywhere so the columns
-// read consistently; the label is for screen readers.
+// Muted em dash for a doc/file cell without a value - one that doesn't apply
+// (a doc's byte size) or isn't known (an unknown author); the label is for
+// screen readers. Folder rows leave their inapplicable cells blank instead.
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -110,20 +110,40 @@ function newestTimestamp(values: (string | undefined)[]): string | undefined {
   return best;
 }
 
+// Fixed desktop widths (px) for the metadata columns: sized for their longest
+// values ("Dec 31, 2025", "999.9 MB", a name + avatar) so the columns sit in
+// the same place in every folder and the trailing actions follow Last updated
+// directly. Name takes whatever width is left and truncates.
+const AUTHOR_COL_PX = 200;
+const SIZE_COL_PX = 96;
+const UPDATED_COL_PX = 128;
+
 // Module-scope so the array identity is stable across renders - the table keys
-// its segment memo off this reference. Every column is a proportional share of
-// the table width (no content auto-fit), so the columns sit in the same place
-// in every folder; row actions live in a fixed trailing column.
+// its segment memo off this reference. min = max width makes each metadata
+// column a fixed standalone segment; Name is the one flexible column (see
+// FIXED_COLUMNS_CLASS for how it's sized). Row actions live in a fixed
+// trailing column.
 const FILE_COLUMNS = [
-  { label: "Name", defaultSize: 42, minSize: 20, sortable: true },
-  { label: "Created by", defaultSize: 22, minSize: 12, sortable: true },
+  { label: "Name", defaultSize: 100, minSize: 20, sortable: true },
+  { label: "Created by", defaultSize: 0, minWidth: AUTHOR_COL_PX, maxWidth: AUTHOR_COL_PX, sortable: true },
   // Right-aligned with tabular figures so byte sizes line up digit for digit.
-  { label: "Size", defaultSize: 14, minSize: 8, sortable: true, align: "right" as const },
-  { label: "Last updated", defaultSize: 22, minSize: 10, sortable: true },
+  { label: "Size", defaultSize: 0, minWidth: SIZE_COL_PX, maxWidth: SIZE_COL_PX, sortable: true, align: "right" as const },
+  { label: "Last updated", defaultSize: 0, minWidth: UPDATED_COL_PX, maxWidth: UPDATED_COL_PX, sortable: true },
 ];
-// Bumped from "file-columns" when the layout above changed, so stale persisted
-// px widths from the old auto-fit columns don't carry over.
-const FILE_COLUMNS_STORAGE_KEY = "file-columns-v2";
+// Bumped when the layout above changed, so stale persisted widths from the
+// old proportional columns don't carry over.
+const FILE_COLUMNS_STORAGE_KEY = "file-columns-v3";
+
+// ResizableTable always lets its *last* segment (here Last updated) fill the
+// row, while the first segment (Name) gets a fixed share. To make Name the
+// flexible column instead, pin Name's segment to "row minus every fixed
+// column" (`--fm-fixed-cols`, set inline per render since the checkbox and
+// actions columns vary) - the last segment's flex then resolves to exactly
+// its own fixed width. `!important` is needed to beat the table's inline
+// custom property. The segment drag grips are hidden: every column but Name
+// is fixed, so there's nothing to drag.
+const FIXED_COLUMNS_CLASS =
+  "[&_[role=grid]]:[--seg-0-width:calc(100%_-_var(--fm-fixed-cols))]! [&_.cursor-col-resize]:hidden";
 
 // Higher-contrast checkbox border for the listing (the shared default is too
 // faint against the table surface): the same full-strength grey as the
@@ -263,6 +283,17 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     files, setFiles,
     folderCounts, bumpFolderCount, path, loading, error: loadError, reload,
   } = useFolderContents(projectId, currentFolderId, projectName);
+
+  // Keep the sidebar page tree in step with edits made here (create, rename,
+  // move, delete, upload) - none of them change the route, which is the
+  // tree's other refetch trigger. The lists filled in by a (re)load are
+  // skipped: those don't mean anything changed.
+  const skipTreeNotify = useRef(true);
+  useEffect(() => {
+    if (loading) { skipTreeNotify.current = true; return; }
+    if (skipTreeNotify.current) { skipTreeNotify.current = false; return; }
+    notifySiteTreeChanged();
+  }, [folders, docs, files, loading]);
 
   // Record this folder's newest child edit for its row's "Last updated" one
   // level up (see folderNewestCache). The lists briefly still hold the
@@ -1144,7 +1175,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     return (
       <>
       {/* Desktop: resizable table (md+) */}
-      <div className="hidden md:block">
+      <div
+        className={`hidden md:block ${FIXED_COLUMNS_CLASS}`}
+        style={{ "--fm-fixed-cols": `${(canEdit ? 40 : 0) + AUTHOR_COL_PX + SIZE_COL_PX + UPDATED_COL_PX + (aiEnabled ? ACTIONS_COL_WITH_AI : ACTIONS_COL)}px` } as React.CSSProperties}
+      >
       <ResizableTable
         columns={FILE_COLUMNS}
         checkboxColumn={canEdit}
@@ -1216,8 +1250,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
-                    // Folders have no author of their own.
-                    { content: <EmptyCell label="No author" /> },
+                    // Folders have no author of their own - left blank (not a
+                    // dash) so it doesn't read as missing data next to docs.
+                    { content: <span className="sr-only">No author</span> },
                     // No byte size either - Size shows what's inside instead
                     // (full-subtree total, breakdown in the tooltip), a step
                     // quieter than the byte sizes so it isn't read as one.
@@ -1229,11 +1264,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       ),
                     },
                     // Newest child edit, once this folder's contents have been
-                    // seen (see folderNewestCache); a dash until then.
+                    // seen (see folderNewestCache); blank until then.
                     {
                       content: folderNewest
                         ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
-                        : <EmptyCell label="No update time" />,
+                        : <span className="sr-only">No update time</span>,
                     },
                   ]}
                   actionsCell={canEdit ? (

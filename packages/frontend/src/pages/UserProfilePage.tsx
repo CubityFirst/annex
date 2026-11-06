@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { BookOpen, CalendarDays, ChevronRight, Clock, CodeXml, Flag, FlaskConical, Globe, NotebookPen, Pencil, Star, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronRight, Clock, CodeXml, Flag, FlaskConical, Globe, NotebookPen, Pencil, Plus, UserRound } from "lucide-react";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
@@ -133,15 +133,16 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
   const inkSince = isInk ? formatInkSince(profile?.personalPlanSince) : null;
   const tz = profile?.timezone ? getTimezoneGroup(profile.timezone) : undefined;
 
-  // Own profile: one consistent nudge in the same spot. Ink users without a
-  // bio are pointed at the bio (an Ink perk); otherwise, with no favourites,
-  // at favourite sites.
+  // Own profile: one nudge at a time. Ink users without a bio are pointed at
+  // the bio (an Ink perk, shown as a row above the sections); otherwise, with
+  // no favourites, at favourite sites - as a dashed tile in the favourites
+  // grid, so it sits in the same 3-column rhythm as the site cards.
   const selfPrompt = !isSelf || !profile
     ? null
     : isInk && !profile.bio
-      ? { label: "Add a bio", hint: "a short note shown on your profile and profile card", to: "/settings#billing", icon: NotebookPen }
+      ? "bio"
       : profile.favouriteSites.length === 0
-        ? { label: "Add favourite sites", hint: "show up to 3 published sites on your profile", to: "/settings#favourites", icon: Star }
+        ? "favourites"
         : null;
 
   return (
@@ -250,15 +251,15 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
 
       {profile && (
         <div className="mt-10 flex flex-col gap-8">
-          {selfPrompt && (
+          {selfPrompt === "bio" && (
             <Link
-              to={selfPrompt.to}
+              to="/settings#billing"
               className="group flex min-h-12 items-center gap-2.5 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <selfPrompt.icon className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground" aria-hidden />
+              <NotebookPen className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground" aria-hidden />
               <span className="min-w-0 flex-1">
-                <span className="font-medium text-foreground">{selfPrompt.label}</span>
-                <span className="max-sm:hidden"> · {selfPrompt.hint}</span>
+                <span className="font-medium text-foreground">Add a bio</span>
+                <span className="max-sm:hidden"> · a short note shown on your profile and profile card</span>
               </span>
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </Link>
@@ -277,6 +278,30 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
                   {profile.bio}
                 </ReactMarkdown>
               </div>
+            </section>
+          )}
+
+          {selfPrompt === "favourites" && (
+            <section>
+              <Eyebrow>Favourite sites</Eyebrow>
+              <ul className={SITE_GRID}>
+                <li>
+                  {/* Same footprint as a site card; dashed = "add" target,
+                      like the dashboard's "Add another site" tile. */}
+                  <Link
+                    to="/settings#favourites"
+                    className="group flex h-full min-h-[4.5rem] w-full items-start gap-2.5 rounded-xl border border-dashed border-border px-5 py-4 text-left text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
+                      <Plus className="size-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-h-8 items-center truncate text-sm font-semibold leading-tight text-foreground">Add favourite sites</span>
+                      <span className="block text-sm">Show up to 3 published sites on your profile.</span>
+                    </span>
+                  </Link>
+                </li>
+              </ul>
             </section>
           )}
 

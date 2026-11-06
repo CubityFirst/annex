@@ -146,7 +146,7 @@ test.describe("demo sandbox", () => {
     // The bin is a section of Site Settings.
     await page.getByTitle("Site settings").click();
     await expect(page.getByRole("heading", { name: "Recycle bin" })).toBeVisible();
-    await expect(page.getByText("Guides", { exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Restore Guides" }).click();
     await expect(page.getByText('Restored "Guides"')).toBeVisible();
     await expect(page.getByText("The recycle bin is empty")).toBeVisible();

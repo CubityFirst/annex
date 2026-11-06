@@ -18,7 +18,7 @@ import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { describeFileType, fileKind, guessLanguage } from "@/lib/fileKind";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { fileContentEtag } from "@/lib/excalidraw";
-import { formatBytes, folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
+import { formatBytes, formatRelativeTime, folderPathLabel, type MoveFolderLike } from "@/lib/fileManager";
 import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
@@ -56,12 +56,11 @@ const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 // column centred in the content area, with a w-60 rail reserved on the right
 // at xl (docs keep their outline there). At xl the column keeps the doc
 // column's left edge but may run wider to the right (capped at 56rem), so
-// previews get room while the file title lines up with a doc title.
+// previews get room while the file title lines up with a doc title. The
+// header (title + metadata) and the preview share this one column, so both
+// edges line up.
 const VIEWER_COLUMN_CLASS =
   "mx-auto max-w-[44rem] xl:mr-0 xl:ml-[max(0px,calc((100%_-_44rem)/2))] xl:max-w-[56rem]";
-// The header row (title, metadata, actions) stays at the doc column's width
-// even where the preview widens, so its right edge matches a doc's too.
-const VIEWER_HEADER_CLASS = "max-w-[44rem]";
 
 // Subtle neutral checkerboard behind image previews, so transparent regions
 // read as transparent rather than as the card colour. Token-based so it
@@ -115,6 +114,16 @@ export function FilePage() {
   const [drawingSaveSlot, setDrawingSaveSlot] = useState<HTMLSpanElement | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Desktop: page actions live in the app top bar (same rule as DocPage);
+  // phones keep them in-page. Each control renders in exactly one place.
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   // "⋯" menu (editors): rename / move / delete, mirroring the File Manager's
   // file row actions and API calls.
@@ -369,9 +378,16 @@ export function FilePage() {
   const kind = fileKind(file.mime_type, file.name);
   const embedMarkdown = fileEmbedMarkdown(file);
   const isSvg = /svg/i.test(file.mime_type) || /\.svg$/i.test(file.name);
+  const actionsInBar = isDesktop && !!headerActionSlot;
 
-  // Editor-only items shared by both ⋯ menus (viewer header + drawing top
-  // bar): rename / move / delete, mirroring the File Manager's file row actions.
+  function copyEmbed() {
+    navigator.clipboard.writeText(embedMarkdown);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
+
+  // Editor-only items shared by every ⋯ menu: rename / move / delete,
+  // mirroring the File Manager's file row actions.
   const editItems = canEdit && (
     <>
       <DropdownMenuItem onClick={() => { setRenameName(file.name); setRenameOpen(true); }}>
@@ -388,6 +404,52 @@ export function FilePage() {
         Delete
       </DropdownMenuItem>
     </>
+  );
+
+  const copyIcon = copiedLink
+    ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+    : <Code className="h-4 w-4" aria-hidden="true" />;
+
+  // Desktop top-bar actions, shared by every file kind (drawings add their
+  // Save state in front): Copy embed (ghost), Download (outline), ⋯ (editors).
+  const barActions = (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1.5"
+        aria-label={copiedLink ? "Copied" : "Copy embed"}
+        title="Copy markdown to embed this file in a doc"
+        onClick={copyEmbed}
+      >
+        {copyIcon}
+        {copiedLink ? "Copied!" : "Copy embed"}
+      </Button>
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDownload} disabled={downloading}>
+        <Download className="h-4 w-4" aria-hidden="true" />
+        {downloading ? "Downloading…" : "Download"}
+      </Button>
+      {canEdit && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More file actions" title="More actions">
+              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={MENU_CLASS}>
+            {editItems}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </>
+  );
+
+  // Announce the transient copy confirmation to assistive tech (the button
+  // text swap alone isn't reliably announced).
+  const copyStatus = (
+    <div role="status" aria-live="polite" className="sr-only">
+      {copiedLink ? "Embed markdown copied to clipboard" : ""}
+    </div>
   );
 
   const dialogs = (
@@ -490,15 +552,18 @@ export function FilePage() {
 
   // Drawings render as a live canvas filling the content area - editor+ get the
   // full editor + Save; everyone else gets a read-only (view-mode) canvas.
-  // Page actions live in the top bar's right side: the canvas's Save state
-  // (portalled into drawingSaveSlot) beside a ⋯ menu with the file actions.
+  // Page actions live in the top bar's right side on every screen size (the
+  // canvas fills the page, so there's no in-page header): the canvas's Save
+  // state (portalled into drawingSaveSlot), then the same actions as every
+  // other file kind on desktop, folded into one ⋯ menu on phones.
   if (kind === "drawing") {
     const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
     return (
       <div className="flex h-full flex-col">
         {headerActionSlot && createPortal(
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1 md:gap-2">
             {canEdit && <span ref={setDrawingSaveSlot} className="flex items-center" />}
+            {isDesktop ? barActions : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More file actions" title="More actions">
@@ -524,6 +589,7 @@ export function FilePage() {
                 {editItems}
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>,
           headerActionSlot,
         )}
@@ -547,20 +613,27 @@ export function FilePage() {
             saveSlot={drawingSaveSlot}
           />
         </Suspense>
+        {copyStatus}
         {dialogs}
       </div>
     );
   }
 
   // One viewer column for every kind (image/text/PDF/media) so the header -
-  // title, metadata, actions - sits in exactly the same place from file to
-  // file, with the title on the same left edge as a doc title (see
-  // VIEWER_COLUMN_CLASS; the type icon rides in the metadata line rather than
-  // a leading tile, which would push the title off that edge). The header
-  // shares the column so its edges line up with the preview.
+  // title + metadata - sits in exactly the same place from file to file, with
+  // the title on the same left edge as a doc title (see VIEWER_COLUMN_CLASS;
+  // the type icon rides in the metadata line rather than a leading tile,
+  // which would push the title off that edge). The header shares the
+  // preview's column so their edges line up. Actions go to the top bar on
+  // desktop and stay beside the title on phones (exactly one copy each).
+  const uploadedRelative = formatRelativeTime(file.created_at);
   return (
     <ViewerLayout>
-      <div className={`flex flex-wrap items-center gap-4 ${VIEWER_HEADER_CLASS}`}>
+      {actionsInBar && createPortal(
+        <div className="flex shrink-0 items-center gap-2">{barActions}</div>,
+        headerActionSlot!,
+      )}
+      <div className="flex flex-wrap items-center gap-4">
         {/* min width lets the actions wrap onto their own line on phones
             instead of squeezing the title to a sliver. */}
         <div className="min-w-[12rem] flex-1">
@@ -569,48 +642,51 @@ export function FilePage() {
               pulled left by that padding and clipped, so the first item on
               every line (including after a wrap) shows no stray separator. */}
           <div className="mt-1 overflow-hidden">
-            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
+            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:content-['·']">
               <span title={file.mime_type} className="inline-flex items-center gap-1.5">
                 <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
                 {describeFileType(file.mime_type, file.name)}
               </span>
               <span>{formatBytes(file.size)}</span>
-              <span>Uploaded {formatDate(file.created_at)}</span>
+              {/* Relative like a doc's "Last updated 2d ago"; the full date is the tooltip. */}
+              <span className="whitespace-nowrap">
+                Uploaded <time dateTime={file.created_at} title={formatDate(file.created_at)}>
+                  {uploadedRelative === "Just now" ? "just now" : uploadedRelative}
+                </time>
+              </span>
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            className="gap-2"
-            aria-label={copiedLink ? "Copied" : "Copy embed"}
-            title="Copy markdown to embed this file in a doc"
-            onClick={() => {
-              navigator.clipboard.writeText(embedMarkdown);
-              setCopiedLink(true);
-              setTimeout(() => setCopiedLink(false), 2000);
-            }}
-          >
-            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Code className="h-4 w-4" aria-hidden="true" />}
-            {copiedLink ? "Copied!" : "Copy embed"}
-          </Button>
-          <Button onClick={handleDownload} disabled={downloading} className="gap-2">
-            <Download className="h-4 w-4" />
-            {downloading ? "Downloading…" : "Download"}
-          </Button>
-          {canEdit && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
-                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className={MENU_CLASS}>
-                {editItems}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+        {!actionsInBar && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              aria-label={copiedLink ? "Copied" : "Copy embed"}
+              title="Copy markdown to embed this file in a doc"
+              onClick={copyEmbed}
+            >
+              {copyIcon}
+              {copiedLink ? "Copied!" : "Copy embed"}
+            </Button>
+            <Button onClick={handleDownload} disabled={downloading} className="gap-2">
+              <Download className="h-4 w-4" />
+              {downloading ? "Downloading…" : "Download"}
+            </Button>
+            {canEdit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className={MENU_CLASS}>
+                  {editItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
 
       {/* One frame only: the image sits centred in a bordered card whose
@@ -732,11 +808,7 @@ export function FilePage() {
         </div>
       )}
 
-      {/* Announce the transient copy confirmation to assistive tech (the button
-          text swap alone isn't reliably announced). */}
-      <div role="status" aria-live="polite" className="sr-only">
-        {copiedLink ? "Embed markdown copied to clipboard" : ""}
-      </div>
+      {copyStatus}
 
       {dialogs}
     </ViewerLayout>

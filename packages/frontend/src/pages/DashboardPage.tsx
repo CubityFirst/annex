@@ -277,9 +277,9 @@ export function DashboardPage() {
   }
 
   const pageActions = (
-    // Phones: primary action first, both full width; desktop: outline then
-    // primary at the right end of the top bar.
-    <div className="flex shrink-0 flex-col-reverse gap-2 self-stretch sm:flex-row sm:items-center sm:self-start [&>button]:w-full sm:[&>button]:w-auto">
+    // Phones: two equal buttons side by side, primary first; desktop: outline
+    // then primary at the right end of the top bar.
+    <div className="flex shrink-0 flex-row-reverse gap-2 self-stretch sm:flex-row sm:items-center sm:self-start [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none">
       <Button variant="outline" size="sm" onClick={openCreateOrg} className="h-10 gap-1.5 sm:h-8">
         <Building2 className="h-4 w-4" />
         New organization
@@ -369,7 +369,7 @@ export function DashboardPage() {
         {!isDesktop && pageActions}
       </div>
 
-      <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+      <div className="grid auto-rows-auto grid-cols-1 gap-4 sm:auto-rows-fr sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
           {visibleProjects.map(project => renderProjectCard(project))}
           {pendingCount > 0 && (
             <Card asChild>
@@ -434,7 +434,7 @@ export function DashboardPage() {
         </div>
 
       {recent.length > 0 && (
-        <section className="mt-12">
+        <section className="mt-8 sm:mt-12">
           <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Recently opened</h2>
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {recent.map(item => (

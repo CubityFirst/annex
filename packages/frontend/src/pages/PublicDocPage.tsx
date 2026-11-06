@@ -1212,7 +1212,7 @@ export function PublicDocPage() {
                       const fm = parseFrontmatter(data.doc.content);
                       const showHeading = fm.hide_title !== undefined ? !fm.hide_title : data.doc.showHeading;
                       const headingTitle = fm.title ?? data.doc.title;
-                      return showHeading && <h1>{headingTitle}</h1>;
+                      return showHeading && <h1 className="text-balance">{headingTitle}</h1>;
                     })()}
                     {data.doc.showLastUpdated && (
                       <p className="not-prose -mt-2 mb-1 text-[13px] text-muted-foreground sm:mb-3 sm:text-sm">

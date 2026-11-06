@@ -405,9 +405,9 @@ describe("FileManager", () => {
   });
 
   // Folder rows: the item count sits in the Size column (breakdown in the
-  // tooltip), and cells that don't apply or aren't known show a muted dash.
-  // Doc rows dash their Size too.
-  it("puts the folder count in Size and dashes inapplicable cells", async () => {
+  // tooltip), and its other cells that don't apply or aren't known stay
+  // blank. Doc rows dash their Size.
+  it("puts the folder count in Size and blanks inapplicable folder cells", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -425,12 +425,15 @@ describe("FileManager", () => {
     expect(cell("Open folder Specs", 2).textContent).toBe("1 item");
     expect(cell("Open folder Specs", 2).querySelector('[title="1 doc"]')).toBeTruthy();
     expect(cell("Open folder Blank", 2).textContent).toBe("Empty");
-    // Author / last updated (folder never opened) / doc size: a muted dash
+    // A folder's author / last updated (never opened) are blank - no dash -
     // with a screen-reader label.
-    for (const [label, col] of [["Open folder Specs", 1], ["Open folder Specs", 3], ["Open Doc A", 2]] as const) {
-      expect(cell(label, col).querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
-      expect(cell(label, col).querySelector(".sr-only")).toBeTruthy();
+    for (const col of [1, 3]) {
+      expect(cell("Open folder Specs", col).querySelector('[aria-hidden="true"]')).toBeNull();
+      expect(cell("Open folder Specs", col).querySelector(".sr-only")?.textContent).toBeTruthy();
     }
+    // A doc's size: a muted dash with a screen-reader label.
+    expect(cell("Open Doc A", 2).querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
+    expect(cell("Open Doc A", 2).querySelector(".sr-only")).toBeTruthy();
     // Size is right-aligned with tabular figures so sizes line up.
     expect(cell("Open Doc A", 2).className).toContain("justify-end");
     expect(cell("Open Doc A", 2).className).toContain("tabular-nums");
