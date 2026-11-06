@@ -1073,6 +1073,10 @@ export function PublicDocPage() {
                 <PanelLeftOpen className="h-4 w-4" />
               </Button>
             )}
+            {/* The site index already names the site twice (sidebar header +
+                its H1), so the top bar stays empty there; doc pages keep the
+                Site › … › Page trail. */}
+            {!(isSiteIndex && !pageTitle) && (
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
               {pageTitle ? (
                 <Link
@@ -1100,6 +1104,7 @@ export function PublicDocPage() {
                 </>
               )}
             </nav>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -1171,9 +1176,12 @@ export function PublicDocPage() {
         ) : (
         // Thin, low-contrast reading scrollbar (the Radix bar replaces the native
         // one): a border-toned thumb, shown only while the reader hovers or
-        // scrolls the page (type="hover"), firming up under the pointer.
+        // scrolls the page (type="hover"), firming up under the pointer. On
+        // phones / touch it shows only while scrolling (type="scroll"), like the
+        // app's native overlay scrollbars - "hover" left a resting thumb in the
+        // content gutter after a tap.
         <ScrollArea
-          type="hover"
+          type={typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px), (hover: none)").matches ? "scroll" : "hover"}
           scrollHideDelay={400}
           className="flex-1 public-doc-scroller [&>[data-orientation=vertical]]:w-2 [&>[data-orientation=vertical]>div]:bg-border [&>[data-orientation=vertical]>div:hover]:bg-muted-foreground/40"
         >

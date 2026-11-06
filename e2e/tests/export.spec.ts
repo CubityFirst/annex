@@ -105,6 +105,8 @@ test("sets up a project with two docs (root + folder)", async () => {
   // draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Root Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   const rootDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
@@ -133,6 +135,8 @@ test("sets up a project with two docs (root + folder)", async () => {
   await page.getByRole("main").getByText("Notes").first().click();
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Inner Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   const folderDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];

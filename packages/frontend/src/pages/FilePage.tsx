@@ -637,7 +637,7 @@ export function FilePage() {
         {/* min width lets the actions wrap onto their own line on phones
             instead of squeezing the title to a sliver. */}
         <div className="min-w-[12rem] flex-1">
-          <h1 className="truncate text-xl font-semibold tracking-tight">{file.name}</h1>
+          <h1 className="truncate text-2xl font-semibold leading-tight tracking-tight">{file.name}</h1>
           {/* Each item carries a leading "·" in its left padding; the row is
               pulled left by that padding and clipped, so the first item on
               every line (including after a wrap) shows no stray separator. */}

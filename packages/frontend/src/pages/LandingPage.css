@@ -252,15 +252,16 @@
 }
 /* The capture is the top of a taller page, so it would otherwise end on a
    hard cut through a line of text - fade the whole frame (border included)
-   out over its last quarter so it reads as "and it keeps going". */
+   out over its last third so it reads as "and it keeps going". One mask on
+   the frame, none on the image, so border and content fade together. */
 .l-viewer-frame {
   border: 1px solid var(--border2);
   border-radius: 10px;
   overflow: hidden;
   background: #0a0a0a;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset;
-  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+          mask-image: linear-gradient(to bottom, #000 65%, transparent);
 }
 .l-viewer-chrome {
   display: flex;
@@ -292,9 +293,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Crop the 2304x1440 captures to their top 1250px (object-position: top):
+   that ends above the sidebar's user footer and the next heading, so the
+   fade never ghosts a half-visible "Demo User / Owner" or title. */
 .l-viewer-stage {
   position: relative;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 2304 / 1250;
   background: var(--skeleton);
 }
 .l-viewer-host { color: #6c6c6c; }
@@ -322,7 +326,7 @@
 
 /* ── USES ── */
 .l-uses {
-  /* A light, text-only strip: tighter than a full feature section. */
+  /* A light strip: tighter than a full feature section. */
   padding: calc(var(--section-y) * 0.75) 0;
   border-top: 1px solid var(--border);
 }
@@ -338,6 +342,8 @@
   border-left: 1px solid var(--border);
 }
 .l-use:first-child { border-left: none; }
+/* Same icon tile as the feature grid (.l-extra-icon). */
+.l-use-icon { margin-bottom: 18px; }
 .l-use-title {
   font-size: 17px;
   font-weight: 500;
@@ -708,17 +714,20 @@
 }
 .l-ack-list .l-ack-link {
   font-size: 15px;
-  color: var(--text2);
+  font-weight: 500;
+  /* Brighter + heavier than the muted licence tag, so the names read as
+     links without 39 resting underlines; the underline appears on
+     hover/focus only. */
+  color: var(--text);
   overflow-wrap: anywhere;
-  /* Reads as a link at rest: a faint underline that firms up on hover. */
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
-  text-decoration-color: rgba(163, 163, 163, 0.4);
-  transition: color 0.15s, text-decoration-color 0.15s;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
 }
-.l-ack-list .l-ack-link:hover {
-  color: var(--text);
+.l-ack-list .l-ack-link:hover,
+.l-ack-list .l-ack-link:focus-visible {
   text-decoration-color: currentColor;
 }
 /* Licence tag: small but at the full muted-text strength (--text2), not the
@@ -830,19 +839,19 @@
   border-left-color: var(--text);
 }
 /* Body copy: regular weight + a lifted grey so long-form reading holds up on
-   the dark ground; a ~700px measure (~75 characters at 18px). */
+   the dark ground; a 40rem measure (~70 characters at 18px). */
 .l-legal-body p {
   font-size: 18px;
   font-weight: 400;
   color: #b0b0b0;
   line-height: 30px;
-  max-width: 700px;
+  max-width: 40rem;
   margin: 0 0 18px;
 }
 .l-legal-body ul {
   margin: 0 0 18px;
   padding-left: 24px;
-  max-width: 700px;
+  max-width: 40rem;
 }
 .l-legal-body li {
   font-size: 18px;
@@ -923,7 +932,9 @@
      VIEWER_MOBILE_MQ in LandingPage.tsx. Cap the width so a tablet-ish
      window doesn't blow a phone capture up past ~1.2x. */
   .l-viewer-frame { max-width: 460px; margin: 0 auto; }
-  .l-viewer-stage { aspect-ratio: 4 / 5; }
+  /* Phone captures (780x976) cropped to their top 760px - stops above the
+     next heading / bottom toolbar so the fade doesn't half-show it. */
+  .l-viewer-stage { aspect-ratio: 780 / 760; }
 }
 @media (max-width: 480px) {
   /* Drop the host so the path fits instead of trailing off. */

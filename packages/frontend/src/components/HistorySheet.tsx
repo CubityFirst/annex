@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Type } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -91,7 +91,7 @@ function rowClass(selected: boolean): string {
 
 function ViewingBadge() {
   return (
-    <span className="shrink-0 rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium leading-none text-foreground ring-1 ring-inset ring-foreground/20">Viewing</span>
+    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium leading-none text-muted-foreground ring-1 ring-inset ring-border">Viewing</span>
   );
 }
 
@@ -225,11 +225,17 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                           {selectedId === rev.id && <ViewingBadge />}
                           <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground" title={formatDateTime(rev.created_at)}>{rowTime(rev.created_at)}</span>
                         </span>
+                        {/* System note (generated, not written by a person):
+                            muted with a small glyph. The author's own note
+                            below reads as plain upright text. */}
                         {rev.title && rev.title !== currentTitle && (
-                          <span className="truncate text-xs text-muted-foreground">Titled “{rev.title}”</span>
+                          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                            <Type className="size-3 shrink-0 opacity-70" aria-hidden="true" />
+                            <span className="truncate">Titled “{rev.title}”</span>
+                          </span>
                         )}
                         {rev.changelog && (
-                          <span className="text-xs text-foreground/70 italic line-clamp-2" title={rev.changelog}>{rev.changelog}</span>
+                          <span className="line-clamp-2 text-xs text-foreground/80" title={rev.changelog}>{rev.changelog}</span>
                         )}
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

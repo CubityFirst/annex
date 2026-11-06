@@ -135,6 +135,8 @@ test("sets up an account, project, and two docs (one as wikilink target)", async
   // first save, so save the empty draft to mint an id.
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Linked Doc");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   linkedDocId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];
@@ -144,6 +146,8 @@ test("sets up an account, project, and two docs (one as wikilink target)", async
   await page.goto(`/projects/${projectId}`);
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/docs\/new$/, { timeout: 10000 });
+  // Save stays disabled on an empty, untitled draft - give it a title.
+  await page.getByPlaceholder("Document title").fill("Markdown Showcase");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/docs\/(?!new$)[a-z0-9-]+$/, { timeout: 10000 });
   docId = page.url().match(/\/docs\/([a-z0-9-]+)/)![1];

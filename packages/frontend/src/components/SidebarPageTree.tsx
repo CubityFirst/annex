@@ -99,7 +99,7 @@ type Row =
   | { kind: "doc"; doc: TreeDoc }
   | { kind: "file"; file: TreeFile };
 
-const ROW_CLASS = "h-8 w-full justify-start gap-1.5 px-2 text-[13px] font-normal";
+const ROW_CLASS = "h-8 w-full justify-start gap-1.5 px-2 text-sm font-normal";
 const rowTone = (active: boolean) => (active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground");
 
 export function SidebarPageTree({
@@ -279,9 +279,9 @@ export function SidebarPageTree({
   return (
     <div className="mt-4">
       <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
-        Pages
+        Contents
       </p>
-      <nav aria-label="Pages" className="flex flex-col gap-px">
+      <nav aria-label="Site contents" className="flex flex-col gap-px">
         {renderLevel(null)}
       </nav>
     </div>

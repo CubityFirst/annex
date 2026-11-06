@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { readRecentItems } from "@/lib/recentDocs";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
+import { timeAgo } from "@/components/SearchPalette";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { BookOpen, Building2, ChevronDown, FileText, Eye, EyeOff, Globe, Lock, Mail, MoreHorizontal, Plus, Radio, Settings, Sparkles, Star, Users } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -448,7 +449,8 @@ export function DashboardPage() {
                     ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     : <FileTypeIcon mimeType={item.mime ?? ""} name={item.title} className="h-4 w-4 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
-                  <span className="hidden shrink-0 truncate text-muted-foreground sm:inline">{item.project.name}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{timeAgo(item.accessedAt)}</span>
+                  <span className="hidden max-w-[12rem] shrink-0 truncate text-xs text-muted-foreground sm:inline">{item.project.name}</span>
                 </Link>
               </li>
             ))}

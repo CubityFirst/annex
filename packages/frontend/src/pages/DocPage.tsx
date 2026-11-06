@@ -35,7 +35,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { MoreHorizontal, Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -176,6 +176,31 @@ function HeadingSamples() {
     </ul>
   );
 }
+
+// Emphasis: syntax → rendered result → shortcut, in aligned columns.
+function EmphasisSamples() {
+  const rows: [string, React.ReactNode, string][] = [
+    ["**bold**", <strong className="font-semibold">bold</strong>, "Ctrl+B"],
+    ["*italic*", <em>italic</em>, "Ctrl+I"],
+    ["__underline__", <u className="underline-offset-2">underline</u>, "Ctrl+U"],
+    ["~~strikethrough~~", <s>strikethrough</s>, ""],
+  ];
+  return (
+    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+      {rows.map(([code, rendered, shortcut]) => (
+        <li key={code} className="grid grid-cols-[8.5rem_1fr_auto] items-center gap-3 px-3 py-2">
+          <code className="font-mono text-xs text-foreground/90">{code}</code>
+          <span className="text-sm text-foreground">{rendered}</span>
+          {shortcut ? <Kbd className="shrink-0">{shortcut}</Kbd> : <span aria-hidden="true" />}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Square icon tool in the reading-mode action row: 40px inline on phones,
+// 32px in the desktop top bar (max-sm: overrides the Button's touch bump).
+const TOOL_ICON_BUTTON = "h-10 w-10 max-sm:h-10 max-sm:w-10 md:h-8 md:w-8 text-muted-foreground hover:text-foreground";
 
 function MajorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1014,9 +1039,15 @@ export function DocPage() {
     // heading-less docs, so every doc - new, editing, reading - shares one
     // column position.
     const reserveOutline = true;
-    // Existing docs: Save is only offered once something changed. New docs can
-    // always be saved (saving an empty draft is how a doc gets created).
-    const isDirty = isNewDoc || draft !== doc.content || titleDraft.trim() !== doc.title;
+    // Existing docs: Save is only offered once something changed. New docs
+    // light Save up once there's a title or any body text - an empty,
+    // untitled draft has nothing worth creating yet.
+    const isDirty = isNewDoc
+      ? titleDraft.trim() !== "" || draft.trim() !== ""
+      : draft !== doc.content || titleDraft.trim() !== doc.title;
+    // At rest (existing doc, nothing changed) leaving edit mode loses nothing,
+    // so it's a quiet "Done"; once there are edits it becomes "Cancel".
+    const exitLabel = !isNewDoc && !isDirty ? "Done" : "Cancel";
     return (
       <div className="flex h-full flex-col">
         {/* One header for editing: the editable title continues the
@@ -1078,16 +1109,25 @@ export function DocPage() {
               )}
             >
               <Code2 className="h-4 w-4" />
-              <span className="hidden xl:inline">Markdown</span>
+              <span className="hidden xl:inline">Source</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={cancelEditing} className="gap-1.5">
-              <X className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Cancel</span>
+            <Button
+              variant={exitLabel === "Done" ? "ghost" : "outline"}
+              size="sm"
+              onClick={cancelEditing}
+              aria-label={exitLabel}
+              title={exitLabel}
+              className="gap-1.5"
+            >
+              {exitLabel === "Cancel" && <X className="h-3.5 w-3.5" />}
+              {exitLabel === "Done" && <Check className="h-3.5 w-3.5 sm:hidden" />}
+              <span className="hidden sm:inline">{exitLabel}</span>
             </Button>
             <Button
               size="sm"
               onClick={handleSaveClick}
               disabled={saving || !isDirty}
+              aria-label={saving ? "Saving…" : "Save"}
               // Nothing to save yet: recede to a quiet muted chip rather than
               // a half-opacity primary block that outweighs Cancel.
               className={cn("gap-1.5", !saving && !isDirty && "disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100")}
@@ -1170,7 +1210,7 @@ export function DocPage() {
                   <HeadingSamples />
                 </Section>
                 <Section title="Emphasis">
-                  <RefList items={[[`**bold**`, `Ctrl+B`], [`*italic*`, `Ctrl+I`], [`__underline__`, `Ctrl+U`], [`~~strikethrough~~`, ``]]} />
+                  <EmphasisSamples />
                 </Section>
                 <Section title="Links & images">
                   <RefList items={[[`[link text](https://example.com)`, ``], [`[email me](mailto:hello@example.com)`, ``], [`[call](tel:+15551234567)`, ``], [`![alt text](https://example.com/img.png)`, ``], [`![alt](img.png){width=300}`, `fixed width (px)`], [`![alt](img.png){width=50%}`, `percentage width`], [`![alt](img.png){width=400 height=200}`, `width and height`]]} />
@@ -1343,12 +1383,12 @@ export function DocPage() {
           {/* Phones: float right so "Last updated" shares the row (the meta
               line below is given the same 40px height). */}
           {(() => { const bar = (
-          <div className={cn("flex items-center justify-end gap-2", !isDesktop && "max-md:float-right max-md:ml-3 max-md:mb-2")}>
-          {/* Secondary tools: one quiet grouped strip. Edit (below) is the
-              labelled primary action so authors don't have to decode glyphs. */}
-          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-input/60 bg-card p-0.5 shadow-xs [&>button]:size-11 md:[&>button]:size-7 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
+          // Plain ghost tools, then Edit (outline - the one emphasised action),
+          // with the overflow menu always rightmost. Every control shares one
+          // height: 40px inline on phones, 32px in the desktop top bar.
+          <div className={cn("flex items-center justify-end gap-1.5", !isDesktop && "max-md:float-right max-md:ml-3 max-md:mb-2")}>
             {headings.length > 0 && (
-              <Button variant="ghost" size="icon" className="xl:hidden" title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
+              <Button variant="ghost" size="icon" className={cn(TOOL_ICON_BUTTON, "xl:hidden")} title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
                 <ListTree className="h-4 w-4" />
               </Button>
             )}
@@ -1359,7 +1399,7 @@ export function DocPage() {
             />
           {isEditor && (
             <>
-              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="!w-auto gap-1.5 !px-2.5 !text-foreground">
+              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="h-10 w-10 gap-1.5 px-0 max-sm:h-10 sm:w-auto sm:px-2.5 md:h-8">
                 <History className="h-4 w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">History</span>
               </Button>
@@ -1577,21 +1617,27 @@ export function DocPage() {
                         <div className="flex flex-col gap-0.5">
                           <Label className="text-sm font-medium">Publish this document on its own</Label>
                           <p className="text-xs text-muted-foreground">
-                            {projectPublishedAt
-                              ? "Not needed while the whole site is published."
-                              : "Make just this document public while the rest of the site stays private."}
+                            {projectPublishedAt && !doc.published_at
+                              ? "Not needed while the site is published."
+                              : projectPublishedAt
+                                ? "Also published on its own, so it stays public if the site is unpublished."
+                                : "Make just this document public while the rest of the site stays private."}
                           </p>
                         </div>
-                        <Button
-                          variant={doc.published_at || projectPublishedAt ? "outline" : "default"}
-                          size="sm"
-                          className="shrink-0"
-                          disabled={togglingPublish || (!!projectPublishedAt && !doc.published_at)}
-                          onClick={handleTogglePublish}
-                          title={projectPublishedAt && !doc.published_at ? "The whole site is already public" : undefined}
-                        >
-                          {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
-                        </Button>
+                        {/* While the site is published a per-doc Publish would
+                            be a dead control - hide it. Unpublish stays if the
+                            doc carries its own flag (it outlives the site's). */}
+                        {!(projectPublishedAt && !doc.published_at) && (
+                          <Button
+                            variant={doc.published_at ? "outline" : "default"}
+                            size="sm"
+                            className="shrink-0"
+                            disabled={togglingPublish}
+                            onClick={handleTogglePublish}
+                          >
+                            {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <p className="-mb-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Display</p>
@@ -1630,11 +1676,17 @@ export function DocPage() {
               </Dialog>
             </>
           )}
+            {isEditor && (
+              <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3 max-sm:h-10 md:h-8">
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+            )}
             {/* Occasional tools live in one labelled menu instead of a row of
                 look-alike glyphs. Items keep their old titles for tests. */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" title="More actions" aria-label="More actions">
+                <Button variant="ghost" size="icon" className={TOOL_ICON_BUTTON} title="More actions" aria-label="More actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -1667,13 +1719,6 @@ export function DocPage() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-          {isEditor && (
-            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-11 gap-1.5 px-3 md:h-8">
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-          )}
           </div>
           );
           // Desktop: the reading actions live in the app top bar, exactly where

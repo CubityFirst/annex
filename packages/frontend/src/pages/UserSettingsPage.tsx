@@ -1407,9 +1407,9 @@ export function UserSettingsPage() {
             <h2 className="text-base font-semibold">Account</h2>
             <p className="mt-1 text-sm text-muted-foreground">Update your personal information.</p>
 
-            {/* Avatar block: an 80px avatar with "Change photo" beside it and
-                the compact Dark/Light preview toggle directly under that
-                button (its explanation lives in a tooltip). */}
+            {/* Avatar block: an 80px avatar with "Change photo" beside it, the
+                compact Dark/Light preview toggle directly under that button
+                and a one-line helper under the toggle. */}
             {userId && (
               <div className="mt-5 flex flex-col items-start gap-3">
                 <input
@@ -1420,9 +1420,12 @@ export function UserSettingsPage() {
                   onChange={handleAvatarChange}
                 />
                 <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
-                  <div className="flex items-center gap-4">
+                  {/* Grid: avatar | controls, with the one-line helper under
+                      the controls from sm up. Below sm the helper spans the
+                      full row under the avatar so it never wraps at 390px. */}
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:gap-y-1.5">
                     <PopoverTrigger asChild>
-                      <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
+                      <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 sm:row-span-2">
                         <UserAvatar userId={userId} name={name || "?"} className="size-20 [&_[data-slot=avatar-fallback]]:text-[1.875rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
                         <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                           {avatarUploading
@@ -1471,7 +1474,7 @@ export function UserSettingsPage() {
                         compact Dark/Light toggle sits directly under it and
                         picks which avatar slot the preview shows and
                         Upload/Remove target (one image per background). */}
-                    <div className="flex flex-col items-start gap-2">
+                    <div className="flex flex-col items-start gap-2 sm:self-end">
                       <PopoverAnchor asChild>
                         <Button
                           ref={changePhotoButtonRef}
@@ -1487,8 +1490,6 @@ export function UserSettingsPage() {
                           Change photo
                         </Button>
                       </PopoverAnchor>
-                      <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-muted-foreground" aria-hidden="true">Photo for</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
@@ -1515,7 +1516,7 @@ export function UserSettingsPage() {
                                   )}
                                 >
                                   <Icon className="size-3.5" aria-hidden />
-                                  {v === "dark" ? "Dark backgrounds" : "Light backgrounds"}
+                                  {v === "dark" ? "Dark" : "Light"}
                                 </button>
                               );
                             })}
@@ -1525,12 +1526,10 @@ export function UserSettingsPage() {
                           Preview your avatar on dark or light backgrounds. Each can use a different photo.
                         </TooltipContent>
                       </Tooltip>
-                      </div>
-                      
-                      <span id="avatar-variant-hint" className="sr-only">
-                        Your avatar can differ on dark and light backgrounds.
-                      </span>
                     </div>
+                    <p id="avatar-variant-hint" className="col-span-2 text-xs text-muted-foreground sm:col-span-1 sm:col-start-2 sm:self-start">
+                      Optional: use a different photo on light backgrounds.
+                    </p>
                   </div>
                 </Popover>
 
@@ -1548,19 +1547,21 @@ export function UserSettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <div className="flex items-center gap-2">
-                      {/* The current email is static text on a muted row (no
-                          input chrome - it isn't editable in place); changing
-                          it goes through the "Change" button, a
-                          password-confirmed dialog. Resend + verification
-                          status sit inside the row, after the address. The
-                          read-only input keeps the label association and the
-                          value the e2e specs read. */}
-                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1 rounded-md bg-muted/50 pl-3 pr-1 sm:min-h-9">
+                      {/* The current email is plain text (no input chrome or
+                          fill - it isn't editable in place, and a filled box
+                          next to the bordered Display name input reads as
+                          disabled); changing it goes through the "Change"
+                          button, a password-confirmed dialog. Resend +
+                          verification status sit after the address. The row
+                          keeps the input row's height so both fields line up.
+                          The read-only input keeps the label association and
+                          the value the e2e specs read. */}
+                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1 sm:min-h-9">
                       <input
                         id="email"
                         value={email}
                         readOnly
-                        className="min-w-0 flex-1 truncate bg-transparent text-sm text-foreground outline-none"
+                        className="min-w-0 flex-1 truncate bg-transparent p-0 text-sm text-foreground outline-none"
                       />
                       {emailVerified === false && emailVerificationEnabled && (
                         <Tooltip>

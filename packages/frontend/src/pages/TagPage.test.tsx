@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { TagPage } from "./TagPage";
@@ -71,11 +71,52 @@ describe("TagPage", () => {
     renderTagPage([taggedDoc]);
     const column = screen.getByTestId("tag-column");
     expect(column).toHaveClass("mx-auto", "max-w-[44rem]");
+    // Widens to the right at xl like the file viewer.
+    expect(column).toHaveClass("xl:max-w-[56rem]");
     const row = column.parentElement?.parentElement;
     expect(row).toHaveClass("flex");
     const rail = row?.lastElementChild;
     expect(rail).toHaveClass("hidden", "w-60", "xl:block");
     expect(rail).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("shows the tag's graph colour beside the title when a rule names it", async () => {
+    window.localStorage.setItem("token", "jwt-123");
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({
+        ok: true,
+        data: { graph_tag_colors: JSON.stringify([{ tag: "beta", color: "#00ff00" }, { tag: "alpha", color: "#ff0000" }]) },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      renderTagPage([taggedDoc]);
+      const chip = await screen.findByTestId("tag-color-chip");
+      expect(chip).toHaveStyle({ backgroundColor: "#ff0000" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/p1",
+        expect.objectContaining({ headers: { Authorization: "Bearer jwt-123" } }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      window.localStorage.clear();
+    }
+  });
+
+  it("shows no colour chip when no rule names the tag", async () => {
+    window.localStorage.setItem("token", "jwt-123");
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ ok: true, data: { graph_tag_colors: JSON.stringify([{ tag: "beta", color: "#00ff00" }]) } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      renderTagPage([taggedDoc]);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(screen.queryByTestId("tag-color-chip")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+      window.localStorage.clear();
+    }
   });
 
   it("sets and clears breadcrumbs", () => {

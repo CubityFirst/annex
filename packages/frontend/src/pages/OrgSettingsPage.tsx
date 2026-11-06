@@ -400,7 +400,7 @@ export function OrgSettingsPage() {
 
                       <div className="flex shrink-0 items-center gap-3">
                         {isPending ? (
-                          <Badge variant="outline" className="border-transparent text-xs font-medium bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-300">
+                          <Badge variant="warning">
                             Pending
                           </Badge>
                         ) : canChangeRole ? (

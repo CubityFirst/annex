@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
@@ -38,6 +38,19 @@ export function GraphPage() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
+  // Legend: only the tag-colour rules that actually colour a node here, so
+  // the card doesn't list tags no document carries.
+  const legend = useMemo(() => {
+    if (!data?.tagColors?.length) return [];
+    const used = new Set(data.nodes.flatMap(n => n.tags ?? []));
+    const seen = new Set<string>();
+    return data.tagColors.filter(rule => {
+      if (!rule.tag || !used.has(rule.tag) || seen.has(rule.tag)) return false;
+      seen.add(rule.tag);
+      return true;
+    });
+  }, [data]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -62,13 +75,42 @@ export function GraphPage() {
     );
   }
 
+  const docCount = data.nodes.length;
+  const linkCount = data.edges.length;
+
   return (
-    <div className="h-full w-full">
+    <div className="relative h-full w-full">
       <GraphView
         showControls
+        showLegend={false}
         data={data}
         onNodeClick={id => navigate(`/projects/${projectId}/docs/${id}`)}
       />
+      {/* Summary card: what the canvas shows, plus the tag-colour key when
+          the site has tag colours. Pointer-transparent so it never blocks
+          dragging or clicking nodes underneath. */}
+      <div
+        data-testid="graph-summary"
+        className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-lg border border-border bg-card/90 px-3 py-2 text-xs shadow-sm backdrop-blur sm:max-w-xs"
+      >
+        <p className="font-medium text-foreground tabular-nums">
+          {docCount} {docCount === 1 ? "doc" : "docs"} · {linkCount} {linkCount === 1 ? "link" : "links"}
+        </p>
+        {legend.length > 0 && (
+          <ul aria-label="Tag color legend" className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+            {legend.map(rule => (
+              <li key={rule.tag} className="flex min-w-0 items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="inline-block size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: rule.color }}
+                />
+                <span className="truncate">{rule.tag}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

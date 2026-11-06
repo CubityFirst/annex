@@ -30,7 +30,7 @@ describe("SidebarPageTree", () => {
 
   it("lists root folders, docs (home first) and files; folders start collapsed", () => {
     renderAt("/projects/p1");
-    const nav = screen.getByRole("navigation", { name: "Pages" });
+    const nav = screen.getByRole("navigation", { name: "Site contents" });
     const labels = within(nav).getAllByRole("link").map(a => a.textContent);
     expect(labels).toEqual(["Home", "Beta", "photo.png"]);
     expect(within(nav).getByRole("button", { name: "Guides" })).toHaveAttribute("aria-expanded", "false");
@@ -58,7 +58,7 @@ describe("SidebarPageTree", () => {
   it("caps long levels behind a Show more button", async () => {
     const many: TreeDoc[] = Array.from({ length: 60 }, (_, i) => ({ id: `d${i}`, title: `Doc ${String(i).padStart(2, "0")}`, folder_id: null }));
     renderAt("/projects/p1", many);
-    const nav = screen.getByRole("navigation", { name: "Pages" });
+    const nav = screen.getByRole("navigation", { name: "Site contents" });
     // 1 folder + 60 docs + 1 file at the root: the folder takes one of the 50 slots.
     expect(within(nav).getAllByRole("link").filter(a => a.textContent?.startsWith("Doc "))).toHaveLength(49);
     await userEvent.click(within(nav).getByRole("button", { name: "Show 12 more" }));
@@ -71,6 +71,6 @@ describe("SidebarPageTree", () => {
         <SidebarPageTree projectId="p1" docs={[]} folders={[]} files={[]} />
       </MemoryRouter>,
     );
-    expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Site contents" })).toBeNull();
   });
 });

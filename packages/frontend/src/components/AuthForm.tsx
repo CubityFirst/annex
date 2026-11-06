@@ -180,7 +180,12 @@ export function AuthBrandPanel() {
           <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">
             Write in markdown, keep files and drawings alongside, and publish any of it to the web when you&rsquo;re ready.
           </p>
-          <div className="mt-12 min-h-0 w-full max-w-[42rem] overflow-hidden rounded-lg border border-border shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [mask-image:linear-gradient(to_bottom,#000_50%,transparent_100%)]">
+          {/* Cropped to the capture's top 1250px (above the sidebar's user
+              footer) and faded by ONE mask on the frame, border included, so
+              nothing reads as half-rendered. Same framing as the landing
+              hero's .l-viewer-stage. min-h-0 lets it shrink on short
+              screens; the crop then tightens and the fade stays on its edge. */}
+          <div className="mt-12 aspect-[2304/1250] min-h-0 w-full max-w-[42rem] overflow-hidden rounded-lg border border-border shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_65%,transparent)] [mask-image:linear-gradient(to_bottom,#000_65%,transparent)]">
             <img
               src={heroShot}
               alt=""
@@ -188,7 +193,7 @@ export function AuthBrandPanel() {
               height={1440}
               loading="lazy"
               decoding="async"
-              className="block h-auto w-full"
+              className="block h-full w-full object-cover object-top"
             />
           </div>
         </div>

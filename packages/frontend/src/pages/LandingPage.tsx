@@ -2,12 +2,16 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, ty
 import { Link, useLocation } from "react-router-dom";
 import {
   ArrowRight,
+  BookOpen,
   Check,
   Code2,
+  Dices,
+  FileCode,
   FileDown,
   Hash,
   History,
   Network,
+  NotebookPen,
   Search,
   Sparkles,
   Users,
@@ -192,11 +196,11 @@ function ProductViewer() {
   );
 }
 
-const USES: { title: string; items: string }[] = [
-  { title: "Technical docs", items: "API references, runbooks, specs, changelogs" },
-  { title: "Tabletop campaigns", items: "Session notes, lore, maps, inline dice rolls" },
-  { title: "Personal knowledge", items: "Notes, research, recipes, reading lists" },
-  { title: "Team wikis", items: "Handbooks and how-tos with shared roles" },
+const USES: { Icon: LucideIcon; title: string; items: string }[] = [
+  { Icon: FileCode, title: "Technical docs", items: "API references, runbooks, specs, changelogs" },
+  { Icon: Dices, title: "Tabletop campaigns", items: "Session notes, lore, maps, inline dice rolls" },
+  { Icon: NotebookPen, title: "Personal knowledge", items: "Notes, research, recipes, reading lists" },
+  { Icon: BookOpen, title: "Team wikis", items: "Handbooks and how-tos with shared roles" },
 ];
 
 const SHOWCASE: {
@@ -344,6 +348,7 @@ export function LandingPage() {
             <ul className="l-uses-grid">
               {USES.map((u) => (
                 <li key={u.title} className="l-use">
+                  <div className="l-extra-icon l-use-icon"><u.Icon size={18} aria-hidden="true" /></div>
                   <div className="l-use-title">{u.title}</div>
                   <div className="l-use-items">{u.items}</div>
                 </li>

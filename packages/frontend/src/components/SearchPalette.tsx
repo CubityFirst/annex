@@ -47,7 +47,9 @@ interface QuickAction {
   run: () => void | Promise<void>;
 }
 
-function timeAgo(ms: number): string {
+/** Compact relative time ("just now", "5m ago", "2d ago") for recent-item
+ *  rows - shared with the dashboard's "Recently opened" list. */
+export function timeAgo(ms: number): string {
   const seconds = Math.floor((Date.now() - ms) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
@@ -179,6 +181,24 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
   const [siteDocs, setSiteDocs] = useState<(DocHit & { siteId: string; siteName: string })[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Bottom fade on the result list: shown only while there is more to scroll
+  // to, so a row cut by the max-height reads as "continues below".
+  const [listEl, setListEl] = useState<HTMLDivElement | null>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  const updateMoreBelow = useCallback(() => {
+    if (!listEl) return;
+    setMoreBelow(listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight > 1);
+  }, [listEl]);
+  // Content only changes via this component's state (shouldFilter is off), so
+  // re-measuring after every render keeps the fade in sync; a ResizeObserver
+  // covers viewport-driven max-height changes.
+  useEffect(updateMoreBelow);
+  useEffect(() => {
+    if (!listEl || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(updateMoreBelow);
+    ro.observe(listEl);
+    return () => ro.disconnect();
+  }, [listEl, updateMoreBelow]);
   const navigate = useNavigate();
   const route = useSiteRoute();
 
@@ -404,7 +424,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
       </div>
       {/* Taller than the shared default so the dashboard's full action list
           fits at common heights; still capped by the viewport. */}
-      <CommandList className="max-h-[min(360px,calc(100dvh-14vh-8rem))]">
+      <CommandList ref={setListEl} onScroll={updateMoreBelow} className="max-h-[min(360px,calc(100dvh-14vh-8rem))]">
         {showRecent && (
           <CommandGroup heading="Recently viewed">
             {recent.map(item => (
@@ -448,8 +468,9 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             </p>
           </div>
         )}
-        {/* Dashboard search only matches site names - give the user a direct
-            way into a site, where the full doc/file search lives. */}
+        {/* Dashboard search covers site names and doc titles/bodies but not
+            files or tags - give the user a direct way into a site, where the
+            full doc/file/tag search lives. */}
         {showEmpty && isDashboard && sites.length > 0 && (
           <CommandGroup heading="Search inside a site">
             {sites.slice(0, 5).map(s => (
@@ -588,6 +609,8 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             ))}
           </CommandGroup>
         )}
+        {/* Zero-height sticky fade pinned to the list's bottom edge. */}
+        <div aria-hidden className={cn("pointer-events-none sticky bottom-0 -mt-4 h-4 bg-gradient-to-t from-popover to-transparent transition-opacity", moreBelow ? "opacity-100" : "opacity-0")} />
       </CommandList>
       <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5">
         <div className="flex items-center gap-2 min-w-0">

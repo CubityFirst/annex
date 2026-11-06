@@ -69,6 +69,34 @@ describe("GraphPage", () => {
     );
   });
 
+  it("shows a summary card with doc and link counts", async () => {
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data: sampleData }));
+    renderAt();
+    const summary = await screen.findByTestId("graph-summary");
+    expect(summary).toHaveTextContent("2 docs · 1 link");
+    // No tag colours configured: no legend.
+    expect(screen.queryByRole("list", { name: "Tag color legend" })).not.toBeInTheDocument();
+  });
+
+  it("lists only the tag colours that colour a node in the legend", async () => {
+    const data = {
+      nodes: [
+        { id: "d1", title: "Alpha", links: 1, tags: ["lore"] },
+        { id: "d2", title: "Beta", links: 1, tags: [] },
+      ],
+      edges: [{ source: "d1", target: "d2" }],
+      tagColors: [
+        { tag: "lore", color: "#ff0000" },
+        { tag: "unused", color: "#00ff00" },
+      ],
+    };
+    vi.stubGlobal("fetch", mockFetch({ ok: true, data }));
+    renderAt();
+    const legend = await screen.findByRole("list", { name: "Tag color legend" });
+    expect(legend).toHaveTextContent("lore");
+    expect(legend).not.toHaveTextContent("unused");
+  });
+
   it("navigates to the doc when a node is clicked", async () => {
     vi.stubGlobal("fetch", mockFetch({ ok: true, data: sampleData }));
     renderAt();

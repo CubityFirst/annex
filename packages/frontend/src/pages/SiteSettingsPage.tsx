@@ -37,6 +37,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
@@ -1518,13 +1519,13 @@ export function SiteSettingsPage() {
                 Cropped client-side to 512x512 via AvatarCropDialog. */}
             {/* Both branding rows use the shared settings-row pattern: preview
                 + title/description on the left, actions right-aligned. Each
-                preview sits left-aligned in a fixed 128px slot (the 64px square
-                and the 128x64 wordmark share one left edge) so both rows' text
+                preview sits centred in a fixed 128px slot (the 64px square is
+                centred where the 128x64 wordmark fills it) so both rows' text
                 columns start on one left edge. Below sm the actions wrap under
                 the text. */}
             <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
               <div className="flex min-w-0 items-center gap-4">
-                <div className="flex w-32 shrink-0 justify-start">
+                <div className="flex w-32 shrink-0 justify-center">
                   <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                     {project.logo_square_updated_at && logoPreviewUrls.square ? (
                       <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
@@ -2005,19 +2006,30 @@ export function SiteSettingsPage() {
                     const now = new Date();
                     const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
                     const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
+                    const tip = locked ? `Rebuild available in ${minsLeft} min` : "Rebuild graph";
+                    // The span wrapper keeps the tooltip working while the
+                    // button is disabled (disabled buttons swallow pointer
+                    // events, so Radix never sees the hover).
                     return (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground"
-                        disabled={locked || reindexing}
-                        onClick={handleReindex}
-                        aria-label="Reindex graph"
-                        title={locked ? `Reindex available in ${minsLeft} min` : "Reindex graph"}
-                      >
-                        <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground"
+                              disabled={locked || reindexing}
+                              onClick={handleReindex}
+                              aria-label="Rebuild graph"
+                              title={tip}
+                            >
+                              <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{tip}</TooltipContent>
+                      </Tooltip>
                     );
                   })()}
                   <Switch
@@ -2047,18 +2059,23 @@ export function SiteSettingsPage() {
                   <div className="border-t border-border">
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between py-2.5 pl-10 pr-4 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex w-full items-center justify-between gap-4 py-3 pl-10 pr-4 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                       onClick={() => setTagColorsOpen(o => !o)}
                       aria-expanded={tagColorsOpen}
                     >
-                      Tag colors
-                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${tagColorsOpen ? "rotate-180" : ""}`} />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium">Tag colors</span>
+                        <span className="text-[13px] leading-snug text-muted-foreground">
+                          Color graph nodes by frontmatter tag.
+                        </span>
+                      </span>
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${tagColorsOpen ? "rotate-180" : ""}`} aria-hidden />
                     </button>
                   </div>
                   {tagColorsOpen && (
                     <div className="border-t border-border py-3 pl-10 pr-4 flex flex-col gap-2.5">
                       <p className="text-xs text-muted-foreground">
-                        Color graph nodes by frontmatter tag. The first matching tag wins.
+                        When a document has several tags, the first matching rule wins.
                       </p>
                       <div className="flex flex-col gap-2">
                         {tagColorRules.map((rule, i) => (

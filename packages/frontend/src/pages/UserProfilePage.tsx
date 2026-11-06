@@ -65,8 +65,10 @@ function Eyebrow({ children }: { children: ReactNode }) {
   return <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">{children}</h2>;
 }
 
-/** Card grid shared by the profile's site lists (favourites, your/shared sites). */
-const SITE_GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3";
+/** Card grid shared by the profile's site lists (favourites, your/shared
+ *  sites). Two columns max: the page is a centred ~704px column, so a third
+ *  column would squeeze the cards and a short list would sit lopsided. */
+const SITE_GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2";
 /** Compact version of the dashboard's site card: same radius, border,
  *  surface, hover and title type, with the 32px mark and one header row. */
 const SITE_CARD =
@@ -136,7 +138,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
   // Own profile: one nudge at a time. Ink users without a bio are pointed at
   // the bio (an Ink perk, shown as a row above the sections); otherwise, with
   // no favourites, at favourite sites - as a dashed tile in the favourites
-  // grid, so it sits in the same 3-column rhythm as the site cards.
+  // grid, so it sits in the same rhythm as the site cards.
   const selfPrompt = !isSelf || !profile
     ? null
     : isInk && !profile.bio
@@ -145,8 +147,10 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
         ? "favourites"
         : null;
 
+  // A centred ~704px column: the profile is a header plus a few short
+  // sections, which left a wide max-w-5xl page mostly empty on the right.
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+    <div className="mx-auto w-full max-w-[44rem] px-4 py-6 sm:px-6 sm:py-10">
       {/* Header: avatar on the left; name, meta, badges and the self-only
           "Edit profile" action stacked beside it. The avatar shares its left
           edge with every section below. */}
@@ -254,7 +258,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {selfPrompt === "bio" && (
             <Link
               to="/settings#billing"
-              className="group flex min-h-12 items-center gap-2.5 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group flex min-h-12 items-center gap-2.5 rounded-lg border border-dashed border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <NotebookPen className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground" aria-hidden />
               <span className="min-w-0 flex-1">

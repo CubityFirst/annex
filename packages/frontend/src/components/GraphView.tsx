@@ -130,9 +130,12 @@ export interface GraphViewProps {
   onNodeClick: (id: string) => void;
   /** Full-size views (graph page, expanded dialog): zoom/fit controls, labels always on. */
   showControls?: boolean;
+  /** Built-in top-left tag-colour legend. The graph page turns it off and
+   *  renders its own summary card (counts + legend) in that corner. */
+  showLegend?: boolean;
 }
 
-export function GraphView({ data, onNodeClick, showControls = false }: GraphViewProps) {
+export function GraphView({ data, onNodeClick, showControls = false, showLegend = true }: GraphViewProps) {
   const { ref, width, height } = useContainerSize<HTMLDivElement>();
   const tokens = useThemeTokens();
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
@@ -519,7 +522,7 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
           Scroll to zoom &middot; drag to pan &middot; click a page to open it
         </p>
       )}
-      {(data.tagColors?.length ?? 0) > 0 && (
+      {showLegend && (data.tagColors?.length ?? 0) > 0 && (
         <ul
           aria-label="Tag color legend"
           className="pointer-events-none absolute left-2 top-2 flex max-w-[60%] flex-wrap gap-x-3 gap-y-1 rounded-md border bg-popover/80 px-2 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur"

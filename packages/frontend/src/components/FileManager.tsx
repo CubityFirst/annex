@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { notifySiteTreeChanged } from "@/components/SidebarPageTree";
-import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
+import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreHorizontal, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,10 +113,19 @@ function newestTimestamp(values: (string | undefined)[]): string | undefined {
 // Fixed desktop widths (px) for the metadata columns: sized for their longest
 // values ("Dec 31, 2025", "999.9 MB", a name + avatar) so the columns sit in
 // the same place in every folder and the trailing actions follow Last updated
-// directly. Name takes whatever width is left and truncates.
+// directly. Name takes whatever width is left and truncates. Size includes its
+// extra 32px right gutter (SIZE_CELL_CLASS).
 const AUTHOR_COL_PX = 200;
-const SIZE_COL_PX = 96;
+const SIZE_COL_PX = 120;
 const UPDATED_COL_PX = 128;
+
+// Size is right-aligned and Last updated left-aligned, so with the default
+// 12px padding on each side the two values ran together ("3.3 KB 2d ago").
+// Size takes a 32px right gutter instead - its header too (matched by the
+// sort button's constant title, see FIXED_COLUMNS_CLASS) so the label stays
+// on the figures' right edge. Both columns use tabular figures.
+const SIZE_CELL_CLASS = "pl-3 pr-8";
+const UPDATED_CELL_CLASS = "px-3 tabular-nums";
 
 // Module-scope so the array identity is stable across renders - the table keys
 // its segment memo off this reference. min = max width makes each metadata
@@ -132,7 +141,7 @@ const FILE_COLUMNS = [
 ];
 // Bumped when the layout above changed, so stale persisted widths from the
 // old proportional columns don't carry over.
-const FILE_COLUMNS_STORAGE_KEY = "file-columns-v3";
+const FILE_COLUMNS_STORAGE_KEY = "file-columns-v4";
 
 // ResizableTable always lets its *last* segment (here Last updated) fill the
 // row, while the first segment (Name) gets a fixed share. To make Name the
@@ -143,7 +152,7 @@ const FILE_COLUMNS_STORAGE_KEY = "file-columns-v3";
 // custom property. The segment drag grips are hidden: every column but Name
 // is fixed, so there's nothing to drag.
 const FIXED_COLUMNS_CLASS =
-  "[&_[role=grid]]:[--seg-0-width:calc(100%_-_var(--fm-fixed-cols))]! [&_.cursor-col-resize]:hidden";
+  "[&_[role=grid]]:[--seg-0-width:calc(100%_-_var(--fm-fixed-cols))]! [&_.cursor-col-resize]:hidden [&_[role=columnheader][title='Sort_by_Size']]:pr-8";
 
 // Higher-contrast checkbox border for the listing (the shared default is too
 // faint against the table surface): the same full-strength grey as the
@@ -1118,7 +1127,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               ? ROW_ICON_BUTTON_CLASS
               : "inline-flex items-center justify-center h-11 w-11 -mr-2 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         {/* Menu items render in a portal, but React still bubbles their clicks
@@ -1262,6 +1271,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           {folderItemsLabel(counts)}
                         </span>
                       ),
+                      className: SIZE_CELL_CLASS,
                     },
                     // Newest child edit, once this folder's contents have been
                     // seen (see folderNewestCache); blank until then.
@@ -1269,6 +1279,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       content: folderNewest
                         ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
                         : <span className="sr-only">No update time</span>,
+                      className: UPDATED_CELL_CLASS,
                     },
                   ]}
                   actionsCell={canEdit ? (
@@ -1350,9 +1361,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
                     // Docs have no byte size.
-                    { content: <EmptyCell label="No size" /> },
+                    { content: <EmptyCell label="No size" />, className: SIZE_CELL_CLASS },
                     {
                       content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
+                      className: UPDATED_CELL_CLASS,
                     },
                   ]}
                   actionsCell={
@@ -1438,9 +1450,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   },
                   {
                     content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
+                    className: SIZE_CELL_CLASS,
                   },
                   {
                     content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.updated_at ?? file.created_at)}</span>,
+                    className: UPDATED_CELL_CLASS,
                   },
                 ]}
                 actionsCell={

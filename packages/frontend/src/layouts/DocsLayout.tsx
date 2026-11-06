@@ -108,6 +108,11 @@ type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText
 const DOCUMENTS_SECTION: Section = { id: "documents", label: "Documents", icon: FileText };
 const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 
+// App sidebar nav rows (File Manager, Graph, Recently accessed, the overview
+// Sites list) - 14px text on the ghost sm button's 32px row, matching the page
+// tree's rows (SidebarPageTree ROW_CLASS) and the Search entry.
+const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal";
+
 function RecentItemIcon({ item, className }: { item: RecentItem; className?: string }) {
   if (item.kind === "doc") return <FileText className={className} />;
   // Same classifier as the file manager / public tree, so e.g. a drawing gets
@@ -740,7 +745,7 @@ export function DocsLayout() {
   const searchEntry = (
     <button
       onClick={openSearch}
-      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}
+      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-sm font-normal text-muted-foreground")}
     >
       <span className="flex items-center gap-1.5">
         <Search className="h-3.5 w-3.5 shrink-0" />
@@ -775,7 +780,7 @@ export function DocsLayout() {
     const path = location.pathname;
     if (path === "/dashboard") return [{ id: null, name: "Home" }];
     if (path === "/settings") return [{ id: null, name: "Account settings" }];
-    if (path === "/invites/pending") return [{ id: null, name: "Account settings", onClick: () => navigate("/settings") }, { id: "invites", name: "Invites" }];
+    if (path === "/invites/pending") return [{ id: null, name: "Invites" }];
     if (/^\/u\//.test(path)) return [{ id: null, name: "Profile" }];
     const siteSettings = path.match(/^\/projects\/([^/]+)\/settings$/);
     if (siteSettings && currentProject) {
@@ -898,34 +903,33 @@ export function DocsLayout() {
             {/* Sections */}
             <nav className="flex flex-col gap-1">
               {searchEntry}
-              <div className="flex items-center mb-1">
+              <NavLink
+                to={`/projects/${projectId}`}
+                end
+                className={({ isActive }) =>
+                  cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    SIDEBAR_ROW_CLASS,
+                    // Folder views are still the File Manager - keep it lit.
+                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
+                  )
+                }
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                File Manager
+              </NavLink>
+              {currentProject?.graph_enabled ? (
                 <NavLink
-                  to={`/projects/${projectId}`}
-                  end
+                  to={`/projects/${projectId}/graph`}
                   className={({ isActive }) =>
-                    cn(
-                      buttonVariants({ variant: "ghost", size: "sm" }),
-                      "flex-1 justify-start",
-                      // Folder views are still the File Manager - keep it lit.
-                      isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
-                    )
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                   }
+                  title="Graph"
                 >
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                  File Manager
+                  <Network className="h-3.5 w-3.5 shrink-0" />
+                  Graph
                 </NavLink>
-                {currentProject?.graph_enabled ? (
-                  <NavLink
-                    to={`/projects/${projectId}/graph`}
-                    className={({ isActive }) =>
-                      cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0 px-2", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
-                    }
-                    title="Graph"
-                  >
-                    <Network className="h-3.5 w-3.5" />
-                  </NavLink>
-                ) : null}
-              </div>
+              ) : null}
             </nav>
 
             <SidebarPageTree key={projectId} projectId={projectId} docs={docs} folders={folders} files={files} />
@@ -943,7 +947,7 @@ export function DocsLayout() {
                         ? `/projects/${projectId}/docs/${item.id}`
                         : `/projects/${projectId}/files/${item.id}`}
                       className={({ isActive }) =>
-                        cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                       }
                       title={item.title}
                     >
@@ -968,11 +972,12 @@ export function DocsLayout() {
                   key={p.id}
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start gap-2 font-normal text-muted-foreground hover:text-foreground"
+                  className={cn(SIDEBAR_ROW_CLASS, "gap-2 text-muted-foreground hover:text-foreground")}
                   onClick={() => navigate(`/projects/${p.id}`)}
+                  title={p.name}
                 >
                   <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-4 w-4" />
-                  {p.name}
+                  <span className="truncate">{p.name}</span>
                 </Button>
               ))}
             </nav>
@@ -1005,7 +1010,9 @@ export function DocsLayout() {
                   </span>
                 </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start" sideOffset={8} collisionPadding={12} className="w-[232px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
+                {/* sideOffset clears the footer's top divider: the trigger
+                    sits ~13px below it, so 16 leaves a ~3px gap above the rule. */}
+                <DropdownMenuContent side="top" align="start" sideOffset={16} collisionPadding={12} className="w-[232px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
                   <div className="flex items-center gap-2.5 px-2 py-2">
                     <UserAvatar userId={userId} name={userName} className="size-9 shrink-0 text-sm" personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
                     <div className="min-w-0">
@@ -1078,14 +1085,18 @@ export function DocsLayout() {
                 <Menu className="h-5 w-5" />
               </button>
             )}
-            <nav aria-label="Breadcrumb" className="flex items-center">
-              <ol className="flex items-center gap-1">
+            {/* Phones show only the final crumb (the current page/doc title,
+                truncated) so the bar keeps room for page actions and Search;
+                the full trail is in the sidebar tree. */}
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center">
+              <ol className="flex min-w-0 items-center gap-1">
                 {displayCrumbs.map((crumb, i) => {
-                  const isLast = i === displayCrumbs.length - 1 && !crumb.forceLink;
+                  const isFinal = i === displayCrumbs.length - 1;
+                  const isLast = isFinal && !crumb.forceLink;
                   const clickable = !isLast && !!crumb.onClick;
                   return (
-                    <li key={i} className="flex items-center gap-1 shrink-0">
-                      {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" aria-hidden="true" />}
+                    <li key={i} className={cn("flex items-center gap-1", isFinal ? "min-w-0 md:shrink-0" : "hidden shrink-0 md:flex")}>
+                      {i > 0 && <ChevronRight className="hidden h-3.5 w-3.5 text-muted-foreground/50 shrink-0 md:block" aria-hidden="true" />}
                       {clickable ? (
                         <button
                           type="button"
@@ -1094,7 +1105,7 @@ export function DocsLayout() {
                           onDragOver={crumb.onDragOver}
                           onDragLeave={crumb.onDragLeave}
                           onDrop={crumb.onDrop}
-                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
+                          className={`min-w-0 max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
                         >
                           {crumb.name}
                         </button>
@@ -1102,7 +1113,7 @@ export function DocsLayout() {
                         <span
                           title={crumb.name}
                           aria-current={isLast ? "page" : undefined}
-                          className={`max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
+                          className={`min-w-0 max-w-[55vw] sm:max-w-none truncate px-1.5 py-0.5 rounded transition-colors ${
                             isLast ? "text-foreground font-medium" : "text-muted-foreground"
                           } ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
                           onDragOver={crumb.onDragOver}
@@ -1213,16 +1224,20 @@ export function DocsLayout() {
               <div className="grid gap-2">
                 {/* Square icon - cropped to 512×512 via AvatarCropDialog. */}
                 <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                  <button
-                    type="button"
-                    onClick={() => squareInputRef.current?.click()}
-                    aria-label="Upload square icon"
-                    className="mr-8 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
-                  >
-                    {squarePreviewUrl
-                      ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
-                      : <Image className="size-5 text-muted-foreground" />}
-                  </button>
+                  {/* Fixed 80px slot (the wordmark tile's width) so both rows'
+                      captions start on the same edge; the square sits centred. */}
+                  <div className="flex w-20 shrink-0 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => squareInputRef.current?.click()}
+                      aria-label="Upload square icon"
+                      className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
+                    >
+                      {squarePreviewUrl
+                        ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />
+                        : <Image className="size-5 text-muted-foreground" />}
+                    </button>
+                  </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium">Square icon</p>
                     <p className="text-xs text-muted-foreground">Sidebar &amp; favourites</p>
