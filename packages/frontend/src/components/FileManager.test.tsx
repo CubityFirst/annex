@@ -220,8 +220,8 @@ describe("FileManager", () => {
     expect(screen.getByLabelText("Delete 1 selected")).toBeTruthy();
 
     fireEvent.keyDown(screen.getAllByLabelText("Actions for Doc A")[0], { key: "Enter" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to recycle bin" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move to recycle bin" }));
 
     await waitFor(() =>
       expect(vi.mocked(apiFetchJson).mock.calls.some(([u, o]) => u === "/api/docs/d1" && (o as RequestInit)?.method === "DELETE")).toBe(true),
@@ -323,9 +323,9 @@ describe("FileManager", () => {
     });
     renderManager(null);
     fireEvent.keyDown((await screen.findAllByLabelText("Actions for folder Specs"))[0], { key: "Enter" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to recycle bin" }));
     expect(await screen.findByText(/everything in it \(2 docs, 1 file\) will be moved to the recycle bin/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move to recycle bin" }));
 
     await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(expect.objectContaining({ title: 'Moved "Specs" to the recycle bin.' })));
     const contentLoads = () => vi.mocked(apiFetchJson).mock.calls.filter(([u]) => String(u).includes("/contents")).length;
@@ -400,7 +400,7 @@ describe("FileManager", () => {
     fireEvent.click(screen.getAllByLabelText("Select Doc A")[0]);
     fireEvent.click(screen.getByLabelText("Delete 2 selected"));
     expect(await screen.findByText(/Folders go with everything in them/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move to recycle bin" }));
 
     await waitFor(() =>
       expect(vi.mocked(apiFetchJson).mock.calls.some(([u, o]) => u === "/api/folders/f1" && (o as RequestInit)?.method === "DELETE")).toBe(true),

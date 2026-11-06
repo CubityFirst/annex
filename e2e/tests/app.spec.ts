@@ -310,10 +310,10 @@ test("deletes a document via the context menu", async () => {
   // "Recently accessed" link and the CSS-hidden mobile card list.
   const docRow = page.locator('[draggable="true"]', { hasText: "My E2E Document" });
   await docRow.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("menuitem", { name: "Move to recycle bin" }).click();
 
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 3000 });
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Move to recycle bin" }).click();
 
   await expect(docRow).not.toBeVisible({ timeout: 5000 });
 });

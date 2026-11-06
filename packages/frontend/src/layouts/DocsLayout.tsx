@@ -1070,7 +1070,10 @@ export function DocsLayout() {
 
       {/* Main content - full-width and static; the sidebar overlays it on mobile */}
 
-      <main className="flex flex-1 flex-col overflow-hidden min-w-0">
+      {/* data-app-main: a docked side panel (e.g. the Markdown reference)
+          reserves its width here so it never covers the page - see the
+          html[data-side-panel] rule in index.css. */}
+      <main data-app-main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top bar: holds the mobile menu opener and the breadcrumbs. Rendered on
             mobile whenever the sidebar is closed (so the opener sits in the bar
             instead of floating over content); on desktop only when there are

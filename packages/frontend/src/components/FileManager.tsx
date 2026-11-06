@@ -934,7 +934,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <M.Separator />
       <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
         <Trash2 />
-        Delete
+        Move to recycle bin
       </M.Item>
     </>
   );
@@ -969,7 +969,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         {canEdit && !isHome && (
           <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: title })}>
             <Trash2 />
-            Delete
+            Move to recycle bin
           </M.Item>
         )}
       </>
@@ -1007,7 +1007,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       {canEdit && (
         <M.Item variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
           <Trash2 />
-          Delete
+          Move to recycle bin
         </M.Item>
       )}
     </>
@@ -1875,7 +1875,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {selectedCount} {selectedCount === 1 ? "item" : "items"}?
+              Move {selectedCount} {selectedCount === 1 ? "item" : "items"} to the recycle bin?
             </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedCount === 1 ? "It" : "They"} will be moved to the recycle bin, where {selectedCount === 1 ? "it" : "they"} can be restored for 30 days.
@@ -1888,7 +1888,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteConfirmed}
             >
-              Delete
+              Move to recycle bin
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1924,7 +1924,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <AlertDialog open={!!contextDeleteTarget} onOpenChange={open => { if (!open) setContextDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{contextDeleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>Move "{contextDeleteTarget?.name}" to the recycle bin?</AlertDialogTitle>
             <AlertDialogDescription>
               {contextDeleteTarget?.type === "folder"
                 ? `The folder${contextDeleteCountLabel ? ` and everything in it (${contextDeleteCountLabel})` : ""} will be moved to the recycle bin, where it can be restored for 30 days.`
@@ -1938,7 +1938,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               onClick={handleContextDelete}
               disabled={contextDeleting}
             >
-              {contextDeleting ? "Deleting…" : "Delete"}
+              {contextDeleting ? "Moving…" : "Move to recycle bin"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

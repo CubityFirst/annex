@@ -444,6 +444,14 @@ export function DocPage() {
   const [changelogText, setChangelogText] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
+  // On desktop the Markdown reference docks beside the page instead of over
+  // it: flag the root so the app's main column gives up the panel's width.
+  useEffect(() => {
+    if (!(markdownHelpOpen && isDesktop)) return;
+    const root = document.documentElement;
+    root.dataset.sidePanel = "open";
+    return () => { delete root.dataset.sidePanel; };
+  }, [markdownHelpOpen, isDesktop]);
   const [rawMode, setRawMode] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [docShares, setDocShares] = useState<DocShareMember[]>([]);
@@ -1143,7 +1151,10 @@ export function DocPage() {
     // Always reserve the outline rail (xl): the reading view keeps it even for
     // heading-less docs, so every doc - new, editing, reading - shares one
     // column position.
-    const reserveOutline = true;
+    // ...except while the Markdown reference is docked beside the page: the
+    // main column has already given up the panel's width, so the rail's
+    // space goes back to the writing column.
+    const reserveOutline = !(markdownHelpOpen && isDesktop);
     // Existing docs: Save is only offered once something changed. New docs
     // light Save up once there's a title or any body text - an empty,
     // untitled draft has nothing worth creating yet.

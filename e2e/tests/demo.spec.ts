@@ -136,9 +136,9 @@ test.describe("demo sandbox", () => {
     await expect(guidesRow).toBeVisible();
 
     await page.getByLabel("Actions for folder Guides").click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await page.getByRole("menuitem", { name: "Move to recycle bin" }).click();
     await expect(page.getByText(/will be moved to the recycle bin/)).toBeVisible();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("button", { name: "Move to recycle bin", exact: true }).click();
     await expect(page.getByText('Moved "Guides" to the recycle bin.')).toBeVisible();
     await expect(guidesRow).toHaveCount(0);
 

@@ -413,3 +413,12 @@ pre.shiki {
   border-radius: 0.6rem;
   line-height: 1.65;
 }
+
+/* Docked side panel (DocPage's Markdown reference on desktop): the app's main
+   column shrinks by the panel's width so nothing sits underneath it. Keep the
+   width in sync with that SheetContent (md:w-[26rem]). */
+@media (min-width: 768px) {
+  html[data-side-panel="open"] [data-app-main] {
+    margin-right: 26rem;
+  }
+}
