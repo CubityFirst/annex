@@ -13,12 +13,12 @@ export function TermsPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Terms of service</h1>
-            <p className="l-legal-meta">Effective date: September 29, 2026</p>
+            <p className="l-legal-meta">Effective date: 29 September 2026</p>
 
             <div className="l-legal-body" ref={bodyRef}>
               <h2>1. Acceptance</h2>
               <p>
-                By creating an account or using Annex, you agree to these Terms of Service. If you
+                By creating an account or using Annex, you agree to these terms of service. If you
                 do not agree, do not use the service. We may update these terms; continued use
                 after notice of changes constitutes acceptance.
               </p>
@@ -27,7 +27,7 @@ export function TermsPage() {
               <p>
                 You are responsible for maintaining the security of your account credentials. Do
                 not share your password. You are responsible for all activity that occurs under
-                your account. Notify us immediately if you suspect unauthorized access.
+                your account. Notify us immediately if you suspect unauthorised access.
               </p>
               <p>
                 You must provide accurate information when registering. Accounts found to use false
@@ -39,7 +39,7 @@ export function TermsPage() {
               <ul>
                 <li>Upload or share content that is unlawful, harmful, abusive, defamatory, or infringing</li>
                 <li>Distribute spam, malware, or phishing content</li>
-                <li>Attempt to gain unauthorized access to our systems or other users' workspaces</li>
+                <li>Attempt to gain unauthorised access to our systems or other users' workspaces</li>
                 <li>Scrape, crawl, or systematically extract data without prior written permission</li>
                 <li>Interfere with or disrupt the integrity or performance of the service</li>
                 <li>Use the service in any way that violates applicable laws or regulations</li>
@@ -67,7 +67,7 @@ export function TermsPage() {
               <h2>5. Your content</h2>
               <p>
                 You retain ownership of all content you create in Annex. By using the service, you
-                grant us a limited, non-exclusive license to store, process, and display your
+                grant us a limited, non-exclusive licence to store, process, and display your
                 content solely to provide the service to you and your invited collaborators.
               </p>
               <p>
@@ -83,7 +83,7 @@ export function TermsPage() {
                 possible.
               </p>
 
-              <h2>7. Payments, subscriptions, and refunds</h2>
+              <h2>7. Payments, subscriptions and refunds</h2>
               <p>
                 Paid plans (such as Annex Ink) are billed in advance on a recurring basis at the
                 price shown when you subscribe. By starting a subscription you authorise us, through

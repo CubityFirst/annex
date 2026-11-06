@@ -8,6 +8,7 @@ import { SettingsEmptyState } from "@/components/settings/SettingsShell";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -100,10 +101,11 @@ export function PendingInvitesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-      {/* Same centred max-w-5xl index container as the dashboard and the
-          profile page; title, muted line, then a divider spanning the
-          measure the list below shares. */}
+    <div className={PAGE_PADDING}>
+    <div className={WIDE_CONTAINER}>
+      {/* Same wide index container as the dashboard (lib/pageContainer);
+          title, muted line, then a divider spanning the measure the list
+          below shares. */}
       <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight">Invites</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
         Pending invitations to sites and organizations. Accept or decline each one.
@@ -170,6 +172,7 @@ export function PendingInvitesPage() {
           })}
         </ul>
       )}
+    </div>
     </div>
   );
 }

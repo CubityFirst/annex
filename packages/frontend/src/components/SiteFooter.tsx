@@ -87,7 +87,7 @@ function sectionId(text: string): string {
  * shape as the settings rail. Hidden below 1024px (see `.l-legal-toc`).
  */
 export function LegalToc({ bodyRef }: { bodyRef: RefObject<HTMLElement | null> }) {
-  const [sections, setSections] = useState<{ id: string; label: string }[]>([]);
+  const [sections, setSections] = useState<{ id: string; num: string | null; label: string }[]>([]);
   const [active, setActive] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,7 +97,8 @@ export function LegalToc({ bodyRef }: { bodyRef: RefObject<HTMLElement | null> }
     const list = heads.map((h) => {
       const text = h.textContent ?? "";
       if (!h.id) h.id = sectionId(text);
-      return { id: h.id, label: text.replace(/^\s*\d+\.\s*/, "") };
+      const num = /^\s*(\d+)\./.exec(text)?.[1] ?? null;
+      return { id: h.id, num, label: text.replace(/^\s*\d+\.\s*/, "") };
     });
     setSections(list);
     if (!list.length) return;
@@ -146,6 +147,13 @@ export function LegalToc({ bodyRef }: { bodyRef: RefObject<HTMLElement | null> }
                   setActive(s.id);
                 }}
               >
+                {/* Mirrors the heading's "N." numbering; hidden from the
+                    accessible name, which stays the bare section title. */}
+                {s.num && (
+                  <span className="l-legal-toc-num" aria-hidden="true">
+                    {s.num}
+                  </span>
+                )}
                 {s.label}
               </a>
             </li>

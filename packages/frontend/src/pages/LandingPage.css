@@ -806,7 +806,7 @@
 @media (min-width: 1024px) {
   .l-legal-layout {
     display: grid;
-    grid-template-columns: minmax(0, 40rem) 220px;
+    grid-template-columns: minmax(0, 40rem) 230px;
     justify-content: center;
     column-gap: 96px;
     align-items: start;
@@ -831,7 +831,8 @@
   border-left: 1px solid var(--border2);
 }
 .landing .l-legal-toc-link {
-  display: block;
+  display: flex;
+  align-items: baseline;
   margin-left: -1px;
   padding: 6px 8px 6px 14px;
   border-left: 2px solid transparent;
@@ -839,6 +840,15 @@
   line-height: 1.4;
   color: var(--text-sub);
   transition: color 0.15s, border-color 0.15s;
+}
+/* Section number, matching the numbered h2s: muted, tabular, and in its own
+   fixed-width column so wrapped titles hang-indent past it. */
+.l-legal-toc-num {
+  flex: none;
+  min-width: 1.6em;
+  margin-right: 4px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
 }
 .landing .l-legal-toc-link:hover { color: var(--text); }
 .landing .l-legal-toc-link[aria-current="true"] {

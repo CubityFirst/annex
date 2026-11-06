@@ -23,7 +23,9 @@ import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
 import { isLightTheme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 import { pushRecentItem } from "@/lib/recentDocs";
+import { PAGE_PADDING, READING_CONTAINER, WIDE_CONTAINER } from "@/lib/pageContainer";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
 // @excalidraw/excalidraw is a heavy chunk - keep it out of the main bundle and
@@ -38,6 +40,9 @@ interface FileRecord {
   project_id: string;
   folder_id: string | null;
   uploaded_by: string;
+  // Display name of the uploader, when the endpoint joins it in (the listing
+  // routes and the demo do; it falls back to the raw user id there).
+  uploader_name?: string | null;
   created_at: string;
   updated_at: string;
   // Short-lived capability token for streaming this file's bytes by URL, so
@@ -52,22 +57,14 @@ interface FileRecord {
 // chunk and tell the user to download for the rest.
 const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 
-// The viewer column follows the doc page's container rule (DocPage): a 44rem
-// column centred in the content area, with a w-60 rail reserved on the right
-// at xl (docs keep their outline there). At xl the column keeps the doc
-// column's left edge but may run wider to the right (capped at 56rem), so
-// previews get room while the file title lines up with a doc title. The
-// header (title + metadata) and the preview share this one column, so both
-// edges line up.
-const VIEWER_COLUMN_CLASS =
-  "mx-auto max-w-[44rem] xl:mr-0 xl:ml-[max(0px,calc((100%_-_44rem)/2))] xl:max-w-[56rem]";
-
-// Subtle neutral checkerboard behind image previews, so transparent regions
-// read as transparent rather than as the card colour. Token-based so it
-// follows the theme.
+// Very low-contrast neutral 8px checkerboard behind image previews, so
+// transparent regions read as transparent rather than as the frame colour:
+// the page background and a 4% step towards the foreground (~#1b1b1b/#222 in
+// dark, ~#fcfcfc/#f2f2f2 in light). Token-based so it follows the theme.
+const CHECKER_SQUARE = "color-mix(in oklch, var(--background) 96%, var(--foreground))";
 const CHECKERBOARD_STYLE: React.CSSProperties = {
-  backgroundColor: "var(--card)",
-  backgroundImage: "conic-gradient(var(--muted) 25%, transparent 0 50%, var(--muted) 0 75%, transparent 0)",
+  backgroundColor: "var(--background)",
+  backgroundImage: `conic-gradient(${CHECKER_SQUARE} 25%, transparent 0 50%, ${CHECKER_SQUARE} 0 75%, transparent 0)`,
   backgroundSize: "16px 16px",
 };
 
@@ -76,17 +73,13 @@ const CHECKERBOARD_STYLE: React.CSSProperties = {
 const MENU_CLASS =
   "min-w-[200px] [&_[role=menuitem]]:pr-4 [&_svg:not([class*='size-'])]:size-4 [&_[role=menuitem]:not([data-variant=destructive])_svg]:text-muted-foreground";
 
-// Content area + empty xl rail, mirroring DocPage's reading layout.
+// The padded pane; each block inside picks a shared container
+// (lib/pageContainer). The header and text/audio previews use the doc's
+// reading column, so a file title sits exactly where a doc title does and
+// both edges match a doc; image/PDF/video previews use the wide container,
+// which keeps that left edge but runs further right.
 function ViewerLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-full">
-      <div className="min-w-0 flex-1 px-5 py-6 sm:px-6 sm:py-10">
-        <div className={VIEWER_COLUMN_CLASS}>{children}</div>
-      </div>
-      {/* Empty rail matching the doc outline rail, so the column sits where a doc's does. */}
-      <div className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
-    </div>
-  );
+  return <div className={PAGE_PADDING}>{children}</div>;
 }
 
 function formatDate(iso: string): string {
@@ -113,6 +106,8 @@ export function FilePage() {
   // sits beside the ⋯ menu in the top bar's action slot.
   const [drawingSaveSlot, setDrawingSaveSlot] = useState<HTMLSpanElement | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // Image previews: intrinsic pixel size, read from the <img> once it loads.
+  const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   // Desktop: page actions live in the app top bar (same rule as DocPage);
   // phones keep them in-page. Each control renders in exactly one place.
@@ -156,6 +151,7 @@ export function FilePage() {
     setTextTruncated(false);
     setDrawingDirty(false);
     setLightboxOpen(false);
+    setImageDims(null);
     // One automatic retry on 5xx: a single transient server hiccup otherwise
     // dead-ends the page in "File not found" with no recourse but reload.
     const loadMeta = async () => {
@@ -360,7 +356,7 @@ export function FilePage() {
   if (loading) {
     return (
       <ViewerLayout>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className={cn(READING_CONTAINER, "flex items-center gap-2 text-sm text-muted-foreground")}>
           <Spinner /> Loading…
         </div>
       </ViewerLayout>
@@ -370,7 +366,7 @@ export function FilePage() {
   if (!file) {
     return (
       <ViewerLayout>
-        <p className="text-sm text-destructive">File not found.</p>
+        <p className={cn(READING_CONTAINER, "text-sm text-destructive")}>File not found.</p>
       </ViewerLayout>
     );
   }
@@ -619,21 +615,24 @@ export function FilePage() {
     );
   }
 
-  // One viewer column for every kind (image/text/PDF/media) so the header -
-  // title + metadata - sits in exactly the same place from file to file, with
-  // the title on the same left edge as a doc title (see VIEWER_COLUMN_CLASS;
-  // the type icon rides in the metadata line rather than a leading tile,
-  // which would push the title off that edge). The header shares the
-  // preview's column so their edges line up. Actions go to the top bar on
-  // desktop and stay beside the title on phones (exactly one copy each).
+  // The header - title + metadata - sits in the doc's reading column for
+  // every kind, so it's in exactly the same place from file to file and the
+  // title shares a doc title's left edge (the type icon rides in the metadata
+  // line rather than a leading tile, which would push the title off that
+  // edge). Previews share that left edge (see ViewerLayout). Actions go to the
+  // top bar on desktop and stay beside the title on phones (exactly one copy
+  // each).
   const uploadedRelative = formatRelativeTime(file.created_at);
+  // The list routes COALESCE a missing member name to the raw user id; only
+  // show a real name.
+  const uploaderName = file.uploader_name && file.uploader_name !== file.uploaded_by ? file.uploader_name : null;
   return (
     <ViewerLayout>
       {actionsInBar && createPortal(
         <div className="flex shrink-0 items-center gap-2">{barActions}</div>,
         headerActionSlot!,
       )}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className={cn(READING_CONTAINER, "flex flex-wrap items-center gap-4")}>
         {/* min width lets the actions wrap onto their own line on phones
             instead of squeezing the title to a sliver. */}
         <div className="min-w-[12rem] flex-1">
@@ -647,12 +646,20 @@ export function FilePage() {
                 <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
                 {describeFileType(file.mime_type, file.name)}
               </span>
+              {kind === "image" && imageDims && (
+                <span className="whitespace-nowrap tabular-nums" title="Pixel dimensions">
+                  {imageDims.w} × {imageDims.h}
+                </span>
+              )}
               <span>{formatBytes(file.size)}</span>
               {/* Relative like a doc's "Last updated 2d ago"; the full date is the tooltip. */}
-              <span className="whitespace-nowrap">
-                Uploaded <time dateTime={file.created_at} title={formatDate(file.created_at)}>
-                  {uploadedRelative === "Just now" ? "just now" : uploadedRelative}
-                </time>
+              <span>
+                <span className="whitespace-nowrap">
+                  Uploaded <time dateTime={file.created_at} title={formatDate(file.created_at)}>
+                    {uploadedRelative === "Just now" ? "just now" : uploadedRelative}
+                  </time>
+                </span>
+                {uploaderName && ` by ${uploaderName}`}
               </span>
             </p>
           </div>
@@ -694,14 +701,15 @@ export function FilePage() {
           dark-edged images from merging into the page. The image itself
           carries a checkerboard so transparency reads as transparency (the
           letterbox around it stays the plain card), and clicking it opens a
-          full-size lightbox. */}
+          full-size lightbox. The frame takes the wide container: same left
+          edge as the header, more room to the right. */}
       {kind === "image" && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-card")}>
           <button
             type="button"
             onClick={() => setLightboxOpen(true)}
-            aria-label={`View ${file.name} full size`}
-            title="View full size"
+            aria-label="Zoom image"
+            title="Zoom image"
             className="flex min-h-40 w-full cursor-zoom-in items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <AuthenticatedImage
@@ -710,6 +718,10 @@ export function FilePage() {
               projectId={projectId}
               mimeType={file.mime_type}
               style={CHECKERBOARD_STYLE}
+              onLoad={e => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                if (w > 0 && h > 0) setImageDims({ w, h });
+              }}
               // Rasters show at natural size (never upscaled into blur); SVGs
               // often have no intrinsic size, so they fill the column instead.
               className={isSvg
@@ -722,7 +734,13 @@ export function FilePage() {
 
       {kind === "image" && (
         <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-          <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-4 sm:max-w-[calc(100vw-4rem)]">
+          {/* Sized to the image's natural width (+ padding/border) up to the
+              viewport. An explicit width is needed: the dialog is fixed at
+              left:50%, so w-fit alone caps it at half the viewport. */}
+          <DialogContent
+            className="w-fit max-w-[calc(100vw-2rem)] p-4 sm:max-w-[calc(100vw-4rem)]"
+            style={imageDims ? { width: `calc(${imageDims.w}px + 2rem + 2px)` } : undefined}
+          >
             <DialogHeader className="pb-3 pr-10">
               <DialogTitle className="truncate">{file.name}</DialogTitle>
               <DialogDescription className="sr-only">Full-size image preview</DialogDescription>
@@ -738,10 +756,12 @@ export function FilePage() {
                 alt={file.name}
                 projectId={projectId}
                 mimeType={file.mime_type}
-                style={CHECKERBOARD_STYLE}
+                // Natural size up to the dialog: rasters size themselves
+                // (w-auto); an SVG gets its intrinsic width once known.
+                style={isSvg && imageDims ? { ...CHECKERBOARD_STYLE, width: `${imageDims.w}px` } : CHECKERBOARD_STYLE}
                 className={isSvg
-                  ? "block h-auto max-h-[calc(100dvh-8rem)] w-[min(calc(100vw-6rem),80rem)] max-w-full rounded-md object-contain"
-                  : "block h-auto max-h-[calc(100dvh-8rem)] w-auto max-w-full rounded-md"}
+                  ? "mx-auto block h-auto max-h-[calc(100dvh-8rem)] w-[min(calc(100vw-6rem),80rem)] max-w-full rounded-md object-contain"
+                  : "mx-auto block h-auto max-h-[calc(100dvh-8rem)] w-auto max-w-full rounded-md"}
               />
             </button>
           </DialogContent>
@@ -749,14 +769,14 @@ export function FilePage() {
       )}
 
       {kind === "audio" && contentUrl && (
-        <div className="mt-8 rounded-xl border border-border bg-card p-4">
+        <div className={cn(READING_CONTAINER, "mt-8 rounded-xl border border-border bg-card p-4")}>
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
         </div>
       )}
 
       {kind === "video" && videoSrc && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-black">
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-black")}>
           <video
             controls
             preload="metadata"
@@ -776,7 +796,7 @@ export function FilePage() {
       )}
 
       {kind === "pdf" && contentUrl && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
+        <div className={cn(WIDE_CONTAINER, "mt-8 overflow-hidden rounded-xl border border-border bg-card")}>
           {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
               origin, so the browser's PDF script can't touch the app origin;
               allow-scripts keeps the viewer itself functional. */}
@@ -792,7 +812,7 @@ export function FilePage() {
       )}
 
       {kind === "text" && textContent !== null && (
-        <div className="mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6">
+        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6")}>
           {/* Plain-file preview sits on the card surface (never the
               highlighter theme's own background), framed like the other previews. */}
           <CodeBlock

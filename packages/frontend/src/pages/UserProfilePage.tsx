@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { BookOpen, CalendarDays, ChevronRight, Clock, CodeXml, Flag, FlaskConical, Globe, NotebookPen, Pencil, Plus, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronRight, Clock, CodeXml, Flag, FlaskConical, Globe, NotebookPen, Pencil, Plus, Star, UserRound } from "lucide-react";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsEmptyState } from "@/components/settings/SettingsShell";
 import { getToken } from "@/lib/auth";
+import { PAGE_PADDING, READING_CONTAINER } from "@/lib/pageContainer";
 import { formatInkSince } from "@/lib/inkDate";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
@@ -141,8 +142,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
 
   // Own profile: one nudge at a time. Ink users without a bio are pointed at
   // the bio (an Ink perk, shown as a row above the sections); otherwise, with
-  // no favourites, at favourite sites - as a dashed tile in the favourites
-  // grid, so it sits in the same rhythm as the site cards.
+  // no favourites, at favourite sites - as Settings' dashed empty-state card.
   const selfPrompt = !isSelf || !profile
     ? null
     : isInk && !profile.bio
@@ -151,10 +151,11 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
         ? "favourites"
         : null;
 
-  // A centred ~704px column: the profile is a header plus a few short
-  // sections, which left a wide max-w-5xl page mostly empty on the right.
+  // The doc reading column (lib/pageContainer): the profile is a header plus
+  // a few short sections, which left a wide page mostly empty on the right.
   return (
-    <div className="mx-auto w-full max-w-[44rem] px-4 py-6 sm:px-6 sm:py-10">
+    <div className={PAGE_PADDING}>
+    <div className={READING_CONTAINER}>
       {/* Header: avatar on the left; name, meta, badges and the self-only
           "Edit profile" action stacked beside it. The avatar shares its left
           edge with every section below. */}
@@ -292,24 +293,21 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           {selfPrompt === "favourites" && (
             <section>
               <Eyebrow>Favourite sites</Eyebrow>
-              <ul className={siteGrid(1)}>
-                <li>
-                  {/* Same footprint as a site card; dashed = "add" target,
-                      like the dashboard's "Add another site" tile. */}
-                  <Link
-                    to="/settings#favourites"
-                    className="group flex h-full min-h-[4.5rem] w-full items-start gap-2.5 rounded-xl border border-dashed border-border px-5 py-4 text-left text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
-                      <Plus className="size-4" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-h-8 items-center truncate text-sm font-semibold leading-tight text-foreground">Add favourite sites</span>
-                      <span className="block text-sm">Show up to 3 published sites on your profile.</span>
-                    </span>
-                  </Link>
-                </li>
-              </ul>
+              {/* The same dashed empty-state card as Settings' "No
+                  favourites yet", with the way to add some as its action. */}
+              <SettingsEmptyState
+                icon={Star}
+                title="No favourites yet"
+                hint="Add up to 3 published sites to show on your profile."
+                action={
+                  <Button asChild variant="outline" size="sm" className="gap-1.5">
+                    <Link to="/settings#favourites">
+                      <Plus className="size-3.5" aria-hidden />
+                      Add favourite sites
+                    </Link>
+                  </Button>
+                }
+              />
             </section>
           )}
 
@@ -387,6 +385,7 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

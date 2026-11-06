@@ -56,7 +56,10 @@ export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, o
         </DialogHeader>
         <div className="flex flex-col gap-6 py-2">
           <div className="flex flex-col gap-4">
-            <h3 className="pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Layout</h3>
+            <div className="flex flex-col gap-0.5">
+              <h3 className="pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Layout</h3>
+              <p className="text-xs text-muted-foreground">Paper size and colour theme for the PDF.</p>
+            </div>
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-1">
                 <Label htmlFor="pdf-page-size" className="text-sm font-medium">Page size</Label>

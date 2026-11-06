@@ -146,11 +146,41 @@ ${EX_DARK} .layer-ui__search-header .ExcTextField__input {
 ${EX} .App-toolbar__extra-tools-trigger:active {
   box-shadow: 0 0 0 1px var(--border) inset;
 }
-/* Canvas hint ("To move canvas, hold mouse wheel…"): the app's caption style. */
+/* Canvas hint ("To move canvas, hold mouse wheel…"): an 11px line under the
+   toolbar that competes with the drawing - hidden (the help dialog and the
+   tool tooltips cover the same ground). */
 ${EX} .HintViewer,
 ${EX_DARK} .HintViewer {
-  font-size: 12px;
-  color: var(--muted-foreground);
+  display: none;
+}
+/* App UI chrome metrics. Excalidraw defines its own --ui-font (Assistant) on
+   .excalidraw, shadowing the app's variable of the same name, so the wrapper
+   captures the app's value first and the editor re-points at it. */
+.annex-excalidraw {
+  --annex-ui-font: var(--ui-font);
+}
+${EX} {
+  --ui-font: var(--annex-ui-font);
+  /* Panels/islands at the app's 8px surface radius, controls at 6px. */
+  --border-radius-lg: 8px;
+  --border-radius-md: 6px;
+  /* Every toolbar/menu button at the app's 32px control height (Excalidraw
+     uses 36px for the main tool row and 36-40px on large displays). */
+  --default-button-size: 2rem;
+  --lg-button-size: 2rem;
+  --default-icon-size: 1rem;
+  --lg-icon-size: 1rem;
+}
+/* Labels Excalidraw sets in a hard-coded "Assistant". */
+${EX} .ExcTextField__label,
+${EX} .ImageExportModal h3,
+${EX} .ImageExportModal__settings__setting__label {
+  font-family: var(--ui-font);
+}
+/* Tool tooltips are portalled to <body>, outside the wrapper; inherit the
+   app's font from there. */
+body .excalidraw-tooltip.excalidraw-tooltip {
+  --ui-font: inherit;
 }
 /* Text that Excalidraw paints white/black on a --color-primary fill: use the
    app's on-primary colour so it stays legible on the cream accent. */
@@ -337,7 +367,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
           setConflictState(true);
           toast({
             title: "Drawing changed elsewhere",
-            description: "Someone saved a newer version. Reload to get it - saving is paused so it isn't overwritten.",
+            description: "Someone saved a newer version. Reload to get it – saving is paused so it isn't overwritten.",
             variant: "destructive",
           });
           return false;
@@ -503,7 +533,7 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
       {conflict && (
         <div className="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-background/95 px-4 py-2 text-sm">
           <span className="text-destructive">
-            This drawing was changed elsewhere - saving is paused so the newer version isn't overwritten.
+            This drawing was changed elsewhere – saving is paused so the newer version isn't overwritten.
           </span>
           <Button size="sm" variant="outline" className="h-7" onClick={() => setReloadKey(k => k + 1)}>
             Reload latest

@@ -798,9 +798,9 @@ export function UserSettingsPage() {
         if (json.error === "invalid_totp") return "Invalid authenticator code.";
         // Stale client MFA state (enrolled in another tab): the string routes
         // to a toast via runWithTwoFA since no 2FA dialog is open.
-        if (json.error === "mfa_required") return "Two-factor authentication is required — reload the page and try again.";
+        if (json.error === "mfa_required") return "Two-factor authentication is required – reload the page and try again.";
         if (json.error === "send_failed") {
-          toast({ title: "Couldn't send the confirmation email — try again", variant: "destructive" });
+          toast({ title: "Couldn't send the confirmation email – try again", variant: "destructive" });
           return undefined;
         }
         if (res.status === 409) {
@@ -812,7 +812,7 @@ export function UserSettingsPage() {
           return undefined;
         }
         if (res.status === 429) {
-          toast({ title: "Too many attempts — try again in a minute", variant: "destructive" });
+          toast({ title: "Too many attempts – try again in a minute", variant: "destructive" });
           return undefined;
         }
         if (res.status === 401) {
@@ -843,11 +843,11 @@ export function UserSettingsPage() {
       } else if (json.error === "no_pending_change") {
         // The pending change expired server-side - clear the stale UI.
         setPendingEmail(null);
-        toast({ title: "This email change has expired — request it again", variant: "destructive" });
+        toast({ title: "This email change has expired – request it again", variant: "destructive" });
       } else if (json.error === "too_soon" || json.error === "rate_limited") {
         toast({ title: "Give it a few minutes before resending", variant: "destructive" });
       } else if (json.error === "send_failed") {
-        toast({ title: "Couldn't send the email — try again in a few minutes", variant: "destructive" });
+        toast({ title: "Couldn't send the email – try again in a few minutes", variant: "destructive" });
       } else {
         toast({ title: "Could not re-send confirmation email", variant: "destructive" });
       }
@@ -1421,10 +1421,12 @@ export function UserSettingsPage() {
                   onChange={handleAvatarChange}
                 />
                 <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
-                  {/* Grid: avatar | controls, with the one-line helper under
-                      the controls from sm up. Below sm the helper spans the
-                      full row under the avatar so it never wraps at 390px. */}
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:gap-y-1.5">
+                  {/* From sm up a grid: avatar | controls, with the one-line
+                      helper under the controls. Below sm everything stacks -
+                      avatar, then controls, then helper - each full width, so
+                      the helper never drops under the avatar while the
+                      controls wrap beside it. */}
+                  <div className="flex w-full flex-col items-start gap-3 sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-4 sm:gap-y-1.5">
                     <PopoverTrigger asChild>
                       <button type="button" aria-label="Change profile photo" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 sm:row-span-2">
                         <UserAvatar userId={userId} name={name || "?"} className="size-20 [&_[data-slot=avatar-fallback]]:text-[1.875rem] [&_[data-slot=avatar-fallback]]:font-medium" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} variant={avatarVariant} />
@@ -1475,7 +1477,7 @@ export function UserSettingsPage() {
                         compact Dark/Light toggle sits directly under it and
                         picks which avatar slot the preview shows and
                         Upload/Remove target (one image per background). */}
-                    <div className="flex flex-col items-start gap-2 sm:self-end">
+                    <div className="flex w-full flex-col items-start gap-2 sm:self-end">
                       <PopoverAnchor asChild>
                         <Button
                           ref={changePhotoButtonRef}
@@ -1491,10 +1493,10 @@ export function UserSettingsPage() {
                           Change photo
                         </Button>
                       </PopoverAnchor>
-                      {/* "Photo for" lead-in so the segments read as "which
-                          photo", not an app theme switch. */}
+                      {/* "Editing photo for" lead-in so the segments read as
+                          "which photo you're editing", not an app theme switch. */}
                       <div className="flex items-center gap-2">
-                        <span aria-hidden className="whitespace-nowrap text-xs text-muted-foreground">Photo for</span>
+                        <span aria-hidden className="whitespace-nowrap text-xs text-muted-foreground">Editing photo for</span>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div
@@ -1533,7 +1535,7 @@ export function UserSettingsPage() {
                         </Tooltip>
                       </div>
                     </div>
-                    <p id="avatar-variant-hint" className="col-span-2 text-xs text-muted-foreground sm:col-span-1 sm:col-start-2 sm:self-start">
+                    <p id="avatar-variant-hint" className="w-full text-xs text-muted-foreground sm:col-start-2 sm:self-start">
                       Use a different photo on light backgrounds (optional).
                     </p>
                   </div>
@@ -1549,139 +1551,140 @@ export function UserSettingsPage() {
               </div>
             )}
 
-            <form onSubmit={handleSaveName} className="mt-6 flex flex-col gap-4">
-                  <div className="flex flex-col gap-1.5">
+            {/* Email + Display name share one bordered card, in the same row
+                pattern as the toggle rows below: Email is a title with the
+                address as its description line and its controls (verification
+                status, Change) on the right; Display name is a labelled input. */}
+            <form onSubmit={handleSaveName} className="mt-6 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+              <div className="flex flex-col gap-2 px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <Label htmlFor="email">Email</Label>
-                    <div className="flex items-center gap-2">
-                      {/* The current email is plain text (no input chrome or
-                          fill - it isn't editable in place, and a filled box
-                          next to the bordered Display name input reads as
-                          disabled); changing it goes through the "Change"
-                          button, a password-confirmed dialog. Resend +
-                          verification status sit after the address. The row
-                          keeps the input row's height so both fields line up.
-                          The read-only input keeps the label association and
-                          the value the e2e specs read. */}
-                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1 sm:min-h-9">
-                      <input
-                        id="email"
-                        value={email}
-                        readOnly
-                        className="min-w-0 flex-1 truncate bg-transparent p-0 text-sm text-foreground outline-none"
-                      />
-                      {emailVerified === false && emailVerificationEnabled && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={handleResendVerification}
-                              disabled={resendingVerification || resendCooldown > 0}
-                              aria-label="Resend verification email"
-                              className="inline-flex size-9 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-                            >
-                              {resendingVerification
-                                ? <Loader2 className="size-4 animate-spin" />
-                                : resendCooldown > 0
-                                  ? <span className="text-[10px] font-medium tabular-nums">{resendCooldown}</span>
-                                  : <Mail className="size-4" />}
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">
-                            {resendCooldown > 0 ? `Sent — resend in ${resendCooldown}s` : "Resend verification email"}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      {emailVerified === true && emailVerificationEnabled && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button type="button" aria-label="Email verified" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                              <CheckCircle2 className="size-4 text-green-500" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                            Email verified
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                      {emailVerified === false && emailVerificationEnabled && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button type="button" aria-label="Email not verified" className="inline-flex size-9 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                              <AlertCircle className="size-4 text-amber-500" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                            Email not verified
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                      </div>
+                    {/* The current email isn't editable in place - changing it
+                        goes through the "Change" button, a password-confirmed
+                        dialog. The borderless read-only input keeps the label
+                        association and the value the e2e specs read. */}
+                    <input
+                      id="email"
+                      value={email}
+                      readOnly
+                      className="min-h-0! w-full min-w-0 truncate bg-transparent p-0 text-[13px] leading-snug text-muted-foreground outline-none"
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {emailVerified === false && emailVerificationEnabled && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={handleResendVerification}
+                            disabled={resendingVerification || resendCooldown > 0}
+                            aria-label="Resend verification email"
+                            className="inline-flex size-9 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                          >
+                            {resendingVerification
+                              ? <Loader2 className="size-4 animate-spin" />
+                              : resendCooldown > 0
+                                ? <span className="text-xs font-medium tabular-nums">{resendCooldown}</span>
+                                : <Mail className="size-4" />}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {resendCooldown > 0 ? `Sent – resend in ${resendCooldown}s` : "Resend verification email"}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {emailVerified === true && emailVerificationEnabled && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button type="button" aria-label="Email verified" className="inline-flex size-9 shrink-0 items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <CheckCircle2 className="size-4 text-green-500" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                          Email verified
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    {emailVerified === false && emailVerificationEnabled && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button type="button" aria-label="Email not verified" className="inline-flex size-9 shrink-0 items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <AlertCircle className="size-4 text-amber-500" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                          Email not verified
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setChangeEmailOpen(true)}
+                      aria-label="Change email address"
+                      className="ml-1 h-11 shrink-0 sm:h-8"
+                    >
+                      Change
+                    </Button>
+                  </div>
+                </div>
+                {pendingEmail && (
+                  <div className="text-xs text-muted-foreground">
+                    <p className="text-pretty">
+                      Confirmation sent to <strong className="text-foreground">{pendingEmail}</strong> – check that inbox to finish the change.
+                    </p>
+                    <div className="flex items-center gap-3">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="link"
                         size="sm"
-                        onClick={() => setChangeEmailOpen(true)}
-                        aria-label="Change email address"
-                        className="h-11 shrink-0 sm:h-9"
+                        className="w-fit px-0 h-auto text-xs"
+                        onClick={handleResendEmailChange}
+                        disabled={emailChangeResending}
                       >
-                        Change
+                        {emailChangeResending ? "Sending…" : "Resend"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="w-fit px-0 h-auto text-xs text-destructive"
+                        onClick={handleCancelEmailChange}
+                        disabled={emailChangeCancelling}
+                      >
+                        {emailChangeCancelling ? "Cancelling…" : "Cancel"}
                       </Button>
                     </div>
-                    {pendingEmail && (
-                      <div className="text-xs text-muted-foreground">
-                        <p>
-                          Confirmation sent to <strong className="text-foreground">{pendingEmail}</strong> — check that inbox to finish the change.
-                        </p>
-                        <div className="flex items-center gap-3">
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="sm"
-                            className="w-fit px-0 h-auto text-xs"
-                            onClick={handleResendEmailChange}
-                            disabled={emailChangeResending}
-                          >
-                            {emailChangeResending ? "Sending…" : "Resend"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="sm"
-                            className="w-fit px-0 h-auto text-xs text-destructive"
-                            onClick={handleCancelEmailChange}
-                            disabled={emailChangeCancelling}
-                          >
-                            {emailChangeCancelling ? "Cancelling…" : "Cancel"}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
+                )}
+              </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="display-name">Display name</Label>
-                      <SavedIndicator show={nameSaved} />
-                    </div>
-                    <div className="flex items-center">
-                      <InlineSaveControls
-                        changed={name !== currentName}
-                        saving={saving}
-                        onReset={() => setName(currentName)}
-                        saveDisabled={!name.trim() || name.trim() === currentName}
-                        resetLabel="Reset display name"
-                        saveLabel="Save display name"
-                      >
-                        <Input
-                          id="display-name"
-                          value={name}
-                          onChange={e => setName(e.target.value)}
-                          className="flex-1"
-                          required
-                        />
-                      </InlineSaveControls>
-                    </div>
-                  </div>
+              <div className="flex flex-col gap-1.5 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="display-name">Display name</Label>
+                  <SavedIndicator show={nameSaved} />
+                </div>
+                <div className="flex items-center">
+                  <InlineSaveControls
+                    changed={name !== currentName}
+                    saving={saving}
+                    onReset={() => setName(currentName)}
+                    saveDisabled={!name.trim() || name.trim() === currentName}
+                    resetLabel="Reset display name"
+                    saveLabel="Save display name"
+                  >
+                    <Input
+                      id="display-name"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      className="flex-1"
+                      required
+                    />
+                  </InlineSaveControls>
+                </div>
+              </div>
             </form>
 
             {/* Profile-card visibility rows: bordered row cards, matching the
@@ -1693,7 +1696,7 @@ export function UserSettingsPage() {
                     <Label htmlFor="tz-visible">Show my timezone on my profile card</Label>
                     <p className="text-[13px] leading-snug text-muted-foreground">
                       {timezonePrivate
-                        ? "Off — nobody sees your local time."
+                        ? "Off – nobody sees your local time."
                         : "People who open your card see your local time."}
                     </p>
                   </div>
@@ -1773,7 +1776,7 @@ export function UserSettingsPage() {
                       const g = getTimezoneGroup(timezone);
                       return (
                         <p className="text-[13px] text-muted-foreground">
-                          Currently {formatTimeInZone(timezone)} — {g?.offset ?? timezone}
+                          Currently {formatTimeInZone(timezone)} – {g?.offset ?? timezone}
                         </p>
                       );
                     })()}
@@ -1791,7 +1794,7 @@ export function UserSettingsPage() {
                     {handleLocked && (
                       <p className="mt-0.5 flex items-center gap-1 text-[13px] text-muted-foreground">
                         <LockKeyhole className="size-3 shrink-0" />
-                        Managed by an Annex admin — you can't change it.
+                        Managed by an Annex admin – you can't change it.
                       </p>
                     )}
                   </div>
@@ -1982,7 +1985,7 @@ export function UserSettingsPage() {
             ) : (
               <>
               <p className="mt-3 text-[13px] text-muted-foreground">
-                {favouriteSites.length} of 3 added{favouriteSites.length >= 3 && " — remove one to add another"}.
+                {favouriteSites.length} of 3 added{favouriteSites.length >= 3 && " – remove one to add another"}.
               </p>
               <ul className="mt-2 flex flex-col gap-2">
                 {favouriteSites.map(site => {
@@ -2301,7 +2304,7 @@ export function UserSettingsPage() {
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <p id="theme-label" className="text-sm font-medium">Theme</p>
                     <p className="text-[13px] leading-snug text-muted-foreground">
-                      Custom derives a full palette — surfaces, borders and accents — from a single colour.
+                      Custom derives a full palette – surfaces, borders and accents – from a single colour.
                     </p>
                   </div>
                   <div role="group" aria-labelledby="theme-label" className="flex shrink-0 flex-wrap gap-2">
@@ -2735,7 +2738,7 @@ export function UserSettingsPage() {
             <h2 className="text-base font-semibold">Danger zone</h2>
             <DangerRow
               title="Delete your account"
-              description="Permanently delete your account and its data. Transfer or delete any sites you own first."
+              description="Permanently delete your account and its data. Transfer or delete sites you own first."
               action={
                 <Button
                   variant="outline"

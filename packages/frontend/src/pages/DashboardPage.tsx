@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getToken } from "@/lib/auth";
+import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
 import type { DocsLayoutContext, ProjectListItem } from "@/layouts/DocsLayout";
 
 type Project = ProjectListItem;
@@ -135,10 +136,13 @@ export function DashboardPage() {
           )}
         </CardHeader>
 
-        <CardContent className="flex-1">
+        {/* Grows so cards in a row stay equal height; three lines of
+            description, with the footer's status pill ~16px under the text
+            (the footer row is taller than the pill it centres). */}
+        <CardContent className="flex-1 pb-2.5 pt-2">
           {project.description && (
             // Indented to the title's text edge (32px icon + 10px gap).
-            <p className="pl-[42px] text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+            <p className="pl-[42px] text-sm text-muted-foreground line-clamp-3">{project.description}</p>
           )}
         </CardContent>
 
@@ -229,7 +233,7 @@ export function DashboardPage() {
                   onClick={(e) => handleToggleFavourite(e, project.id)}
                 >
                   <Star
-                    className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-foreground text-foreground" : "text-muted-foreground"}`}
+                    className={`h-4 w-4 transition-colors ${project.is_favourite ? "fill-foreground/70 text-foreground/70" : "text-muted-foreground"}`}
                     strokeWidth={1.5}
                   />
                 </Button>
@@ -305,7 +309,9 @@ export function DashboardPage() {
     .slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+    // Shared wide container: same left edge as the doc column at xl.
+    <div className={PAGE_PADDING}>
+    <div className={WIDE_CONTAINER}>
       <h1 className="sr-only">Dashboard</h1>
       {orgs.length > 0 && (
         <div className="mb-10">
@@ -482,6 +488,7 @@ export function DashboardPage() {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

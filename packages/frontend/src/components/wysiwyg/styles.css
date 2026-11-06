@@ -282,10 +282,12 @@
 .cm-wysiwyg .cm-content .cm-wysiwyg-table thead tr:first-child th:last-child {
   border-top-right-radius: 5px;
 }
-/* Direct hsl values (not CSS vars) so the borders render regardless of how
-   the surrounding theme defines `--border` / `--foreground`. Light mode uses
-   a darker grey so the rules are clearly visible against white; .dark
-   overrides drop back to the original faint-grey treatment. */
+/* Horizontal rules only - no vertical column lines, which made tables read
+   heavier than the surrounding page; the header fill, row rules and the outer
+   frame carry the structure. Direct hsl values (not CSS vars) so the rules
+   render regardless of how the surrounding theme defines `--border` /
+   `--foreground`. Light mode uses a darker grey so the rules are clearly
+   visible against white; .dark overrides drop back to a faint grey. */
 .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
 .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
   padding: 0.35em 0.75em;
@@ -294,12 +296,6 @@
   /* Fixed-width digits so numbers line up down a column. */
   font-variant-numeric: tabular-nums;
   border: 0;
-  /* Vertical column separator */
-  border-right: 1px solid hsl(0 0% 15% / 0.55);
-}
-.cm-wysiwyg .cm-content .cm-wysiwyg-table th:last-child,
-.cm-wysiwyg .cm-content .cm-wysiwyg-table td:last-child {
-  border-right: 0;
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
   font-weight: 600;
@@ -313,10 +309,6 @@
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody tr:last-child td {
   border-bottom: 0;
-}
-.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
-.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
-  border-right-color: hsl(0 0% 50% / 0.35);
 }
 .dark .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
   /* A quiet header rule: lighter than the headings and callout borders. */

@@ -6,6 +6,23 @@ export interface OutlineHeading {
   id: string;
 }
 
+const normalise = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * The headings the outline lists. A doc that opens with an H1 repeating its
+ * own title would make the first outline entry a copy of the page title, so
+ * that one leading H1 is dropped and the list starts at the first section.
+ * Only the leading H1 is skipped, and only when it matches the title - docs
+ * with several H1s, or an opening H1 that says something else, keep them all.
+ */
+export function outlineHeadings<H extends { level: number; text: string }>(headings: H[], title?: string | null): H[] {
+  const [first] = headings;
+  if (first && first.level === 1 && title && normalise(first.text) === normalise(title)) {
+    return headings.slice(1);
+  }
+  return headings;
+}
+
 /**
  * Doc outline list shared by the app reading view and the published site.
  * A hairline rail with the current section marked by a 2px foreground bar;

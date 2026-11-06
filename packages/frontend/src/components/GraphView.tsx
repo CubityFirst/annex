@@ -49,6 +49,18 @@ function toCanvasColor(css: string): string {
   return c ? formatHex(c) : css;
 }
 
+/** The colour actually painted behind `el`: its own or its nearest ancestor's
+ *  opaque background, as hex (the label halo must match the surface the
+ *  canvas sits on - the page, a card or a panel). Empty when none is found. */
+function effectiveBackground(el: HTMLElement | null): string {
+  if (typeof window === "undefined") return "";
+  for (let cur = el; cur; cur = cur.parentElement) {
+    const c = toRgb(getComputedStyle(cur).backgroundColor);
+    if (c && (c.alpha ?? 1) > 0.5) return formatHex(c);
+  }
+  return "";
+}
+
 function useThemeTokens() {
   const [tokens, setTokens] = useState({ fg: "", muted: "", border: "", accent: "", uiFont: "", bg: "" });
   useEffect(() => {
@@ -138,6 +150,11 @@ export interface GraphViewProps {
 export function GraphView({ data, onNodeClick, showControls = false, showLegend = true }: GraphViewProps) {
   const { ref, width, height } = useContainerSize<HTMLDivElement>();
   const tokens = useThemeTokens();
+  // Label-halo colour: the surface the canvas actually sits on (re-read when
+  // the theme tokens change), falling back to the page background token.
+  const [surfaceBg, setSurfaceBg] = useState("");
+  useEffect(() => { setSurfaceBg(effectiveBackground(ref.current)); }, [ref, tokens, width, height]);
+  const haloColor = surfaceBg || tokens.bg;
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
   const [zoom, setZoom] = useState(1);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -282,7 +299,9 @@ export function GraphView({ data, onNodeClick, showControls = false, showLegend 
   const showLabels = showControls || zoom > 1.6;
   const fittedRef = useRef(false);
   useEffect(() => { fittedRef.current = false; }, [graph]);
-  const fitPadding = showControls ? Math.min(width, height) * 0.18 : 24;
+  // ~80px of breathing room in full views leaves space for the labels that
+  // overhang the outermost nodes; the small panel graph keeps a tight frame.
+  const fitPadding = showControls ? 80 : 24;
   // zoomToFit, but never past a comfortable max: a 3-node graph would
   // otherwise be blown up until the nodes are the size of buttons.
   // Then re-centre on the node bounding box, so the cluster sits in the
@@ -464,17 +483,19 @@ export function GraphView({ data, onNodeClick, showControls = false, showLegend 
               // Put the label on whichever side (below by default, else
               // above) fewer edges arrive from, so links rarely cross it.
               const above = labelGoesAbove(n, neighbourIds.get(n.id), nodeById);
-              const gap = r + (showControls ? 5 : 3) / globalScale;
+              // ~6px on screen between the node's edge and its label.
+              const gap = r + (showControls ? 6 : 4) / globalScale;
               const x = n.x ?? 0;
               const y = (n.y ?? 0) + (above ? -gap : gap);
               ctx.textBaseline = above ? "bottom" : "top";
-              // A halo in the page colour knocks out any link passing behind
-              // the glyphs, so edges read as running under the text, never
-              // through it. ~4px on screen regardless of zoom.
-              if (tokens.bg) {
-                ctx.globalAlpha = alpha;
-                ctx.strokeStyle = tokens.bg;
-                ctx.lineWidth = 4 / globalScale;
+              // A halo in the surface colour knocks out any link passing
+              // behind the glyphs, so edges read as running under the text,
+              // never through it. ~3px each side on screen regardless of zoom,
+              // and always opaque - a faded label still hides the link behind.
+              if (haloColor) {
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = haloColor;
+                ctx.lineWidth = 6 / globalScale;
                 ctx.lineJoin = "round";
                 ctx.miterLimit = 2;
                 ctx.strokeText(label, x, y);

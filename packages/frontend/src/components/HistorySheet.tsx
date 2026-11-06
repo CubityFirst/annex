@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { ChevronRight, Type } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -82,17 +83,14 @@ function groupLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-// Selected row uses the app's inset rounded-highlight pattern (see the
-// sidebar's recent-docs list) rather than full-width bands, which read as
-// stacked horizontal lines next to the header/section borders.
-function rowClass(selected: boolean): string {
-  return `mx-3 flex items-start gap-3 rounded-md px-3 py-2.5 text-left disabled:opacity-50 [&>svg:last-child]:self-center ${selected ? "bg-accent" : "hover:bg-accent/60"}`;
-}
+// Every row - the pinned current version and each revision - shares one
+// geometry: an inset rounded hover highlight and no persistent fill. The row
+// being viewed is marked by its "Viewing" badge alone, so the current-version
+// entry doesn't read as a filled card sitting above flush revision rows.
+const ROW_CLASS = "mx-3 flex items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent/60 disabled:opacity-50 [&>svg:last-child]:self-center";
 
 function ViewingBadge() {
-  return (
-    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium leading-none text-muted-foreground ring-1 ring-inset ring-border">Viewing</span>
-  );
+  return <Badge variant="neutral" size="sm" className="shrink-0">Viewing</Badge>;
 }
 
 // Single avatar, or the app's overlapping-stack pattern (see EditorPresence)
@@ -182,7 +180,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
               {onSelectCurrent && (
                 <button
                   aria-current={!selectedId ? "true" : undefined}
-                  className={rowClass(!selectedId)}
+                  className={ROW_CLASS}
                   onClick={onSelectCurrent}
                   disabled={loading}
                 >
@@ -210,7 +208,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                     )}
                     <button
                       aria-current={selectedId === rev.id ? "true" : undefined}
-                      className={rowClass(selectedId === rev.id)}
+                      className={ROW_CLASS}
                       onClick={() => onSelect(rev.id)}
                       disabled={loading}
                     >

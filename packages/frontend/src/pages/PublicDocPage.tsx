@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
-import { DocOutline } from "@/components/DocOutline";
+import { DocOutline, outlineHeadings } from "@/components/DocOutline";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { fileKind } from "@/lib/fileKind";
 import { formatBytes } from "@/lib/fileManager";
@@ -34,6 +34,11 @@ import { ReportSiteDialog } from "@/components/ReportSiteDialog";
 const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
 interface Heading { level: number; text: string; id: string }
+
+/** Outline entries: like the app, a leading H1 that repeats the title is skipped. */
+function publicOutline(content: string, title: string): Heading[] {
+  return outlineHeadings(extractHeadings(content), parseFrontmatter(content).title ?? title);
+}
 
 function extractHeadings(content: string): Heading[] {
   const headings: Heading[] = [];
@@ -222,20 +227,12 @@ function SiteIndex({
   );
 }
 
-// Nested rows sit 8px (ml-2) right of their parent's guide line (the children
-// wrapper's border-l), and the elbow connector spans exactly that gap - it
-// lives entirely OUTSIDE the row, so an active/hovered row's highlight starts
-// after the connector instead of swallowing most of it and leaving a stub.
-// When a folder or doc is the last child, we erase the guide below the item's
-// midpoint so the vertical line terminates rather than running past the last
-// item. The eraser covers exactly the guide's 1px column (inset + border = 9px
-// left of the row), so it never notches the row's highlight.
-// For folders, the midpoint is top-4 (16px = half of the 32px button row height).
-// For docs, it's top-1/2 (50% of the single-row element height).
-const NESTED_INSET = "ml-2";
-const NESTED_ELBOW = "absolute -left-2 top-1/2 -translate-y-1/2 h-px w-2 bg-border";
-const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-9px] after:top-4 after:bottom-0 after:w-px after:bg-sidebar";
-const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-9px] after:top-1/2 after:bottom-0 after:w-px after:bg-sidebar";
+// Nesting matches the app sidebar (SidebarPageTree): each open folder's
+// children sit in a wrapper with a plain vertical guide line
+// (`ml-3 border-l border-border pl-1`) - no elbow connectors - and every row is
+// full-width inside it, so a hovered/active highlight starts right of the line.
+// Labels truncate with an ellipsis (min-w-0 + truncate) instead of wrapping.
+const ROW_BASE = "flex h-8 w-full min-w-0 items-center rounded-md px-2 text-sm transition-colors";
 
 function FolderNode({
   folder,
@@ -244,7 +241,6 @@ function FolderNode({
   docs,
   files,
   depth,
-  isLast,
   onFileClick,
   onDocClick,
   selectedFileId,
@@ -255,7 +251,6 @@ function FolderNode({
   docs: NavDoc[];
   files: NavFile[];
   depth: number;
-  isLast: boolean;
   onFileClick: (file: NavFile) => void;
   onDocClick: () => void;
   selectedFileId: string | null;
@@ -264,22 +259,20 @@ function FolderNode({
   const childrenId = `folder-children-${folder.id}`;
 
   return (
-    <div className={`relative ${depth > 0 ? NESTED_INSET : ""} ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
+    <div className="min-w-0">
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         aria-controls={childrenId}
-        className={`relative w-full flex h-8 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-2 pr-2" : "px-2"}`}
+        title={folder.name}
+        className={`${ROW_BASE} gap-1.5 text-muted-foreground hover:bg-accent hover:text-foreground`}
       >
-        {depth > 0 && (
-          <span aria-hidden className={NESTED_ELBOW} />
-        )}
         <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
         <Folder className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate font-medium">{folder.name}</span>
+        <span className="min-w-0 truncate font-medium">{folder.name}</span>
       </button>
       {open && (
-        <div id={childrenId} className="ml-3 border-l border-border">
+        <div id={childrenId} className="ml-3 flex flex-col gap-px border-l border-border pl-1">
           <NavTree href={href} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
         </div>
       )}
@@ -311,44 +304,37 @@ function NavTree({
   const childFolders = visibleChildFolders(parentId, folders, docs, files);
   const childDocs = docs.filter(d => d.folder_id === parentId);
   const childFiles = files.filter(f => f.folder_id === parentId);
-  const hasLeafItems = childDocs.length > 0 || childFiles.length > 0;
 
   return (
     <>
-      {childFolders.map((folder, i) => {
-        const isLast = !hasLeafItems && i === childFolders.length - 1;
-        return (
-          <FolderNode
-            key={folder.id}
-            folder={folder}
-            href={href}
-            folders={folders}
-            docs={docs}
-            files={files}
-            depth={depth}
-            isLast={isLast}
-            onFileClick={onFileClick}
-            onDocClick={onDocClick}
-            selectedFileId={selectedFileId}
-          />
-        );
-      })}
-      {childDocs.map((doc, i) => {
-        const isLast = childFiles.length === 0 && i === childDocs.length - 1;
+      {childFolders.map(folder => (
+        <FolderNode
+          key={folder.id}
+          folder={folder}
+          href={href}
+          folders={folders}
+          docs={docs}
+          files={files}
+          depth={depth}
+          onFileClick={onFileClick}
+          onDocClick={onDocClick}
+          selectedFileId={selectedFileId}
+        />
+      ))}
+      {childDocs.map(doc => {
+        const label = doc.display_title ?? doc.title;
         return (
           <NavLink
             key={doc.id}
             to={href(doc.id)}
             onClick={onDocClick}
+            title={label}
             className={({ isActive }) =>
-              `relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-                depth > 0 ? `pl-2 ${NESTED_INSET}` : "pl-2"
-              } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
+              `${ROW_BASE} gap-2 hover:bg-accent hover:text-accent-foreground ${
+                isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+              }`
             }
           >
-            {depth > 0 && (
-              <span aria-hidden className={NESTED_ELBOW} />
-            )}
             {/* Spacer reserves the folder chevron column (w-2.5 + gap-2 = the
                 folder row's w-3 chevron + gap-1.5), so leaf icons line up
                 under folder icons - the app sidebar's rule. */}
@@ -357,29 +343,24 @@ function NavTree({
               ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
-            <span className="truncate">{doc.display_title ?? doc.title}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </NavLink>
         );
       })}
-      {childFiles.map((file, i) => {
-        const isLast = i === childFiles.length - 1;
-        return (
-          <button
-            key={file.id}
-            onClick={() => onFileClick(file)}
-            className={`relative flex h-8 items-center gap-2 rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
-              depth > 0 ? `pl-2 ${NESTED_INSET} w-[calc(100%-0.5rem)]` : "pl-2 w-full"
-            } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
-          >
-            {depth > 0 && (
-              <span aria-hidden className={NESTED_ELBOW} />
-            )}
-            <span aria-hidden className="w-2.5 shrink-0" />
-            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{file.name}</span>
-          </button>
-        );
-      })}
+      {childFiles.map(file => (
+        <button
+          key={file.id}
+          onClick={() => onFileClick(file)}
+          title={file.name}
+          className={`${ROW_BASE} gap-2 hover:bg-accent hover:text-accent-foreground ${
+            selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+          }`}
+        >
+          <span aria-hidden className="w-2.5 shrink-0" />
+          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate">{file.name}</span>
+        </button>
+      ))}
     </>
   );
 }
@@ -712,7 +693,7 @@ export function PublicDocPage() {
   const scrollToHash = useScrollToHeading(data?.doc.content);
   const activeHeadingId = useActiveHeading(
     data?.doc.content,
-    data?.doc.content ? extractHeadings(data.doc.content).map(h => h.id) : [],
+    data?.doc.content ? publicOutline(data.doc.content, data.doc.title).map(h => h.id) : [],
   );
 
   // Scroll to #heading anchor when one is present in the URL.
@@ -756,7 +737,7 @@ export function PublicDocPage() {
     );
   }
 
-  const headings = extractHeadings(data.doc.content);
+  const headings = publicOutline(data.doc.content, data.doc.title);
   const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
 
   // Desktop top bar breadcrumb: site name (links to the home doc, or the
@@ -897,7 +878,10 @@ export function PublicDocPage() {
               </NavLink>
             )}
           </div>
-          <ScrollArea className="flex-1 px-2 pb-2">
+          {/* app-sidebar-scroller (index.css) drops Radix's display:table
+              content wrapper, which sizes to max-content and would stop long
+              labels from truncating - same fix as the app sidebar. */}
+          <ScrollArea className="app-sidebar-scroller flex-1 px-2 pb-2">
             <nav className="flex flex-col gap-0.5">
               {filteredDocs !== null ? (
                 filteredDocs.length === 0 ? (

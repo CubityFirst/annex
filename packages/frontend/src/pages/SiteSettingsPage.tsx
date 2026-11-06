@@ -88,7 +88,7 @@ const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 const API_REFERENCE_URL = "https://github.com/CubityFirst/annex/blob/main/docs/api/README.md";
 
 /** Inline code styling for API paths like /v1 in running text. */
-const INLINE_CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]";
+const INLINE_CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[max(0.75rem,0.85em)]";
 
 // Grouped outline for the settings nav. Section→group membership and
 // per-role visibility live in the per-render `settingsSections` array. Order
@@ -1499,8 +1499,8 @@ export function SiteSettingsPage() {
                     : `${unpublishedDocCount} documents are marked unpublished`}
                 </AlertTitle>
                 <AlertDescription>
-                  This site is published, so every document — including{" "}
-                  {unpublishedDocCount === 1 ? "this one" : "these"} — is publicly
+                  This site is published, so every document – including{" "}
+                  {unpublishedDocCount === 1 ? "this one" : "these"} – is publicly
                   visible. A document's individual publish setting does not hide it
                   while the whole site is published. Unpublish the site if any of
                   these should stay private.
@@ -1836,7 +1836,7 @@ export function SiteSettingsPage() {
                     {domain.status !== "active" && domain.dnsRecords.length > 0 && (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-muted-foreground">
-                          Add these records at your DNS provider. We re-check while this page is open — propagation can take a few minutes, or click Refresh to check right away.
+                          Add these records at your DNS provider. We re-check while this page is open – propagation can take a few minutes, or click Refresh to check right away.
                         </p>
                         <div className="overflow-x-auto rounded-md border border-border">
                           <table className="w-full text-xs">
@@ -2340,9 +2340,10 @@ export function SiteSettingsPage() {
                 <SettingsEmptyRow icon={Link} action={createLinkButton}>Loading…</SettingsEmptyRow>
               ) : activeInviteLinks.length === 0 ? (
                 <SettingsEmptyState
+                  size="compact"
                   icon={Link}
                   title="No invite links yet"
-                  hint="Create a link anyone can use to join this site."
+                  hint="Anyone with a link can join this site."
                   action={createLinkButton}
                 />
               ) : (
@@ -2401,7 +2402,7 @@ export function SiteSettingsPage() {
                 title="API keys"
                 description={<>
                   Scoped keys for the <code className={INLINE_CODE}>/v1</code> REST API. Each key is
-                  bound to this site and can never do more than your own role allows. Keep them secret — treat a key
+                  bound to this site and can never do more than your own role allows. Keep them secret – treat a key
                   like a password.
                 </>}
               />
@@ -2412,7 +2413,7 @@ export function SiteSettingsPage() {
                     <DialogHeader>
                       <DialogTitle>Create API key</DialogTitle>
                       <DialogDescription>
-                        The secret is shown once, right after creation. Store it somewhere safe — it can't be retrieved again.
+                        The secret is shown once, right after creation. Store it somewhere safe – it can't be retrieved again.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col gap-4 py-4">
@@ -2477,6 +2478,7 @@ export function SiteSettingsPage() {
               <SettingsEmptyRow icon={KeyRound} action={newKeyButton}>Loading keys…</SettingsEmptyRow>
             ) : apiKeys.length === 0 ? (
               <SettingsEmptyState
+                size="compact"
                 icon={KeyRound}
                 title="No API keys yet"
                 hint={<>Create one to use the <code className={INLINE_CODE}>/v1</code> API.</>}
@@ -2628,7 +2630,7 @@ export function SiteSettingsPage() {
             {isOwner ? (
               <DangerRow
                 title="Delete this site"
-                description="Permanently remove the site with all of its documents, files and members. This cannot be undone."
+                description="Permanently delete the site, its documents, files and members. This can't be undone."
                 action={
                 <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) { setDeleteError(null); setDeleteConfirm(""); setCopiedDeleteName(false); } }}>
                   <AlertDialogTrigger asChild>

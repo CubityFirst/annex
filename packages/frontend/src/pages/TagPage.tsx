@@ -4,13 +4,8 @@ import { FileText, Tag } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { formatRelativeTime } from "@/lib/fileManager";
 import { getToken } from "@/lib/auth";
+import { PAGE_PADDING, READING_CONTAINER } from "@/lib/pageContainer";
 
-// Same column as the file viewer (FilePage's VIEWER_COLUMN_CLASS): a 44rem
-// column centred in the content area that, at xl, keeps the doc column's
-// left edge but may run wider to the right (capped at 56rem), so the list
-// doesn't leave a wide empty band beside it.
-const TAG_COLUMN_CLASS =
-  "mx-auto max-w-[44rem] xl:mr-0 xl:ml-[max(0px,calc((100%_-_44rem)/2))] xl:max-w-[56rem]";
 
 /** The colour a site's graph tag-colour rules give `tag` (the first matching
  *  rule wins, as in the graph), or null when no rule names it. */
@@ -92,14 +87,12 @@ export function TagPage() {
 
   if (!projectId || !tag) return null;
 
-  // Same reading layout as DocPage/FilePage (a 44rem column in a flex row,
-  // with the empty w-60 outline rail reserved at xl), so the header doesn't
-  // shift when you click a tag from a doc. Like the file viewer, the column
-  // may widen to the right at xl (TAG_COLUMN_CLASS).
+  // The doc's reading column (lib/pageContainer: 44rem, on the doc column's
+  // left edge at every width), so the header doesn't shift when you click a
+  // tag from a doc.
   return (
-    <div className="flex min-h-full">
-      <div className="min-w-0 flex-1 px-5 py-6 sm:px-6 sm:py-10">
-      <div data-testid="tag-column" className={TAG_COLUMN_CLASS}>
+    <div className={PAGE_PADDING}>
+      <div data-testid="tag-column" className={READING_CONTAINER}>
       <div className="mb-6">
         <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Tag</p>
         <div className="flex items-center gap-2.5">
@@ -170,9 +163,6 @@ export function TagPage() {
         </ul>
       )}
       </div>
-      </div>
-      {/* Empty rail matching the doc outline rail. */}
-      <div className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
     </div>
   );
 }

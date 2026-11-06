@@ -91,7 +91,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
       const result = await apiFetchJson<{ purged: number; remaining: number }>(`/api/projects/${projectId}/trash`, { method: "DELETE" });
       if (result.ok && result.data && result.data.remaining > 0) {
         // A very large bin is emptied in bounded passes server-side.
-        toast({ title: `Deleted ${result.data.purged} items.`, description: `${result.data.remaining} remain — empty the bin again to finish.` });
+        toast({ title: `Deleted ${result.data.purged} items.`, description: `${result.data.remaining} remain – empty the bin again to finish.` });
       } else if (!result.ok && !result.redirected) {
         toast({ title: "Couldn't empty the recycle bin.", description: result.error, variant: "destructive" });
       }
@@ -132,7 +132,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
         <SettingsEmptyState
           icon={Trash2}
           title="The recycle bin is empty"
-          hint="Deleted docs, files and folders will appear here."
+          hint="Nothing here right now."
         />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border bg-card">

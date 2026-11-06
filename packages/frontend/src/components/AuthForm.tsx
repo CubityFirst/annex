@@ -163,30 +163,34 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 }
 
 // Brand panel: the interactive dot field, the product line from the landing
-// page and the landing's hero product shot (at ~0.6 scale, fading out), so the
-// wide half of the screen carries the brand instead of reading as empty space.
-// The block is centred both ways (equal side margins, not a left-hugging
-// column with a wider right gap), level with the centred form.
+// page and the landing's hero product shot, so the wide half of the screen
+// carries the brand instead of reading as empty space. The headline block sits
+// at a fixed share of the viewport height (level with the top of the centred
+// form); the shot below it is drawn near real size (~0.8x, so its UI text
+// stays legible) and bleeds off the panel's right and bottom edges, which the
+// panel's overflow-hidden crops - so it shows the sidebar, the doc title and
+// the callout instead of a shrunken full-window thumbnail.
 export function AuthBrandPanel() {
   return (
       <div className="relative hidden flex-1 overflow-hidden border-l border-border bg-sidebar lg:block" aria-hidden="true">
         <DotGrid />
         <div className="pointer-events-none absolute inset-0 bg-radial-[ellipse_70%_60%_at_45%_50%] from-sidebar via-sidebar/70 to-sidebar/0" />
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-14 py-16 xl:px-20">
-         <div className="flex min-h-0 w-full max-w-[42rem] flex-col">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">An annex for your mind</p>
-          <p className="mt-4 max-w-xl text-5xl font-light leading-[1.05] tracking-[-0.035em] text-foreground">
-            A place to keep <span className="font-semibold">anything.</span>
-          </p>
-          <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">
-            Write in markdown, keep files and drawings alongside, and publish any of it to the web when you&rsquo;re ready.
-          </p>
-          {/* Cropped to the capture's top 1250px (above the sidebar's user
-              footer) and faded by ONE mask on the frame, border included, so
-              nothing reads as half-rendered. Same framing as the landing
-              hero's .l-viewer-stage. min-h-0 lets it shrink on short
-              screens; the crop then tightens and the fade stays on its edge. */}
-          <div className="mt-12 aspect-[2304/1250] min-h-0 w-full overflow-hidden rounded-lg border border-border shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_65%,transparent)] [mask-image:linear-gradient(to_bottom,#000_65%,transparent)]">
+        <div className="pointer-events-none absolute inset-0 flex flex-col pl-14 pt-[clamp(4rem,18vh,11rem)] xl:pl-20">
+          <div className="max-w-xl pr-14 xl:pr-20">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">An annex for your mind</p>
+            <p className="mt-4 text-5xl font-light leading-[1.05] tracking-[-0.035em] text-foreground">
+              A place to keep <span className="font-semibold">anything.</span>
+            </p>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">
+              Write in markdown, keep files and drawings alongside, and publish any of it to the web when you&rsquo;re ready.
+            </p>
+          </div>
+          {/* Fixed width (the capture is 1152 CSS px wide at 1x, so 54rem /
+              57rem is ~0.75x / ~0.8x) and left-anchored: the panel crops the
+              right and bottom. The frame grows to the panel's bottom edge,
+              capped at the image's own height on tall screens, and ONE mask on
+              the frame (border included) fades it out before that edge. */}
+          <div className="mt-12 flex min-h-[10rem] w-[54rem] max-w-none flex-1 shrink-0 self-start overflow-hidden rounded-tl-lg border-l border-t border-border max-h-[33.75rem] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8)] [-webkit-mask-image:linear-gradient(to_bottom,#000_60%,transparent)] [mask-image:linear-gradient(to_bottom,#000_60%,transparent)] xl:w-[57rem] xl:max-h-[35.625rem]">
             <img
               src={heroShot}
               alt=""
@@ -194,10 +198,9 @@ export function AuthBrandPanel() {
               height={1440}
               loading="lazy"
               decoding="async"
-              className="block h-full w-full object-cover object-top"
+              className="block h-auto w-full max-w-none self-start"
             />
           </div>
-         </div>
         </div>
       </div>
   );

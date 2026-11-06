@@ -636,17 +636,17 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
             Tags
           </button>}
           {loading ? (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground" aria-hidden="true">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden="true">
               <Loader2 className="h-3 w-3 animate-spin" />
               Searching…
             </span>
           ) : hasTerm && resultCount > 0 ? (
-            <span className="text-[11px] text-muted-foreground" aria-hidden="true">
+            <span className="text-xs text-muted-foreground" aria-hidden="true">
               {resultCount} result{resultCount === 1 ? "" : "s"}
             </span>
           ) : isDashboard ? (
             // Keep the search scope visible once the placeholder is gone.
-            <span className="text-[11px] text-muted-foreground" aria-hidden="true">Sites and documents</span>
+            <span className="text-xs text-muted-foreground" aria-hidden="true">Searching all sites</span>
           ) : null}
         </div>
         <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">

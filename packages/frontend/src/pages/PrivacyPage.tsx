@@ -13,7 +13,7 @@ export function PrivacyPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Privacy policy</h1>
-            <p className="l-legal-meta">Effective date: May 29, 2026</p>
+            <p className="l-legal-meta">Effective date: 29 May 2026</p>
 
             <div className="l-legal-body" ref={bodyRef}>
               <h2>1. What we collect</h2>
@@ -23,7 +23,7 @@ export function PrivacyPage() {
               </p>
               <p>
                 If you subscribe to a paid plan (such as Annex Ink), we store identifiers that link
-                your account to our payment processor - specifically a Stripe customer ID, a Stripe
+                your account to our payment processor – specifically a Stripe customer ID, a Stripe
                 subscription ID, which plan you're on and its current status, the end of your current
                 billing period, any pending cancellation date, and the date your supporter status
                 began. If an administrator grants you complimentary supporter status, we also store
@@ -65,7 +65,7 @@ export function PrivacyPage() {
               </p>
               <ul>
                 <li>You explicitly ask us to (for example, a support request about a specific document)</li>
-                <li>We are responding to a credible report that the content violates our Terms</li>
+                <li>We are responding to a credible report that the content violates our terms of service</li>
                 <li>We are required to comply with law or a valid legal process</li>
                 <li>It is necessary to investigate or resolve a security incident</li>
               </ul>
@@ -79,11 +79,11 @@ export function PrivacyPage() {
               <ul>
                 <li>Provide, maintain, and improve Annex</li>
                 <li>Send transactional emails (account confirmation, password reset, invites)</li>
-                <li>Detect and prevent abuse or unauthorized access</li>
+                <li>Detect and prevent abuse or unauthorised access</li>
                 <li>Comply with legal obligations</li>
               </ul>
               <p>
-                We do not use your content or personal data to train machine learning models, and
+                We do not use your content or personal data to train machine-learning models, and
                 we do not serve advertising.
               </p>
 
@@ -97,7 +97,7 @@ export function PrivacyPage() {
               </p>
               <p>
                 Payments are processed by Stripe, Inc. When you start a checkout, we send Stripe a
-                reference to your account - and, on your first checkout, your email address - so the
+                reference to your account – and, on your first checkout, your email address – so the
                 resulting subscription can be tied back to you. Stripe collects payment details (card number, expiry, billing
                 address) directly. Stripe's handling of that data is governed by their own privacy
                 policy, available at{" "}
@@ -111,7 +111,7 @@ export function PrivacyPage() {
                 AI features (such as document summarisation) are <strong>off by default</strong>{" "}
                 for every project. They only operate after a project admin explicitly turns them
                 on in project settings. By default, even with the feature enabled, AI actions are
-                manual - summaries are only generated when a user clicks the "summarise" button on
+                manual – summaries are only generated when a user clicks the "summarise" button on
                 a document. A project admin can additionally opt the project in to automatic
                 summarisation; in that mode content is sent to the AI provider when a document is
                 viewed. Automatic summarisation is a separate, deliberate setting and is not enabled
@@ -169,7 +169,7 @@ export function PrivacyPage() {
               <h2>7. Security</h2>
               <p>
                 All data is transmitted over HTTPS. Passwords are stored as salted cryptographic hashes and are never stored in plain text. We take
-                reasonable technical and organizational measures to protect your data, but no
+                reasonable technical and organisational measures to protect your data, but no
                 system is perfectly secure. Use a strong, unique password and enable two-factor
                 authentication where available.
               </p>

@@ -47,10 +47,13 @@ describe("TermsPage", () => {
     const links = within(toc).getAllByRole("link");
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(links).toHaveLength(headings.length);
-    // Numbering is dropped from the rail; each link targets its heading's id.
-    const payments = within(toc).getByRole("link", { name: "Payments, subscriptions, and refunds" });
+    // The rail repeats the number visually (aria-hidden), so the accessible
+    // name is the bare title; each link targets its heading's id.
+    const payments = within(toc).getByRole("link", { name: "Payments, subscriptions and refunds" });
     const target = document.getElementById(payments.getAttribute("href")!.slice(1));
     expect(target?.textContent).toMatch(/^7\. Payments/);
+    const num = payments.querySelector("[aria-hidden='true']");
+    expect(num?.textContent).toBe("7");
   });
 
   it("exposes a contact mailto link", () => {

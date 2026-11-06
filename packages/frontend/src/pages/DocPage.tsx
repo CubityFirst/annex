@@ -48,7 +48,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { createPortal } from "react-dom";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
-import { DocOutline } from "@/components/DocOutline";
+import { DocOutline, outlineHeadings } from "@/components/DocOutline";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
@@ -108,6 +108,12 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
+// Outline entries for a doc: its headings minus a leading H1 that just repeats
+// the page title (see outlineHeadings).
+function docOutlineHeadings(doc: { title: string; content: string }): Heading[] {
+  return outlineHeadings(extractHeadings(doc.content), parseFrontmatter(doc.content).title ?? doc.title);
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
@@ -143,65 +149,57 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-// Shared row grid for the reference groups that show a rendered sample
-// (syntax | rendered | shortcut), so their columns line up across groups.
-const REF_SAMPLE_ROW = "grid grid-cols-[150px_1fr_auto] gap-3 px-3 py-2";
+// One table style for every reference group: the syntax (mono) on the left,
+// a short label or the rendered result on the right, and an optional
+// shortcut chip. Rows share the list's columns via subgrid, so the syntax
+// column is as wide as its longest entry (at least 9.5rem, which keeps short
+// groups like Headings and Emphasis aligned with each other) while always
+// leaving the right column room; long syntax wraps instead of clipping.
+type RefRow = { code: string; result: React.ReactNode; shortcut?: string };
 
-// Reference entries: the syntax on its own line, the explanation underneath
-// as wrapping prose - aligned trailing comments inside a <pre> got clipped.
-function RefList({ items }: { items: [string, string][] }) {
+function RefTable({ rows, align = "center" }: { rows: RefRow[]; align?: "center" | "baseline" }) {
+  const hasShortcut = rows.some(r => r.shortcut);
   return (
-    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
-      {items.map(([code, desc]) => {
-        // "Ctrl+B"-style descriptions are shortcuts: show them as a key chip on
-        // the same line instead of a second line of prose.
-        const isShortcut = /^(Ctrl|Cmd|⌘|Shift|Alt)\+\S+$/.test(desc);
-        return (
-          <li key={code} className={cn("px-3 py-2", isShortcut ? "flex items-center justify-between gap-3" : "flex flex-col gap-1")}>
-            <code className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{code}</code>
-            {desc && (isShortcut
-              ? <Kbd className="shrink-0">{desc}</Kbd>
-              : <span className="text-[13px] leading-5 text-muted-foreground">{desc}</span>)}
-          </li>
-        );
-      })}
+    <ul className={cn(
+      "grid gap-x-3 divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+      hasShortcut
+        ? "grid-cols-[minmax(9.5rem,max-content)_minmax(7rem,1fr)_auto]"
+        : "grid-cols-[minmax(9.5rem,max-content)_minmax(7rem,1fr)]",
+    )}>
+      {rows.map(({ code, result, shortcut }) => (
+        <li key={code} className={cn("col-span-full grid grid-cols-subgrid px-3 py-2", align === "baseline" ? "items-baseline" : "items-center")}>
+          <code className="whitespace-pre-wrap font-mono text-xs text-foreground/90 [overflow-wrap:anywhere]">{code}</code>
+          {typeof result === "string"
+            ? <span className="text-[13px] leading-5 text-muted-foreground">{result}</span>
+            : <span className="text-sm text-foreground">{result}</span>}
+          {hasShortcut && (shortcut ? <Kbd className="shrink-0 justify-self-end">{shortcut}</Kbd> : <span aria-hidden="true" />)}
+        </li>
+      ))}
     </ul>
   );
+}
+
+// Plain [syntax, label] pairs - the common case.
+function RefList({ items }: { items: [string, string][] }) {
+  return <RefTable rows={items.map(([code, result]) => ({ code, result }))} />;
 }
 
 // Headings: show each level at its real relative size next to its syntax.
 function HeadingSamples() {
-  return (
-    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
-      {([["#", "Heading 1", "text-xl"], ["##", "Heading 2", "text-lg"], ["###", "Heading 3", "text-base"]] as const).map(([mark, label, size]) => (
-        <li key={mark} className={cn(REF_SAMPLE_ROW, "items-baseline")}>
-          <code className="font-mono text-xs text-foreground/90">{mark}</code>
-          <span className={cn("font-semibold tracking-tight", size)}>{label}</span>
-          <span aria-hidden="true" />
-        </li>
-      ))}
-    </ul>
-  );
+  const rows: RefRow[] = ([["#", "Heading 1", "text-xl"], ["##", "Heading 2", "text-lg"], ["###", "Heading 3", "text-base"]] as const)
+    .map(([code, label, size]) => ({ code, result: <span className={cn("font-semibold tracking-tight", size)}>{label}</span> }));
+  return <RefTable rows={rows} align="baseline" />;
 }
 
 // Emphasis: syntax → rendered result → shortcut, in aligned columns.
 function EmphasisSamples() {
-  const rows: [string, React.ReactNode, string][] = [
-    ["**bold**", <strong className="font-semibold">bold</strong>, "Ctrl+B"],
-    ["*italic*", <em>italic</em>, "Ctrl+I"],
-    ["__underline__", <u className="underline-offset-2">underline</u>, "Ctrl+U"],
-    ["~~strikethrough~~", <s>strikethrough</s>, ""],
-  ];
   return (
-    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
-      {rows.map(([code, rendered, shortcut]) => (
-        <li key={code} className={cn(REF_SAMPLE_ROW, "items-center")}>
-          <code className="font-mono text-xs text-foreground/90">{code}</code>
-          <span className="text-sm text-foreground">{rendered}</span>
-          {shortcut ? <Kbd className="shrink-0">{shortcut}</Kbd> : <span aria-hidden="true" />}
-        </li>
-      ))}
-    </ul>
+    <RefTable rows={[
+      { code: "**bold**", result: <strong className="font-semibold">bold</strong>, shortcut: "Ctrl+B" },
+      { code: "*italic*", result: <em>italic</em>, shortcut: "Ctrl+I" },
+      { code: "__underline__", result: <u className="underline-offset-2">underline</u>, shortcut: "Ctrl+U" },
+      { code: "~~strikethrough~~", result: <s>strikethrough</s> },
+    ]} />
   );
 }
 
@@ -479,7 +477,7 @@ export function DocPage() {
   const scrollToHash = useScrollToHeading(viewingRevision ? viewingRevision.content : doc?.content);
   const activeHeadingId = useActiveHeading(
     editing ? undefined : doc?.content,
-    doc ? extractHeadings(doc.content).map(h => h.id) : [],
+    doc ? docOutlineHeadings(doc).map(h => h.id) : [],
   );
 
   // Scroll to the URL-hash anchor once the doc is rendered. Keyed by
@@ -740,7 +738,7 @@ export function DocPage() {
         // The server echoes `content` only when the body actually changed; a
         // no-op save records no revision, so a provided changelog went nowhere.
         if (changelog && !("content" in data)) {
-          toast({ title: "No content changes - your changelog note wasn't saved." });
+          toast({ title: "No content changes – your changelog note wasn't saved." });
         }
       } else {
         setSaveError("Failed to save. Please try again.");
@@ -1163,18 +1161,24 @@ export function DocPage() {
             breadcrumb in the app's top bar, with the editor actions at its
             right end - no separate edit bar stacked above the toolbar. */}
         {headerActionSlot && createPortal(
-          // The bar's gap-1 + the slot's pl-2, pulled back by -ml-0.5, then
-          // chevron + gap-1 and an unpadded input land the title text exactly
-          // where the reading-mode crumb text sits (crumb gap + chevron + gap +
-          // px-1.5), so it doesn't shift when editing starts.
-          <div className="-ml-0.5 flex min-w-0 flex-1 items-center gap-1">
+          // Mirrors the reading-mode final crumb so nothing moves on Edit.
+          // Horizontally: the slot sits after the bar's gap-1 + its own pl-2
+          // (12px) where the reading crumb's chevron sits after the list's
+          // gap-1 (4px), so -ml-2 puts this chevron on the same x; gap-2.5
+          // (the crumb's gap-1 + px-1.5) then lands the unpadded input text on
+          // the crumb text's x. Vertically: pt-0.5 + 20px line + pb-px + the
+          // 1px dashed underline is the crumb's 24px box (py-0.5 + 20px), so
+          // the text baseline matches too. field-sizing hugs the typed title
+          // (or the placeholder for a new doc), with a small floor so an
+          // emptied field stays clickable.
+          <div className="-ml-2 flex min-w-0 flex-1 items-center gap-2.5">
             <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/50 md:block" aria-hidden="true" />
             <Input
               value={titleDraft}
               onChange={e => setTitleDraft(e.target.value)}
               placeholder="Document title"
               aria-label="Document title"
-              className="hidden h-8 w-auto min-w-[12ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 text-sm font-medium shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
+              className="hidden h-auto w-auto min-w-[4ch] max-w-[40ch] flex-none rounded-none border-0 border-b border-dashed border-foreground/25 bg-transparent px-0 pt-0.5 pb-px text-sm font-medium leading-5 shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground enabled:hover:border-foreground/40 dark:enabled:hover:border-foreground/40 focus-visible:border-solid focus-visible:border-foreground/80 focus-visible:ring-0 md:block md:text-sm"
               autoFocus={isNewDoc}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -1188,7 +1192,7 @@ export function DocPage() {
                 variant="destructive"
                 size="sm"
                 onClick={() => setResetConfirmOpen(true)}
-                title="Realtime sync is disabled - click to restore"
+                title="Realtime sync is disabled – click to restore"
                 className="gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -1332,21 +1336,21 @@ export function DocPage() {
                   <EmphasisSamples />
                 </Section>
                 <Section title="Links & images">
-                  <RefList items={[[`[link text](https://example.com)`, ``], [`[email me](mailto:hello@example.com)`, ``], [`[call](tel:+15551234567)`, ``], [`![alt text](https://example.com/img.png)`, ``], [`![alt](img.png){width=300}`, `fixed width (px)`], [`![alt](img.png){width=50%}`, `percentage width`], [`![alt](img.png){width=400 height=200}`, `width and height`]]} />
+                  <RefList items={[[`[link text](https://example.com)`, `Link`], [`[email me](mailto:hello@example.com)`, `Email link`], [`[call](tel:+15551234567)`, `Phone link`], [`![alt text](https://example.com/img.png)`, `Image`], [`![alt](img.png){width=300}`, `Fixed width (px)`], [`![alt](img.png){width=50%}`, `Percentage width`], [`![alt](img.png){width=400 height=200}`, `Width and height`]]} />
                   <p className="text-xs text-muted-foreground mt-1">Allowed URL schemes: <span className="font-mono">http</span>, <span className="font-mono">https</span>, <span className="font-mono">mailto</span>, <span className="font-mono">tel</span>. Other schemes are stripped.</p>
                 </Section>
                 <Section title="Audio embeds">
-                  <RefList items={[[`![song.mp3](song.mp3)`, `full player (default)`], [`![song.mp3](song.mp3){size=full}`, `same as default`], [`![song.mp3](song.mp3){size=small}`, `inline chip`], [`![song.mp3](/api/files/<id>/content)`, `uploaded file`]]} />
-                  <p className="text-xs text-muted-foreground mt-1">Recognized extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
+                  <RefList items={[[`![song.mp3](song.mp3)`, `Full player (default)`], [`![song.mp3](song.mp3){size=full}`, `Same as default`], [`![song.mp3](song.mp3){size=small}`, `Inline chip`], [`![song.mp3](/api/files/<id>/content)`, `Uploaded file`]]} />
+                  <p className="text-xs text-muted-foreground mt-1">Recognised extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
                 </Section>
                 <Section title="Document links">
-                  <RefList items={[[`[[My Document]]`, `link by title`], [`[[My Document|custom label]]`, `link with display text`], [`[[My Document#section]]`, `link to a heading anchor`], [`[[My Document#section|see this]]`, `anchor link with label`]]} />
+                  <RefList items={[[`[[My Document]]`, `Link by title`], [`[[My Document|custom label]]`, `Link with display text`], [`[[My Document#section]]`, `Link to a heading`], [`[[My Document#section|see this]]`, `Heading link with label`]]} />
                 </Section>
                 <Section title="Lists">
-                  <Code>{`- unordered item\n- another item\n\n1. ordered item\n2. another item`}</Code>
+                  <RefList items={[[`- item`, `Bulleted list item`], [`1. item`, `Numbered list item`]]} />
                 </Section>
                 <Section title="Task lists">
-                  <Code>{`- [x] done\n- [ ] not done`}</Code>
+                  <RefList items={[[`- [x] done`, `Ticked task`], [`- [ ] not done`, `Open task`]]} />
                 </Section>
                 <Section title="Tables">
                   <Code>{`| Col A | Col B |
@@ -1362,7 +1366,7 @@ export function DocPage() {
                 </Section>
                 <Section title="Comments">
                   <Code>{`%% hidden note for editors %%`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Inline only - text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Inline only – text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
                 </Section>
                 <Section title="Callouts">
                   <Code>{`> [!note]\n> This is a note.\n\n> [!warning] Watch out\n> Something to be careful about.\n\n> [!tip]+ Foldable tip\n> This starts open.\n\n> [!danger]- Foldable danger\n> This starts closed.`}</Code>
@@ -1373,8 +1377,8 @@ export function DocPage() {
                   <Code>{`---`}</Code>
                 </Section>
                 <Section title="Dice roller">
-                  <RefList items={[[`\`dice: 1d20\``, `standard roll`], [`\`dice: 2d6+1d4+3\``, `compound expression`], [`\`dice: 4d6kh3\``, `keep highest 3`], [`\`dice: 4d6kl3\``, `keep lowest 3`], [`\`dice: 2d8r1\``, `reroll 1s (unlimited)`], [`\`dice: 2d8r<3\``, `reroll less than 3`], [`\`dice: 2d8r>5\``, `reroll greater than 5`], [`\`dice: 2d8r1r3\``, `reroll 1s and 3s`], [`\`dice: 4d6kh3r1\``, `keep highest 3, reroll 1s`], [`\`dice: 2d10ro<2\``, `reroll once if less than 2`], [`\`dice: 2dF\``, `fate/fudge dice (-1, 0, +1)`], [`\`dice: 1d[2,4,6,8]\``, `custom numeric faces`], [`\`dice: 1d[fire,ice]\``, `random string table`], [`\`dice: 2d6[Fire]\``, `inline label`], [`\`dice: 2d6%4\``, `modulus`], [`\`dice: 2d6**2\``, `exponentiation`], [`\`dice: floor(2d6/3)\``, `math function`], [`\`dice: (2d6+1d4)*2\``, `grouping with parentheses`], [`\`dice: 1d20 Attack Roll\``, `overall label`], [`\`dice: 1d20+5 \\ +5 for initiative\` label with separator`, ``]]} />
-                  <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
+                  <RefList items={[[`\`dice: 1d20\``, `Standard roll`], [`\`dice: 2d6+1d4+3\``, `Compound expression`], [`\`dice: 4d6kh3\``, `Keep highest 3`], [`\`dice: 4d6kl3\``, `Keep lowest 3`], [`\`dice: 2d8r1\``, `Reroll 1s (unlimited)`], [`\`dice: 2d8r<3\``, `Reroll less than 3`], [`\`dice: 2d8r>5\``, `Reroll greater than 5`], [`\`dice: 2d8r1r3\``, `Reroll 1s and 3s`], [`\`dice: 4d6kh3r1\``, `Keep highest 3, reroll 1s`], [`\`dice: 2d10ro<2\``, `Reroll once if less than 2`], [`\`dice: 2dF\``, `Fate/Fudge dice (−1, 0, +1)`], [`\`dice: 1d[2,4,6,8]\``, `Custom numeric faces`], [`\`dice: 1d[fire,ice]\``, `Random string table`], [`\`dice: 2d6[Fire]\``, `Inline label`], [`\`dice: 2d6%4\``, `Modulus`], [`\`dice: 2d6**2\``, `Exponentiation`], [`\`dice: floor(2d6/3)\``, `Maths function`], [`\`dice: (2d6+1d4)*2\``, `Grouping with parentheses`], [`\`dice: 1d20 Attack Roll\``, `Overall label`], [`\`dice: 1d20+5 \\ +5 for initiative\``, `Label after a separator`]]} />
+                  <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Maths functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
                 </Section>
                 </MajorSection>
 
@@ -1383,7 +1387,7 @@ export function DocPage() {
                 <MajorSection title="Advanced: frontmatter">
                   <Section title="YAML metadata block">
                     <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\ncover: /api/files/abc123/content\nimage: /api/files/abc123/content\n---`}</Code>
-                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
+                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognised keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">cover</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path shown as a full-width header image at the top of the page), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
                   </Section>
                 </MajorSection>
               </div>
@@ -1439,7 +1443,7 @@ export function DocPage() {
     );
   }
 
-  const headings = extractHeadings(doc.content);
+  const headings = docOutlineHeadings(doc);
   const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || myPermission === "edit";
   const isAdmin = myRole === "admin" || myRole === "owner";
   // Structural changes (move, recycle bin) need a project-level editor role - a
@@ -1713,11 +1717,11 @@ export function DocPage() {
                           </span>
                           <div className="flex min-w-0 flex-col gap-0.5">
                             <p className="text-sm font-medium">
-                              {projectPublishedAt ? "Public — inherited from site" : doc.published_at ? "Public" : "Private"}
+                              {projectPublishedAt ? "Public – inherited from site" : doc.published_at ? "Public" : "Private"}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {projectPublishedAt && !doc.published_at
-                                ? "Anyone with the link can read this document while the site is published - no need to publish it on its own."
+                                ? "Anyone with the link can read this document while the site is published – no need to publish it on its own."
                                 : doc.published_at || projectPublishedAt
                                   ? "Anyone with the link can read this document."
                                   : "Only site members can see this document."}
@@ -1726,14 +1730,15 @@ export function DocPage() {
                         </div>
                         {(doc.published_at || projectPublishedAt) && (
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
-                            className="h-8 w-8 shrink-0"
+                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
                             onClick={() => {
                               navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
                               toast({ title: "Link copied to clipboard." });
                             }}
-                            title="Copy share link"
+                            title="Copy link"
+                            aria-label="Copy link"
                           >
                             <Link className="h-4 w-4" />
                           </Button>
@@ -2004,7 +2009,7 @@ export function DocPage() {
                   </span>
                 </div>
                 {diffBase === "previous" && !prevRevisionMeta ? (
-                  <p className="text-sm text-muted-foreground">This is the oldest loaded revision - there is no previous version to compare against.</p>
+                  <p className="text-sm text-muted-foreground">This is the oldest loaded revision – there is no previous version to compare against.</p>
                 ) : diffBase === "previous" && prevRevisionContent === null ? (
                   <p className="text-sm text-muted-foreground">Loading previous version…</p>
                 ) : (

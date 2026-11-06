@@ -130,7 +130,13 @@ export function SettingsRow({
 
 /** Design-system "nothing here" state: a dashed card with a muted 20px icon,
  *  a medium-weight line, an optional muted hint and an optional action
- *  centred below. Use it whenever a list or section has nothing to show. */
+ *  centred below. Use it whenever a list or section has nothing to show.
+ *
+ *  `size="compact"` is the inline variant for a secondary sub-list inside a
+ *  section that has other content (invite links under Members, API keys
+ *  above the usage hint): a single ~56px dashed row with the icon and text on
+ *  the left and the action right-aligned. Keep the default tall panel where
+ *  the empty state is the section's main content (recycle bin, favourites). */
 export const EMPTY_STATE_CARD = "flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-10 text-center";
 
 export function SettingsEmptyState({
@@ -138,14 +144,35 @@ export function SettingsEmptyState({
   title,
   hint,
   action,
+  size = "default",
   className,
 }: {
   icon: LucideIcon;
   title: ReactNode;
   hint?: ReactNode;
   action?: ReactNode;
+  size?: "default" | "compact";
   className?: string;
 }) {
+  if (size === "compact") {
+    return (
+      <div
+        className={cn(
+          "flex min-h-14 items-center justify-between gap-4 rounded-lg border border-dashed border-border py-2 pl-4 pr-2.5",
+          className,
+        )}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="flex min-w-0 flex-col">
+            <p className="text-sm font-medium">{title}</p>
+            {hint && <p className="text-pretty text-[13px] leading-snug text-muted-foreground">{hint}</p>}
+          </div>
+        </div>
+        {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+      </div>
+    );
+  }
   return (
     <div className={cn(EMPTY_STATE_CARD, className)}>
       <Icon className="mb-2 size-5 text-muted-foreground" aria-hidden />

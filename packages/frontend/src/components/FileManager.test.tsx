@@ -410,11 +410,11 @@ describe("FileManager", () => {
     expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
   });
 
-  // Folder rows: the item count sits beside the name (breakdown in the
-  // tooltip), and the cells that don't apply or aren't known (creator, byte
-  // size, last updated before the folder is opened) get the same muted dash
-  // as a doc's Size.
-  it("puts the folder count by the name and dashes inapplicable folder cells", async () => {
+  // Folder rows: the item count is the folder's Size (breakdown in the
+  // tooltip) rather than sitting beside the name; the cells that aren't known
+  // (creator, last updated before the folder is opened) get the same muted
+  // dash as a doc's Size.
+  it("shows the folder count as its size and dashes unknown folder cells", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -427,13 +427,16 @@ describe("FileManager", () => {
     renderManager(null);
     await screen.findAllByLabelText("Open folder Specs");
     const cell = (label: string, col: number) => desktopRow(label).querySelector(`[data-col="${col}"]`)!;
-    // Name carries the count as secondary text, with the breakdown tooltip.
-    expect(cell("Open folder Specs", 0).textContent).toBe("Specs1 item");
-    expect(cell("Open folder Specs", 0).querySelector('[title="1 doc"]')?.textContent).toBe("1 item");
-    expect(cell("Open folder Blank", 0).textContent).toBe("BlankEmpty");
-    // Created by / Size / Last updated (never opened): a muted dash with a
+    // Name is just the name.
+    expect(cell("Open folder Specs", 0).textContent).toBe("Specs");
+    expect(cell("Open folder Blank", 0).textContent).toBe("Blank");
+    // Size carries the count, with the breakdown tooltip.
+    expect(cell("Open folder Specs", 2).textContent).toBe("1 item");
+    expect(cell("Open folder Specs", 2).querySelector('[title="1 doc"]')?.textContent).toBe("1 item");
+    expect(cell("Open folder Blank", 2).textContent).toBe("Empty");
+    // Created by / Last updated (never opened): a muted dash with a
     // screen-reader label.
-    for (const col of [1, 2, 3]) {
+    for (const col of [1, 3]) {
       expect(cell("Open folder Specs", col).querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
       expect(cell("Open folder Specs", col).querySelector(".sr-only")?.textContent).toBeTruthy();
     }
@@ -510,6 +513,32 @@ describe("FileManager", () => {
     expect(download.className).toContain("group-focus-within/row:opacity-100");
     expect(download.getAttribute("tabindex")).not.toBe("-1");
     expect(screen.getAllByLabelText("Actions for Doc A")[0].className).not.toContain("opacity-0");
+  });
+
+  // Desktop row checkboxes fade in on row hover/focus (opacity only, so they
+  // stay clickable and tabbable) and stay shown while anything is selected.
+  it("reveals desktop row checkboxes on hover/focus and in selection mode", async () => {
+    vi.mocked(apiFetchJson).mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...emptyContents, folders: [folder("f1", "Specs")], docs: [doc("d1", "Doc A"), doc("d2", "Doc B")] },
+    });
+    renderManager(null);
+    const box = (await screen.findAllByLabelText("Select Doc A"))[0];
+    const reveal = box.parentElement!;
+    expect(reveal.className).toContain("opacity-0");
+    expect(reveal.className).toContain("group-hover/row:opacity-100");
+    expect(reveal.className).toContain("group-focus-within/row:opacity-100");
+    expect(reveal.className).toContain("group-data-[selecting]/fm:opacity-100");
+    expect(reveal.className).not.toMatch(/(hidden|invisible)/);
+    // The header select-all box is always visible.
+    expect(screen.getByRole("checkbox", { name: "Select all" }).closest(".opacity-0")).toBeNull();
+
+    const listing = reveal.closest('[class~="group/fm"]')!;
+    expect(listing.hasAttribute("data-selecting")).toBe(false);
+    fireEvent.click(box);
+    expect(listing.hasAttribute("data-selecting")).toBe(true);
+    fireEvent.click(box);
+    expect(listing.hasAttribute("data-selecting")).toBe(false);
   });
 
   // Header select-all is tri-state and covers every visible row except the

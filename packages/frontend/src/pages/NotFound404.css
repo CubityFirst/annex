@@ -23,9 +23,13 @@
 .v404-site .v404-stage {
   padding-top: calc(var(--nav-h) + clamp(48px, 7vw, 88px));
 }
+/* The block (numeral, copy, CTAs) is centred on the page in a ~640px column
+   so the stage isn't left-heavy with an empty right half; text inside stays
+   left-aligned. The column is wide enough for the numeral at its largest. */
 .v404-content {
   position: relative;
   z-index: 2;
+  max-width: calc(680px + 2 * var(--gutter));
 }
 
 /* grid background, fading out toward the edges */
@@ -37,8 +41,8 @@
     linear-gradient(90deg, rgba(232, 228, 222, 0.025) 1px, transparent 1px);
   background-size: 60px 60px;
   background-position: center;
-  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 30% 50%, #000 40%, transparent 100%);
-          mask-image: radial-gradient(ellipse 80% 70% at 30% 50%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 40%, transparent 100%);
+          mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 40%, transparent 100%);
   pointer-events: none;
 }
 
@@ -83,15 +87,18 @@
   gap: 24px;
   align-items: center;
 }
-.v404-link {
+/* Secondary link: a live link, not a muted aside - the readable secondary
+   tone (as the footer/nav links) with a visible underline. Scoped under
+   .v404 so it beats `.landing a { text-decoration: none }`. */
+.v404 .v404-link {
   font-size: 15px;
-  color: var(--text3);
+  color: var(--text-sub);
   text-decoration: underline;
   text-underline-offset: 4px;
-  text-decoration-color: var(--border2);
+  text-decoration-color: var(--text3);
   transition: color 0.15s;
 }
-.v404-link:hover { color: var(--text); }
+.v404 .v404-link:hover { color: var(--text); }
 
 /* ══ Mobile - same language, stacked (<=720px) ══ */
 @media (max-width: 720px) {

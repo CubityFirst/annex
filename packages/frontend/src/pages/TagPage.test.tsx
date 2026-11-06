@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { TagPage } from "./TagPage";
+import { PAGE_PADDING, READING_CONTAINER } from "@/lib/pageContainer";
 
 type Doc = { id: string; title: string; display_title?: string | null; tags: string | null; folder_id: string | null; updated_at?: string };
 
@@ -67,17 +68,12 @@ describe("TagPage", () => {
     expect(screen.getByText("DOC PAGE")).toBeInTheDocument();
   });
 
-  it("uses the doc reading layout: a 44rem column beside an empty xl rail", () => {
+  it("uses the shared doc reading container (44rem on the doc column's left edge)", () => {
     renderTagPage([taggedDoc]);
     const column = screen.getByTestId("tag-column");
+    expect(column.className).toBe(READING_CONTAINER);
     expect(column).toHaveClass("mx-auto", "max-w-[44rem]");
-    // Widens to the right at xl like the file viewer.
-    expect(column).toHaveClass("xl:max-w-[56rem]");
-    const row = column.parentElement?.parentElement;
-    expect(row).toHaveClass("flex");
-    const rail = row?.lastElementChild;
-    expect(rail).toHaveClass("hidden", "w-60", "xl:block");
-    expect(rail).toHaveAttribute("aria-hidden", "true");
+    expect(column.parentElement?.className).toBe(PAGE_PADDING);
   });
 
   it("shows the tag's graph colour beside the title when a rule names it", async () => {

@@ -72,17 +72,18 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
   );
 }
 
-// Folder item count shown beside its row's name / in its card subtitle: one
-// total ("1 item", "7 items", "Empty") on desktop and mobile alike; the
-// doc/file/folder breakdown rides in the tooltip (folderCountLabel).
+// Folder item count - a folder's "size" - shown in its row's Size column / its
+// card subtitle: one total ("1 item", "7 items", "Empty") on desktop and
+// mobile alike; the doc/file/folder breakdown rides in the tooltip
+// (folderCountLabel).
 function folderItemsLabel(c: FolderCounts | undefined): string {
   const n = c ? c.docs + c.files + c.folders : 0;
   return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
 }
 
 // Muted em dash for a table cell without a value - one that doesn't apply
-// (a doc's or folder's byte size) or isn't known (an unknown author, a folder's
-// creator); the label is for screen readers.
+// (a doc's byte size) or isn't known (an unknown author, a folder's creator or
+// not-yet-seen update time); the label is for screen readers.
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -158,6 +159,20 @@ const FIXED_COLUMNS_CLASS =
 // faint against the table surface): the same full-strength grey as the
 // row action icons.
 const ROW_CHECKBOX_CLASS = "border-muted-foreground data-[state=checked]:border-primary";
+
+// Desktop row checkboxes stay out of the way until they're useful: faded in
+// while the row is hovered, holds focus (so keyboard users tabbing onto a box
+// see it) or has its menu open; always shown once any row is selected (the
+// listing's `data-selecting`, `group/fm`) and on touch pointers that can't
+// hover. Opacity only - never display/visibility - so the column keeps its
+// width, the boxes stay in the tab order and remain clickable. A wrapper
+// rather than classes on the box itself so the disabled home-doc box's own
+// half opacity still applies on top.
+const ROW_CHECK_REVEAL_CLASS =
+  "inline-flex opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 group-data-[state=open]/rowmenu:opacity-100 group-has-[[data-row-menu][data-state=open]]/row:opacity-100 group-data-[selecting]/fm:opacity-100 [@media(hover:none)]:opacity-100";
+const RowCheckReveal = ({ children }: { children: React.ReactNode }) => (
+  <span className={ROW_CHECK_REVEAL_CLASS}>{children}</span>
+);
 
 // Header select-all box. A local primitive rather than the shared Checkbox
 // because the shared one always draws a check - the indeterminate (partial
@@ -1023,7 +1038,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         Upload files
       </DropdownMenuItem>
       {!touch && (
-        <p className="px-2 pb-1.5 pt-1 text-xs text-muted-foreground">Or drop files anywhere on this page.</p>
+        // Indented to the item labels (8px item padding + 16px icon + 8px
+        // gap), capped so it wraps instead of outgrowing the items.
+        <p className="max-w-[200px] pb-2 pl-8 pr-3 pt-0.5 text-xs leading-snug text-muted-foreground">Or drop files anywhere on this page.</p>
       )}
     </DropdownMenuContent>
   );
@@ -1185,7 +1202,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       <>
       {/* Desktop: resizable table (md+) */}
       <div
-        className={`hidden md:block ${FIXED_COLUMNS_CLASS}`}
+        className={`group/fm hidden md:block ${FIXED_COLUMNS_CLASS}`}
+        // Selection mode: any checked row keeps every row's checkbox shown
+        // (see ROW_CHECK_REVEAL_CLASS).
+        data-selecting={canEdit && selectedCount > 0 ? "" : undefined}
         style={{ "--fm-fixed-cols": `${(canEdit ? 40 : 0) + AUTHOR_COL_PX + SIZE_COL_PX + UPDATED_COL_PX + (aiEnabled ? ACTIONS_COL_WITH_AI : ACTIONS_COL)}px` } as React.CSSProperties}
       >
       <ResizableTable
@@ -1205,12 +1225,14 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 columns={FILE_COLUMNS}
                 draggable={canEdit}
                   checkboxCell={canEdit ? (
-                    <Checkbox
-                      aria-label={`Select folder ${folder.name}`}
-                      className={ROW_CHECKBOX_CLASS}
-                      checked={selectedFolders.has(folder.id)}
-                      onClick={checkClick(sortedFolders, folderIdx, lastCheckedFolderIndex, setSelectedFolders)}
-                    />
+                    <RowCheckReveal>
+                      <Checkbox
+                        aria-label={`Select folder ${folder.name}`}
+                        className={ROW_CHECKBOX_CLASS}
+                        checked={selectedFolders.has(folder.id)}
+                        onClick={checkClick(sortedFolders, folderIdx, lastCheckedFolderIndex, setSelectedFolders)}
+                      />
+                    </RowCheckReveal>
                   ) : undefined}
                   onDragStart={e => onDragStart(e, "folder", folder.id)}
                   onDragEnd={onDragEnd}
@@ -1243,15 +1265,6 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
-                          {/* Item count as secondary text beside the name
-                              (full-subtree total, breakdown in the tooltip) -
-                              Size stays a byte-size column. */}
-                          <span
-                            className="ml-2 shrink-0 text-xs text-muted-foreground tabular-nums"
-                            title={folderCountLabel(counts) || "Empty folder"}
-                          >
-                            {folderItemsLabel(counts)}
-                          </span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1268,11 +1281,18 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       className: "px-3 cursor-pointer",
                       onClick: () => enterFolder(folder),
                     },
-                    // The listing API records no creator for folders, and a
-                    // folder has no byte size (its count sits by the name) -
-                    // both dash like a doc's Size.
+                    // The listing API records no creator for folders - dashed.
                     { content: <EmptyCell label="No author" /> },
-                    { content: <EmptyCell label="No size" />, className: SIZE_CELL_CLASS },
+                    // A folder's size is its item count (full-subtree total,
+                    // breakdown in the tooltip).
+                    {
+                      content: (
+                        <span className="text-sm text-muted-foreground" title={folderCountLabel(counts) || "Empty folder"}>
+                          {folderItemsLabel(counts)}
+                        </span>
+                      ),
+                      className: SIZE_CELL_CLASS,
+                    },
                     // Newest child edit, once this folder's contents have been
                     // seen (see folderNewestCache); dashed until then.
                     {
@@ -1311,19 +1331,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   checkboxCell={!canEdit ? undefined : isHome ? (
                     // The home doc can't be binned or moved, so it can't join a
                     // bulk selection - a disabled box keeps the column intact.
-                    <Checkbox
-                      disabled
-                      aria-label={`${doc.title || "Untitled"} is the home document and can't be selected`}
-                      title="The home document can't be deleted or moved"
-                      className={ROW_CHECKBOX_CLASS}
-                    />
+                    <RowCheckReveal>
+                      <Checkbox
+                        disabled
+                        aria-label={`${doc.title || "Untitled"} is the home document and can't be selected`}
+                        title="The home document can't be deleted or moved"
+                        className={ROW_CHECKBOX_CLASS}
+                      />
+                    </RowCheckReveal>
                   ) : (
-                    <Checkbox
-                      aria-label={`Select ${doc.title || "Untitled"}`}
-                      className={ROW_CHECKBOX_CLASS}
-                      checked={selectedDocs.has(doc.id)}
-                      onClick={checkClick(sortedDocs, docIdx, lastCheckedDocIndex, setSelectedDocs, isHomeDoc)}
-                    />
+                    <RowCheckReveal>
+                      <Checkbox
+                        aria-label={`Select ${doc.title || "Untitled"}`}
+                        className={ROW_CHECKBOX_CLASS}
+                        checked={selectedDocs.has(doc.id)}
+                        onClick={checkClick(sortedDocs, docIdx, lastCheckedDocIndex, setSelectedDocs, isHomeDoc)}
+                      />
+                    </RowCheckReveal>
                   )}
                   className={rowClass(selectedDocs.has(doc.id))}
                   cells={[
@@ -1409,12 +1433,14 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 onDragStart={e => onDragStart(e, "file", file.id)}
                 onDragEnd={onDragEnd}
                 checkboxCell={canEdit ? (
-                  <Checkbox
-                    aria-label={`Select ${file.name}`}
-                    className={ROW_CHECKBOX_CLASS}
-                    checked={selectedFiles.has(file.id)}
-                    onClick={checkClick(sortedFiles, fileIdx, lastCheckedFileIndex, setSelectedFiles)}
-                  />
+                  <RowCheckReveal>
+                    <Checkbox
+                      aria-label={`Select ${file.name}`}
+                      className={ROW_CHECKBOX_CLASS}
+                      checked={selectedFiles.has(file.id)}
+                      onClick={checkClick(sortedFiles, fileIdx, lastCheckedFileIndex, setSelectedFiles)}
+                    />
+                  </RowCheckReveal>
                 ) : undefined}
                 className={rowClass(selectedFiles.has(file.id))}
                 cells={[
