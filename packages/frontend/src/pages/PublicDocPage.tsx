@@ -1217,6 +1217,10 @@ export function PublicDocPage() {
                     {data.doc.showLastUpdated && (
                       <p className="not-prose -mt-2 mb-1 text-[13px] text-muted-foreground sm:mb-3 sm:text-sm">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                        {/* Same "· N min read" as the app's doc header. */}
+                        {data.doc.content.trim() && (
+                          <span className="whitespace-nowrap">&nbsp;· {Math.max(1, Math.round(data.doc.content.trim().split(/\s+/).length / 200))} min read</span>
+                        )}
                       </p>
                     )}
                     {data.doc.content.trim() ? (

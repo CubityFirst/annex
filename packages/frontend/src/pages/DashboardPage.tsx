@@ -136,7 +136,8 @@ export function DashboardPage() {
 
         <CardContent className="flex-1">
           {project.description && (
-            <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+            // Indented to the title's text edge (32px icon + 10px gap).
+            <p className="pl-[42px] text-sm text-muted-foreground line-clamp-2">{project.description}</p>
           )}
         </CardContent>
 
