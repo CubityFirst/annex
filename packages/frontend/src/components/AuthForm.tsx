@@ -32,14 +32,14 @@ export function PasswordInput({ className, id, ...props }: Omit<React.ComponentP
         id={id}
         type={visible ? "text" : "password"}
         // ::-ms-reveal: drop Edge's built-in eye so there aren't two.
-        className={cn(AUTH_INPUT_CLASS, "pr-10 [&::-ms-reveal]:hidden", className)}
+        className={cn(AUTH_INPUT_CLASS, "pr-12 sm:pr-10 [&::-ms-reveal]:hidden", className)}
       />
       <button
         type="button"
         onClick={() => setVisible(v => !v)}
         aria-pressed={visible}
         aria-controls={id}
-        className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 sm:right-1.5 sm:h-8 sm:w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {visible ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
         <span className="sr-only">{visible ? "Hide password" : "Show password"}</span>

@@ -207,7 +207,7 @@ function EmphasisSamples() {
 
 // Square icon tool in the reading-mode action row: 40px inline on phones,
 // 32px in the desktop top bar (max-sm: overrides the Button's touch bump).
-const TOOL_ICON_BUTTON = "h-10 w-10 max-sm:h-10 max-sm:w-10 md:h-8 md:w-8 text-muted-foreground hover:text-foreground";
+const TOOL_ICON_BUTTON = "h-11 w-11 max-sm:h-11 max-sm:w-11 md:h-8 md:w-8 text-muted-foreground hover:text-foreground";
 
 function MajorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1515,7 +1515,7 @@ export function DocPage() {
             />
           {isEditor && (
             <>
-              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="h-10 w-10 gap-1.5 px-0 max-sm:h-10 sm:w-auto sm:px-2.5 md:h-8">
+              <Button variant="ghost" size="sm" title="View history" onClick={openHistory} className="h-11 w-11 gap-1.5 px-0 max-sm:h-11 sm:w-auto sm:px-2.5 md:h-8">
                 <History className="h-4 w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">History</span>
               </Button>
@@ -1794,7 +1794,7 @@ export function DocPage() {
             </>
           )}
             {isEditor && (
-              <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3 max-sm:h-10 md:h-8">
+              <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-11 gap-1.5 px-3 max-sm:h-11 md:h-8">
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
               </Button>
@@ -1940,7 +1940,7 @@ export function DocPage() {
               return showHeading && <h1 data-pdf-title className="text-balance">{headingTitle}</h1>;
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
-              <p data-pdf-last-updated className="not-prose mb-2 text-[13px] text-muted-foreground max-md:flex max-md:min-h-10 max-md:items-center sm:-mt-2 sm:mb-3 sm:text-sm">
+              <p data-pdf-last-updated className="not-prose mb-2 text-[13px] text-muted-foreground max-md:flex max-md:min-h-11 max-md:items-center sm:-mt-2 sm:mb-3 sm:text-sm">
                 <span className="whitespace-nowrap">Last updated {timeAgo(doc.updated_at)}</span>
                 <span className="hidden whitespace-nowrap sm:inline">&nbsp;· {calcReadingTime(doc.content)}</span>
               </p>

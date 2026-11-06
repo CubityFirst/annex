@@ -896,7 +896,7 @@ export function DocsLayout() {
             type="button"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close navigation"
-            className="ml-auto -mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+            className="ml-auto -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
           >
             <X className="h-5 w-5" />
           </button>
