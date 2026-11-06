@@ -89,7 +89,7 @@ export function ExportPdfDialog({ trigger, documentName, open: controlledOpen, o
           <Separator />
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-0.5">
-              <h3 className="text-sm font-semibold">Content</h3>
+              <h3 className="pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Content</h3>
               <p className="text-xs text-muted-foreground">Choose which parts of the document appear in the export.</p>
             </div>
             <div className="flex items-center justify-between gap-3">

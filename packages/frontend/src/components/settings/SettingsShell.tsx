@@ -155,11 +155,11 @@ export function SettingsListStatusRow({ action, children }: { action?: ReactNode
 }
 
 /** A single danger-zone action: title + description, destructive-outline
- *  button on the right, in the normal neutral row card. The button is the
- *  row's only red element. */
+ *  button on the right, in a row card with a faint destructive border. The
+ *  title text stays neutral; the border and button carry the warning. */
 export function DangerRow({ title, description, action }: { title: ReactNode; description: ReactNode; action: ReactNode }) {
   return (
-    <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
+    <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD, "border-destructive/30")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <p className="text-sm font-medium">{title}</p>
         <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>
@@ -177,25 +177,30 @@ interface SettingsShellProps {
   children: ReactNode;
 }
 
-/** Shared styling for every outline row. Like the legal pages' "On this
+/** Shared styling for every outline link. Like the legal pages' "On this
  *  page" list, the outline sits on a 1px hairline track and the current
  *  destination is marked by exactly one thing: a 2px bar on that track (plus
- *  foreground text). No fill. Nested rows only indent their text - the bar
- *  always sits on the nav's left edge. */
+ *  foreground text). No fill, no weight change. Links inside a group indent
+ *  their text under the group's eyebrow label - the bar always sits on the
+ *  nav's left edge. */
 function outlineItemClass(active: boolean, danger: boolean | undefined, indent: boolean) {
   return cn(
-    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm transition-colors",
+    "-ml-px border-l-2 py-1.5 pr-2 text-left text-sm font-normal transition-colors",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     indent ? "pl-6" : "pl-3.5",
     danger
       ? active
-        ? "border-destructive font-medium text-destructive"
+        ? "border-destructive text-destructive"
         : "border-transparent text-destructive/80 hover:text-destructive"
       : active
-        ? "border-foreground font-medium text-foreground"
+        ? "border-foreground text-foreground"
         : "border-transparent text-muted-foreground hover:text-foreground",
   );
 }
+
+/** Group label in the outline: a non-interactive eyebrow (11px uppercase,
+ *  muted) so it can never be mistaken for a link. */
+const OUTLINE_GROUP_LABEL = "pb-1 pl-3.5 pr-2 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80";
 
 /**
  * Shared chrome for every settings surface (user, site, org): a header, a
@@ -250,7 +255,10 @@ export function SettingsShell({ title, description, groups, sections, children }
           <nav aria-label="Settings sections" className="sticky top-10 flex flex-col">
             <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">On this page</p>
             <div className="flex flex-col border-l border-border">
-              {resolved.map(group => {
+              {resolved.map((group, index) => {
+                // ~8px above each group (and above a plain link that follows
+                // a group) so groups read as blocks; none above the first row.
+                const prevIsGroup = index > 0 && resolved[index - 1].sections.length > 1;
                 // A group holding a single section would just repeat itself
                 // ("Danger zone > Danger zone"), so render it as one plain link.
                 if (group.sections.length === 1) {
@@ -262,21 +270,22 @@ export function SettingsShell({ title, description, groups, sections, children }
                       type="button"
                       onClick={() => scrollTo(section.id)}
                       aria-current={isActive ? "true" : undefined}
-                      className={outlineItemClass(isActive, section.danger, false)}
+                      className={cn(outlineItemClass(isActive, section.danger, false), prevIsGroup && "mt-2")}
                     >
                       {section.label}
                     </button>
                   );
                 }
                 return (
-                  <div key={group.id} role="group" aria-label={group.label} className="flex flex-col">
-                    <button
-                      type="button"
-                      onClick={() => scrollTo(group.sections[0].id)}
-                      className={outlineItemClass(false, false, false)}
-                    >
+                  <div
+                    key={group.id}
+                    role="group"
+                    aria-labelledby={`settings-outline-group-${group.id}`}
+                    className={cn("flex flex-col", index > 0 && "mt-2")}
+                  >
+                    <p id={`settings-outline-group-${group.id}`} className={OUTLINE_GROUP_LABEL}>
                       {group.label}
-                    </button>
+                    </p>
                     {group.sections.map(section => {
                       const isActive = active === section.id;
                       return (

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { BookOpen, CalendarDays, Clock, CodeXml, Flag, FlaskConical, Globe, Pencil, Star, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronRight, Clock, CodeXml, Flag, FlaskConical, Globe, NotebookPen, Pencil, Star, UserRound } from "lucide-react";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ReportUserDialog } from "@/components/ReportUserDialog";
@@ -16,6 +16,7 @@ import { getToken } from "@/lib/auth";
 import { formatInkSince } from "@/lib/inkDate";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
+import { cn } from "@/lib/utils";
 
 type Role = keyof typeof ROLE_BADGE_CLASSES;
 
@@ -66,10 +67,13 @@ function Eyebrow({ children }: { children: ReactNode }) {
 
 /** Card grid shared by the profile's site lists (favourites, your/shared sites). */
 const SITE_GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3";
+/** Compact version of the dashboard's site card: same radius, border,
+ *  surface, hover and title type, with the 32px mark and one header row. */
 const SITE_CARD =
-  "flex h-full w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-full w-full items-start gap-2.5 rounded-xl border border-border bg-card px-5 py-4 text-left text-card-foreground transition-[border-color,background-color,box-shadow] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-/** 32px site mark: the square logo when there is one, else a muted icon tile. */
+/** 32px site mark: the square logo when there is one, else the dashboard's
+ *  icon tile. */
 function SiteMark({ siteId, logoUpdatedAt, fallback: Fallback }: { siteId: string; logoUpdatedAt?: string | null; fallback: typeof Globe }) {
   if (logoUpdatedAt) {
     return (
@@ -81,8 +85,8 @@ function SiteMark({ siteId, logoUpdatedAt, fallback: Fallback }: { siteId: strin
     );
   }
   return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40">
-      <Fallback className="size-4 text-muted-foreground" aria-hidden />
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+      <Fallback className="size-4 text-primary" aria-hidden />
     </span>
   );
 }
@@ -129,108 +133,137 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
   const inkSince = isInk ? formatInkSince(profile?.personalPlanSince) : null;
   const tz = profile?.timezone ? getTimezoneGroup(profile.timezone) : undefined;
 
+  // Own profile: one consistent nudge in the same spot. Ink users without a
+  // bio are pointed at the bio (an Ink perk); otherwise, with no favourites,
+  // at favourite sites.
+  const selfPrompt = !isSelf || !profile
+    ? null
+    : isInk && !profile.bio
+      ? { label: "Add a bio", hint: "a short note shown on your profile and profile card", to: "/settings#billing", icon: NotebookPen }
+      : profile.favouriteSites.length === 0
+        ? { label: "Add favourite sites", hint: "show up to 3 published sites on your profile", to: "/settings#favourites", icon: Star }
+        : null;
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-      {/* Header */}
-      <header className="flex flex-col items-center text-center">
+      {/* Header: avatar on the left; name, meta, badges and the self-only
+          "Edit profile" action stacked beside it. The avatar shares its left
+          edge with every section below. */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
         <UserAvatar
           userId={userId}
           name={displayName || "?"}
-          className="size-28 [&_[data-slot=avatar-fallback]]:text-[2.75rem] [&_[data-slot=avatar-fallback]]:font-medium"
+          className="size-20 shrink-0 [&_[data-slot=avatar-fallback]]:text-[2rem] [&_[data-slot=avatar-fallback]]:font-medium"
           personalPlan={profile?.personalPlan}
           personalPlanStyle={profile?.personalPlanStyle}
         />
-        {displayName ? (
-          <h1 className="mt-5 max-w-full truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{displayName}</h1>
-        ) : (
-          <Skeleton className="mt-5 h-8 w-48" />
-        )}
-        {profile?.handle && <p className="mt-1 text-sm text-muted-foreground">@{profile.handle}</p>}
+        <div className="flex min-w-0 flex-1 flex-col sm:pt-1">
+          {displayName ? (
+            <h1 className="max-w-full truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{displayName}</h1>
+          ) : (
+            <Skeleton className="h-8 w-48" />
+          )}
+          {profile?.handle && <p className="mt-0.5 text-sm text-muted-foreground">@{profile.handle}</p>}
 
-        {(isInk || isDeveloper || isBetaTester) && (
-          <TooltipProvider delayDuration={0}>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
-              {isDeveloper && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Annex Developer"
-                      className={`${PILL} bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300`}
-                    >
-                      <CodeXml className="size-3.5" aria-hidden />
-                      Developer
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">Annex Developer</TooltipContent>
-                </Tooltip>
-              )}
-              {isBetaTester && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Beta Tester"
-                      className={`${PILL} bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300`}
-                    >
-                      <FlaskConical className="size-3.5" aria-hidden />
-                      Beta tester
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">Beta Tester</TooltipContent>
-                </Tooltip>
-              )}
-              {isInk && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" aria-label="Annex Ink" className={`${PILL} bg-muted text-foreground ring-border`}>
-                      <InkSparkle className="size-3.5 ink-icon" />
-                      Ink supporter
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {inkSince ? `Annex Ink since ${inkSince}` : "Annex Ink"}
-                  </TooltipContent>
-                </Tooltip>
+          {loadError ? (
+            <p role="alert" className="mt-2 text-sm text-muted-foreground">Couldn’t load this profile.</p>
+          ) : profile ? (
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="size-4 shrink-0" aria-hidden />
+                Member since {formatDate(profile.createdAt)}
+              </span>
+              {profile.timezone && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock className="size-4 shrink-0" aria-hidden />
+                  {formatTimeInZone(profile.timezone)} · {tz?.offset ?? profile.timezone}
+                </span>
               )}
             </div>
-          </TooltipProvider>
-        )}
+          ) : (
+            <div role="status" aria-live="polite">
+              <Skeleton className="mt-2 h-4 w-56" />
+              <span className="sr-only">Loading profile…</span>
+            </div>
+          )}
 
-        {loadError ? (
-          <p role="alert" className="mt-3 text-sm text-muted-foreground">Couldn’t load this profile.</p>
-        ) : profile ? (
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarDays className="size-4 shrink-0" aria-hidden />
-              Member since {formatDate(profile.createdAt)}
-            </span>
-            {profile.timezone && (
-              <span className="inline-flex items-center gap-1.5">
-                <Clock className="size-4 shrink-0" aria-hidden />
-                {formatTimeInZone(profile.timezone)} · {tz?.offset ?? profile.timezone}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div role="status" aria-live="polite">
-            <Skeleton className="mt-3 h-4 w-56" />
-            <span className="sr-only">Loading profile…</span>
-          </div>
-        )}
+          {(isInk || isDeveloper || isBetaTester) && (
+            <TooltipProvider delayDuration={0}>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {isDeveloper && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Annex Developer"
+                        className={`${PILL} bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300`}
+                      >
+                        <CodeXml className="size-3.5" aria-hidden />
+                        Developer
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">Annex Developer</TooltipContent>
+                  </Tooltip>
+                )}
+                {isBetaTester && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Beta Tester"
+                        className={`${PILL} bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300`}
+                      >
+                        <FlaskConical className="size-3.5" aria-hidden />
+                        Beta tester
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">Beta Tester</TooltipContent>
+                  </Tooltip>
+                )}
+                {isInk && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" aria-label="Annex Ink" className={`${PILL} bg-muted text-foreground ring-border`}>
+                        <InkSparkle className="size-3.5 ink-icon" />
+                        Ink supporter
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {inkSince ? `Annex Ink since ${inkSince}` : "Annex Ink"}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
+          )}
 
-        {isSelf && (
-          <Button variant="outline" size="sm" className="mt-5 gap-1.5" onClick={() => navigate("/settings#account")}>
-            <Pencil className="size-3.5" aria-hidden />
-            Edit profile
-          </Button>
-        )}
+          {isSelf && (
+            <Button variant="outline" size="sm" className="mt-4 gap-1.5 self-start" onClick={() => navigate("/settings#account")}>
+              <Pencil className="size-3.5" aria-hidden />
+              Edit profile
+            </Button>
+          )}
+        </div>
       </header>
 
       {profile && (
         <div className="mt-10 flex flex-col gap-8">
+          {selfPrompt && (
+            <Link
+              to={selfPrompt.to}
+              className="group flex min-h-12 items-center gap-2.5 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <selfPrompt.icon className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="font-medium text-foreground">{selfPrompt.label}</span>
+                <span className="max-sm:hidden"> · {selfPrompt.hint}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0" aria-hidden />
+            </Link>
+          )}
+
           {profile.bio && (
             <section>
               <Eyebrow>About</Eyebrow>
@@ -258,11 +291,11 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
                       <button type="button" onClick={() => navigate(`/s/${site.vanitySlug ?? site.id}`)} className={SITE_CARD}>
                         <SiteMark siteId={site.id} logoUpdatedAt={site.logoSquareUpdatedAt} fallback={Globe} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{site.name}</span>
+                          <span className="flex min-h-8 items-center truncate text-sm font-semibold leading-tight">{site.name}</span>
                           {note ? (
-                            <span className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{note}</span>
+                            <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm text-muted-foreground">{note}</span>
                           ) : (
-                            <span className="mt-0.5 block text-xs text-muted-foreground">Published site</span>
+                            <span className="block text-sm text-muted-foreground">Published site</span>
                           )}
                         </span>
                       </button>
@@ -282,14 +315,12 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
               <ul className={SITE_GRID}>
                 {profile.sharedProjects.map(proj => (
                   <li key={proj.id}>
-                    <button type="button" onClick={() => navigate(`/projects/${proj.id}`)} className={SITE_CARD}>
+                    <button type="button" onClick={() => navigate(`/projects/${proj.id}`)} className={cn(SITE_CARD, "items-center")}>
                       <SiteMark siteId={proj.id} fallback={BookOpen} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{proj.name}</span>
-                        <Badge variant="outline" className={`mt-1.5 text-xs font-medium ${ROLE_BADGE_CLASSES[proj.theirRole]}`}>
-                          {ROLE_LABELS[proj.theirRole]}
-                        </Badge>
-                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">{proj.name}</span>
+                      <Badge variant="outline" className={`shrink-0 text-xs font-medium ${ROLE_BADGE_CLASSES[proj.theirRole]}`}>
+                        {ROLE_LABELS[proj.theirRole]}
+                      </Badge>
                     </button>
                   </li>
                 ))}
@@ -297,37 +328,24 @@ function UserProfileFullPage({ userId, initialName }: { userId: string; initialN
             </section>
           )}
 
-          {!profile.bio && profile.favouriteSites.length === 0 && profile.sharedProjects.length === 0 && (
-            <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          {/* Someone else's empty profile. (Your own gets the prompt row
+              above instead.) Solid, not dashed - dashed is for create targets. */}
+          {!isSelf && !profile.bio && profile.favouriteSites.length === 0 && profile.sharedProjects.length === 0 && (
+            <div className="flex flex-col items-center rounded-lg border border-border px-6 py-10 text-center">
               <UserRound className="mb-2 size-5 text-muted-foreground" aria-hidden />
               <p className="text-sm font-medium">Nothing to show yet</p>
-              {isSelf ? (
-                <>
-                  {/* Bio is an Ink perk, so only mention it to Ink users. */}
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {isInk ? "Add a bio or favourite sites to fill out your profile." : "Add favourite sites to fill out your profile."}
-                  </p>
-                  <Button asChild variant="outline" size="sm" className="mt-4 gap-1.5">
-                    <Link to={isInk ? "/settings#billing" : "/settings#favourites"}>
-                      <Star className="size-3.5" aria-hidden />
-                      {isInk ? "Edit your profile in Settings" : "Add favourite sites in Settings"}
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {isInk ? `${displayName} hasn't added a bio or favourite sites.` : `${displayName} hasn't added any favourite sites.`}
-                </p>
-              )}
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {isInk ? `${displayName} hasn't added a bio or favourite sites.` : `${displayName} hasn't added any favourite sites.`}
+              </p>
             </div>
           )}
 
           {isOther && (
-            <div className="flex justify-center">
+            <div className="flex">
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-1.5 font-normal text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                className="-ml-3 gap-1.5 font-normal text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => setReportOpen(true)}
               >
                 <Flag className="size-3.5" aria-hidden />

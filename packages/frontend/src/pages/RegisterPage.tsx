@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthForm, AUTH_INPUT_CLASS } from "@/components/AuthForm";
+import { AuthForm, PasswordInput, AUTH_INPUT_CLASS } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
@@ -129,11 +129,10 @@ export function RegisterPage() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
-        <Input
-          className={AUTH_INPUT_CLASS}
+        <PasswordInput
           id="password"
-          type="password"
           value={password}
+          autoComplete="new-password"
           onChange={e => setPassword(e.target.value)}
           required
         />

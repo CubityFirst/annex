@@ -88,6 +88,43 @@ function useContainerSize<T extends HTMLElement>() {
   return { ref, ...size };
 }
 
+/** Centre of the nodes' bounding box (graph units), or null before layout. */
+function boundingBoxCenter(nodes: GraphNode[]): { x: number; y: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.x == null || n.y == null) continue;
+    minX = Math.min(minX, n.x);
+    maxX = Math.max(maxX, n.x);
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y);
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
+/** True when more of a node's edges arrive from below than from above, so
+ *  its label should sit above the node instead of in the default slot below.
+ *  Only steep edges count - a near-horizontal link never reaches the label. */
+export function labelGoesAbove(
+  node: { x?: number; y?: number },
+  neighbours: Set<string> | undefined,
+  byId: Map<string, { x?: number; y?: number }>,
+): boolean {
+  if (!neighbours || node.x == null || node.y == null) return false;
+  let below = 0;
+  let above = 0;
+  for (const id of neighbours) {
+    const other = byId.get(id);
+    if (!other || other.x == null || other.y == null) continue;
+    const dx = other.x - node.x;
+    const dy = other.y - node.y;
+    if (Math.abs(dy) < Math.abs(dx) * 0.5) continue;
+    if (dy > 0) below++;
+    else above++;
+  }
+  return below > above;
+}
+
 export interface GraphViewProps {
   data: GraphData;
   onNodeClick: (id: string) => void;
@@ -245,15 +282,22 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
   const fitPadding = showControls ? Math.min(width, height) * 0.18 : 24;
   // zoomToFit, but never past a comfortable max: a 3-node graph would
   // otherwise be blown up until the nodes are the size of buttons.
+  // Then re-centre on the node bounding box, so the cluster sits in the
+  // middle of the stage even after the zoom cap kicks in.
   const fitGraph = () => {
     const fg = fgRef.current;
     if (!fg) return;
     fg.zoomToFit(400, fitPadding);
     setTimeout(() => {
+      const cur = fgRef.current;
+      if (!cur) return;
       const maxZoom = showControls ? FULL_VIEW_MAX_ZOOM : 4;
-      if (fgRef.current && fgRef.current.zoom() > maxZoom) fgRef.current.zoom(maxZoom, 250);
+      if (cur.zoom() > maxZoom) cur.zoom(maxZoom, 250);
+      const center = boundingBoxCenter(graph.nodes);
+      if (center) cur.centerAt(center.x, center.y, 250);
     }, 420);
   };
+  const nodeById = useMemo(() => new Map(graph.nodes.map(n => [n.id, n] as const)), [graph]);
   const fgColor = tokens.fg || "#111";
   const mutedColor = tokens.muted || "#888";
   const accentColor = tokens.accent || "#3b82f6";
@@ -330,8 +374,11 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
           warmupTicks={20}
           d3VelocityDecay={0.3}
           linkCanvasObject={(link, ctx, globalScale) => {
-            const src = link.source as GraphNode;
-            const tgt = link.target as GraphNode;
+            // Resolve endpoints by id so the line always runs centre to centre,
+            // even before the simulation has swapped ids for node objects.
+            const src = nodeById.get(endpointId(link.source));
+            const tgt = nodeById.get(endpointId(link.target));
+            if (!src || !tgt) return;
             const touchesFocus = !!currentId && (endpointId(link.source) === currentId || endpointId(link.target) === currentId);
             ctx.save();
             // 0.6 keeps links above the 3:1 non-text contrast minimum against
@@ -410,35 +457,30 @@ export function GraphView({ data, onNodeClick, showControls = false }: GraphView
               const fontSize = Math.max((showControls ? 13 : 10) / globalScale, 2);
               ctx.font = `500 ${fontSize}px ${uiFontStack}`;
               ctx.textAlign = "center";
-              ctx.textBaseline = "top";
               const label = n.title;
-              // Plate padding (screen px, zoom-compensated): ~6px either side
-              // and a little less above/below the text.
-              const platePadX = 6 / globalScale;
-              const platePadY = (showControls ? 4 : 3) / globalScale;
-              // Text sits far enough below the node that the plate's top edge
-              // keeps a clear gap from the node: an edge arriving at the node
-              // from below then visibly stops at the node rather than seeming
-              // to run into (pierce) the label.
-              const padY = r + platePadY + (showControls ? 8 : 5) / globalScale;
-              // Solid backing plate in the page colour so links never strike
-              // through a label (a glyph halo still leaves gaps between words).
+              // Put the label on whichever side (below by default, else
+              // above) fewer edges arrive from, so links rarely cross it.
+              const above = labelGoesAbove(n, neighbourIds.get(n.id), nodeById);
+              const gap = r + (showControls ? 5 : 3) / globalScale;
+              const x = n.x ?? 0;
+              const y = (n.y ?? 0) + (above ? -gap : gap);
+              ctx.textBaseline = above ? "bottom" : "top";
+              // A halo in the page colour knocks out any link passing behind
+              // the glyphs, so edges read as running under the text, never
+              // through it. ~4px on screen regardless of zoom.
               if (tokens.bg) {
-                const w = ctx.measureText(label).width;
-                ctx.fillStyle = tokens.bg;
-                ctx.globalAlpha = 0.96;
-                ctx.fillRect(
-                  (n.x ?? 0) - w / 2 - platePadX,
-                  (n.y ?? 0) + padY - platePadY,
-                  w + platePadX * 2,
-                  fontSize + platePadY * 2,
-                );
+                ctx.globalAlpha = alpha;
+                ctx.strokeStyle = tokens.bg;
+                ctx.lineWidth = 4 / globalScale;
+                ctx.lineJoin = "round";
+                ctx.miterLimit = 2;
+                ctx.strokeText(label, x, y);
               }
               // Muted labels by default; the hovered/selected page and the
               // hub read in full foreground.
               ctx.globalAlpha = alpha;
               ctx.fillStyle = isHover || isHub ? fgColor : mutedColor;
-              ctx.fillText(label, n.x ?? 0, (n.y ?? 0) + padY);
+              ctx.fillText(label, x, y);
             }
             ctx.restore();
           }}

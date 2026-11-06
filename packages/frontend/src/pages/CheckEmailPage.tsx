@@ -1,12 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { AuthShell, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+const EMAIL_KEY = "annex:check-email";
+
+function readStoredEmail(): string | undefined {
+  try { return sessionStorage.getItem(EMAIL_KEY) ?? undefined; } catch { return undefined; }
+}
+
 export function CheckEmailPage() {
   const location = useLocation();
-  const email = (location.state as { email?: string } | null)?.email;
+  // Register hands the address over in router state; remember it for the tab
+  // so a reload still names it (and keeps the resend button).
+  const stateEmail = (location.state as { email?: string } | null)?.email;
+  const email = stateEmail ?? readStoredEmail();
+  useEffect(() => {
+    if (!stateEmail) return;
+    try { sessionStorage.setItem(EMAIL_KEY, stateEmail); } catch { /* storage blocked */ }
+  }, [stateEmail]);
 
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [cooldown, setCooldown] = useState(false);
@@ -40,7 +54,7 @@ export function CheckEmailPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
             <p className="text-sm text-muted-foreground">
               {email
-                ? <>We sent a verification link to <strong>{email}</strong>.</>
+                ? <>We sent a link to <strong className="font-medium text-foreground">{email}</strong>.</>
                 : "We sent you a verification link."}
               {" "}Click it within 24 hours to activate your account.
             </p>
@@ -76,11 +90,12 @@ export function CheckEmailPage() {
                 {resendState === "sending" ? "Sending…" : cooldown ? "Email sent" : "Resend verification email"}
               </Button>
             )}
-            <p className="text-sm text-muted-foreground">
-              <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
+            <Button asChild variant="ghost" className="-ml-3 h-11 self-start gap-2 px-3 text-muted-foreground hover:text-foreground">
+              <a href="/login">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                 Back to sign in
               </a>
-            </p>
+            </Button>
           </div>
         </div>
     </AuthShell>

@@ -7,7 +7,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AuthForm, AUTH_INPUT_CLASS, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
+import { AuthForm, PasswordInput, AUTH_INPUT_CLASS, AUTH_BUTTON_CLASS } from "@/components/AuthForm";
 import { Turnstile, type TurnstileHandle } from "@/components/Turnstile";
 import { clearToken, getToken, setToken } from "@/lib/auth";
 import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
@@ -479,10 +479,8 @@ export function LoginPage() {
         </p>
         <div className="space-y-2">
           <Label htmlFor="new-password">New password</Label>
-          <Input
-            className={AUTH_INPUT_CLASS}
+          <PasswordInput
             id="new-password"
-            type="password"
             value={newPassword}
             onChange={e => setNewPassword(e.target.value)}
             autoComplete="new-password"
@@ -492,10 +490,8 @@ export function LoginPage() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="confirm-password">Confirm new password</Label>
-          <Input
-            className={AUTH_INPUT_CLASS}
+          <PasswordInput
             id="confirm-password"
-            type="password"
             value={confirmPassword}
             onChange={e => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
@@ -761,10 +757,8 @@ export function LoginPage() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
-        <Input
-          className={AUTH_INPUT_CLASS}
+        <PasswordInput
           id="password"
-          type="password"
           value={password}
           onChange={e => setPassword(e.target.value)}
           autoComplete="current-password"

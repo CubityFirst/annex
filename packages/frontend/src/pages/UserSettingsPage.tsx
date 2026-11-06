@@ -27,7 +27,7 @@ import { use2FA } from "@/hooks/use2FA";
 import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { InlineSaveControls } from "@/components/InlineSaveControls";
+import { InlineSaveControls, SavedIndicator, useSavedFlash } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
 import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, Mail, RotateCcw, Check, Star } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -191,7 +191,9 @@ export function UserSettingsPage() {
   const [timezone, setTimezone] = useState<string | null>(null);
   const [timezonePrivate, setTimezonePrivate] = useState(false);
   const [timezoneSaving, setTimezoneSaving] = useState(false);
-  const [timezoneSaved, setTimezoneSaved] = useState(false);
+  const [timezoneSaved, flashTimezoneSaved] = useSavedFlash();
+  const [nameSaved, flashNameSaved] = useSavedFlash();
+  const [bioSaved, flashBioSaved] = useSavedFlash();
 
   const [avatarKey, setAvatarKey] = useState(0);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -471,7 +473,7 @@ export function UserSettingsPage() {
       if (json.ok && json.data) {
         setCurrentName(json.data.name);
         setName(json.data.name);
-        toast({ title: "Name updated" });
+        flashNameSaved();
       } else {
         toast({ title: "Failed to update name", variant: "destructive" });
       }
@@ -484,7 +486,6 @@ export function UserSettingsPage() {
 
   async function saveTimezone(newTimezone: string | null) {
     setTimezoneSaving(true);
-    setTimezoneSaved(false);
     try {
       const token = getToken();
       const res = await fetch("/api/me", {
@@ -494,8 +495,7 @@ export function UserSettingsPage() {
       });
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
-        setTimezoneSaved(true);
-        setTimeout(() => setTimezoneSaved(false), 2000);
+        flashTimezoneSaved();
       } else {
         toast({ title: "Failed to update timezone", variant: "destructive" });
       }
@@ -1269,7 +1269,7 @@ export function UserSettingsPage() {
         const next = json.data?.bio ?? "";
         setCurrentBio(next);
         setBio(next);
-        toast({ title: "Bio updated" });
+        flashBioSaved();
       } else {
         toast({ title: "Failed to update bio", variant: "destructive" });
       }
@@ -1405,9 +1405,9 @@ export function UserSettingsPage() {
             <h2 className="text-base font-semibold">Account</h2>
             <p className="mt-1 text-sm text-muted-foreground">Update your personal information.</p>
 
-            {/* Avatar block: an 80px avatar with "Change photo" beside it, and
-                the compact "Preview avatar on" Dark/Light selector directly under
-                the avatar. Both rows are left-aligned at every width. */}
+            {/* Avatar block: an 80px avatar with "Change photo" beside it and
+                the compact Dark/Light preview toggle directly under that
+                button (its explanation lives in a tooltip). */}
             {userId && (
               <div className="mt-5 flex flex-col items-start gap-3">
                 <input
@@ -1465,64 +1465,66 @@ export function UserSettingsPage() {
 
                     {/* Visible entry point to the same Upload/Remove popover
                         (the avatar itself is the hidden-affordance trigger);
-                        the popover anchors here so it never covers it. */}
-                    <PopoverAnchor asChild>
-                      <Button
-                        ref={changePhotoButtonRef}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        aria-haspopup="dialog"
-                        aria-expanded={avatarPopoverOpen}
-                        disabled={avatarUploading}
-                        onClick={() => setAvatarPopoverOpen(open => !open)}
-                      >
-                        <Camera className="size-3.5" aria-hidden />
-                        Change photo
-                      </Button>
-                    </PopoverAnchor>
-                  </div>
-
-                  {/* Which avatar slot the preview shows and Upload/Remove
-                      target: one image for dark backgrounds, one for light. */}
-                  <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] text-muted-foreground" aria-hidden>
-                      Preview avatar on
-                    </span>
-                    <div
-                      role="radiogroup"
-                      aria-label="Avatar preview background"
-                      aria-describedby="avatar-variant-hint"
-                      className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
-                    >
-                      {(["dark", "light"] as const).map(v => {
-                        const selected = avatarVariant === v;
-                        const Icon = v === "dark" ? Moon : Sun;
-                        return (
-                          <button
-                            key={v}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => setAvatarVariant(v)}
-                            className={cn(
-                              "inline-flex h-9 items-center gap-1 rounded-[5px] px-2.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
-                              selected
-                                ? "bg-background font-medium text-foreground shadow-xs"
-                                : "text-muted-foreground hover:text-foreground",
-                            )}
+                        the popover anchors here so it never covers it. The
+                        compact Dark/Light toggle sits directly under it and
+                        picks which avatar slot the preview shows and
+                        Upload/Remove target (one image per background). */}
+                    <div className="flex flex-col items-start gap-2">
+                      <PopoverAnchor asChild>
+                        <Button
+                          ref={changePhotoButtonRef}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          aria-expanded={avatarPopoverOpen}
+                          disabled={avatarUploading}
+                          onClick={() => setAvatarPopoverOpen(open => !open)}
+                        >
+                          <Camera className="size-3.5" aria-hidden />
+                          Change photo
+                        </Button>
+                      </PopoverAnchor>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            role="radiogroup"
+                            aria-label="Avatar preview background"
+                            aria-describedby="avatar-variant-hint"
+                            className="inline-flex rounded-md border border-border bg-muted/40 p-0.5"
                           >
-                            <Icon className="size-3.5" aria-hidden />
-                            {v === "dark" ? "Dark" : "Light"}
-                          </button>
-                        );
-                      })}
+                            {(["dark", "light"] as const).map(v => {
+                              const selected = avatarVariant === v;
+                              const Icon = v === "dark" ? Moon : Sun;
+                              return (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={selected}
+                                  onClick={() => setAvatarVariant(v)}
+                                  className={cn(
+                                    "inline-flex h-9 items-center gap-1 rounded-[5px] px-2 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-6",
+                                    selected
+                                      ? "bg-background font-medium text-foreground shadow-xs"
+                                      : "text-muted-foreground hover:text-foreground",
+                                  )}
+                                >
+                                  <Icon className="size-3.5" aria-hidden />
+                                  {v === "dark" ? "Dark" : "Light"}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-56 text-xs">
+                          Preview your avatar on dark or light backgrounds. Each can use a different photo.
+                        </TooltipContent>
+                      </Tooltip>
+                      <span id="avatar-variant-hint" className="sr-only">
+                        Your avatar can differ on dark and light backgrounds.
+                      </span>
                     </div>
-                  </div>
-                  <p id="avatar-variant-hint" className="text-[13px] leading-snug text-muted-foreground">
-                    Your avatar can differ on dark and light backgrounds.
-                  </p>
                   </div>
                 </Popover>
 
@@ -1644,7 +1646,10 @@ export function UserSettingsPage() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="display-name">Display name</Label>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="display-name">Display name</Label>
+                      <SavedIndicator show={nameSaved} />
+                    </div>
                     <div className="flex items-center">
                       <InlineSaveControls
                         changed={name !== currentName}
@@ -1658,7 +1663,7 @@ export function UserSettingsPage() {
                           id="display-name"
                           value={name}
                           onChange={e => setName(e.target.value)}
-                          className="flex-1 pr-9"
+                          className="flex-1"
                           required
                         />
                       </InlineSaveControls>
@@ -1706,7 +1711,7 @@ export function UserSettingsPage() {
                     <div className="flex items-center gap-2">
                       <Label htmlFor="timezone">Timezone</Label>
                       {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
-                      {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
+                      <SavedIndicator show={!timezoneSaving && timezoneSaved} />
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Select
@@ -1815,7 +1820,7 @@ export function UserSettingsPage() {
                             maxLength={HANDLE_MAX_LENGTH + 1}
                             aria-invalid={!!message}
                             aria-describedby={message ? "profile-handle-error" : undefined}
-                            className="flex-1 pl-7 pr-9"
+                            className="flex-1 pl-7"
                           />
                         </InlineSaveControls>
                       </div>
@@ -2020,8 +2025,18 @@ export function UserSettingsPage() {
                         </Button>
                       </div>
                       {expanded && (
-                        <div className="flex items-start gap-2">
-                          <div className="relative flex-1">
+                        <form
+                          className="flex"
+                          onSubmit={e => { e.preventDefault(); if (noteDirty && !noteTooLong) handleSaveFavouriteNote(site.id); }}
+                        >
+                          <InlineSaveControls
+                            changed={noteDirty}
+                            saving={noteSaving}
+                            onReset={() => setFavouriteNoteDrafts(d => ({ ...d, [site.id]: savedNote }))}
+                            saveDisabled={noteTooLong}
+                            resetLabel={`Reset note for ${site.name}`}
+                            saveLabel={`Save note for ${site.name}`}
+                          >
                             <Textarea
                               value={draft}
                               onChange={e => setFavouriteNoteDrafts(d => ({ ...d, [site.id]: e.target.value }))}
@@ -2034,37 +2049,8 @@ export function UserSettingsPage() {
                             <span className="pointer-events-none absolute bottom-1.5 right-2 text-[11px] tabular-nums text-muted-foreground">
                               {draft.trim().length}/{FAV_NOTE_MAX}
                             </span>
-                          </div>
-                          <div
-                            className={`flex flex-col gap-1 overflow-hidden transition-[width,opacity] duration-200 ease-out ${
-                              noteDirty ? "w-11 opacity-100" : "w-0 opacity-0"
-                            }`}
-                            aria-hidden={!noteDirty}
-                          >
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              disabled={noteSaving || !noteDirty || noteTooLong}
-                              onClick={() => handleSaveFavouriteNote(site.id)}
-                              tabIndex={noteDirty ? 0 : -1}
-                              aria-label={`Save note for ${site.name}`}
-                            >
-                              {noteSaving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              disabled={noteSaving}
-                              onClick={() => setFavouriteNoteDrafts(d => ({ ...d, [site.id]: savedNote }))}
-                              tabIndex={noteDirty ? 0 : -1}
-                              aria-label={`Reset note for ${site.name}`}
-                            >
-                              <X className="size-4" />
-                            </Button>
-                          </div>
-                        </div>
+                          </InlineSaveControls>
+                        </form>
                       )}
                     </li>
                   );
@@ -2246,12 +2232,23 @@ export function UserSettingsPage() {
                       </div>
 
                       <form onSubmit={handleSaveBio}>
-                        <h4 className="text-sm font-semibold">Bio</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold"><label htmlFor="settings-bio">Bio</label></h4>
+                          <SavedIndicator show={bioSaved} />
+                        </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">A short note shown on your profile card. Leave empty to fall back to favourites or shared sites.</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">Supports markdown: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">**bold**</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">*italic*</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">[links](https://…)</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">`code`</code>.</p>
-                        <div className="mt-3 flex items-start gap-2">
-                          <div className="relative flex-1">
+                        <div className="mt-3 flex">
+                          <InlineSaveControls
+                            changed={bio.trim() !== currentBio}
+                            saving={bioSaving}
+                            onReset={() => setBio(currentBio)}
+                            saveDisabled={bio.trim().length > BIO_MAX}
+                            resetLabel="Reset bio"
+                            saveLabel="Save bio"
+                          >
                             <Textarea
+                              id="settings-bio"
                               value={bio}
                               onChange={e => setBio(e.target.value)}
                               maxLength={BIO_MAX}
@@ -2260,35 +2257,7 @@ export function UserSettingsPage() {
                               className="min-h-[80px]"
                             />
                             <span className="pointer-events-none absolute bottom-1.5 right-2 text-[11px] tabular-nums text-muted-foreground">{bio.trim().length}/{BIO_MAX}</span>
-                          </div>
-                          <div
-                            className={`flex flex-col gap-1 overflow-hidden transition-[width,opacity] duration-200 ease-out ${
-                              bio.trim() !== currentBio ? "w-11 opacity-100" : "w-0 opacity-0"
-                            }`}
-                            aria-hidden={bio.trim() === currentBio}
-                          >
-                            <Button
-                              type="submit"
-                              size="icon"
-                              variant="outline"
-                              disabled={bioSaving || bio.trim() === currentBio || bio.trim().length > BIO_MAX}
-                              tabIndex={bio.trim() !== currentBio ? 0 : -1}
-                              aria-label="Save bio"
-                            >
-                              {bioSaving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              disabled={bioSaving}
-                              onClick={() => setBio(currentBio)}
-                              tabIndex={bio.trim() !== currentBio ? 0 : -1}
-                              aria-label="Reset bio"
-                            >
-                              <X className="size-4" />
-                            </Button>
-                          </div>
+                          </InlineSaveControls>
                         </div>
                       </form>
                     </div>
@@ -2337,9 +2306,12 @@ export function UserSettingsPage() {
                     return (
                       <tr key={choice} className="border-t border-border">
                         <td className="px-4 py-3">
-                          <div className="font-medium">{FONT_LABELS[choice]}</div>
-                          <div className="mt-0.5 text-[13px] leading-snug text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
-                            The quick brown fox jumps over the lazy dog.
+                          {/* One line per row (a short sample, truncated if
+                              a wide face still overflows) so every row is the
+                              same height and the radios align across rows. */}
+                          <div className="truncate font-medium">{FONT_LABELS[choice]}</div>
+                          <div className="mt-0.5 truncate text-[13px] leading-snug text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
+                            The quick brown fox
                           </div>
                         </td>
                         {columns.map(col => (

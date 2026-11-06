@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { InlineSaveControls, SavedIndicator, useSavedFlash } from "@/components/InlineSaveControls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,6 +137,7 @@ export function OrgSettingsPage() {
 
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [nameSaved, flashNameSaved] = useSavedFlash();
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
@@ -194,7 +196,8 @@ export function OrgSettingsPage() {
       });
       if (result.ok && result.data) {
         setOrg(prev => prev ? { ...prev, name: result.data!.name } : prev);
-        toast({ title: "Organization renamed." });
+        setNameDraft(result.data.name);
+        flashNameSaved();
       } else {
         toast({ title: "Failed to rename.", variant: "destructive" });
       }
@@ -331,26 +334,37 @@ export function OrgSettingsPage() {
         {/* General */}
         <div id="general" className="flex flex-col gap-4">
           <SettingsSectionHeader title="General" description="The organization's name." />
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="org-name">Name</Label>
-            <div className="flex gap-2">
-              <Input
-                id="org-name"
-                value={nameDraft}
-                onChange={e => setNameDraft(e.target.value)}
-                disabled={!isAdmin}
-                className="flex-1"
-              />
-              {isAdmin && (
-                <Button
-                  onClick={handleRename}
-                  disabled={savingName || !nameDraft.trim() || nameDraft.trim() === org?.name}
-                >
-                  {savingName ? "Saving…" : "Save"}
-                </Button>
-              )}
+          <form
+            className="flex flex-col gap-1.5"
+            onSubmit={e => {
+              e.preventDefault();
+              if (isAdmin && nameDraft.trim() && nameDraft.trim() !== org?.name) handleRename();
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Label htmlFor="org-name">Name</Label>
+              <SavedIndicator show={nameSaved} />
             </div>
-          </div>
+            <div className="flex items-center">
+              <InlineSaveControls
+                changed={isAdmin && !!org && nameDraft !== org.name}
+                saving={savingName}
+                onReset={() => setNameDraft(org?.name ?? "")}
+                saveDisabled={!nameDraft.trim() || nameDraft.trim() === org?.name}
+                resetLabel="Reset name"
+                saveLabel="Save name"
+              >
+                <Input
+                  id="org-name"
+                  value={nameDraft}
+                  onChange={e => setNameDraft(e.target.value)}
+                  disabled={!isAdmin}
+                  required
+                  className="flex-1"
+                />
+              </InlineSaveControls>
+            </div>
+          </form>
         </div>
 
         {/* Members */}

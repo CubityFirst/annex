@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   ArrowRight,
@@ -49,7 +49,7 @@ const SHOTS = [
   { key: "write", label: "Write", src: shotEdit, mobile: mobileEdit, path: "demo-site/editor-tour", caption: "Markdown underneath, rendered as you type - callouts, code, wikilinks and more." },
   { key: "organise", label: "Organise", src: shotFiles, mobile: mobileFiles, path: "demo-site/files", caption: "Docs, uploads and drawings side by side, in folders that make sense to you." },
   { key: "draw", label: "Draw", src: shotDraw, mobile: mobileDraw, path: "demo-site/roadmap.excalidraw", caption: "A built-in Excalidraw canvas for diagrams, maps and whiteboard thinking." },
-  { key: "publish", label: "Publish", src: shotPublish, mobile: mobilePublish, path: "s/demo-site", caption: "Turn any site into a public, searchable website in one click." },
+  { key: "publish", label: "Publish", src: shotPublish, mobile: mobilePublish, path: "s/demo-site/coffee-brewing-guide", caption: "Turn any site into a public, searchable website in one click." },
 ] as const;
 
 // Auto-advance cadence. The active tab's progress bar is a CSS animation of
@@ -204,7 +204,7 @@ const SHOWCASE: {
   eyebrow: string;
   title: [string, string];
   body: string;
-  points: string[];
+  points: ReactNode[];
   src: string;
   mobile: string;
   alt: string;
@@ -223,6 +223,7 @@ const SHOWCASE: {
     src: detailEdit,
     mobile: mobileEdit,
     alt: "The Annex editor showing formatting, callouts and a code block",
+    fade: true,
   },
   {
     eyebrow: "Organise",
@@ -244,7 +245,7 @@ const SHOWCASE: {
     body: "Any site can become a public website with navigation, search and link previews. Keep it private until it is ready, then switch it on.",
     points: [
       "One switch to publish a whole site",
-      "Friendly doc URLs from a slug: in the frontmatter",
+      <>Friendly doc URLs from a <code className="l-code">slug:</code> in the frontmatter</>,
       "Your own domain for published sites (early access)",
     ],
     src: detailPublish,
@@ -366,8 +367,8 @@ export function LandingPage() {
                 </h2>
                 <p className="l-show-body">{s.body}</p>
                 <ul className="l-checks">
-                  {s.points.map((p) => (
-                    <li key={p}><Check size={16} aria-hidden="true" />{p}</li>
+                  {s.points.map((p, j) => (
+                    <li key={j}><Check size={16} aria-hidden="true" /><span>{p}</span></li>
                   ))}
                 </ul>
               </div>
@@ -425,7 +426,9 @@ export function LandingPage() {
                     <li key={p}><Check size={16} aria-hidden="true" />{p}</li>
                   ))}
                 </ul>
-                <Link className="l-btn-secondary l-plan-cta" to={primary.to}>{primary.label}</Link>
+                <Link className="l-btn-secondary l-plan-cta" to={primary.to}>
+                  {primary.label} <ArrowRight size={18} aria-hidden="true" />
+                </Link>
               </div>
               <div className="l-plan l-plan-ink">
                 <div className="l-plan-name">

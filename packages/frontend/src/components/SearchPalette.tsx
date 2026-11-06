@@ -345,7 +345,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 {item.kind === "doc"
                   ? <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   : <FileKindIcon mime={item.mime ?? ""} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                <span className="font-medium text-sm flex-1 min-w-0 truncate">{item.title}</span>
+                <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
                 <span className="ml-auto flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
                   <Clock className="h-2.5 w-2.5" />
                   {timeAgo(item.accessedAt)}
@@ -402,7 +402,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-2 py-2 min-w-0"
               >
                 <ProjectSquareLogo projectId={s.id} logoSquareUpdatedAt={s.logo_square_updated_at} className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={s.name} term={searchTerm} />
                 </span>
               </CommandItem>
@@ -421,14 +421,14 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 {d.tags ? (
                   <>
                     <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-medium text-sm flex-1 min-w-0 truncate">{d.title}</span>
+                    <span className="text-sm flex-1 min-w-0 truncate">{d.title}</span>
                     <TagChips tags={d.tags} highlight={searchTerm} />
                   </>
                 ) : (
                   <>
                     <span className="flex w-full items-center gap-1.5 min-w-0">
                       <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-medium text-sm truncate">
+                      <span className="text-sm truncate">
                         <HighlightedText text={d.title} term={searchTerm} />
                       </span>
                       <HitMeta folder={d.folder} updatedAt={d.updated_at} />
@@ -450,7 +450,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-1.5 py-2 min-w-0"
               >
                 <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={f.name} term={searchTerm} />
                 </span>
                 <HitMeta folder={f.parent} />
@@ -468,7 +468,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
                 className="flex items-center gap-1.5 py-2 min-w-0"
               >
                 <FileKindIcon mime={f.mime_type} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="font-medium text-sm truncate">
+                <span className="text-sm truncate">
                   <HighlightedText text={f.name} term={searchTerm} />
                 </span>
                 <HitMeta folder={f.folder} updatedAt={f.updated_at} />

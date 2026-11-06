@@ -1,5 +1,8 @@
-import { BookOpen } from "lucide-react";
+import { useState } from "react";
+import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { DotGrid } from "@/components/DotGrid";
 import heroShot from "@/assets/landing/write.webp";
@@ -13,6 +16,37 @@ export const AUTH_INPUT_CLASS = "h-11 border-foreground/50 dark:border-foregroun
 
 /** Full-width action buttons on the auth screens - same height as the fields. */
 export const AUTH_BUTTON_CLASS = "h-11";
+
+/**
+ * Auth-screen password field with a show/hide toggle inside its right edge.
+ * The toggle's name comes from sr-only text, NOT aria-label: Playwright's
+ * getByLabel("Password") substring-matches aria-label too, so an
+ * aria-label="Show password" button would make every e2e login ambiguous.
+ */
+export function PasswordInput({ className, id, ...props }: Omit<React.ComponentProps<typeof Input>, "type">) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        {...props}
+        id={id}
+        type={visible ? "text" : "password"}
+        // ::-ms-reveal: drop Edge's built-in eye so there aren't two.
+        className={cn(AUTH_INPUT_CLASS, "pr-10 [&::-ms-reveal]:hidden", className)}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible(v => !v)}
+        aria-pressed={visible}
+        aria-controls={id}
+        className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {visible ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+        <span className="sr-only">{visible ? "Hide password" : "Show password"}</span>
+      </button>
+    </div>
+  );
+}
 
 interface AuthFormProps {
   title: string;

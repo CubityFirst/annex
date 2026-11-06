@@ -130,8 +130,10 @@
   border: 1px solid var(--accent);
 }
 .l-btn-primary:hover { opacity: 0.88; }
-.l-btn-primary svg { transition: transform 0.15s; }
-.l-btn-primary:hover svg { transform: translateX(2px); }
+.l-btn-primary svg,
+.l-btn-secondary svg { transition: transform 0.15s; }
+.l-btn-primary:hover svg,
+.l-btn-secondary:hover svg { transform: translateX(2px); }
 .l-btn-secondary {
   background: transparent;
   color: var(--text);
@@ -397,6 +399,15 @@
   color: #cacaca;
   line-height: 1.5;
 }
+/* Inline code in marketing copy (e.g. the slug: frontmatter key). */
+.l-code {
+  font: 400 0.875em "DM Mono", monospace;
+  color: var(--text);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
 .l-checks svg {
   flex-shrink: 0;
   margin-top: 3px;
@@ -420,8 +431,8 @@
 /* Captures that end mid-content (a page that keeps scrolling) fade out at the
    bottom instead of stopping on a half-cut row. */
 .l-show-media-fade img {
-  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
 }
 
 /* ── EXTRAS ── */
@@ -677,8 +688,15 @@
   margin: 32px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: 12px 28px;
+  /* Full container width: three columns, two on tablets, one on phones. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 32px;
+}
+@media (max-width: 860px) {
+  .l-ack-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .l-ack-list { grid-template-columns: minmax(0, 1fr); }
 }
 /* Name + licence read as one inline run: a long name wraps and the tag
    simply follows its last line (no justify-between gutter). */
@@ -701,11 +719,14 @@
   color: var(--text);
   text-decoration-color: currentColor;
 }
+/* Licence tag: small but at the full muted-text strength (--text2), not the
+   fainter --text3, so "MIT" / "Apache-2.0" stay readable. */
 .l-ack-license {
   display: inline-block;
-  margin-left: 6px;
-  font: 400 12px "DM Mono", monospace;
-  color: var(--text3);
+  margin-left: 8px;
+  font: 400 11px/1 "DM Mono", monospace;
+  letter-spacing: 0.02em;
+  color: var(--text2);
   white-space: nowrap;
 }
 
@@ -716,6 +737,9 @@
 .l-legal-inner {
   max-width: 780px;
 }
+/* Acknowledgements: the list spans the whole container; the lead stays at
+   its own readable measure (.l-legal-intro max-width). */
+.l-legal-inner.l-legal-wide { max-width: none; }
 .l-legal-label {
   font-size: 15px;
   font-family: 'DM Mono', monospace;
@@ -839,7 +863,8 @@
 @media (prefers-reduced-motion: reduce) {
   .l-viewer-stage img,
   .l-faq-item summary::after,
-  .l-btn-primary svg { transition: none; }
+  .l-btn-primary svg,
+  .l-btn-secondary svg { transition: none; }
 }
 
 /* ── Responsive ── */

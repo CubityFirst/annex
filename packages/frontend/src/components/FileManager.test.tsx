@@ -54,8 +54,8 @@ function desktopRow(label: string) {
   return row as HTMLElement;
 }
 
-function renderManager(folderId: string | null = null, myRole = "owner") {
-  const ctx = { setBreadcrumbs: vi.fn() };
+function renderManager(folderId: string | null = null, myRole = "owner", headerActionSlot: HTMLElement | null = null) {
+  const ctx = { setBreadcrumbs: vi.fn(), headerActionSlot };
   const utils = render(
     <MemoryRouter>
       <Routes>
@@ -368,6 +368,7 @@ describe("FileManager", () => {
     // Secondary create actions sit behind the split button's chevron.
     fireEvent.keyDown(await screen.findByRole("button", { name: "More create options" }), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
+    expect(await screen.findByText("Folders group docs, files and drawings.")).toBeTruthy();
     fireEvent.change(await screen.findByLabelText("Folder name"), { target: { value: "Specs" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByLabelText("Folder name")).toBeNull());
@@ -404,9 +405,9 @@ describe("FileManager", () => {
   });
 
   // Folder rows: the item count sits in the Size column (breakdown in the
-  // tooltip), and cells that don't apply stay blank rather than dashed. Doc
-  // rows leave Size blank too.
-  it("puts the folder count in Size and leaves inapplicable cells blank", async () => {
+  // tooltip), and cells that don't apply or aren't known show a muted dash.
+  // Doc rows dash their Size too.
+  it("puts the folder count in Size and dashes inapplicable cells", async () => {
     vi.mocked(apiFetchJson).mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -424,11 +425,15 @@ describe("FileManager", () => {
     expect(cell("Open folder Specs", 2).textContent).toBe("1 item");
     expect(cell("Open folder Specs", 2).querySelector('[title="1 doc"]')).toBeTruthy();
     expect(cell("Open folder Blank", 2).textContent).toBe("Empty");
-    // Author / last updated (folder never opened) / doc size: blank, no dash.
+    // Author / last updated (folder never opened) / doc size: a muted dash
+    // with a screen-reader label.
     for (const [label, col] of [["Open folder Specs", 1], ["Open folder Specs", 3], ["Open Doc A", 2]] as const) {
-      expect(cell(label, col).textContent).not.toContain("—");
+      expect(cell(label, col).querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
       expect(cell(label, col).querySelector(".sr-only")).toBeTruthy();
     }
+    // Size is right-aligned with tabular figures so sizes line up.
+    expect(cell("Open Doc A", 2).className).toContain("justify-end");
+    expect(cell("Open Doc A", 2).className).toContain("tabular-nums");
   });
 
   // A folder row shows its newest child's edit time once that folder's
@@ -461,6 +466,28 @@ describe("FileManager", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "More create options" }), { key: "Enter" });
     for (const name of ["New folder", "New drawing", "Upload files"]) {
       expect(await screen.findByRole("menuitem", { name })).toBeTruthy();
+    }
+  });
+
+  // md+: the split button moves into the app top bar's action slot and is
+  // rendered only there, so its accessible names stay unique.
+  it("renders the create split button once, in the top bar on desktop", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+    try {
+      vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
+      const slot = document.createElement("div");
+      document.body.appendChild(slot);
+      renderManager(null, "owner", slot);
+      const newDoc = await screen.findByRole("button", { name: "New document" });
+      expect(slot.contains(newDoc)).toBe(true);
+      expect(screen.getAllByRole("button", { name: "New document" })).toHaveLength(1);
+      expect(slot.contains(screen.getByRole("button", { name: "More create options" }))).toBe(true);
+      slot.remove();
+    } finally {
+      window.matchMedia = original;
     }
   });
 

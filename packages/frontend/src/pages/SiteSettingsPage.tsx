@@ -40,7 +40,7 @@ import { Switch } from "@/components/ui/switch";
 import { useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { InlineSaveControls } from "@/components/InlineSaveControls";
+import { InlineSaveControls, SavedIndicator, useSavedFlash } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, ChevronRight, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2, ExternalLink, NotebookPen, Sparkles, Wand2 } from "lucide-react";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
@@ -217,6 +217,9 @@ export function SiteSettingsPage() {
   const [savingName, setSavingName] = useState(false);
   const [savingDescription, setSavingDescription] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [nameSaved, flashNameSaved] = useSavedFlash();
+  const [descriptionSaved, flashDescriptionSaved] = useSavedFlash();
+  const [slugSaved, flashSlugSaved] = useSavedFlash();
   const { toast } = useToast();
 
   const [myRole, setMyRole] = useState<Role | null>(null);
@@ -495,7 +498,7 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "Name saved." });
+        flashNameSaved();
       } else {
         setSaveError("Failed to save name.");
       }
@@ -520,7 +523,7 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "Description saved." });
+        flashDescriptionSaved();
       } else {
         setSaveError("Failed to save description.");
       }
@@ -1040,7 +1043,7 @@ export function SiteSettingsPage() {
       if (json.ok && json.data) {
         setProject(json.data);
         setVanitySlug(json.data.vanity_slug ?? "");
-        toast({ title: "Custom link saved." });
+        flashSlugSaved();
       } else if (res.status === 409) {
         setSlugError("This URL is already taken.");
       } else {
@@ -1295,7 +1298,10 @@ export function SiteSettingsPage() {
       <div id="general" className="flex flex-col gap-5">
         <SettingsSectionHeader title="General" description="The site's name and a short description of what it's about." />
         <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
-          <Label htmlFor="settings-name">Name</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="settings-name">Name</Label>
+            <SavedIndicator show={nameSaved} />
+          </div>
           <div className="flex items-center">
             <InlineSaveControls
               changed={isAdminOrOwner && name !== project.name}
@@ -1311,14 +1317,17 @@ export function SiteSettingsPage() {
                 onChange={e => setName(e.target.value)}
                 required
                 disabled={!isAdminOrOwner}
-                className="flex-1 pr-9"
+                className="flex-1"
               />
             </InlineSaveControls>
           </div>
         </form>
 
         <form onSubmit={handleSaveDescription} className="flex flex-col gap-1.5">
-          <Label htmlFor="settings-description">Description</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="settings-description">Description</Label>
+            <SavedIndicator show={descriptionSaved} />
+          </div>
           <div className="flex items-center">
             <InlineSaveControls
               changed={isAdminOrOwner && description !== (project.description ?? "")}
@@ -1341,7 +1350,7 @@ export function SiteSettingsPage() {
                   }
                 }}
                 disabled={!isAdminOrOwner}
-                className="flex-1 pr-9"
+                className="flex-1"
               />
             </InlineSaveControls>
           </div>
@@ -1502,13 +1511,13 @@ export function SiteSettingsPage() {
                 Cropped client-side to 512x512 via AvatarCropDialog. */}
             {/* Both branding rows use the shared settings-row pattern: preview
                 + title/description on the left, actions right-aligned. Each
-                preview sits in a fixed 128px slot (the square artwork centred
-                in it, the 128x64 wordmark filling it) so both rows' text
+                preview sits left-aligned in a fixed 128px slot (the 64px square
+                and the 128x64 wordmark share one left edge) so both rows' text
                 columns start on one left edge. Below sm the actions wrap under
                 the text. */}
             <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
               <div className="flex min-w-0 items-center gap-4">
-                <div className="flex w-32 shrink-0 justify-center">
+                <div className="flex w-32 shrink-0 justify-start">
                   <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                     {project.logo_square_updated_at && logoPreviewUrls.square ? (
                       <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
@@ -1644,6 +1653,7 @@ export function SiteSettingsPage() {
                 <div>
                   <p className="text-sm font-medium flex items-center gap-2">
                     <Link className="h-4 w-4 text-muted-foreground" /> Custom link <PremiumBadge />
+                    <SavedIndicator show={slugSaved} />
                   </p>
                   <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
                     Set a custom URL so your public site can be shared at a memorable address.
@@ -1667,7 +1677,7 @@ export function SiteSettingsPage() {
                               value={vanitySlug}
                               onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
                               placeholder="my-site"
-                              className="flex-1 pr-9"
+                              className="flex-1"
                             />
                           </InlineSaveControls>
                         </div>

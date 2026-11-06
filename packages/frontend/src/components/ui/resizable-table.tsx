@@ -17,6 +17,11 @@ export interface ColumnDef {
   minWidth?: number;   // px - if set, column becomes a standalone fixed-width segment
   maxWidth?: number;   // px - maximum width for constrained columns (only used with minWidth)
   sortable?: boolean;  // when true (with onSort), the header is a clickable sort toggle
+  /**
+   * "right" right-aligns the header label and every cell in the column, with
+   * tabular figures so numbers (e.g. byte sizes) line up digit for digit.
+   */
+  align?: "left" | "right";
 }
 
 export interface CellDef {
@@ -72,7 +77,11 @@ function HeaderCell({
   sort?: SortSpec | null;
   onSort?: (colIdx: number) => void;
 }) {
-  const base = "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground";
+  const right = col.align === "right";
+  const base = cn(
+    "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground",
+    right && "justify-end text-right",
+  );
 
   if (!col.sortable || !onSort) {
     return <div role="columnheader" aria-colindex={colIndex} className={base}>{col.label}</div>;
@@ -80,6 +89,13 @@ function HeaderCell({
 
   const active = sort?.colIdx === idx;
   const dir = active ? sort!.dir : undefined;
+  const arrow = active ? (
+    dir === "asc"
+      ? <ArrowUp className="size-3 shrink-0" />
+      : <ArrowDown className="size-3 shrink-0" />
+  ) : (
+    <ArrowUpDown className="size-3 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
+  );
 
   return (
     <button
@@ -94,16 +110,13 @@ function HeaderCell({
           ? `${col.label}, sorted ${dir === "asc" ? "ascending" : "descending"}`
           : `Sort by ${col.label}`
       }
-      className={cn(base, "group gap-1 select-none text-left cursor-pointer hover:text-foreground transition-colors")}
+      className={cn(base, "group gap-1 select-none cursor-pointer hover:text-foreground transition-colors", !right && "text-left")}
     >
+      {/* Right-aligned columns put the sort arrow before the label so the
+          label's right edge stays on the cells' right edge. */}
+      {right && arrow}
       <span className="truncate">{col.label}</span>
-      {active ? (
-        dir === "asc"
-          ? <ArrowUp className="size-3 shrink-0" />
-          : <ArrowDown className="size-3 shrink-0" />
-      ) : (
-        <ArrowUpDown className="size-3 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
-      )}
+      {!right && arrow}
     </button>
   );
 }
@@ -477,7 +490,7 @@ export function ResizableTableRow({
 
         return (
           <div key={`seg-${seg.segIdx}`} style={containerStyle}>
-            {seg.cols.map(({ idx }) => {
+            {seg.cols.map(({ col, idx }) => {
               const cell = cells[idx];
               return (
                 <div
@@ -486,7 +499,11 @@ export function ResizableTableRow({
                   role="gridcell"
                   aria-colindex={idx + 1 + colOffset}
                   style={{ width: `var(--col-${idx})` }}
-                  className={cn("flex items-center overflow-hidden shrink-0", cell?.className ?? "px-3")}
+                  className={cn(
+                    "flex items-center overflow-hidden shrink-0",
+                    col.align === "right" && "justify-end text-right tabular-nums",
+                    cell?.className ?? "px-3",
+                  )}
                   onClick={cell?.onClick}
                 >
                   {cell?.content}

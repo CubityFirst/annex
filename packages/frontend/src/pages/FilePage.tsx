@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,18 @@ const MAX_TEXT_PREVIEW_BYTES = 512 * 1024;
 // previews get room while the file title lines up with a doc title.
 const VIEWER_COLUMN_CLASS =
   "mx-auto max-w-[44rem] xl:mr-0 xl:ml-[max(0px,calc((100%_-_44rem)/2))] xl:max-w-[56rem]";
+// The header row (title, metadata, actions) stays at the doc column's width
+// even where the preview widens, so its right edge matches a doc's too.
+const VIEWER_HEADER_CLASS = "max-w-[44rem]";
+
+// Subtle neutral checkerboard behind image previews, so transparent regions
+// read as transparent rather than as the card colour. Token-based so it
+// follows the theme.
+const CHECKERBOARD_STYLE: React.CSSProperties = {
+  backgroundColor: "var(--card)",
+  backgroundImage: "conic-gradient(var(--muted) 25%, transparent 0 50%, var(--muted) 0 75%, transparent 0)",
+  backgroundSize: "16px 16px",
+};
 
 // Muted 16px menu icons, the destructive item keeping its red (same as the
 // File Manager's row menus).
@@ -97,6 +110,10 @@ export function FilePage() {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textTruncated, setTextTruncated] = useState(false);
   const [drawingDirty, setDrawingDirty] = useState(false);
+  // Drawing view: the canvas portals its Save state into this node, which
+  // sits beside the ⋯ menu in the top bar's action slot.
+  const [drawingSaveSlot, setDrawingSaveSlot] = useState<HTMLSpanElement | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // "⋯" menu (editors): rename / move / delete, mirroring the File Manager's
@@ -129,6 +146,7 @@ export function FilePage() {
     setTextContent(null);
     setTextTruncated(false);
     setDrawingDirty(false);
+    setLightboxOpen(false);
     // One automatic retry on 5xx: a single transient server hiccup otherwise
     // dead-ends the page in "File not found" with no recourse but reload.
     const loadMeta = async () => {
@@ -349,190 +367,31 @@ export function FilePage() {
   }
 
   const kind = fileKind(file.mime_type, file.name);
+  const embedMarkdown = fileEmbedMarkdown(file);
+  const isSvg = /svg/i.test(file.mime_type) || /\.svg$/i.test(file.name);
 
-  // Drawings render as a live canvas filling the content area - editor+ get the
-  // full editor + Save; everyone else gets a read-only (view-mode) canvas.
-  if (kind === "drawing") {
-    const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
-    return (
-      <div className="flex h-full flex-col">
-        <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading editor…</div>}>
-          <ExcalidrawCanvas
-            contentUrl={`/api/files/${file.id}/content`}
-            fetcher={(u, init) => apiFetch(u, init)}
-            readOnly={!canEdit}
-            name={file.name}
-            theme={exTheme}
-            // If-Match fallback for saves when the content GET exposes no ETag
-            // header (same scheme the server uses - see lib/excalidraw).
-            fallbackEtag={file.updated_at ? fileContentEtag(file.id, file.updated_at) : undefined}
-            // Keep the displayed metadata fresh after each save.
-            onSaved={(meta) => setFile(f => (f && f.id === meta.id ? { ...f, size: meta.size, updated_at: meta.updated_at } : f))}
-            // Track unsaved edits so the beforeunload warning above can arm.
-            onDirtyChange={setDrawingDirty}
-            // Render Save in the top bar (title bar) rather than floating over
-            // the canvas, where it overlapped Excalidraw's bottom-right "?".
-            saveSlot={headerActionSlot}
-          />
-        </Suspense>
-      </div>
-    );
-  }
+  // Editor-only items shared by both ⋯ menus (viewer header + drawing top
+  // bar): rename / move / delete, mirroring the File Manager's file row actions.
+  const editItems = canEdit && (
+    <>
+      <DropdownMenuItem onClick={() => { setRenameName(file.name); setRenameOpen(true); }}>
+        <Pencil />
+        Rename
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => { void openMove(); }}>
+        <FolderInput />
+        Move to folder…
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+        <Trash2 />
+        Delete
+      </DropdownMenuItem>
+    </>
+  );
 
-  // One viewer column for every kind (image/text/PDF/media) so the header -
-  // title, metadata, actions - sits in exactly the same place from file to
-  // file, with the title on the same left edge as a doc title (see
-  // VIEWER_COLUMN_CLASS; the type icon rides in the metadata line rather than
-  // a leading tile, which would push the title off that edge). The header
-  // shares the column so its edges line up with the preview.
-  return (
-    <ViewerLayout>
-      <div className="flex flex-wrap items-center gap-4">
-        {/* min width lets the actions wrap onto their own line on phones
-            instead of squeezing the title to a sliver. */}
-        <div className="min-w-[12rem] flex-1">
-          <h1 className="truncate text-xl font-semibold tracking-tight">{file.name}</h1>
-          {/* Each item carries a leading "·" in its left padding; the row is
-              pulled left by that padding and clipped, so the first item on
-              every line (including after a wrap) shows no stray separator. */}
-          <div className="mt-1 overflow-hidden">
-            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
-              <span title={file.mime_type} className="inline-flex items-center gap-1.5">
-                <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
-                {describeFileType(file.mime_type, file.name)}
-              </span>
-              <span>{formatBytes(file.size)}</span>
-              <span>Uploaded {formatDate(file.created_at)}</span>
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            className="gap-2"
-            aria-label={copiedLink ? "Copied" : "Copy embed"}
-            title="Copy markdown to embed this file in a doc"
-            onClick={() => {
-              navigator.clipboard.writeText(fileEmbedMarkdown(file));
-              setCopiedLink(true);
-              setTimeout(() => setCopiedLink(false), 2000);
-            }}
-          >
-            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Code className="h-4 w-4" aria-hidden="true" />}
-            {copiedLink ? "Copied!" : "Copy embed"}
-          </Button>
-          <Button onClick={handleDownload} disabled={downloading} className="gap-2">
-            <Download className="h-4 w-4" />
-            {downloading ? "Downloading…" : "Download"}
-          </Button>
-          {canEdit && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
-                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className={MENU_CLASS}>
-                <DropdownMenuItem onClick={() => { setRenameName(file.name); setRenameOpen(true); }}>
-                  <Pencil />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { void openMove(); }}>
-                  <FolderInput />
-                  Move to folder…
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
-                  <Trash2 />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </div>
-
-      {/* One frame only: the image fills a bordered card whose rounded
-          corners clip it (no inner mat). The hairline border keeps dark-edged
-          images from merging into the page; letterboxing shows the card. */}
-      {kind === "image" && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
-          <AuthenticatedImage
-            src={`/api/files/${file.id}/content`}
-            alt={file.name}
-            projectId={projectId}
-            mimeType={file.mime_type}
-            className="block max-h-[70vh] w-full object-contain"
-          />
-        </div>
-      )}
-
-      {kind === "audio" && contentUrl && (
-        <div className="mt-8 rounded-xl border border-border bg-card p-4">
-          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
-          <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
-        </div>
-      )}
-
-      {kind === "video" && videoSrc && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-black">
-          <video
-            controls
-            preload="metadata"
-            src={videoSrc}
-            onError={(e) => {
-              // A presigned R2 URL can expire while the page sits open; on
-              // failure fall back to the in-Worker token route. The endsWith
-              // guard stops a retry loop once we're already on that route.
-              const v = e.currentTarget;
-              if (contentUrl && !v.src.endsWith(contentUrl)) v.src = contentUrl;
-            }}
-            className="max-h-[70vh] w-full bg-black"
-          >
-            Your browser does not support embedded video playback.
-          </video>
-        </div>
-      )}
-
-      {kind === "pdf" && contentUrl && (
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
-          {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
-              origin, so the browser's PDF script can't touch the app origin;
-              allow-scripts keeps the viewer itself functional. */}
-          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" sandbox="allow-scripts" className="hidden h-[75vh] w-full sm:block" />
-          <div className="flex flex-col items-center gap-3 p-6 text-center sm:hidden">
-            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">PDF preview isn’t available on small screens.</p>
-            <Button asChild className="min-h-11 w-full">
-              <a href={contentUrl} target="_blank" rel="noreferrer">Open PDF</a>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {kind === "text" && textContent !== null && (
-        <div className="mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6">
-          {/* Plain-file preview sits on the card surface (never the
-              highlighter theme's own background), framed like the other previews. */}
-          <CodeBlock
-            lang={guessLanguage(file.name)}
-            code={textContent}
-            className="!my-0 [&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto [&_pre]:!rounded-xl [&_pre]:!border [&_pre]:!border-border [&_pre]:!bg-card [&_pre]:!p-5"
-          />
-          {textTruncated && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Preview truncated at {formatBytes(MAX_TEXT_PREVIEW_BYTES)}. Download the file to see the full contents.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Announce the transient copy confirmation to assistive tech (the button
-          text swap alone isn't reliably announced). */}
-      <div role="status" aria-live="polite" className="sr-only">
-        {copiedLink ? "Embed markdown copied to clipboard" : ""}
-      </div>
-
+  const dialogs = (
+    <>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -626,6 +485,260 @@ export function FilePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+
+  // Drawings render as a live canvas filling the content area - editor+ get the
+  // full editor + Save; everyone else gets a read-only (view-mode) canvas.
+  // Page actions live in the top bar's right side: the canvas's Save state
+  // (portalled into drawingSaveSlot) beside a ⋯ menu with the file actions.
+  if (kind === "drawing") {
+    const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
+    return (
+      <div className="flex h-full flex-col">
+        {headerActionSlot && createPortal(
+          <div className="flex shrink-0 items-center gap-1">
+            {canEdit && <span ref={setDrawingSaveSlot} className="flex items-center" />}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More file actions" title="More actions">
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className={MENU_CLASS}>
+                <DropdownMenuItem onClick={() => { void handleDownload(); }} disabled={downloading}>
+                  <Download />
+                  Download
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  title="Copy markdown to embed this drawing in a doc"
+                  onClick={() => {
+                    navigator.clipboard.writeText(embedMarkdown);
+                    toast({ title: "Embed copied", description: "Paste it into a doc to embed this drawing." });
+                  }}
+                >
+                  <Code />
+                  Copy embed
+                </DropdownMenuItem>
+                {canEdit && <DropdownMenuSeparator />}
+                {editItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>,
+          headerActionSlot,
+        )}
+        <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading editor…</div>}>
+          <ExcalidrawCanvas
+            contentUrl={`/api/files/${file.id}/content`}
+            fetcher={(u, init) => apiFetch(u, init)}
+            readOnly={!canEdit}
+            name={file.name}
+            theme={exTheme}
+            // If-Match fallback for saves when the content GET exposes no ETag
+            // header (same scheme the server uses - see lib/excalidraw).
+            fallbackEtag={file.updated_at ? fileContentEtag(file.id, file.updated_at) : undefined}
+            // Keep the displayed metadata fresh after each save.
+            onSaved={(meta) => setFile(f => (f && f.id === meta.id ? { ...f, size: meta.size, updated_at: meta.updated_at } : f))}
+            // Track unsaved edits so the beforeunload warning above can arm.
+            onDirtyChange={setDrawingDirty}
+            // Render Save in the top bar (title bar) rather than floating over
+            // the canvas, where it overlapped Excalidraw's bottom-right "?".
+            // Null until the slot mounts (no floating-button flash).
+            saveSlot={drawingSaveSlot}
+          />
+        </Suspense>
+        {dialogs}
+      </div>
+    );
+  }
+
+  // One viewer column for every kind (image/text/PDF/media) so the header -
+  // title, metadata, actions - sits in exactly the same place from file to
+  // file, with the title on the same left edge as a doc title (see
+  // VIEWER_COLUMN_CLASS; the type icon rides in the metadata line rather than
+  // a leading tile, which would push the title off that edge). The header
+  // shares the column so its edges line up with the preview.
+  return (
+    <ViewerLayout>
+      <div className={`flex flex-wrap items-center gap-4 ${VIEWER_HEADER_CLASS}`}>
+        {/* min width lets the actions wrap onto their own line on phones
+            instead of squeezing the title to a sliver. */}
+        <div className="min-w-[12rem] flex-1">
+          <h1 className="truncate text-xl font-semibold tracking-tight">{file.name}</h1>
+          {/* Each item carries a leading "·" in its left padding; the row is
+              pulled left by that padding and clipped, so the first item on
+              every line (including after a wrap) shows no stray separator. */}
+          <div className="mt-1 overflow-hidden">
+            <p className="-ml-4 flex flex-wrap items-center text-sm text-muted-foreground [&>span]:relative [&>span]:pl-4 [&>span]:before:absolute [&>span]:before:left-1.5 [&>span]:before:text-muted-foreground/50 [&>span]:before:content-['·']">
+              <span title={file.mime_type} className="inline-flex items-center gap-1.5">
+                <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0" />
+                {describeFileType(file.mime_type, file.name)}
+              </span>
+              <span>{formatBytes(file.size)}</span>
+              <span>Uploaded {formatDate(file.created_at)}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            aria-label={copiedLink ? "Copied" : "Copy embed"}
+            title="Copy markdown to embed this file in a doc"
+            onClick={() => {
+              navigator.clipboard.writeText(embedMarkdown);
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+          >
+            {copiedLink ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Code className="h-4 w-4" aria-hidden="true" />}
+            {copiedLink ? "Copied!" : "Copy embed"}
+          </Button>
+          <Button onClick={handleDownload} disabled={downloading} className="gap-2">
+            <Download className="h-4 w-4" />
+            {downloading ? "Downloading…" : "Download"}
+          </Button>
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label="More file actions" title="More actions">
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className={MENU_CLASS}>
+                {editItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+
+      {/* One frame only: the image sits centred in a bordered card whose
+          rounded corners clip it (no inner mat). The hairline border keeps
+          dark-edged images from merging into the page. The image itself
+          carries a checkerboard so transparency reads as transparency (the
+          letterbox around it stays the plain card), and clicking it opens a
+          full-size lightbox. */}
+      {kind === "image" && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label={`View ${file.name} full size`}
+            title="View full size"
+            className="flex min-h-40 w-full cursor-zoom-in items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <AuthenticatedImage
+              src={`/api/files/${file.id}/content`}
+              alt={file.name}
+              projectId={projectId}
+              mimeType={file.mime_type}
+              style={CHECKERBOARD_STYLE}
+              // Rasters show at natural size (never upscaled into blur); SVGs
+              // often have no intrinsic size, so they fill the column instead.
+              className={isSvg
+                ? "block h-auto max-h-[70vh] w-full object-contain"
+                : "block h-auto max-h-[70vh] w-auto max-w-full"}
+            />
+          </button>
+        </div>
+      )}
+
+      {kind === "image" && (
+        <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+          <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-4 sm:max-w-[calc(100vw-4rem)]">
+            <DialogHeader className="pb-3 pr-10">
+              <DialogTitle className="truncate">{file.name}</DialogTitle>
+              <DialogDescription className="sr-only">Full-size image preview</DialogDescription>
+            </DialogHeader>
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              aria-label="Close full-size view"
+              className="block cursor-zoom-out rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <AuthenticatedImage
+                src={`/api/files/${file.id}/content`}
+                alt={file.name}
+                projectId={projectId}
+                mimeType={file.mime_type}
+                style={CHECKERBOARD_STYLE}
+                className={isSvg
+                  ? "block h-auto max-h-[calc(100dvh-8rem)] w-[min(calc(100vw-6rem),80rem)] max-w-full rounded-md object-contain"
+                  : "block h-auto max-h-[calc(100dvh-8rem)] w-auto max-w-full rounded-md"}
+              />
+            </button>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {kind === "audio" && contentUrl && (
+        <div className="mt-8 rounded-xl border border-border bg-card p-4">
+          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
+          <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
+        </div>
+      )}
+
+      {kind === "video" && videoSrc && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-black">
+          <video
+            controls
+            preload="metadata"
+            src={videoSrc}
+            onError={(e) => {
+              // A presigned R2 URL can expire while the page sits open; on
+              // failure fall back to the in-Worker token route. The endsWith
+              // guard stops a retry loop once we're already on that route.
+              const v = e.currentTarget;
+              if (contentUrl && !v.src.endsWith(contentUrl)) v.src = contentUrl;
+            }}
+            className="max-h-[70vh] w-full bg-black"
+          >
+            Your browser does not support embedded video playback.
+          </video>
+        </div>
+      )}
+
+      {kind === "pdf" && contentUrl && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
+          {/* sandbox WITHOUT allow-same-origin puts the viewer in an opaque
+              origin, so the browser's PDF script can't touch the app origin;
+              allow-scripts keeps the viewer itself functional. */}
+          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" sandbox="allow-scripts" className="hidden h-[75vh] w-full sm:block" />
+          <div className="flex flex-col items-center gap-3 p-6 text-center sm:hidden">
+            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">PDF preview isn’t available on small screens.</p>
+            <Button asChild className="min-h-11 w-full">
+              <a href={contentUrl} target="_blank" rel="noreferrer">Open PDF</a>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {kind === "text" && textContent !== null && (
+        <div className="mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6">
+          {/* Plain-file preview sits on the card surface (never the
+              highlighter theme's own background), framed like the other previews. */}
+          <CodeBlock
+            lang={guessLanguage(file.name)}
+            code={textContent}
+            className="!my-0 [&_pre]:max-h-[75vh] [&_pre]:overflow-y-auto [&_pre]:!rounded-xl [&_pre]:!border [&_pre]:!border-border [&_pre]:!bg-card [&_pre]:!p-5"
+          />
+          {textTruncated && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Preview truncated at {formatBytes(MAX_TEXT_PREVIEW_BYTES)}. Download the file to see the full contents.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Announce the transient copy confirmation to assistive tech (the button
+          text swap alone isn't reliably announced). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {copiedLink ? "Embed markdown copied to clipboard" : ""}
+      </div>
+
+      {dialogs}
     </ViewerLayout>
   );
 }

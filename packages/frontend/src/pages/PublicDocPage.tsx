@@ -27,7 +27,7 @@ import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List, PanelLeftOpen } from "lucide-react";
+import { ArrowLeft, BookOpen, FileText, Flag, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network, Menu, List, PanelLeftOpen } from "lucide-react";
 import { ReportSiteDialog } from "@/components/ReportSiteDialog";
 
 // Heavy chunk - only loaded when a published drawing is opened.
@@ -86,10 +86,28 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; slug?: string | null; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null };
+  // `description` only comes with the site payload (/public/projects/:id).
+  project: { id: string; name: string; description?: string | null; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
+}
+
+/** GET /public/projects/:id - the published site row plus its nav lists. */
+type PublicProjectPayload = PublicData["project"] & { docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] };
+
+const EMPTY_DOC: PublicData["doc"] = { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" };
+
+/** Page data for the doc-less views (site index, graph, file) from the site payload. */
+function dataFromProject(p: PublicProjectPayload): PublicData {
+  return {
+    doc: EMPTY_DOC,
+    sitePublished: true,
+    project: { id: p.id, name: p.name, description: p.description ?? null, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
+    docs: p.docs ?? [],
+    folders: p.folders ?? [],
+    files: p.files ?? [],
+  };
 }
 
 function flattenDocs(folders: NavFolder[], docs: NavDoc[], parentId: string | null = null): NavDoc[] {
@@ -109,6 +127,104 @@ function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], 
   return folders
     .filter(f => f.parent_id === folderId)
     .some(child => folderHasItems(child.id, folders, docs, files));
+}
+
+const HIDDEN_FOLDER_NAMES = ["hidden", "doc_assets"];
+
+/** Folders the public nav shows under `parentId`: not hidden, not empty. */
+function visibleChildFolders(parentId: string | null, folders: NavFolder[], docs: NavDoc[], files: NavFile[]): NavFolder[] {
+  return folders
+    .filter(f => f.parent_id === parentId)
+    .filter(f => !HIDDEN_FOLDER_NAMES.includes(f.name.toLowerCase()))
+    .filter(f => folderHasItems(f.id, folders, docs, files));
+}
+
+/** Files in `folderId` and every folder below it, in nav (tree) order. */
+function filesInSubtree(folderId: string, folders: NavFolder[], files: NavFile[]): NavFile[] {
+  return [
+    ...folders.filter(f => f.parent_id === folderId).flatMap(f => filesInSubtree(f.id, folders, files)),
+    ...files.filter(f => f.folder_id === folderId),
+  ];
+}
+
+const pluralize = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Generated landing page for a published site with no home doc: the site's
+ * name and description over its top-level pages, folders and files in sidebar
+ * order. A folder links to its first page (or first file when it holds only
+ * uploads), since folders have no page of their own.
+ */
+function SiteIndex({
+  name,
+  description,
+  href,
+  folders,
+  docs,
+  files,
+}: {
+  name: string;
+  description: string | null;
+  href: (id: string) => string;
+  folders: NavFolder[];
+  docs: NavDoc[];
+  files: NavFile[];
+}) {
+  type Row = { key: string; to: string; label: string; meta?: string; icon: React.ReactNode };
+  const iconClass = "h-4 w-4 shrink-0 text-muted-foreground";
+  const rows: Row[] = [];
+  for (const folder of visibleChildFolders(null, folders, docs, files)) {
+    const folderDocs = flattenDocs(folders, docs, folder.id);
+    const folderFiles = filesInSubtree(folder.id, folders, files);
+    const target = folderDocs[0]?.id ?? folderFiles[0]?.id;
+    if (!target) continue;
+    const meta = [
+      folderDocs.length > 0 ? pluralize(folderDocs.length, "page") : null,
+      folderFiles.length > 0 ? pluralize(folderFiles.length, "file") : null,
+    ].filter(Boolean).join(" · ");
+    rows.push({ key: folder.id, to: href(target), label: folder.name, meta, icon: <Folder className={iconClass} aria-hidden /> });
+  }
+  for (const doc of docs.filter(d => d.folder_id === null)) {
+    rows.push({ key: doc.id, to: href(doc.id), label: doc.display_title ?? doc.title, icon: <FileText className={iconClass} aria-hidden /> });
+  }
+  for (const file of files.filter(f => f.folder_id === null)) {
+    rows.push({ key: file.id, to: href(file.id), label: file.name, meta: formatBytes(file.size), icon: <FileTypeIcon mimeType={file.mime_type} name={file.name} className={iconClass} /> });
+  }
+
+  return (
+    <div>
+      <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
+        <h1>{name}</h1>
+        {description?.trim() && <p className="lead text-muted-foreground">{description}</p>}
+      </article>
+      {rows.length > 0 ? (
+        <nav aria-label="Site contents" className="not-prose mt-10">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Contents</h2>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {rows.map(r => (
+              <li key={r.key}>
+                <Link
+                  to={r.to}
+                  className="group flex min-h-12 items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                >
+                  {r.icon}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">{r.label}</span>
+                  {r.meta && <span className="shrink-0 text-xs text-muted-foreground">{r.meta}</span>}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ) : (
+        <div className="not-prose mt-10 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <FileText className="mx-auto h-5 w-5 text-muted-foreground" aria-hidden />
+          <p className="mt-3 text-sm font-medium">Nothing published here yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Pages will appear here once the site has some.</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Nested rows sit 8px (ml-2) right of their parent's guide line (the children
@@ -197,11 +313,7 @@ function NavTree({
   onDocClick: () => void;
   selectedFileId: string | null;
 }) {
-  const HIDDEN_FOLDER_NAMES = ["hidden", "doc_assets"];
-  const childFolders = folders
-    .filter(f => f.parent_id === parentId)
-    .filter(f => !HIDDEN_FOLDER_NAMES.includes(f.name.toLowerCase()))
-    .filter(f => folderHasItems(f.id, folders, docs, files));
+  const childFolders = visibleChildFolders(parentId, folders, docs, files);
   const childDocs = docs.filter(d => d.folder_id === parentId);
   const childFiles = files.filter(f => f.folder_id === parentId);
   const hasLeafItems = childDocs.length > 0 || childFiles.length > 0;
@@ -493,21 +605,30 @@ export function PublicDocPage() {
   useEffect(() => {
     if (!projectId) return;
 
-    // If no docId, fetch the site to get the first doc and redirect
+    // Site root: a site with a home doc redirects to it; one without gets a
+    // generated index page (site name, description, top-level pages) instead
+    // of an arbitrary first doc.
     if (!docId) {
+      setNotFound(false);
+      setSelectedFile(null);
       fetch(`/api/public/projects/${projectId}`)
-        .then(r => r.json())
-        .then((json: { ok: boolean; data?: { id: string; vanity_slug?: string | null; home_doc_id?: string | null; docs: NavDoc[] } }) => {
-          if (json.ok && json.data && json.data.docs.length > 0) {
-            const slug = json.data.vanity_slug ?? projectId;
-            const homeDoc = json.data.home_doc_id ? json.data.docs.find(d => d.id === json.data!.home_doc_id) : null;
-            const target = homeDoc ?? json.data.docs[0];
-            const docSeg = target.slug ?? target.id;
-            navigate(hostMode ? `/${docSeg}` : `/s/${slug}/${docSeg}`, { replace: true });
-          } else {
+        .then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>)
+        .then(json => {
+          const p = json.ok ? json.data : undefined;
+          if (!p) {
             setNotFound(true);
             setLoading(false);
+            return;
           }
+          const homeDoc = p.home_doc_id ? p.docs.find(d => d.id === p.home_doc_id) : null;
+          if (homeDoc) {
+            const slug = p.vanity_slug ?? projectId;
+            const docSeg = homeDoc.slug ?? homeDoc.id;
+            navigate(hostMode ? `/${docSeg}` : `/s/${slug}/${docSeg}`, { replace: true });
+            return;
+          }
+          setData(dataFromProject(p));
+          setLoading(false);
         })
         .catch(() => { setNotFound(true); setLoading(false); });
       return;
@@ -519,7 +640,7 @@ export function PublicDocPage() {
       setNotFound(false);
       setSelectedFile(null);
       Promise.all([
-        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
+        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>),
         fetch(`/api/public/projects/${projectId}/graph`).then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>),
       ])
         .then(([projJson, graphJson]) => {
@@ -529,14 +650,7 @@ export function PublicDocPage() {
               setNotFound(true);
               return;
             }
-            setData({
-              doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
-              sitePublished: true,
-              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
-              docs: p.docs ?? [],
-              folders: p.folders ?? [],
-              files: p.files ?? [],
-            });
+            setData(dataFromProject(p));
           } else {
             setNotFound(true);
           }
@@ -559,19 +673,12 @@ export function PublicDocPage() {
         // are directly linkable too). Load the site nav and, if it matches a file,
         // show the file view; otherwise it's a genuine 404.
         const projJson = await fetch(`/api/public/projects/${projectId}`)
-          .then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>)
+          .then(r => r.json() as Promise<{ ok: boolean; data?: PublicProjectPayload }>)
           .catch(() => null);
         const p = projJson?.ok ? projJson.data : undefined;
         const file = p?.files?.find(f => f.id === docId);
         if (p && file) {
-          setData({
-            doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
-            sitePublished: true,
-            project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
-            docs: p.docs ?? [],
-            folders: p.folders ?? [],
-            files: p.files ?? [],
-          });
+          setData(dataFromProject(p));
           setSelectedFile(file);
         } else {
           setNotFound(true);
@@ -652,7 +759,8 @@ export function PublicDocPage() {
   const headings = extractHeadings(data.doc.content);
   const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
 
-  // Desktop top bar breadcrumb: site name (links to the home doc) › current page.
+  // Desktop top bar breadcrumb: site name (links to the home doc, or the
+  // generated site index when there is none) › current page.
   const homeDocId = data.docs?.find(d => d.is_home === 1)?.id ?? null;
   const currentNavDoc = data.docs?.find(d => d.id === data.doc.id);
   const pageTitle = isGraph
@@ -676,6 +784,28 @@ export function PublicDocPage() {
     return chain;
   })();
 
+  // Bare site root (no home doc - one with a home doc redirected to it).
+  const isSiteIndex = !docId;
+
+  const publishedWithAnnex = (
+    <footer className="not-prose mt-16 border-t border-border pt-6 text-xs text-muted-foreground">
+      {hostMode ? (
+        <a
+          href="https://docs.cubityfir.st/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-foreground"
+        >
+          Published with Annex
+        </a>
+      ) : (
+        <Link to="/" className="transition-colors hover:text-foreground">
+          Published with Annex
+        </Link>
+      )}
+    </footer>
+  );
+
   const filteredDocs = searchQuery.trim()
     ? (data.docs ?? []).filter(d => (d.display_title ?? d.title).toLowerCase().includes(searchQuery.toLowerCase()))
     : null;
@@ -695,16 +825,6 @@ export function PublicDocPage() {
         )}>
         <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
           <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-            {isMember && (
-              <button
-                onClick={() => navigate(`/projects/${data.project.id}`)}
-                className="-ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="Back to site"
-                aria-label="Back to site"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-            )}
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -835,7 +955,18 @@ export function PublicDocPage() {
               })()}
             </nav>
           </ScrollArea>
-          <div className="border-t border-border px-3 py-2">
+          <div className="flex flex-col gap-0.5 border-t border-border px-3 py-2">
+            {/* Signed-in members only (isMember is never set for visitors):
+                back to this site in the app, labelled so it doesn't read as
+                browser-style "back". */}
+            {isMember && (
+              <Button asChild variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground">
+                <Link to={`/projects/${data.project.id}`}>
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                  Back to app
+                </Link>
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -943,9 +1074,9 @@ export function PublicDocPage() {
               </Button>
             )}
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-              {homeDocId && pageTitle ? (
+              {pageTitle ? (
                 <Link
-                  to={href(homeDocId)}
+                  to={homeDocId ? href(homeDocId) : hostMode ? "/" : `/s/${linkSlug}`}
                   onClick={() => setSelectedFile(null)}
                   className="shrink-0 truncate text-muted-foreground transition-colors hover:text-foreground"
                 >
@@ -1048,6 +1179,25 @@ export function PublicDocPage() {
         >
           {selectedFile ? (
             <PublicFileView key={selectedFile.id} file={selectedFile} projectId={projectId ?? ""} />
+          ) : isSiteIndex ? (
+            // Same column + empty rail as a doc page, so the index and docs
+            // share one left edge.
+            <div className="flex min-h-full">
+            <div className="flex-1 min-w-0 px-4 pt-6 pb-24 sm:px-6 md:pt-12">
+              <div className="mx-auto max-w-[44rem]">
+                <SiteIndex
+                  name={data.project.name}
+                  description={data.project.description ?? null}
+                  href={href}
+                  folders={data.folders ?? []}
+                  docs={data.docs ?? []}
+                  files={data.files ?? []}
+                />
+                {publishedWithAnnex}
+              </div>
+            </div>
+            <div className="hidden w-56 shrink-0 xl:block" aria-hidden="true" />
+            </div>
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
@@ -1132,22 +1282,7 @@ export function PublicDocPage() {
                     );
                   })()}
 
-                  <footer className="not-prose mt-16 border-t border-border pt-6 text-xs text-muted-foreground">
-                    {hostMode ? (
-                      <a
-                        href="https://docs.cubityfir.st/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="transition-colors hover:text-foreground"
-                      >
-                        Published with Annex
-                      </a>
-                    ) : (
-                      <Link to="/" className="transition-colors hover:text-foreground">
-                        Published with Annex
-                      </Link>
-                    )}
-                  </footer>
+                  {publishedWithAnnex}
                 </div>
               </div>
 

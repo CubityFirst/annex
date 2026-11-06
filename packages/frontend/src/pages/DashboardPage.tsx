@@ -116,7 +116,7 @@ export function DashboardPage() {
         }}
         className="group flex cursor-pointer flex-col transition-[border-color,background-color,box-shadow] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
+        <CardHeader className="flex-row items-center justify-between gap-3 pb-0">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
               <BookOpen className="h-4 w-4 text-primary" />
@@ -277,7 +277,9 @@ export function DashboardPage() {
   }
 
   const pageActions = (
-    <div className="flex shrink-0 items-center gap-2 self-start">
+    // Phones: primary action first, both full width; desktop: outline then
+    // primary at the right end of the top bar.
+    <div className="flex shrink-0 flex-col-reverse gap-2 self-stretch sm:flex-row sm:items-center sm:self-start [&>button]:w-full sm:[&>button]:w-auto">
       <Button variant="outline" size="sm" onClick={openCreateOrg} className="h-10 gap-1.5 sm:h-8">
         <Building2 className="h-4 w-4" />
         New organization

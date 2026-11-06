@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, FilePlus, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
+import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,8 +79,10 @@ function folderItemsLabel(c: FolderCounts | undefined): string {
   return n === 0 ? "Empty" : `${n} ${n === 1 ? "item" : "items"}`;
 }
 
-// Muted em dash for a value that should exist but is missing (e.g. an
-// unknown author). The label is for screen readers.
+// Muted em dash for any cell without a value - one that doesn't apply to the
+// row (a doc's byte size, a folder's author) or isn't known (an unknown
+// author, a folder not yet opened). Same treatment everywhere so the columns
+// read consistently; the label is for screen readers.
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="text-sm text-muted-foreground/50">
@@ -87,13 +90,6 @@ function EmptyCell({ label }: { label: string }) {
       <span className="sr-only">{label}</span>
     </span>
   );
-}
-
-// A cell that genuinely doesn't apply to the row (a doc's byte size, a
-// folder's author) stays visually blank rather than repeating dashes down
-// the column; screen readers still get a label.
-function BlankCell({ label }: { label: string }) {
-  return <span className="sr-only">{label}</span>;
 }
 
 // Newest edit time seen among each folder's direct docs/files (plus any child
@@ -121,7 +117,8 @@ function newestTimestamp(values: (string | undefined)[]): string | undefined {
 const FILE_COLUMNS = [
   { label: "Name", defaultSize: 42, minSize: 20, sortable: true },
   { label: "Created by", defaultSize: 22, minSize: 12, sortable: true },
-  { label: "Size", defaultSize: 14, minSize: 8, sortable: true },
+  // Right-aligned with tabular figures so byte sizes line up digit for digit.
+  { label: "Size", defaultSize: 14, minSize: 8, sortable: true, align: "right" as const },
   { label: "Last updated", defaultSize: 22, minSize: 10, sortable: true },
 ];
 // Bumped from "file-columns" when the layout above changed, so stale persisted
@@ -244,7 +241,20 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const { setBreadcrumbs, headerActionSlot } = useOutletContext<DocsLayoutContext>();
+
+  // md+ puts the create split button in the top bar; below md it sits in the
+  // toolbar. A media-query state (not CSS hiding) so it renders in exactly one
+  // place - keeps "New document" / "More create options" unique for role lookups.
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   const currentFolderId = folderId;
   const {
@@ -954,11 +964,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
     ? folderCountLabel(folderCounts.get(contextDeleteTarget.id))
     : "";
 
-  // The create menu behind the toolbar's split-button chevron (desktop) and
-  // its "New" button (touch). Upload lives here too; the desktop menu also
-  // points at drag-and-drop, which has no other visible affordance.
+  // The create menu behind the split button's chevron. Upload lives here too;
+  // the desktop menu also points at drag-and-drop, which has no other visible
+  // affordance, and the touch variant gets 44px rows.
   const createMenu = (touch: boolean) => (
-    <DropdownMenuContent align={touch ? "start" : "end"} className={`min-w-[200px] ${MENU_ICON_CLASS}${touch ? " [&_[role=menuitem]]:min-h-11" : ""}`}>
+    <DropdownMenuContent align="end" className={`min-w-[200px] ${MENU_ICON_CLASS}${touch ? " [&_[role=menuitem]]:min-h-11" : ""}`}>
       <DropdownMenuItem onClick={() => setShowNewFolder(true)}>
         <FolderPlus />
         New folder
@@ -977,6 +987,42 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       )}
     </DropdownMenuContent>
   );
+
+  // Creation controls: one split button - "New document" plus an attached
+  // chevron menu for the secondary creates and Upload. On md+ it's a page
+  // action in the top bar (createInHeader); below md it spans the toolbar's
+  // full width with 44px touch targets. Same labels and menu either way.
+  const createInHeader = isDesktop && !!headerActionSlot;
+  const createSplitButton = canEdit ? (
+    <div className={createInHeader ? "flex shrink-0" : "flex w-full md:w-auto"}>
+      <Button
+        aria-label="New document"
+        title="New document"
+        size={createInHeader ? "sm" : "default"}
+        className={`gap-1.5 rounded-r-none ${createInHeader ? "h-8 px-3" : "h-11 flex-1 px-4 md:h-9 md:flex-none md:px-3"}`}
+        onClick={handleNewDoc}
+      >
+        <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+        New document
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="More create options"
+            title="More create options"
+            size={createInHeader ? "sm" : "default"}
+            className={`rounded-l-none border-l border-primary-foreground/20 px-0 ${createInHeader ? "h-8 w-8" : "h-11 w-11 md:h-9 md:w-9"}`}
+            disabled={creatingDrawing}
+          >
+            {creatingDrawing
+              ? <Spinner className="size-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
+          </Button>
+        </DropdownMenuTrigger>
+        {createMenu(!isDesktop)}
+      </DropdownMenu>
+    </div>
+  ) : null;
 
   const contextKit: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
   const dropdownKit: MenuKit = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
@@ -1039,7 +1085,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             onClick={e => e.stopPropagation()}
             className={compact
               ? ROW_ICON_BUTTON_CLASS
-              : "inline-flex items-center justify-center h-10 w-10 -mr-1.5 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
+              : "inline-flex items-center justify-center h-11 w-11 -mr-2 shrink-0 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
             <MoreVertical className="h-4 w-4" />
           </button>
@@ -1171,22 +1217,23 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                       onClick: () => enterFolder(folder),
                     },
                     // Folders have no author of their own.
-                    { content: <BlankCell label="No author" /> },
+                    { content: <EmptyCell label="No author" /> },
                     // No byte size either - Size shows what's inside instead
-                    // (full-subtree total, breakdown in the tooltip).
+                    // (full-subtree total, breakdown in the tooltip), a step
+                    // quieter than the byte sizes so it isn't read as one.
                     {
                       content: (
-                        <span className="text-sm text-muted-foreground truncate" title={folderCountLabel(counts) || "Empty folder"}>
+                        <span className="text-sm text-muted-foreground/70 truncate" title={folderCountLabel(counts) || "Empty folder"}>
                           {folderItemsLabel(counts)}
                         </span>
                       ),
                     },
                     // Newest child edit, once this folder's contents have been
-                    // seen (see folderNewestCache); blank until then.
+                    // seen (see folderNewestCache); a dash until then.
                     {
                       content: folderNewest
                         ? <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(folderNewest)}</span>
-                        : <BlankCell label="No update time" />,
+                        : <EmptyCell label="No update time" />,
                     },
                   ]}
                   actionsCell={canEdit ? (
@@ -1267,8 +1314,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     {
                       content: <AuthorCell userId={doc.author_id} name={doc.author_name} role={doc.author_role} />,
                     },
-                    // Docs have no byte size - left blank, not dashed.
-                    { content: <BlankCell label="No size" /> },
+                    // Docs have no byte size.
+                    { content: <EmptyCell label="No size" /> },
                     {
                       content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
                     },
@@ -1558,18 +1605,24 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         onChange={e => { enqueueFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
       />
 
-      {/* Toolbar - search on the left, actions right-aligned so the primary
-          "New document" sits above the table's trailing columns. Below sm the
-          actions drop to their own full-width row under the search. */}
+      {/* Desktop: the create split button is a page action in the app's top
+          bar (right side). Rendered in exactly one place at a time - see
+          isDesktop - so role/name lookups stay unique. */}
+      {createInHeader && createPortal(createSplitButton, headerActionSlot!)}
+
+      {/* Toolbar - search fills the row (bulk Delete joins it on the right
+          while a selection is active). Below md the actions drop to their
+          own full-width row under the search, with the create split button
+          there instead of the top bar. */}
       <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
-        <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
+        <div className="relative w-full md:w-auto md:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
             placeholder="Search files and documents…"
             aria-label="Search files and documents"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="h-11 pl-9 pr-10 sm:h-9 sm:pr-8"
+            className="h-11 pl-9 pr-10 md:h-9 md:pr-8"
           />
           {searchQuery && (
             <button
@@ -1577,57 +1630,21 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               aria-label="Clear search"
               title="Clear search"
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-5 sm:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 md:h-5 md:w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
-        {canEdit && (
-          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+        {canEdit && (selectedCount > 0 || !createInHeader) && (
+          <div className="flex w-full flex-col gap-2 md:ml-auto md:w-auto md:flex-row md:items-center">
             {selectedCount > 0 && (
-              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 sm:h-9 sm:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 md:h-9 md:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 {deleting ? "Deleting…" : `Delete (${selectedCount})`}
               </Button>
             )}
-            {/* Creation controls. Desktop: one split button - "New document"
-                plus an attached chevron menu for the secondary creates and
-                Upload. Touch: a full-width two-column row, an outline
-                "New ⌄" menu beside the primary "New doc". Same menu either
-                way; the touch triggers render only below sm. */}
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-0">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="h-11 gap-1.5 px-3 sm:hidden" disabled={creatingDrawing}>
-                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    {creatingDrawing ? "Creating…" : "New"}
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                  </Button>
-                </DropdownMenuTrigger>
-                {createMenu(true)}
-              </DropdownMenu>
-              <Button aria-label="New document" title="New document" className="h-11 gap-1.5 px-4 sm:h-9 sm:rounded-r-none sm:px-3" onClick={handleNewDoc}>
-                <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="sm:hidden">New doc</span>
-                <span className="hidden sm:inline">New document</span>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    aria-label="More create options"
-                    title="More create options"
-                    className="hidden h-9 w-9 rounded-l-none border-l border-primary-foreground/20 px-0 sm:inline-flex"
-                    disabled={creatingDrawing}
-                  >
-                    {creatingDrawing
-                      ? <Spinner className="size-3.5" />
-                      : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
-                  </Button>
-                </DropdownMenuTrigger>
-                {createMenu(false)}
-              </DropdownMenu>
-            </div>
+            {!createInHeader && createSplitButton}
           </div>
         )}
       </div>
@@ -1674,6 +1691,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>Folders group docs, files and drawings.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateFolder} className="flex flex-col">
             <div className="grid gap-2">

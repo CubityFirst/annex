@@ -9,7 +9,7 @@ export function AcknowledgementsPage() {
 
       <section className="l-legal">
         <div className="site-wrap">
-          <div className="l-legal-inner">
+          <div className="l-legal-inner l-legal-wide">
             <div className="l-legal-label">Open source</div>
             <h1 className="l-legal-title">Acknowledgements</h1>
             <p className="l-legal-intro">

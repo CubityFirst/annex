@@ -701,9 +701,9 @@ export function DocsLayout() {
 
   const fallbackCrumbs = ((): BreadcrumbItem[] => {
     const path = location.pathname;
-    if (path === "/dashboard") return [{ id: null, name: "Dashboard" }];
-    if (path === "/settings") return [{ id: null, name: "Settings" }];
-    if (path === "/invites/pending") return [{ id: null, name: "Pending invites" }];
+    if (path === "/dashboard") return [{ id: null, name: "Home" }];
+    if (path === "/settings") return [{ id: null, name: "Account" }];
+    if (path === "/invites/pending") return [{ id: null, name: "Account", onClick: () => navigate("/settings") }, { id: "invites", name: "Invites" }];
     if (/^\/u\//.test(path)) return [{ id: null, name: "Profile" }];
     const siteSettings = path.match(/^\/projects\/([^/]+)\/settings$/);
     if (siteSettings && currentProject) {
@@ -892,7 +892,7 @@ export function DocsLayout() {
                   key={p.id}
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start gap-2"
+                  className="w-full justify-start gap-2 font-normal text-muted-foreground hover:text-foreground"
                   onClick={() => navigate(`/projects/${p.id}`)}
                 >
                   <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-4 w-4" />
@@ -959,22 +959,8 @@ export function DocsLayout() {
                 <span className="flex-1 truncate text-sm font-medium">-</span>
               </>
             )}
-            <button
-              onClick={() => navigate("/settings")}
-              title="Settings"
-              aria-label="Settings"
-              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => { void signOut(); }}
-              title="Sign out"
-              aria-label="Sign out"
-              className="flex items-center justify-center shrink-0 rounded-md p-2.5 sm:p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            {/* Account settings and Sign out live in the profile menu above,
+                so the footer is just the account row (no duplicate icons). */}
           </div>
         </div>
         </div>
@@ -1056,6 +1042,16 @@ export function DocsLayout() {
             {/* Action slot: fills the rest of the bar (pages portal right-aligned
                 actions or, while editing a doc, its title field + actions). */}
             <div ref={setHeaderActionEl} className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 bg-background pl-2" />
+            {/* Phones: search without opening the drawer (desktop has the
+                sidebar search row and Ctrl/⌘K). */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search"
+              className="md:hidden ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Search className="h-5 w-5" />
+            </button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
@@ -1143,7 +1139,7 @@ export function DocsLayout() {
                     type="button"
                     onClick={() => squareInputRef.current?.click()}
                     aria-label="Upload square icon"
-                    className="mx-4 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
+                    className="mr-8 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 transition-colors hover:border-foreground/30"
                   >
                     {squarePreviewUrl
                       ? <img src={squarePreviewUrl} alt="" className="size-full object-cover" />

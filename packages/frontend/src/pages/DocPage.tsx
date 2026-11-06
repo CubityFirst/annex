@@ -42,6 +42,7 @@ import { apiFetchJson } from "@/lib/apiFetch";
 import { pushRecentItem } from "@/lib/recentDocs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { Kbd } from "@/components/ui/kbd";
 import { createPortal } from "react-dom";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useActiveHeading } from "@/hooks/useActiveHeading";
@@ -145,10 +146,31 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function RefList({ items }: { items: [string, string][] }) {
   return (
     <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
-      {items.map(([code, desc]) => (
-        <li key={code} className="flex flex-col gap-1 px-3 py-2">
-          <code className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{code}</code>
-          {desc && <span className="text-[13px] leading-5 text-muted-foreground">{desc}</span>}
+      {items.map(([code, desc]) => {
+        // "Ctrl+B"-style descriptions are shortcuts: show them as a key chip on
+        // the same line instead of a second line of prose.
+        const isShortcut = /^(Ctrl|Cmd|⌘|Shift|Alt)\+\S+$/.test(desc);
+        return (
+          <li key={code} className={cn("px-3 py-2", isShortcut ? "flex items-center justify-between gap-3" : "flex flex-col gap-1")}>
+            <code className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{code}</code>
+            {desc && (isShortcut
+              ? <Kbd className="shrink-0">{desc}</Kbd>
+              : <span className="text-[13px] leading-5 text-muted-foreground">{desc}</span>)}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Headings: show each level at its real relative size next to its syntax.
+function HeadingSamples() {
+  return (
+    <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+      {([["#", "Heading 1", "text-xl"], ["##", "Heading 2", "text-lg"], ["###", "Heading 3", "text-base"]] as const).map(([mark, label, size]) => (
+        <li key={mark} className="flex items-baseline gap-3 px-3 py-2">
+          <code className="w-8 shrink-0 font-mono text-xs text-muted-foreground">{mark}</code>
+          <span className={cn("font-semibold tracking-tight", size)}>{label}</span>
         </li>
       ))}
     </ul>
@@ -356,6 +378,14 @@ export function DocPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [outlineSheetOpen, setOutlineSheetOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 768px)");
+    if (!mq) return;
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   const [exportOpen, setExportOpen] = useState(false);
   const [docSettingsOpen, setDocSettingsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -984,23 +1014,31 @@ export function DocPage() {
     // heading-less docs, so every doc - new, editing, reading - shares one
     // column position.
     const reserveOutline = true;
+    // Existing docs: Save is only offered once something changed. New docs can
+    // always be saved (saving an empty draft is how a doc gets created).
+    const isDirty = isNewDoc || draft !== doc.content || titleDraft.trim() !== doc.title;
     return (
       <div className="flex h-full flex-col">
         {/* One header for editing: the editable title continues the
             breadcrumb in the app's top bar, with the editor actions at its
             right end - no separate edit bar stacked above the toolbar. */}
         {headerActionSlot && createPortal(
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+          // -ml-1 + gap-1 + the input's px-1.5 reproduce the breadcrumb's own
+          // crumb spacing, so the title text doesn't shift when editing starts.
+          <div className="-ml-1 flex min-w-0 flex-1 items-center gap-1">
             <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/50 md:block" aria-hidden="true" />
             <Input
               value={titleDraft}
               onChange={e => setTitleDraft(e.target.value)}
               placeholder="Document title"
               aria-label="Document title"
-              className="hidden h-8 min-w-0 flex-1 rounded-md border-transparent bg-transparent px-1.5 text-sm font-medium shadow-none placeholder:font-normal placeholder:text-muted-foreground hover:bg-accent/60 focus-visible:border-border focus-visible:bg-card focus-visible:ring-0 md:block md:text-sm"
+              className="hidden h-8 min-w-48 max-w-lg flex-none rounded-none border-0 border-b border-transparent bg-transparent px-1.5 text-sm font-medium shadow-none [field-sizing:content] placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus-visible:border-foreground/40 focus-visible:ring-0 md:block md:text-sm"
               autoFocus={isNewDoc}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {isDirty && !isNewDoc && !saving && (
+              <span className="hidden text-xs text-muted-foreground lg:inline" role="status">Unsaved changes</span>
+            )}
             {realtimeEnabled && !isNewDoc && <EditorPresence editors={remoteEditors} />}
             {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
             {collabFatal && (
@@ -1038,7 +1076,7 @@ export function DocPage() {
               <X className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Cancel</span>
             </Button>
-            <Button size="sm" onClick={handleSaveClick} disabled={saving || (isNewDoc && !draft.trim() && !titleDraft.trim())} className="gap-1.5">
+            <Button size="sm" onClick={handleSaveClick} disabled={saving || !isDirty} className="gap-1.5">
               <Save className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
             </Button>
@@ -1114,7 +1152,7 @@ export function DocPage() {
               <div className="flex flex-col gap-6 pb-8 text-sm">
                 <MajorSection title="Everyday syntax">
                 <Section title="Headings">
-                  <Code>{`# H1\n## H2\n### H3`}</Code>
+                  <HeadingSamples />
                 </Section>
                 <Section title="Emphasis">
                   <RefList items={[[`**bold**`, `Ctrl+B`], [`*italic*`, `Ctrl+I`], [`__underline__`, `Ctrl+U`], [`~~strikethrough~~`, ``]]} />
@@ -1289,10 +1327,11 @@ export function DocPage() {
           {/* Top-right actions */}
           {/* Phones: float right so "Last updated" shares the row (the meta
               line below is given the same 40px height). */}
-          <div className="flex items-center justify-end gap-2 max-md:float-right max-md:ml-3 max-md:mb-2 md:absolute md:-top-[9px] md:right-0">
+          {(() => { const bar = (
+          <div className={cn("flex items-center justify-end gap-2", !isDesktop && "max-md:float-right max-md:ml-3 max-md:mb-2")}>
           {/* Secondary tools: one quiet grouped strip. Edit (below) is the
               labelled primary action so authors don't have to decode glyphs. */}
-          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-input/60 bg-card p-0.5 shadow-xs [&>button]:size-9 md:[&>button]:size-8 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
+          <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-input/60 bg-card p-0.5 shadow-xs [&>button]:size-9 md:[&>button]:size-7 [&>button]:text-muted-foreground [&>button:hover]:text-foreground">
             {headings.length > 0 && (
               <Button variant="ghost" size="icon" className="xl:hidden" title="Outline" aria-label="Outline" onClick={() => setOutlineSheetOpen(true)}>
                 <ListTree className="h-4 w-4" />
@@ -1540,7 +1579,7 @@ export function DocPage() {
                         </Button>
                       </div>
                     </div>
-                    <Separator />
+                    <p className="-mb-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Display</p>
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
                         <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
@@ -1556,7 +1595,6 @@ export function DocPage() {
                         onCheckedChange={handleToggleHeading}
                       />
                     </div>
-                    <Separator />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
                         <Label htmlFor="show-last-updated" className="text-sm font-medium cursor-pointer">
@@ -1616,12 +1654,18 @@ export function DocPage() {
             </DropdownMenu>
           </div>
           {isEditor && (
-            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3.5 max-sm:h-[42px] md:h-9">
+            <Button variant="outline" size="sm" onClick={startEditing} title="Edit document" className="h-10 gap-1.5 px-3 max-sm:h-[42px] md:h-8">
               <Pencil className="h-3.5 w-3.5" />
               Edit
             </Button>
           )}
           </div>
+          );
+          // Desktop: the reading actions live in the app top bar, exactly where
+          // the editing actions (Cancel / Save) appear, so Edit and Save swap
+          // in place. Phones keep them inline beside the meta line.
+          return isDesktop && headerActionSlot ? createPortal(bar, headerActionSlot) : bar;
+          })()}
           {/* Without the meta line there's nothing to sit beside the floated
               actions on phones, so clear them instead of indenting the title. */}
           {(viewingRevision || doc.show_last_updated === 0) && <div className="max-md:clear-both" />}

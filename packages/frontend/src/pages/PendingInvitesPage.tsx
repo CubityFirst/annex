@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Building2, Mail } from "lucide-react";
+import { BookOpen, Building2, Mail, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +25,11 @@ interface PendingInvite {
   organizationId?: string;
   organizationName?: string;
 }
+
+/** Borderless, centred empty/error state: nothing here is clickable, so no
+ *  dashed box (dashed outlines are reserved for create targets). */
+const EMPTY_STATE = "flex flex-col items-center justify-center px-6 py-14 text-center";
+const EMPTY_ICON_TILE = "mb-3 flex size-10 items-center justify-center rounded-full bg-muted";
 
 export function PendingInvitesPage() {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -112,14 +117,18 @@ export function PendingInvitesPage() {
       <div aria-live="polite" className="sr-only">{statusMessage}</div>
 
       {loadError ? (
-        <div role="alert" className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
-          <Mail className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
+        <div role="alert" className={EMPTY_STATE}>
+          <span className={EMPTY_ICON_TILE}>
+            <Mail className="size-5 text-muted-foreground" aria-hidden="true" />
+          </span>
           <p className="text-sm font-medium">Couldn&apos;t load invites</p>
           <p className="mt-0.5 text-sm text-muted-foreground">{loadError}</p>
         </div>
       ) : invites.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
-          <Mail className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
+        <div className={EMPTY_STATE}>
+          <span className={EMPTY_ICON_TILE}>
+            <MailCheck className="size-5 text-muted-foreground" aria-hidden="true" />
+          </span>
           <p className="text-sm font-medium">No pending invites</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
             You&apos;re all caught up.

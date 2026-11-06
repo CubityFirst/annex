@@ -516,9 +516,8 @@ export function WysiwygToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <ToolbarSeparator />
-
-        {/* Find - last group; the bar always ends on a tool, never a separator. */}
+        {/* Find sits at the far end on purpose (a utility, not formatting). */}
+        <span className="ml-auto" aria-hidden="true" />
         <ToolButton title={`Find & replace (${modShortcut("F")})`} onAction={onFind}>
           <Search />
         </ToolButton>
