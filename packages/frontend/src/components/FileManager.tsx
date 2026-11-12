@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { notifySiteTreeChanged } from "@/components/SidebarPageTree";
-import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
+import { PAGE_PADDING, TABLE_CONTAINER } from "@/lib/pageContainer";
 import { Folder, FileText, FilePlus, House, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreHorizontal, FolderInput, Code, RefreshCw, SquareCheck, ChevronDown, Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
@@ -1686,9 +1686,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           isDesktop - so role/name lookups stay unique. */}
       {createInHeader && createPortal(createSplitButton, headerActionSlot!)}
 
-      {/* Shared page container: same left edge and width as the dashboard
-          and other wide pages (see lib/pageContainer.ts). */}
-      <div className={PAGE_PADDING}><div className={WIDE_CONTAINER}>
+      {/* Shared page padding; the listing fills the pane (TABLE_CONTAINER)
+          rather than the doc-column width (see lib/pageContainer.ts). */}
+      <div className={PAGE_PADDING}><div className={TABLE_CONTAINER}>
       {/* Toolbar - search fills the row (bulk Delete joins it on the right
           while a selection is active). Below md the actions drop to their
           own full-width row under the search, with the create split button
