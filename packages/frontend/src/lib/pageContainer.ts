@@ -31,3 +31,11 @@ export const READING_CONTAINER = `mx-auto max-w-[44rem] ${DOC_COLUMN_LEFT}`;
 
 /** Wide index pages (59rem / 944px - equal 120px margins at 1440): dashboard, wide file previews. */
 export const WIDE_CONTAINER = `mx-auto max-w-[59rem] ${DOC_COLUMN_LEFT}`;
+
+/**
+ * Data tables (the file manager): fill the padded pane instead of aligning to
+ * the doc column, since a listing's flexible Name column benefits from every
+ * pixel. Capped at 120rem (1920px) and centred so an ultrawide monitor doesn't
+ * stretch rows until the trailing columns sit a screen away from the names.
+ */
+export const TABLE_CONTAINER = "mx-auto max-w-[120rem]";
