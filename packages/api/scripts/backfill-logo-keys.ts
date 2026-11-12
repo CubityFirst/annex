@@ -6,7 +6,9 @@
  *
  * Run from the monorepo root AFTER applying migration 0048:
  *
- *   # against the local persisted dev state
+ *   # against the local persisted dev state (the api dev server must be
+ *   # running - `pnpm dev` - because the local D1 read goes through
+ *   # scripts/d1-local.mjs)
  *   npx tsx packages/api/scripts/backfill-logo-keys.ts --local
  *
  *   # against prod (uses your default wrangler login)
@@ -35,23 +37,31 @@ if (isLocal === isRemote) {
   process.exit(1);
 }
 
-// `--config` so we can run from monorepo root and still resolve the
-// `cubedocs-main` D1 binding + `cubedocs-assets` R2 binding declared in
-// the api package's wrangler.toml.
-const configFlags = ["--config", "packages/api/wrangler.toml"];
+// No Wrangler config file exists (the Worker config is cloudflare.config.ts):
+// `wrangler r2 object` and `wrangler d1 execute --remote` address the bucket /
+// database by name without one. `wrangler d1 execute --local` cannot, so the
+// local D1 read goes through scripts/d1-local.mjs instead.
 const baseFlags = isLocal
-  ? [...configFlags, "--local", "--persist-to", "./.wrangler/state"]
-  : [...configFlags, "--remote"];
+  ? ["--local", "--persist-to", "./.wrangler/state"]
+  : ["--remote"];
 
 function wrangler(...subargs: string[]): string {
   // shell: true so this works on Windows where `npx` is `npx.cmd`.
   return execFileSync("npx", ["wrangler", ...subargs], { encoding: "utf8", shell: true });
 }
 
+const LIST_SQL = "SELECT id FROM projects WHERE logo_wide_updated_at IS NOT NULL";
+
 function listProjectIdsWithLogo(): string[] {
+  if (isLocal) {
+    // d1-local prints one JSON line per statement: { columns, rows }.
+    const out = execFileSync(process.execPath, ["scripts/d1-local.mjs", "main", LIST_SQL], { encoding: "utf8" });
+    const { rows } = JSON.parse(out.trim().split("\n").pop()!) as { rows: string[][] };
+    return rows.map(r => r[0]);
+  }
   const out = wrangler(
     "d1", "execute", DB,
-    "--command", `"SELECT id FROM projects WHERE logo_wide_updated_at IS NOT NULL"`,
+    "--command", `"${LIST_SQL}"`,
     "--json",
     ...baseFlags,
   );

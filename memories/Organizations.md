@@ -33,8 +33,8 @@ site in the org. Sites don't need an org, but each belongs to at most one.
   organizations(id) ON DELETE SET NULL`. Indexes: `idx_org_members_user`,
   `idx_projects_org`.
 - Local apply diverged from the migrations tracker (0053 was applied manually),
-  so 0054 was applied to local dev via `wrangler d1 execute --file` (not
-  `migrations apply`). Remote/deploy uses normal migration tracking.
+  so 0054 was applied to local dev by executing the file directly (today:
+  `node scripts/d1-local.mjs main --file ...`, not `migrations apply`). Remote/deploy uses normal migration tracking.
 
 ## The access boundary - `packages/api/src/lib/access.ts`
 

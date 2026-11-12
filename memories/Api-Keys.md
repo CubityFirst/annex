@@ -92,7 +92,7 @@ hides mutations), but Annex remains the real enforcement. `revoke_key` calls
 
 ## Rate limiting & killswitch
 
-- `RATE_LIMITER_API` (wrangler `unsafe.bindings`, namespace `2002`, 120/60s) keyed
+- `RATE_LIMITER_API` (`bindings.rateLimit` in `cloudflare.config.ts`, namespace `2002`, 120/60s) keyed
   by `apikey:<id>`, applied to all `/v1`. Invite email-lookup also reuses
   `RATE_LIMITER_INVITE_LOOKUP` keyed by owner `userId`.
 - Flagship flag **`api`** is a global killswitch checked first in `routes/v1.ts`
