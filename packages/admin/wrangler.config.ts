@@ -3,10 +3,11 @@ import { defineWranglerConfig } from "wrangler/experimental-config";
 // Wrangler build settings for `cf build` / `cf deploy` (Worker config and
 // bindings live in cloudflare.config.ts).
 //
-// Local dev (`pnpm dev`) still runs `wrangler dev --persist-to ../../.wrangler/state`
-// against wrangler.toml: every worker must share one local state dir (the api
-// worker reads the auth DB via AUTH_DB), and `cf dev` cannot set a persist
-// directory yet (it always uses <package>/.wrangler/state).
+// There is no wrangler.toml. Local dev (`pnpm dev`) runs
+// `wrangler dev --experimental-new-config --persist-to ../../.wrangler/state`,
+// which reads this file + cloudflare.config.ts directly: every worker must share
+// one local state dir (the api worker reads the auth DB via AUTH_DB), and
+// `cf dev` cannot set a persist directory yet.
 export default defineWranglerConfig({
 	// Built by `pnpm build` (the admin SPA in ./frontend).
 	assetsDirectory: "./dist",

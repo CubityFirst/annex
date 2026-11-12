@@ -67,9 +67,8 @@ Annex secret is ever shared with a connected service.
 
 3. **Apply the migration** (creates `oauth_clients` + `oauth_codes`):
    ```bash
-   cd packages/auth
-   npx wrangler d1 migrations apply cubedocs-auth --remote
-   # local dev: --local --persist-to ../../.wrangler/state
+   pnpm migrations:remote   # cf d1 migrations apply <id> for both DBs
+   # local dev: pnpm migrations:local
    ```
 
 4. **Deploy** the three workers that gained code (new tables aren't read by
@@ -117,6 +116,8 @@ It prints the `client_id` + `client_secret` (**secret shown once**) and writes a
 
 ```bash
 cd packages/auth && npx wrangler d1 execute cubedocs-auth --remote --file <printed path>
+# local dev (with `pnpm dev` running), from the repo root:
+node scripts/d1-local.mjs auth --file <printed path>
 ```
 
 Either way, put `client_id` + `client_secret` (+ the discovery URL) into the
