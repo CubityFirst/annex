@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickActiveSection, readingLine } from "./useScrollSpy";
+import { pickActiveSection, readingLine, trailingSpacerHeight } from "./useScrollSpy";
 import { resolveOutline, type SettingsGroupDef, type SettingsSectionDef } from "./SettingsShell";
 
 describe("pickActiveSection", () => {
@@ -54,6 +54,29 @@ describe("pickActiveSection", () => {
 
   it("returns null for an empty id list", () => {
     expect(pickActiveSection([], geo({}, 0))).toBeNull();
+  });
+});
+
+describe("trailingSpacerHeight", () => {
+  // 1000px viewport -> reading line at 160px.
+  it("adds just enough tail for a short last section to reach the reading line", () => {
+    // Danger zone starts at 3000 and the content (incl. its own bottom padding)
+    // ends at 3120: 120px of natural tail.
+    const spacer = trailingSpacerHeight({ viewportHeight: 1000, naturalScrollHeight: 3120, lastTop: 3000 });
+    expect(spacer).toBe(1000 - 160 - 120 + 1);
+    // At max scroll, the last section's top sits at (or a hair above) the line.
+    const maxScroll = 3120 + spacer - 1000;
+    const topInViewport = 3000 - maxScroll;
+    expect(topInViewport).toBeLessThanOrEqual(readingLine(1000));
+    expect(topInViewport).toBeGreaterThan(readingLine(1000) - 2);
+  });
+
+  it("adds nothing when the last section is already tall enough", () => {
+    expect(trailingSpacerHeight({ viewportHeight: 1000, naturalScrollHeight: 4000, lastTop: 3000 })).toBe(0);
+  });
+
+  it("adds nothing when the page fits without scrolling", () => {
+    expect(trailingSpacerHeight({ viewportHeight: 1000, naturalScrollHeight: 900, lastTop: 700 })).toBe(0);
   });
 });
 

@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { useScrollSpy } from "./useScrollSpy";
+import { useScrollSpy, useTrailingSpacer } from "./useScrollSpy";
 
 export interface SettingsSectionDef {
   /** Matches the `id` on the section's content wrapper in the page JSX. */
@@ -277,6 +277,8 @@ export function SettingsShell({ title, description, groups, sections, children }
   const orderedIds = resolved.flatMap(group => group.sections.map(s => s.id));
   const idsKey = orderedIds.join("|");
   const { active, scrollTo } = useScrollSpy(orderedIds);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const spacerHeight = useTrailingSpacer(orderedIds[orderedIds.length - 1] ?? null, spacerRef);
 
   // Deep-link support (e.g. /settings#billing, /settings#sessions): on hash
   // change, scroll to the section once it has rendered. scrollTo also sets the
@@ -362,15 +364,15 @@ export function SettingsShell({ title, description, groups, sections, children }
         </aside>
 
         {/* Content column - one measure for header, divider and sections.
-            The bottom padding is most of a viewport tall so every section,
-            even a short trailing one (Sessions, Danger zone), can scroll up to
-            the scroll-spy reading line and a jump lands it at the top.
-            Below sm, text inputs, select triggers and text buttons grow to a
+            It ends in a measured spacer just tall enough that the last
+            section, even a short one (Sessions, Danger zone), can scroll up
+            to the scroll-spy reading line - but no further, so the page can't
+            be scrolled until it's nearly off screen. Below sm, text inputs, select triggers and text buttons grow to a
             44px touch target (icon buttons carry an aria-label and keep their
             own square sizing; switches/radios/OTP slots are excluded). */}
         <div
           className={cn(
-            "min-w-0 max-w-[44rem] flex-1 pb-[max(8rem,calc(100dvh-12rem))]",
+            "min-w-0 max-w-[44rem] flex-1",
             "max-sm:[&_input:not([type=checkbox],[type=radio],[type=file],[type=color],[data-input-otp])]:min-h-11",
             "max-sm:[&_button:not([aria-label],[role=switch],[role=radio],[role=checkbox])]:min-h-11",
             "max-sm:[&_button[role=combobox]]:min-h-11",
@@ -425,6 +427,7 @@ export function SettingsShell({ title, description, groups, sections, children }
           )}
           <Separator className="mb-6 mt-5 md:mb-10 md:mt-7" />
           {children}
+          <div ref={spacerRef} aria-hidden style={{ height: spacerHeight }} />
         </div>
       </div>
     </div>
