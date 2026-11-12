@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 /**
  * Fraction of the scroll viewport (from its top) that acts as the "reading
@@ -36,13 +36,13 @@ export function readingLine(viewportHeight: number): number {
  * (in the supplied order) whose top has crossed the reading line, or the first
  * present section when none has.
  *
- * SettingsShell pads the end of its content column by most of a viewport, so
- * every section - including short trailing ones like Sessions or Danger zone -
- * can scroll all the way up to the line; no "sweep" is needed. The only
- * bottom-of-page special case left is narrow: when the container is clamped at
- * the bottom AND the last section's top is already in the upper half of the
- * viewport (e.g. a shorter-than-expected viewport ate the padding), the last
- * section wins. A last section merely peeking in at the bottom never steals
+ * SettingsShell ends its content column with a measured spacer (see
+ * trailingSpacerHeight) just tall enough for the last section - even a short
+ * one like Sessions or Danger zone - to scroll up to the line, and no further;
+ * no "sweep" is needed. The only bottom-of-page special case left is narrow:
+ * when the container is clamped at the bottom AND the last section's top is
+ * already in the upper half of the viewport (a safety net if the spacer is
+ * momentarily stale), the last section wins. A last section merely peeking in at the bottom never steals
  * the highlight from the section being read.
  */
 export function pickActiveSection(orderedIds: string[], geometry: SpyGeometry): string | null {
@@ -205,4 +205,77 @@ export function useScrollSpy(orderedIds: string[]): ScrollSpy {
   }, []);
 
   return { active, scrollTo };
+}
+
+/**
+ * Height for the spacer that ends a settings content column: exactly enough
+ * extra scroll for the last section's top to reach the reading line at max
+ * scroll (so scroll-spy can select it), and never more - so the page can't be
+ * scrolled until the last section is nearly off screen. 0 when the content
+ * already has that much tail below the last section, or fits without
+ * scrolling. All px, in scroll-content coordinates; `naturalScrollHeight` is
+ * the scroll height without the spacer.
+ */
+export function trailingSpacerHeight({
+  viewportHeight,
+  naturalScrollHeight,
+  lastTop,
+}: {
+  viewportHeight: number;
+  naturalScrollHeight: number;
+  lastTop: number;
+}): number {
+  if (naturalScrollHeight <= viewportHeight) return 0;
+  const naturalTail = naturalScrollHeight - lastTop;
+  // +1px so sub-pixel layout can't leave the top a hair below the line.
+  return Math.max(0, Math.ceil(viewportHeight - readingLine(viewportHeight) - naturalTail + 1));
+}
+
+/**
+ * Measures the trailing spacer (see trailingSpacerHeight) for section
+ * `lastId`. `spacerRef` is the spacer element; its parent (the content column)
+ * and the scroll container are observed so the height tracks async-loaded
+ * content and viewport resizes. A layout effect, so a hash deep-link's scroll
+ * already sees the final height.
+ */
+export function useTrailingSpacer(lastId: string | null, spacerRef: RefObject<HTMLElement | null>): number {
+  const [height, setHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const spacer = spacerRef.current;
+    if (!lastId || !spacer) {
+      setHeight(0);
+      return;
+    }
+    const root = scrollContainerOf(spacer);
+
+    const measure = () => {
+      const last = document.getElementById(lastId);
+      if (!last) return;
+      const scroller = root ?? document.scrollingElement ?? document.documentElement;
+      const viewportHeight = root ? root.clientHeight : window.innerHeight;
+      const rootTop = root ? root.getBoundingClientRect().top : 0;
+      setHeight(
+        trailingSpacerHeight({
+          viewportHeight,
+          naturalScrollHeight: scroller.scrollHeight - spacer.offsetHeight,
+          lastTop: last.getBoundingClientRect().top - rootTop + scroller.scrollTop,
+        }),
+      );
+    };
+
+    measure();
+    // The result excludes the spacer's own height, so the re-measure its
+    // resize triggers settles immediately.
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    ro?.observe(spacer.parentElement ?? spacer);
+    if (root) ro?.observe(root);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [lastId, spacerRef]);
+
+  return height;
 }
