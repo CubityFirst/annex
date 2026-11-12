@@ -131,6 +131,32 @@ export async function createAuthenticationOptions(env: Env, userId: string) {
   return { options, challengeId };
 }
 
+// Discoverable ("usernameless") passkey sign-in: the user isn't known until the
+// authenticator picks a credential, so the challenge row carries this sentinel
+// in its NOT NULL user_id column, under its own ceremony type so it can never
+// be redeemed by (or redeem) a user-bound ceremony.
+const DISCOVERABLE_CHALLENGE_USER = "";
+const DISCOVERABLE_CHALLENGE_TYPE = "passkey";
+
+export async function createDiscoverableAuthenticationOptions(env: Env) {
+  // Unauthenticated row creation - same bound as createAuthenticationOptions.
+  await deleteExpiredWebauthnChallenges(env);
+
+  // No allowCredentials: the browser offers every discoverable credential it
+  // holds for this RP ID and the chosen one names the account.
+  const options = await generateAuthenticationOptions({
+    rpID: env.WEBAUTHN_RP_ID,
+    userVerification: "required",
+  });
+
+  const challengeId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO webauthn_challenges (id, user_id, challenge, type, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).bind(challengeId, DISCOVERABLE_CHALLENGE_USER, options.challenge, DISCOVERABLE_CHALLENGE_TYPE, Date.now()).run();
+
+  return { options, challengeId };
+}
+
 export async function consumeChallenge(
   env: Env,
   challengeId: string,
@@ -169,9 +195,54 @@ export async function verifyWebauthnAssertion(
   const responseId = (response as { id: string }).id;
   const storedCred = await env.DB.prepare(
     "SELECT id, public_key, counter FROM webauthn_credentials WHERE id = ? AND user_id = ?",
-  ).bind(responseId, userId).first<{ id: string; public_key: string; counter: number }>();
+  ).bind(responseId, userId).first<StoredCredential>();
   if (!storedCred) return errorResponse(Errors.UNAUTHORIZED);
 
+  return verifyAgainstCredential(env, challenge, storedCred, response, logPrefix);
+}
+
+/**
+ * Verifies a discoverable-credential (usernameless passkey) assertion: consumes
+ * the user-less challenge, resolves the account from the credential the
+ * authenticator chose, and requires the returned userHandle to name that same
+ * account (WebAuthn §7.2 step 6 - mandatory when allowCredentials was empty).
+ *
+ * Returns the authenticated user id, or an error Response.
+ */
+export async function verifyDiscoverableAssertion(
+  env: Env,
+  challengeId: string,
+  response: Record<string, unknown>,
+): Promise<{ userId: string } | Response> {
+  const challenge = await consumeChallenge(env, challengeId, DISCOVERABLE_CHALLENGE_USER, DISCOVERABLE_CHALLENGE_TYPE);
+  if (!challenge) return errorResponse(Errors.BAD_REQUEST);
+
+  const responseId = response.id;
+  if (typeof responseId !== "string" || !responseId) return errorResponse(Errors.UNAUTHORIZED);
+
+  const storedCred = await env.DB.prepare(
+    "SELECT id, user_id, public_key, counter FROM webauthn_credentials WHERE id = ?",
+  ).bind(responseId).first<StoredCredential & { user_id: string }>();
+  if (!storedCred) return errorResponse(Errors.UNAUTHORIZED);
+
+  // @simplewebauthn/browser v9 decodes userHandle to the UTF-8 user id we
+  // registered with (createRegistrationOptions passes userID: userId).
+  const userHandle = (response.response as { userHandle?: unknown } | undefined)?.userHandle;
+  if (userHandle !== storedCred.user_id) return errorResponse(Errors.UNAUTHORIZED);
+
+  const error = await verifyAgainstCredential(env, challenge, storedCred, response, "passkey-auth-finish");
+  return error ?? { userId: storedCred.user_id };
+}
+
+type StoredCredential = { id: string; public_key: string; counter: number };
+
+async function verifyAgainstCredential(
+  env: Env,
+  challenge: string,
+  storedCred: StoredCredential,
+  response: Record<string, unknown>,
+  logPrefix: string,
+): Promise<Response | null> {
   let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
   try {
     verification = await verifyAuthenticationResponse({

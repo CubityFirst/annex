@@ -64,6 +64,9 @@ interface AuthFormProps {
   // signed out because your account was disabled." Distinct from `error`,
   // which uses destructive styling for action failures.
   header?: React.ReactNode;
+  // Alternative sign-in actions rendered under the form (outside it, so they
+  // never submit it), e.g. "Sign in with a passkey".
+  alternate?: React.ReactNode;
   devPanel?: React.ReactNode;
 }
 
@@ -80,6 +83,7 @@ export function AuthForm({
   hideSubmit,
   wordmark,
   header,
+  alternate,
   devPanel,
 }: AuthFormProps) {
   return (
@@ -124,7 +128,18 @@ export function AuthForm({
             )}
           </form>
 
-          {footer && <p className="text-sm text-muted-foreground">{footer}</p>}
+          {alternate && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                <span className="h-px flex-1 bg-border" />
+                or
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              {alternate}
+            </div>
+          )}
+
+          {footer &&<p className="text-sm text-muted-foreground">{footer}</p>}
 
           {/* Dev builds only: quick-login shortcuts, framed as a labelled
               panel on the form's own 384px column. */}
