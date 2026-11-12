@@ -9,7 +9,7 @@ vi.mock("@simplewebauthn/server", () => ({
 }));
 
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
-import { verifyWebauthnAssertion } from "./webauthn";
+import { verifyDiscoverableAssertion, verifyWebauthnAssertion } from "./webauthn";
 
 // verifyWebauthnAssertion runs: consumeChallenge (DELETE ... RETURNING .first),
 // credential SELECT (.first), then the counter UPDATE (.run).
@@ -61,5 +61,69 @@ describe("verifyWebauthnAssertion signature counter", () => {
     const { env, run } = makeEnv(0);
     expect(await verifyWebauthnAssertion(env, "u1", "c1", { id: "AQID" })).toBeNull();
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+// verifyDiscoverableAssertion runs: consumeChallenge (.first), credential
+// SELECT by id only (.first), then the shared verify + counter UPDATE (.run).
+function makeDiscoverableEnv(cred: Record<string, unknown> | null) {
+  const binds: unknown[][] = [];
+  const firsts: unknown[] = [{ challenge: "chal", created_at: Date.now() }, cred];
+  const first = vi.fn(async () => firsts.shift() ?? null);
+  const run = vi.fn(async () => ({ meta: { changes: 1 } }));
+  const prepare = vi.fn(() => ({
+    bind: vi.fn((...args: unknown[]) => {
+      binds.push(args);
+      return { first, run };
+    }),
+  }));
+  return {
+    env: { DB: { prepare }, WEBAUTHN_ORIGIN: "https://x", WEBAUTHN_RP_ID: "x" } as unknown as Env,
+    binds,
+  };
+}
+
+const storedCred = { id: "AQID", user_id: "user-1", public_key: "AQID", counter: 0 };
+
+describe("verifyDiscoverableAssertion", () => {
+  it("consumes only a user-less passkey challenge", async () => {
+    verified(0);
+    const { env, binds } = makeDiscoverableEnv(storedCred);
+    await verifyDiscoverableAssertion(env, "c1", { id: "AQID", response: { userHandle: "user-1" } });
+    // consumeChallenge binds (id, user_id, type): sentinel user + its own type,
+    // so a user-bound authentication challenge can't be redeemed here.
+    expect(binds[0]).toEqual(["c1", "", "passkey"]);
+  });
+
+  it("resolves the account from the credential when userHandle matches", async () => {
+    verified(0);
+    const { env } = makeDiscoverableEnv(storedCred);
+    const result = await verifyDiscoverableAssertion(env, "c1", { id: "AQID", response: { userHandle: "user-1" } });
+    expect(result).toEqual({ userId: "user-1" });
+  });
+
+  it.each([
+    ["names another account", "user-2"],
+    ["is missing", undefined],
+  ])("rejects when userHandle %s, before verifying the signature", async (_label, userHandle) => {
+    verified(0);
+    const { env } = makeDiscoverableEnv(storedCred);
+    const result = await verifyDiscoverableAssertion(env, "c1", { id: "AQID", response: { userHandle } });
+    expect((result as Response).status).toBe(401);
+    expect(verifyAuthenticationResponse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown credential", async () => {
+    verified(0);
+    const { env } = makeDiscoverableEnv(null);
+    const result = await verifyDiscoverableAssertion(env, "c1", { id: "nope", response: { userHandle: "user-1" } });
+    expect((result as Response).status).toBe(401);
+  });
+
+  it("rejects a failed signature", async () => {
+    vi.mocked(verifyAuthenticationResponse).mockResolvedValue({ verified: false } as unknown as Awaited<ReturnType<typeof verifyAuthenticationResponse>>);
+    const { env } = makeDiscoverableEnv(storedCred);
+    const result = await verifyDiscoverableAssertion(env, "c1", { id: "AQID", response: { userHandle: "user-1" } });
+    expect((result as Response).status).toBe(401);
   });
 });

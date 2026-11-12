@@ -264,6 +264,74 @@ export function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, navigate]);
 
+  // Usernameless passkey sign-in: no email or password typed. The browser
+  // offers the passkeys it holds for this site and the server resolves the
+  // account from the one chosen. A user-verifying passkey is a full login on
+  // its own, so there's no 2FA step after it (same as webauthn_required).
+  async function handlePasskeySignIn() {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const startRes = await fetch("/api/webauthn/auth/passkey/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const startJson = await startRes.json() as {
+        ok: boolean;
+        data?: { options: Record<string, unknown>; challengeId: string };
+      };
+      if (!startJson.ok || !startJson.data) {
+        setError(startRes.status === 429
+          ? "Too many attempts. Please wait a moment and try again."
+          : "Failed to start passkey sign-in.");
+        return;
+      }
+
+      const { options, challengeId } = startJson.data;
+      let assertion;
+      try {
+        assertion = await startWebauthnAuth(options);
+      } catch {
+        setError("No passkey was used. Try again, or sign in with your email and password.");
+        return;
+      }
+
+      const finishRes = await fetch("/api/webauthn/auth/passkey/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId, response: assertion }),
+      });
+      const finishJson = await finishRes.json() as {
+        ok: boolean;
+        data?: { token: string };
+        error?: string;
+        until?: number;
+        changeToken?: string;
+        email?: string;
+      };
+
+      if (finishJson.ok && finishJson.data) {
+        await completeAuthentication(finishJson.data.token);
+      } else if (finishJson.error === "password_change_required" && finishJson.changeToken) {
+        setChangeToken(finishJson.changeToken);
+        setStep("force_password_change");
+      } else if (finishJson.error === "email_not_verified") {
+        if (finishJson.email) setEmail(finishJson.email);
+        setStep("email_unverified");
+      } else if (finishRes.status === 403) {
+        setError(moderationMessage(finishJson.error, finishJson.until));
+      } else {
+        setError("That passkey isn't registered to an Annex account. Sign in with your email and password, then add it in Settings.");
+      }
+    } catch {
+      setError("Could not connect to the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleResendVerification() {
     if (!email || resendState === "sending") return;
     setResendState("sending");
@@ -715,6 +783,18 @@ export function LoginPage() {
           <AlertDescription>{reasonNotice}</AlertDescription>
         </Alert>
       ) : null}
+      alternate={
+        <Button
+          type="button"
+          variant="outline"
+          className={`${AUTH_BUTTON_CLASS} w-full`}
+          disabled={loading}
+          onClick={() => void handlePasskeySignIn()}
+        >
+          <KeyRound className="size-4 mr-2" aria-hidden />
+          Sign in with a passkey
+        </Button>
+      }
       footer={
         adminReturnTo ? "Your admin session will continue after sign-in." : (
           <>

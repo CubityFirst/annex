@@ -2557,7 +2557,7 @@ export function UserSettingsPage() {
                   status={!webauthnLoading && (
                     <SecurityStatus ok={webauthnCredentials.length > 0} on="Enabled" off="Not set up" title={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} />
                   )}
-                  description="Use a hardware security key (YubiKey, etc.) or platform passkey as a second factor."
+                  description="Sign in with a passkey instead of your password, or use a hardware security key (YubiKey, etc.) as a second factor."
                   action={webauthnLoading ? (
                     <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
                   ) : !addingKey ? (
