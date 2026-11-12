@@ -3,15 +3,17 @@
  *
  * Prerequisites:
  *   1. Start both workers from the repo root:  pnpm dev
- *   2. wrangler CLI must be available from packages/api (already a dev dep) - the test
- *      uses it to flip the REALTIME flag on the test project, since there's no API
- *      route for that today (see CLAUDE.md, "Enabling for a project locally").
+ *   2. The test flips the REALTIME flag on the test project by writing the local D1
+ *      through scripts/d1-local.mjs (via the running api dev server), since there's
+ *      no API route for that today (see memories/Collab.md, "Enabling for a project
+ *      locally").
  *
  * Tests skip automatically when the dev API isn't reachable.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import * as Y from "yjs";
 import * as encoding from "lib0/encoding";
 
@@ -49,10 +51,13 @@ function encodeSyncStep2(update: Uint8Array): Uint8Array {
 }
 
 // Flip the REALTIME bit (= 4) on a project's `features` column. There's no API route for
-// this - production toggling happens via an admin script - so the test shells out to wrangler.
+// this - production toggling happens via an admin script - so the test writes the local D1
+// directly with scripts/d1-local.mjs (no shell, so the SQL quotes pass through verbatim).
+const D1_LOCAL = fileURLToPath(new URL("../../../../scripts/d1-local.mjs", import.meta.url));
 function enableRealtime(projectId: string): void {
-  execSync(
-    `npx wrangler d1 execute cubedocs-main --local --persist-to ../../.wrangler/state --command "UPDATE projects SET features = features | 4 WHERE id = '${projectId}';"`,
+  execFileSync(
+    process.execPath,
+    [D1_LOCAL, "main", `UPDATE projects SET features = features | 4 WHERE id = '${projectId}';`],
     { stdio: "pipe" },
   );
 }

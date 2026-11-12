@@ -11,7 +11,7 @@
  * resolves to "ink". Two ways to get there in dev:
  *   1. Stripe checkout (requires external service, not viable in tests)
  *   2. Grant the plan directly in the auth DB via `granted_plan = 'ink'` on
- *      user_billing - same wrangler-shell-out trick collab.spec.ts uses for
+ *      user_billing - same local-D1 write (e2e/d1Local.ts) collab.spec.ts uses for
  *      the REALTIME feature bit
  *
  * After granting, the user must re-fetch their session for the resolved plan
@@ -20,8 +20,7 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
-import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import { d1Local } from "../d1Local";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-ink-${RUN_ID}@example.com`;
@@ -55,12 +54,8 @@ async function injectFakeIp(ctx: BrowserContext) {
 }
 
 function grantInk(uid: string) {
-  const authDir = resolve(__dirname, "../../packages/auth");
   const sql = `INSERT INTO user_billing (user_id, granted_plan, granted_plan_started_at) VALUES ('${uid}', 'ink', ${Date.now()}) ON CONFLICT(user_id) DO UPDATE SET granted_plan = 'ink', granted_plan_started_at = ${Date.now()};`;
-  execSync(
-    `npx wrangler d1 execute cubedocs-auth --local --persist-to ../../.wrangler/state --command "${sql}"`,
-    { cwd: authDir, stdio: "pipe" },
-  );
+  d1Local("auth", sql);
 }
 
 test.describe.configure({ mode: "serial" });

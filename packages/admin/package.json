@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"cd frontend && pnpm dev\" \"pnpm exec wrangler dev --port 8789 --persist-to ../../.wrangler/state\"",
+    "dev": "concurrently \"cd frontend && pnpm dev\" \"pnpm exec wrangler dev --experimental-new-config --port 8789 --persist-to ../../.wrangler/state\"",
     "build": "cd frontend && pnpm build",
     "deploy": "pnpm build && cf deploy",
     "typecheck": "tsc --noEmit",

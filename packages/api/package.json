@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm exec wrangler dev --port 8787 --persist-to ../../.wrangler/state",
+    "dev": "pnpm exec wrangler dev --experimental-new-config --port 8787 --persist-to ../../.wrangler/state",
     "migrate": "cf d1 migrations apply 267490be-7141-4d00-ab23-152742f2f6ef --local --persist-to ../../.wrangler/state",
     "build": "tsc",
     "deploy": "cf deploy",
