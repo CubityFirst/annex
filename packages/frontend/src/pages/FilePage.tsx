@@ -491,7 +491,7 @@ export function FilePage() {
 
       {/* Move-to-folder picker - same rows as the File Manager's. */}
       <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Move "{file.name}"</DialogTitle>
             <DialogDescription>Choose a destination folder.</DialogDescription>
@@ -506,23 +506,27 @@ export function FilePage() {
                 <button
                   type="button"
                   disabled={moving || file.folder_id === null}
+                  aria-current={file.folder_id === null ? "location" : undefined}
                   onClick={() => handleMoveTo(null)}
-                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${file.folder_id === null ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                 >
                   <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                   <span className="truncate">{projectName} (home)</span>
+                  {file.folder_id === null && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                 </button>
                 {destinations.map(({ folder: f, label }) => (
                   <button
                     key={f.id}
                     type="button"
                     disabled={moving || file.folder_id === f.id}
+                    aria-current={file.folder_id === f.id ? "location" : undefined}
                     onClick={() => handleMoveTo(f.id)}
                     title={label}
-                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${file.folder_id === f.id ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                   >
                     <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                     <span className="truncate">{label}</span>
+                    {file.folder_id === f.id && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                   </button>
                 ))}
                 {destinations.length === 0 && (
