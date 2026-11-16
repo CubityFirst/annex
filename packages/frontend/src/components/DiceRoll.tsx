@@ -336,6 +336,15 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const [open, setOpen] = useState(false);
   const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blockOpenRef = useRef(false);
+  // A roll swaps (and re-keys) the chip, which drops keyboard focus on the
+  // floor - put it back on the new chip so Enter/Space can keep re-rolling.
+  const rollBtnRef = useRef<HTMLButtonElement>(null);
+  const refocusRef = useRef(false);
+  useEffect(() => {
+    if (!refocusRef.current) return;
+    refocusRef.current = false;
+    rollBtnRef.current?.focus({ preventScroll: true });
+  }, [rollKey]);
   const { showInkCritSparkles } = useRendererCtx();
 
   const clearTouchTimer = useCallback(() => {
@@ -352,6 +361,8 @@ export function DiceRoll({ notation }: DiceRollProps) {
       e.preventDefault();
       e.stopPropagation();
       clearTouchTimer();
+      // detail 0 = keyboard activation (mouse clicks report the click count).
+      refocusRef.current = e.detail === 0;
       setResult(tryRoll(notation) ?? "invalid");
       setRollKey((k) => k + 1);
       setOpen(false);
@@ -385,7 +396,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   if (result === "invalid") {
     return (
       <span
-        className="rounded bg-red-900/40 px-1.5 py-0.5 text-[0.875em] text-red-300"
+        className="rounded bg-destructive/10 px-1.5 py-0.5 text-[0.875em] text-destructive"
         style={{ fontFamily: "var(--ui-font)" }}
       >
         dice: {notation}
@@ -396,6 +407,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   if (result === null) {
     return (
       <button
+        ref={rollBtnRef}
         onClick={doRoll}
         className="inline-flex max-w-full items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-md border border-input/70 bg-card px-2 py-0.5 text-left align-middle text-[0.875em] font-medium text-foreground shadow-xs hover:bg-accent transition-colors cursor-pointer max-sm:my-1 max-sm:min-h-11 max-sm:px-3 max-sm:py-1.5 max-sm:text-sm max-sm:whitespace-normal"
         style={{ fontFamily: "var(--ui-font)" }}
@@ -423,6 +435,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
   const isCritSuccess = anyCritSuccess || isMaxRoll;
   const showInkSparkles = !!showInkCritSparkles && isCritSuccess;
+  const { formula, label } = splitFormulaLabel(notation);
 
   return (
     <HoverCard key={rollKey} open={open} onOpenChange={handleOpenChange} openDelay={200}>
@@ -433,15 +446,23 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onPointerUp={handlePointerUp}
           className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-input/70 bg-card px-2 py-0.5 text-left text-[0.875em] text-foreground shadow-xs select-none not-prose hover:bg-accent transition-colors cursor-pointer max-sm:my-1 max-sm:min-h-11 max-sm:px-3 max-sm:py-1.5 max-sm:text-sm max-sm:whitespace-normal"
           style={{ fontFamily: "var(--ui-font)" }}
-          aria-label="Re-roll"
+          ref={rollBtnRef}
+          // Name the roll and its result - a bare "Re-roll" hid the outcome
+          // from screen readers.
+          aria-label={`${label || prettyFormula(formula)}: rolled ${displayValue}. Re-roll`}
         >
           <Dices className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="font-mono text-[0.85em] text-muted-foreground max-sm:text-[0.9em] max-sm:break-words">{prettyFormula(splitFormulaLabel(notation).formula)}</span>
-          {result.label && (
-            <span className="text-zinc-400">{result.label}</span>
+          {/* Same order as the unrolled chip (label · formula), so rolling
+              only appends the result instead of reshuffling the chip. */}
+          {label && (
+            <>
+              <span className="font-medium">{label}</span>
+              <span aria-hidden="true" className="text-muted-foreground/60">&middot;</span>
+            </>
           )}
-          <span className="text-zinc-500">:</span>
-          <span className={`relative font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>
+          <span className="font-mono text-[0.85em] text-muted-foreground max-sm:text-[0.9em] max-sm:break-words">{prettyFormula(formula)}</span>
+          <span className="text-muted-foreground/70">:</span>
+          <span className={`relative font-semibold ${isMaxRoll || anyCritSuccess ? "text-emerald-600 dark:text-emerald-400" : isMinRoll || anyCritFail ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>
             {displayValue}
             {showInkSparkles && (
               <span className="ink-crit-sparkles" aria-hidden="true">
@@ -453,9 +474,9 @@ export function DiceRoll({ notation }: DiceRollProps) {
               </span>
             )}
           </span>
-          {isDiceSuccessCount && <span className="text-zinc-400 font-normal">succ</span>}
+          {isDiceSuccessCount && <span className="text-muted-foreground font-normal">succ</span>}
           {exprST && (
-            <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
+            <span className={`font-semibold ${result.successCount === 1 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
               {result.successCount === 1 ? "✓" : "✗"}
             </span>
           )}

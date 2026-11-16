@@ -23,11 +23,13 @@ import { formatBytes, formatRelativeTime, moveDestinations, folderPathLabel, shi
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useFolderContents, type FolderItem, type DocItem, type FileItem } from "@/hooks/useFolderContents";
 import { useUploads } from "@/hooks/useUploads";
+import { useStemSelection } from "@/hooks/useStemSelection";
 import { emptyExcalidrawScene, EXCALIDRAW_MIME, EXCALIDRAW_EXT } from "@/lib/excalidraw";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Spinner } from "@/components/ui/spinner";
+import { DESTRUCTIVE_OUTLINE_BUTTON } from "@/components/settings/SettingsShell";
 import { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentGroup } from "@/components/ui/attachment";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { restoreTrashEntry } from "@/lib/trash";
@@ -350,6 +352,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string } | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const renameStem = useStemSelection(renameTarget?.type === "file");
   const [contextDeleteTarget, setContextDeleteTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; name: string } | null>(null);
   const [contextDeleting, setContextDeleting] = useState(false);
 
@@ -1106,6 +1109,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   const selectedCount = selectedFolders.size + selectedDocs.size + selectedFiles.size;
 
+  function clearSelection() {
+    setSelectedFolders(new Set());
+    setSelectedDocs(new Set());
+    setSelectedFiles(new Set());
+    lastCheckedFolderIndex.current = null;
+    lastCheckedDocIndex.current = null;
+    lastCheckedFileIndex.current = null;
+  }
+
   function renderTable() {
     // Mobile card helpers. The kebab mirrors the desktop ContextMenu exactly;
     // on desktop the same kebab renders in the row's last cell so keyboard
@@ -1265,7 +1277,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
-                          <span className="text-sm font-medium truncate">{folder.name}</span>
+                          <span className="text-sm font-medium truncate" title={folder.name}>{folder.name}</span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1365,7 +1377,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             ? <House className="h-4 w-4 shrink-0 mr-2 text-primary/70" aria-hidden="true" />
                             : <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" aria-hidden="true" />
                           }
-                          <span className="text-sm truncate">{doc.title || "Untitled"}</span>
+                          <span className="text-sm truncate" title={doc.title || "Untitled"}>{doc.title || "Untitled"}</span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1455,7 +1467,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                       >
                         <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
-                        <span className="text-sm truncate">{file.name}</span>
+                        <span className="text-sm truncate" title={file.name}>{file.name}</span>
                         {canEdit && (
                           <button
                             type="button"
@@ -1531,7 +1543,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               )}
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{folder.name}</div>
+                <div className="line-clamp-2 text-sm font-medium [overflow-wrap:anywhere]">{folder.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {folderNewest && <span>{formatRelativeTime(folderNewest)} · </span>}
                   <span title={folderCountLabel(counts) || "Empty folder"}>{folderItemsLabel(counts)}</span>
@@ -1567,7 +1579,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
               }
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{doc.title || "Untitled"}</div>
+                <div className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{doc.title || "Untitled"}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
                 </div>
@@ -1596,7 +1608,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm">{file.name}</div>
+              <div className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{file.name}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {formatRelativeTime(file.updated_at ?? file.created_at)} · {formatBytes(file.size)}
               </div>
@@ -1622,10 +1634,22 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setExternalDragOver(false); }}
       onDrop={handleExternalDrop}
     >
+      {/* Drop zone: a dashed edge (the drop-target convention) and a label
+          that names where the files will land. The label is sticky so it
+          stays in view over a long, scrolled listing. */}
       {externalDragOver && (
-        <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
-          <Upload className="h-8 w-8 text-primary/60" aria-hidden="true" />
-          <p className="text-sm font-medium text-muted-foreground">Drop to upload</p>
+        <div className="pointer-events-none absolute inset-3 z-20 rounded-lg border-2 border-dashed border-primary/50 bg-background/85 backdrop-blur-sm">
+          <div className="sticky top-[30vh] flex flex-col items-center gap-3 px-6 pt-[12vh] text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Upload className="h-5 w-5 text-foreground" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Drop files to upload</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                They'll be added to <span className="font-medium text-foreground">{path[path.length - 1]?.name || projectName}</span>.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1694,6 +1718,32 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           own full-width row under the search, with the create split button
           there instead of the top bar. */}
       <div className="flex flex-wrap items-center gap-2 pb-3">
+        {canEdit && selectedCount > 0 ? (
+          // Selection bar: takes the search box's slot (same height, so the
+          // rows don't jump when the first box is ticked) with the count, a
+          // way out, and the bulk action - outlined, not a solid red slab.
+          <div
+            role="toolbar"
+            aria-label="Selection"
+            className="flex h-11 w-full items-center gap-1 rounded-md border border-border bg-muted/50 pl-3 pr-1 md:h-9 md:w-auto md:flex-1"
+          >
+            <span className="text-sm font-medium tabular-nums" aria-live="polite">{selectedCount} selected</span>
+            <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground md:h-7" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={`Move ${selectedCount} selected to the recycle bin`}
+              className={`ml-auto h-9 gap-1.5 bg-transparent px-2.5 md:h-7 ${DESTRUCTIVE_OUTLINE_BUTTON}`}
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={deleting}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {deleting ? "Moving…" : "Move to recycle bin"}
+            </Button>
+          </div>
+        ) : (
         <div className="relative w-full md:w-auto md:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
@@ -1715,15 +1765,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             </button>
           )}
         </div>
-        {canEdit && (selectedCount > 0 || !createInHeader) && (
+        )}
+        {canEdit && !createInHeader && (
           <div className="flex w-full flex-col gap-2 md:ml-auto md:w-auto md:flex-row md:items-center">
-            {selectedCount > 0 && (
-              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 md:h-9 md:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {deleting ? "Deleting…" : `Delete (${selectedCount})`}
-              </Button>
-            )}
-            {!createInHeader && createSplitButton}
+            {createSplitButton}
           </div>
         )}
       </div>
@@ -1751,6 +1796,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <Search className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm font-medium">No results</p>
             <p className="mt-1 text-sm text-muted-foreground">Nothing matches “{searchQuery.trim()}”. Try a different search.</p>
+            <Button size="sm" variant="outline" className="mt-4 h-11 md:h-8" onClick={() => setSearchQuery("")}>
+              Clear search
+            </Button>
           </div>
         ) : !inSearch && folders.length === 0 && docs.length === 0 && files.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
@@ -1758,9 +1806,29 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <p className="text-sm font-medium">This folder is empty</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {canEdit
-                ? "Create a document, add a folder, or drop files here to upload."
+                ? isDesktop
+                  ? "Start with a document, or drop files anywhere on this page to upload them."
+                  : "Start with a document, or upload files from your device."
                 : "Nothing has been added here yet."}
             </p>
+            {/* The next step, right where the eye already is. Labels differ
+                from the top bar's "New document" so role lookups stay unique;
+                below md the full-width create button already sits just above,
+                so only Upload (otherwise behind its chevron) is repeated. */}
+            {canEdit && (
+              <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center">
+                {createInHeader && (
+                  <Button size="sm" variant="outline" className="h-11 gap-1.5 md:h-8" onClick={handleNewDoc}>
+                    <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Write a document
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" className="h-11 gap-1.5 md:h-8" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                  Upload files
+                </Button>
+              </div>
+            )}
           </div>
         ) : renderTable()}
       </div>
@@ -1803,18 +1871,22 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent
+          className="sm:max-w-sm"
+          // Files open with only the name (not the extension) selected.
+          onOpenAutoFocus={renameStem.onOpenAutoFocus}
+        >
           <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
+            <DialogTitle>Rename {renameTarget?.type === "folder" ? "folder" : renameTarget?.type === "file" ? "file" : "document"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col">
             <div className="grid gap-2">
               <Label htmlFor="rename-name">Name</Label>
               <Input
                 id="rename-name"
+                {...renameStem.inputProps}
                 value={renameName}
                 onChange={e => setRenameName(e.target.value)}
-                autoFocus
                 required
               />
             </div>
@@ -1832,7 +1904,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
       {/* Move-to-folder dialog - keyboard/single-pointer alternative to drag */}
       <Dialog open={!!moveTarget} onOpenChange={open => { if (!open) setMoveTarget(null); }}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Move "{moveTarget?.name}"</DialogTitle>
             <DialogDescription>Choose a destination folder.</DialogDescription>
@@ -1847,23 +1919,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 <button
                   type="button"
                   disabled={moving || currentFolderId === null}
+                  aria-current={currentFolderId === null ? "location" : undefined}
                   onClick={() => handleMoveTo(null)}
-                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${currentFolderId === null ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                 >
                   <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                   <span className="truncate">{projectName} (home)</span>
+                  {currentFolderId === null && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                 </button>
                 {destinations.map(({ folder: f, label }) => (
                   <button
                     key={f.id}
                     type="button"
                     disabled={moving || currentFolderId === f.id}
+                    aria-current={currentFolderId === f.id ? "location" : undefined}
                     onClick={() => handleMoveTo(f.id)}
                     title={label}
-                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${currentFolderId === f.id ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                   >
                     <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                     <span className="truncate">{label}</span>
+                    {currentFolderId === f.id && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                   </button>
                 ))}
                 {destinations.length === 0 && currentFolderId !== null && (
@@ -1890,7 +1966,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={handleDeleteConfirmed}
             >
               Move to recycle bin
@@ -1939,7 +2015,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={handleContextDelete}
               disabled={contextDeleting}
             >

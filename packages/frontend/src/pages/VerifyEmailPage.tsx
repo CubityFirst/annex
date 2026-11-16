@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { AuthShell, AUTH_BUTTON_CLASS, AUTH_INPUT_CLASS } from "@/components/AuthForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -119,11 +120,12 @@ export function VerifyEmailPage() {
                   This email-change link is no longer valid. Request the change again from your account settings.
                 </AlertDescription>
               </Alert>
-              <p className="text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
+              <Button asChild variant="ghost" className="-ml-3 h-11 self-start gap-2 px-3 text-muted-foreground hover:text-foreground">
+                <a href="/login">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back to sign in
                 </a>
-              </p>
+              </Button>
             </>
           )}
 
@@ -134,11 +136,12 @@ export function VerifyEmailPage() {
                   That email address was claimed by another account before you confirmed. Request the change again from your account settings.
                 </AlertDescription>
               </Alert>
-              <p className="text-sm text-muted-foreground">
-                <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
+              <Button asChild variant="ghost" className="-ml-3 h-11 self-start gap-2 px-3 text-muted-foreground hover:text-foreground">
+                <a href="/login">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back to sign in
                 </a>
-              </p>
+              </Button>
             </>
           )}
 
@@ -178,11 +181,12 @@ export function VerifyEmailPage() {
                 >
                   {resendState === "sending" ? "Sending…" : "Resend verification email"}
                 </Button>
-                <p className="text-sm text-muted-foreground">
-                  <a href="/login" className="text-primary underline-offset-4 hover:underline inline-flex min-h-11 items-center">
+                <Button asChild variant="ghost" className="-ml-3 h-11 self-start gap-2 px-3 text-muted-foreground hover:text-foreground">
+                  <a href="/login">
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                     Back to sign in
                   </a>
-                </p>
+                </Button>
               </div>
             </>
           )}

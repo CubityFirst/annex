@@ -32,6 +32,7 @@ import { TestAudioPage } from "./pages/TestAudioPage";
 import { AnimationsTestPage } from "./pages/tests/AnimationsTestPage";
 import { HomeVariantsPage } from "./pages/tests/home/HomeVariantsPage";
 import { Toaster } from "@/components/ui/sonner";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // `/@<handle>` profile links. React Router 6 can't match a literal `@` prefix
 // on a param, so the route is the generic single segment `/:atHandle`: only
@@ -65,7 +66,7 @@ export function App() {
     }
   }, [location.pathname]);
   return (
-    <>
+    <ErrorBoundary resetKey={location.pathname}>
       <Routes location={backgroundLocation ?? location}>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -115,6 +116,6 @@ export function App() {
         </Routes>
       )}
       <Toaster />
-    </>
+    </ErrorBoundary>
   );
 }

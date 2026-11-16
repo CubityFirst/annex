@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
-import { getHighlighter, highlighterReady } from "@/lib/shiki";
+import { highlightCode, highlighterReady } from "@/lib/shiki";
 import { Button } from "@/components/ui/button";
 import { DiceRoll } from "@/components/DiceRoll";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
-
-const THEME = "vitesse-dark";
-
-function highlight(code: string, lang: string): string | null {
-  const h = getHighlighter();
-  if (!h) return null;
-  try {
-    return h.codeToHtml(code, { lang, theme: THEME });
-  } catch {
-    // Unknown language - fall back to plain text
-    return h.codeToHtml(code, { lang: "text", theme: THEME });
-  }
-}
 
 interface CodeBlockProps {
   lang: string;
@@ -38,15 +25,15 @@ export function CodeBlock({ lang, code, className }: CodeBlockProps) {
   return <ShikiCodeBlock lang={lang} code={code} className={className} />;
 }
 
-/** Highlighted fenced code block using Shiki (vitesse-dark theme on the card surface). */
+/** Highlighted fenced code block using Shiki (vitesse light/dark on the card surface). */
 function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
-  const [html, setHtml] = useState<string | null>(() => highlight(code, lang));
+  const [html, setHtml] = useState<string | null>(() => highlightCode(code, lang));
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // If highlighter wasn't ready on first render, wait for it then re-render.
     if (html !== null) return;
-    highlighterReady.then(() => setHtml(highlight(code, lang)));
+    highlighterReady.then(() => setHtml(highlightCode(code, lang)));
   }, [code, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const copy = useCallback(() => {

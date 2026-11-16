@@ -2361,16 +2361,19 @@ export function UserSettingsPage() {
             </p>
 
             <div className="mt-3 overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full table-fixed min-w-[30rem] text-sm">
+              <table className="w-full min-w-[20rem] table-fixed text-sm">
                 <thead className="bg-muted/40">
                   <tr>
                     <th scope="col" className="px-4 py-2.5 text-left font-medium">Font</th>
                     {/* The last column carries the row's 16px right inset
                         (matching the Font column's left inset) and is widened
                         by the same amount, so every radio column keeps an
-                        equal content width. */}
+                        equal content width. Below sm the radio columns
+                        narrow to 64px so all three fit a 390px phone without
+                        sideways scrolling (the old 30rem floor hid Interface
+                        off-screen with no scroll hint). */}
                     {(["Reading", "Editing", "Interface"] as const).map(label => (
-                      <th key={label} scope="col" className="w-20 px-1 py-2.5 text-center font-medium last:w-[5.75rem] last:pr-4">
+                      <th key={label} scope="col" className="w-16 px-1 py-2.5 text-center font-medium last:w-[4.75rem] last:pr-4 sm:w-20 sm:last:w-[5.75rem]">
                         {label}
                       </th>
                     ))}
@@ -2847,7 +2850,7 @@ export function UserSettingsPage() {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  variant="destructive"
                   onClick={handleDeleteAccount}
                   disabled={!deleteCurrentPassword || deletingAccount}
                 >
@@ -2887,22 +2890,38 @@ export function UserSettingsPage() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       autoComplete="new-password"
-                      aria-describedby={newPassword ? "password-strength" : undefined}
+                      aria-describedby="new-password-hint"
                       required
                     />
+                    {/* Same rule and copy as RegisterPage: the auth worker
+                        rejects anything below zxcvbn score 3 ("Strong"), and
+                        the submit button stays disabled until then - say so,
+                        or a disabled button gives no reason. */}
+                    <p id="new-password-hint" className="text-xs text-muted-foreground">
+                      Must rate &ldquo;Strong&rdquo; or better on the strength meter. A phrase of a few unrelated words works well.
+                    </p>
                     {newPassword && (() => {
                       const score = zxcvbn(newPassword).score;
                       return (
                         <div className="space-y-1">
-                          <div className="flex gap-1">
+                          <div
+                            className="flex gap-1"
+                            role="meter"
+                            aria-label="Password strength"
+                            aria-valuemin={0}
+                            aria-valuemax={4}
+                            aria-valuenow={score}
+                            aria-valuetext={STRENGTH_LABELS[score]}
+                          >
                             {[0, 1, 2, 3, 4].map(i => (
                               <div
                                 key={i}
+                                aria-hidden="true"
                                 className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
                               />
                             ))}
                           </div>
-                          <p id="password-strength" aria-label={`Password strength: ${STRENGTH_LABELS[score]}`} className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+                          <p className="text-xs text-muted-foreground" aria-live="polite">{STRENGTH_LABELS[score]}</p>
                         </div>
                       );
                     })()}

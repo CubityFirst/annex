@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { KeyRound, Smartphone, Hash } from "lucide-react";
+import { ArrowLeft, KeyRound, Smartphone, Hash } from "lucide-react";
 import { startWebauthnAuth } from "@/lib/webauthn";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
@@ -48,6 +48,22 @@ function adminHandoffErrorMessage(error?: string): string {
   }
 
   return "Could not continue to the admin panel. Please try again.";
+}
+
+// Same "← Back to sign in" ghost action as CheckEmailPage, so every auth step
+// exits the same way (it was a bare text link here, indented off the form edge).
+function BackToSignIn({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="-ml-3 h-11 gap-2 px-3 text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Back to sign in
+    </Button>
+  );
 }
 
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />;
@@ -500,13 +516,7 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         <p className="text-sm text-muted-foreground">
@@ -581,13 +591,7 @@ export function LoginPage() {
         error={error}
         onSubmit={handleSubmit}
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         {usingBackupCode ? (
@@ -658,13 +662,7 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         <p className="text-sm text-muted-foreground">
@@ -719,28 +717,42 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
-        <p className="text-sm text-muted-foreground">
-          {loading
-            ? "Touch your security key when it flashes…"
-            : "Security key verification failed or was cancelled."}
-        </p>
-        {!loading && (
-          <Button
-            type="button"
-            className={AUTH_BUTTON_CLASS}
-            onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
-          >
-            Try again
-          </Button>
+        {/* While waiting, a live status line; after a failure the error Alert
+            above already says what happened, so don't repeat it - just offer
+            the two ways forward at full width like every other auth action. */}
+        {loading ? (
+          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+            Touch your security key when it flashes…
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {!error && (
+              <p className="text-sm text-muted-foreground">Security key verification failed or was cancelled.</p>
+            )}
+            <Button
+              type="button"
+              className={`${AUTH_BUTTON_CLASS} w-full`}
+              onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
+            >
+              Try again
+            </Button>
+            {/* Accounts with more than one factor arrive via the method picker
+                (which issues a preAuthToken) - let them switch instead of
+                retrying a key they may not have with them. */}
+            {preAuthToken && (
+              <Button
+                type="button"
+                variant="outline"
+                className={`${AUTH_BUTTON_CLASS} w-full`}
+                onClick={() => { setError(null); setStep("method_picker"); }}
+              >
+                Use another method
+              </Button>
+            )}
+          </div>
         )}
       </AuthForm>
     );
@@ -836,7 +848,17 @@ export function LoginPage() {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        {/* There's no self-serve reset yet, so point at the same support inbox
+            the moderation notices use rather than leave no way back in. */}
+        <div className="flex items-baseline justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <a
+            href="mailto:docs@cubityfir.st?subject=Annex%20password%20reset"
+            className="-my-1 inline-block py-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Forgot password?
+          </a>
+        </div>
         <PasswordInput
           id="password"
           value={password}

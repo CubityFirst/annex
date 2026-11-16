@@ -377,14 +377,6 @@
 .l-show + .l-show { margin-top: var(--section-y); }
 .l-show-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 .l-show-flip .l-show-copy { order: 2; }
-.l-show-eyebrow {
-  font-size: 13px;
-  font-family: 'DM Mono', monospace;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin-bottom: 20px;
-}
 .l-show-title {
   font-size: clamp(32px, 3.6vw, 48px);
   font-weight: 300;

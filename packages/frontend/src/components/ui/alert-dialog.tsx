@@ -150,10 +150,12 @@ function AlertDialogAction({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <Button variant={variant} size={size} asChild>
+    // className goes through Button so cn() merges it over the variant's
+    // classes; on the Slot child it was only concatenated, so an override
+    // like bg-destructive lost to the variant's bg-primary.
+    <Button variant={variant} size={size} className={className} asChild>
       <AlertDialogPrimitive.Action
         data-slot="alert-dialog-action"
-        className={cn(className)}
         {...props}
       />
     </Button>
@@ -168,10 +170,12 @@ function AlertDialogCancel({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <Button variant={variant} size={size} asChild>
+    // className goes through Button so cn() merges it over the variant's
+    // classes; on the Slot child it was only concatenated, so an override
+    // like bg-destructive lost to the variant's bg-primary.
+    <Button variant={variant} size={size} className={className} asChild>
       <AlertDialogPrimitive.Cancel
         data-slot="alert-dialog-cancel"
-        className={cn(className)}
         {...props}
       />
     </Button>

@@ -101,7 +101,9 @@ type Row =
 
 // 32px rows on desktop; 40px touch targets in the mobile drawer (below md).
 const ROW_CLASS = "h-8 max-md:h-10 w-full justify-start gap-1.5 px-2 text-sm font-normal";
-const rowTone = (active: boolean) => (active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground");
+// Active = filled + medium weight; hover is a lighter tint, so the current
+// row stays identifiable while the pointer rests on another one.
+const rowTone = (active: boolean) => (active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground");
 
 export function SidebarPageTree({
   projectId,
@@ -236,10 +238,10 @@ export function SidebarPageTree({
                   <span className="truncate">{folder.name}</span>
                 </button>
                 {open && (
-                  <div id={childrenId} role="group" className="ml-3 flex flex-col gap-px border-l border-border pl-1">
+                  <div id={childrenId} role="group" className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-1">
                     {(index.children.get(folder.id)?.length ?? 0) > 0
                       ? renderLevel(folder.id)
-                      : <p className="px-2 py-1 text-xs text-muted-foreground/70">No items</p>}
+                      : <p className="px-2 py-1 text-xs text-muted-foreground">No items</p>}
                   </div>
                 )}
               </div>
@@ -296,10 +298,12 @@ export function SidebarPageTree({
 
   return (
     <div className="mt-4">
-      <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
+      <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         Contents
       </p>
-      <nav aria-label="Site contents" className="flex flex-col gap-px">
+      {/* Same 2px row gap as the nav rows and Recently accessed in DocsLayout,
+          so every 32px row in the sidebar sits on one 34px pitch. */}
+      <nav aria-label="Site contents" className="flex flex-col gap-0.5">
         {renderLevel(null)}
       </nav>
     </div>

@@ -5,14 +5,14 @@ import { NotFoundPage } from "./NotFoundPage";
 import { NotFound404 } from "./NotFound404";
 
 describe("NotFoundPage", () => {
-  it("renders the 404 shell with the workspace copy and a home CTA", () => {
+  it("renders the 404 shell with its copy and a home CTA", () => {
     render(
       <MemoryRouter>
         <NotFoundPage />
       </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: /404 - page not found/i })).toBeInTheDocument();
-    expect(screen.getByText(/does not exist in this workspace/i)).toBeInTheDocument();
+    expect(screen.getByText(/requested does not exist. Check the URL/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /go home/i })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: /report a broken link/i })).toHaveAttribute(
       "href",

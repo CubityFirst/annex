@@ -10,7 +10,7 @@
 
 import { test, expect, type Page } from "@playwright/test";
 
-const BANNER_TEXT = "This is a demo environment, any changes you make here are local, and will not be saved.";
+const BANNER_TEXT = "You’re exploring a demo. Changes stay in this tab and are lost when you reload.";
 
 async function enterDemo(page: Page) {
   await page.goto("/demo");

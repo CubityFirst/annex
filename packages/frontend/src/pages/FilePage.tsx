@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House } from "lucide-react";
+import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House, FileX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ import { formatBytes, formatRelativeTime, folderPathLabel, type MoveFolderLike }
 import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
+import { useStemSelection } from "@/hooks/useStemSelection";
 import { isLightTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { pushRecentItem } from "@/lib/recentDocs";
@@ -125,6 +126,7 @@ export function FilePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const renameStem = useStemSelection(true);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
   const [moving, setMoving] = useState(false);
@@ -363,10 +365,21 @@ export function FilePage() {
     );
   }
 
+  // Same dashed empty-state card as the File Manager's, with a way back -
+  // a stale link or a binned file otherwise dead-ends on one red line.
   if (!file) {
     return (
       <ViewerLayout>
-        <p className={cn(READING_CONTAINER, "text-sm text-destructive")}>File not found.</p>
+        <div className={cn(READING_CONTAINER, "rounded-lg border border-dashed border-border px-6 py-10 text-center")}>
+          <FileX className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <h1 className="text-sm font-medium">File not found</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            It may have been moved to the recycle bin, or you may not have access to it.
+          </p>
+          <Button size="sm" variant="outline" className="mt-4 h-11 md:h-8" onClick={() => navigate(`/projects/${projectId}`)}>
+            Back to files
+          </Button>
+        </div>
       </ViewerLayout>
     );
   }
@@ -374,6 +387,9 @@ export function FilePage() {
   const kind = fileKind(file.mime_type, file.name);
   const embedMarkdown = fileEmbedMarkdown(file);
   const isSvg = /svg/i.test(file.mime_type) || /\.svg$/i.test(file.name);
+  // Prose-like text (notes, Markdown) soft-wraps; code, CSV and logs keep
+  // their lines and scroll sideways, where line breaks carry meaning.
+  const wrapText = /\.(txt|text|md|markdown|mdx)$/i.test(file.name);
   const actionsInBar = isDesktop && !!headerActionSlot;
 
   function copyEmbed() {
@@ -397,7 +413,7 @@ export function FilePage() {
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
         <Trash2 />
-        Delete
+        Move to recycle bin
       </DropdownMenuItem>
     </>
   );
@@ -451,18 +467,22 @@ export function FilePage() {
   const dialogs = (
     <>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent
+          className="sm:max-w-sm"
+          // Open with only the name (not the extension) selected.
+          onOpenAutoFocus={renameStem.onOpenAutoFocus}
+        >
           <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
+            <DialogTitle>Rename file</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col">
             <div className="grid gap-2">
               <Label htmlFor="file-rename-name">Name</Label>
               <Input
                 id="file-rename-name"
+                {...renameStem.inputProps}
                 value={renameName}
                 onChange={e => setRenameName(e.target.value)}
-                autoFocus
                 required
               />
             </div>
@@ -480,7 +500,7 @@ export function FilePage() {
 
       {/* Move-to-folder picker - same rows as the File Manager's. */}
       <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Move "{file.name}"</DialogTitle>
             <DialogDescription>Choose a destination folder.</DialogDescription>
@@ -495,23 +515,27 @@ export function FilePage() {
                 <button
                   type="button"
                   disabled={moving || file.folder_id === null}
+                  aria-current={file.folder_id === null ? "location" : undefined}
                   onClick={() => handleMoveTo(null)}
-                  className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${file.folder_id === null ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                 >
                   <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                   <span className="truncate">{projectName} (home)</span>
+                  {file.folder_id === null && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                 </button>
                 {destinations.map(({ folder: f, label }) => (
                   <button
                     key={f.id}
                     type="button"
                     disabled={moving || file.folder_id === f.id}
+                    aria-current={file.folder_id === f.id ? "location" : undefined}
                     onClick={() => handleMoveTo(f.id)}
                     title={label}
-                    className="flex items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className={`flex min-h-11 items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9 ${file.folder_id === f.id ? "text-muted-foreground disabled:hover:bg-transparent" : "disabled:opacity-50"}`}
                   >
                     <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                     <span className="truncate">{label}</span>
+                    {file.folder_id === f.id && <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current location</span>}
                   </button>
                 ))}
                 {destinations.length === 0 && (
@@ -526,7 +550,7 @@ export function FilePage() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{file.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>Move "{file.name}" to the recycle bin?</AlertDialogTitle>
             <AlertDialogDescription>
               It will be moved to the recycle bin, where it can be restored for 30 days.
             </AlertDialogDescription>
@@ -534,11 +558,11 @@ export function FilePage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={e => { e.preventDefault(); void handleDelete(); }}
               disabled={deleting}
             >
-              {deleting ? "Deleting…" : "Delete"}
+              {deleting ? "Moving…" : "Move to recycle bin"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -636,7 +660,9 @@ export function FilePage() {
         {/* min width lets the actions wrap onto their own line on phones
             instead of squeezing the title to a sliver. */}
         <div className="min-w-[12rem] flex-1">
-          <h1 className="truncate text-2xl font-semibold leading-tight tracking-tight">{file.name}</h1>
+          {/* Wraps rather than truncates: a long file name's distinguishing
+              part (version, date, extension) is usually at the end. */}
+          <h1 className="text-2xl font-semibold leading-tight tracking-tight [overflow-wrap:anywhere]">{file.name}</h1>
           {/* Each item carries a leading "·" in its left padding; the row is
               pulled left by that padding and clipped, so the first item on
               every line (including after a wrap) shows no stray separator. */}
@@ -812,7 +838,7 @@ export function FilePage() {
       )}
 
       {kind === "text" && textContent !== null && (
-        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6")}>
+        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6", wrapText && "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere] [&_pre]:!pr-12")}>
           {/* Plain-file preview sits on the card surface (never the
               highlighter theme's own background), framed like the other previews. */}
           <CodeBlock

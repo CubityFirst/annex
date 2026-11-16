@@ -28,16 +28,19 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronsUpDown,
   FileText,
   SlidersHorizontal,
   Check,
   Network,
   Search,
+  Mail,
   Image,
   Plus,
   Upload,
   Building2,
   Menu,
+  PanelLeftOpen,
   LayoutGrid,
   X,
 } from "lucide-react";
@@ -49,6 +52,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { UserAvatar } from "@/components/UserAvatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // A row of GET /api/projects. doc_count / member_count are only present when
 // the list was fetched with `?counts=1` (the dashboard cards).
@@ -113,6 +117,10 @@ const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 // tree's rows (SidebarPageTree ROW_CLASS) and the Search entry. Below md (the
 // slide-over drawer) rows grow to 40px so they're comfortable touch targets.
 const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal max-md:h-10";
+// Active vs idle tone for those rows (same as SidebarPageTree's rowTone):
+// hover is a lighter tint than the active fill so the two never look alike.
+const SIDEBAR_ACTIVE_CLASS = "bg-accent font-medium text-foreground";
+const SIDEBAR_IDLE_CLASS = "text-muted-foreground hover:bg-accent/50 hover:text-foreground";
 
 // Create-dialog submit buttons stay disabled until Name has text; same muted
 // disabled look as the editor's Save so it reads as "not yet", not "broken".
@@ -801,8 +809,13 @@ export function DocsLayout() {
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
-          <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
+        // One line at every width: phones get the short form so the banner
+        // doesn't eat three lines of a 390px screen above the top bar.
+        <div className="z-30 flex shrink-0 items-center justify-center gap-3 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
+          <span className="min-w-0">
+            <span className="hidden sm:inline">You&rsquo;re exploring a demo. Changes stay in this tab and are lost when you reload.</span>
+            <span className="sm:hidden">Demo: changes aren&rsquo;t saved.</span>
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -810,7 +823,7 @@ export function DocsLayout() {
               // Full reload so the demo fetch patch and in-memory data are dropped.
               window.location.replace("/");
             }}
-            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20 max-sm:py-1"
           >
             Exit demo
           </button>
@@ -837,8 +850,9 @@ export function DocsLayout() {
         />
       )}
       <aside className={cn(
-        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 md:shadow-none",
-        // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
+        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-[min(20rem,85vw)] md:shadow-none",
+        // Mobile: fixed overlay that slides in over the content (doesn't push it wider),
+        // up to 320px / 85vw so the site switcher keeps a readable name.
         // The drop shadow only exists while open - parked off-canvas it would
         // bleed ~30px onto the page's left edge.
         "fixed inset-y-0 left-0 transition-transform duration-200",
@@ -849,7 +863,7 @@ export function DocsLayout() {
         sidebarOpen ? "md:w-64" : "md:w-0 md:border-r-0",
       )}>
         {/* Inner wrapper - clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
-        <div className={cn("flex flex-col flex-1 min-h-0 w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
+        <div className={cn("flex flex-col flex-1 min-h-0 w-[min(20rem,85vw)] md:w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
         {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
           {projectId && currentProject ? (
@@ -906,7 +920,7 @@ export function DocsLayout() {
           /* ── Project sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             {/* Sections */}
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-0.5">
               {searchEntry}
               <NavLink
                 to={`/projects/${projectId}`}
@@ -916,7 +930,7 @@ export function DocsLayout() {
                     buttonVariants({ variant: "ghost", size: "sm" }),
                     SIDEBAR_ROW_CLASS,
                     // Folder views are still the File manager - keep it lit.
-                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
+                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS,
                   )
                 }
               >
@@ -927,7 +941,7 @@ export function DocsLayout() {
                 <NavLink
                   to={`/projects/${projectId}/graph`}
                   className={({ isActive }) =>
-                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)
                   }
                   title="Graph"
                 >
@@ -941,8 +955,8 @@ export function DocsLayout() {
 
             {visibleRecentItems.length > 0 && (
               <div className="mt-4">
-                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
-                  Recently accessed
+                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Recent
                 </p>
                 <nav className="flex flex-col gap-0.5">
                   {visibleRecentItems.map(item => (
@@ -952,7 +966,7 @@ export function DocsLayout() {
                         ? `/projects/${projectId}/docs/${item.id}`
                         : `/projects/${projectId}/files/${item.id}`}
                       className={({ isActive }) =>
-                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)
                       }
                       title={item.title}
                     >
@@ -967,10 +981,27 @@ export function DocsLayout() {
         ) : (
           /* ── Overview sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-0.5">
               {searchEntry}
+              {/* Home-level destinations, so Home / Invites / Profile pages
+                  always have a lit row marking where you are (the wordmark
+                  link alone gives no current-location cue). */}
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) => cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)}
+              >
+                <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+                Home
+              </NavLink>
+              <NavLink
+                to="/invites/pending"
+                className={({ isActive }) => cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)}
+              >
+                <Mail className="h-3.5 w-3.5 shrink-0" />
+                Invites
+              </NavLink>
               {visibleProjects.length > 0 && (
-                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Sites</p>
+                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sites</p>
               )}
               {visibleProjects.map(p => (
                 <Button
@@ -1002,7 +1033,8 @@ export function DocsLayout() {
                 <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Open profile"
+                  // Name starts with the visible text (WCAG 2.5.3 label in name).
+                  aria-label={`${userName}, account menu`}
                   title={userName}
                   className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -1013,6 +1045,9 @@ export function DocsLayout() {
                       <span className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"}</span>
                     )}
                   </span>
+                  {/* Says "this opens a menu" - without it the row reads as a
+                      static label. */}
+                  <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 </button>
                 </DropdownMenuTrigger>
                 {/* sideOffset clears the footer's top divider: the trigger
@@ -1081,16 +1116,20 @@ export function DocsLayout() {
         {(displayCrumbs.length > 0 || !sidebarOpen) && (
           <div className={cn(
             "shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap px-2 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]",
-            displayCrumbs.length === 0 && "md:hidden",
+            displayCrumbs.length === 0 && sidebarOpen && "md:hidden",
           )}>
             {!sidebarOpen && (
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
                 aria-label="Open navigation menu"
-                className="md:hidden shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Show sidebar"
+                // Desktop: the collapsed sidebar's only other way back is the
+                // 12px edge tab, so the bar carries a real 32px opener too.
+                className="shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:-ml-2 md:mr-2 md:h-8 md:w-8"
               >
-                <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5 md:hidden" />
+                <PanelLeftOpen className="hidden h-4 w-4 md:block" />
               </button>
             )}
             {/* Phones show only the final crumb (the current page/doc title,
@@ -1152,7 +1191,10 @@ export function DocsLayout() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
-          <Outlet context={outletContext} />
+          {/* A broken page keeps the sidebar and top bar around it. */}
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet context={outletContext} />
+          </ErrorBoundary>
         </div>
       </main>
       </div>

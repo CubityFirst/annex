@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense } from "react";
-import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense, type ReactNode } from "react";
+import { useParams, useLocation, useNavigate, useOutletContext, Link as RouterLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -31,11 +31,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House, Tag, FileQuestion } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -112,6 +113,24 @@ function extractHeadings(content: string): Heading[] {
 // the page title (see outlineHeadings).
 function docOutlineHeadings(doc: { title: string; content: string }): Heading[] {
   return outlineHeadings(extractHeadings(doc.content), parseFrontmatter(doc.content).title ?? doc.title);
+}
+
+// Says why the doc's own folder is greyed out in the Move picker.
+function CurrentFolderMark() {
+  return <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current</span>;
+}
+
+// Loading / not-found frame: the same padding, 44rem column and xl outline
+// rail as the reading view, so these states sit exactly where the doc will.
+function DocStateShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-full">
+      <div className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
+        <div className="mx-auto max-w-[44rem]">{children}</div>
+      </div>
+      <aside className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
+    </div>
+  );
 }
 
 function truncate(s: string, max: number): string {
@@ -483,6 +502,7 @@ export function DocPage() {
   const [collabFatalReason, setCollabFatalReason] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resettingCollab, setResettingCollab] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   const assetsFolderPromiseRef = useRef<Map<string | null, Promise<string>>>(new Map());
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -1043,6 +1063,30 @@ export function DocPage() {
     return () => { cancelled = true; };
   }, [revisionView, diffBase, prevRevisionMeta, prevRevisionContent, docId]);
 
+  // Local edits that leaving edit mode (or the tab) would throw away. In a
+  // live collab session the room already mirrors the body to the server, so
+  // only the title draft counts there.
+  const collabLive = realtimeEnabled && !collabFatal && !isNewDoc && !!currentUser;
+  const hasUnsavedEdits = editing && (isNewDoc
+    ? titleDraft.trim() !== "" || draft.trim() !== ""
+    : !!doc && ((!collabLive && draft !== doc.content) || titleDraft.trim() !== doc.title));
+
+  // Warn before the tab/window closes with unsaved edits (mirrors FilePage's
+  // drawing guard). In-app route changes can't be blocked this way: useBlocker
+  // needs a data router and the app mounts a plain <BrowserRouter>.
+  useEffect(() => {
+    if (!hasUnsavedEdits) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedEdits]);
+
+  // The editor's Cancel: confirm first when it would discard work.
+  function requestExitEditing() {
+    if (hasUnsavedEdits) setDiscardConfirmOpen(true);
+    else cancelEditing();
+  }
+
   async function handleRevert() {
     if (!docId || !viewingRevision) return;
     setReverting(true);
@@ -1142,18 +1186,45 @@ export function DocPage() {
   }
 
   if (loading) {
+    // The reading page's shape (meta line, title, paragraphs) in its exact
+    // column, so the real content lands without a layout jump.
     return (
-      <div className="mx-auto max-w-[44rem] px-6 py-10">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
+      <DocStateShell>
+        <div aria-busy="true" aria-label="Loading document" className="flex flex-col">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="mt-7 h-9 w-2/3" />
+          <div className="mt-6 flex flex-col gap-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-11/12" />
+            <Skeleton className="h-4 w-4/5" />
+          </div>
+          <Skeleton className="mt-10 h-6 w-1/3" />
+          <div className="mt-4 flex flex-col gap-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        </div>
+      </DocStateShell>
     );
   }
 
   if (!doc) {
+    // Name what happened, the likely reasons, and a way back - not a lone
+    // line of red text with an empty top bar.
     return (
-      <div className="mx-auto max-w-[44rem] px-6 py-10">
-        <p className="text-sm text-destructive">Document not found.</p>
-      </div>
+      <DocStateShell>
+        <div role="alert" className="flex flex-col items-start">
+          <FileQuestion className="mb-4 size-6 text-muted-foreground" aria-hidden="true" />
+          <h1 className="text-xl font-semibold tracking-tight">This document isn&apos;t available</h1>
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            It may have been moved to the recycle bin, the link may be wrong, or you may not have access to it.
+          </p>
+          <Button variant="outline" size="sm" className="mt-5 gap-1.5" onClick={() => navigate(`/projects/${projectId}`)}>
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Back to {projectName || "site"}
+          </Button>
+        </div>
+      </DocStateShell>
     );
   }
 
@@ -1252,7 +1323,7 @@ export function DocPage() {
             <Button
               variant={isDirty ? "outline" : "ghost"}
               size="sm"
-              onClick={cancelEditing}
+              onClick={requestExitEditing}
               aria-label={exitLabel}
               title={exitLabel}
               className="gap-1.5"
@@ -1328,6 +1399,27 @@ export function DocPage() {
               <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
                 {resettingCollab ? "Restoring…" : "Restore real-time sync"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {isNewDoc ? "Discard this new document?" : `Discard changes to “${titleDraft.trim() || doc.title}”?`}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {isNewDoc
+                  ? "It hasn't been created yet, so everything you've written will be lost."
+                  : "Your edits since you opened the editor haven't been saved. Discarding can't be undone."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={cancelEditing}>
+                Discard changes
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1547,6 +1639,8 @@ export function DocPage() {
               open={exportOpen}
               onOpenChange={setExportOpen}
               documentName={parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).title ?? doc.title}
+              hasAiSummary={!viewingRevision && aiEnabled && !!doc.ai_summary}
+              hasLastUpdated={!viewingRevision && doc.show_last_updated !== 0}
             />
           {isEditor && (
             <>
@@ -1570,16 +1664,18 @@ export function DocPage() {
               {isAdmin && (
                 <>
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-                    <DialogContent className="sm:max-w-md">
+                    {/* Opened from a menu (like Document settings): focus the
+                        dialog, not a ring on the close button. */}
+                    <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                       <DialogHeader>
                         <DialogTitle>Document access</DialogTitle>
                         <DialogDescription>
-                          Grant per-document access to limited members, or uplift viewers to edit this document.
+                          Let limited members read this document, or let viewers edit it. Site roles are unchanged.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="flex flex-col gap-4 py-2">
                         <div className="flex flex-col gap-2">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Members with access</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shared with</p>
                           {sharesLoading ? (
                             <div className="flex flex-col divide-y divide-border rounded-md border border-border">
                               {[0, 1].map(i => (
@@ -1592,7 +1688,7 @@ export function DocPage() {
                               ))}
                             </div>
                           ) : docShares.length === 0 ? (
-                            <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">No users have been granted discrete access yet.</p>
+                            <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Not shared with anyone yet.</p>
                           ) : (
                               <div className="flex flex-col divide-y divide-border rounded-md border border-border">
                                 {docShares.map(share => (
@@ -1709,7 +1805,7 @@ export function DocPage() {
                             </div>
                           )}
                           {!sharesLoading && shareableMembers.length === 0 && (
-                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site settings.</p>
+                            <p className="text-xs text-muted-foreground">Only viewers and limited members can be added here, and this site has none yet. Invite them from Site settings → People &amp; access.</p>
                           )}
                         </div>
                     </DialogContent>
@@ -1893,7 +1989,9 @@ export function DocPage() {
               <>
                 {/* Move-to-folder picker - same rows as the File Manager's. */}
                 <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-                  <DialogContent className="sm:max-w-xs">
+                  {/* Opened from a menu while the folder list is still loading,
+                      so Radix's default lands a focus ring on the close button. */}
+                  <DialogContent className="sm:max-w-xs" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                     <DialogHeader>
                       <DialogTitle>Move "{doc.title}"</DialogTitle>
                       <DialogDescription>Choose a destination folder.</DialogDescription>
@@ -1913,6 +2011,7 @@ export function DocPage() {
                           >
                             <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                             <span className="truncate">{projectName} (home)</span>
+                            {doc.folder_id === null && <CurrentFolderMark />}
                           </button>
                           {moveDestinations.map(({ folder: f, label }) => (
                             <button
@@ -1925,6 +2024,7 @@ export function DocPage() {
                             >
                               <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                               <span className="truncate">{label}</span>
+                              {doc.folder_id === f.id && <CurrentFolderMark />}
                             </button>
                           ))}
                           {moveDestinations.length === 0 && (
@@ -1946,7 +2046,7 @@ export function DocPage() {
                     <AlertDialogFooter>
                       <AlertDialogCancel disabled={trashing}>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        variant="destructive"
                         onClick={e => { e.preventDefault(); void handleMoveToTrash(); }}
                         disabled={trashing}
                       >
@@ -2007,29 +2107,31 @@ export function DocPage() {
             )}
             {viewingRevision && revisionView === "diff" ? (
               <div className="not-prose">
-                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                  <span className="text-muted-foreground">Compare against:</span>
-                  <div className="flex overflow-hidden rounded-md border border-border">
-                    <button
-                      className={`px-2.5 py-1 text-xs font-medium transition-colors ${diffBase === "current" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
-                      onClick={() => setDiffBase("current")}
-                    >
-                      Current version
-                    </button>
-                    <button
-                      className={`border-l border-border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${diffBase === "previous" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
-                      onClick={() => setDiffBase("previous")}
-                      disabled={!prevRevisionMeta}
-                      title={prevRevisionMeta ? undefined : "No older revision is loaded to compare against."}
-                    >
-                      Previous save
-                    </button>
+                {/* A real segmented control (shadcn Tabs: arrow keys, selected
+                    state announced, 28px targets) with the explanation on its
+                    own line instead of squeezed beside 24px raw buttons. */}
+                <div className="mb-4 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                  <span id="diff-base-label" className="text-sm text-muted-foreground">Compare with</span>
+                  <Tabs value={diffBase} onValueChange={v => setDiffBase(v as "current" | "previous")}>
+                    <TabsList aria-labelledby="diff-base-label" className="h-9">
+                      <TabsTrigger value="current" className="h-7 text-xs">Current version</TabsTrigger>
+                      <TabsTrigger
+                        value="previous"
+                        className="h-7 text-xs"
+                        disabled={!prevRevisionMeta}
+                        title={prevRevisionMeta ? undefined : "No older revision is loaded to compare against."}
+                      >
+                        Previous save
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {diffBase === "current"
-                      ? "What has changed between this version and the live document."
+                      ? "Changes between this version and the live document."
                       : "What this save changed compared to the previous version."}
-                  </span>
+                  </p>
                 </div>
                 {diffBase === "previous" && !prevRevisionMeta ? (
                   <p className="text-sm text-muted-foreground">This is the oldest loaded revision – there is no previous version to compare against.</p>
@@ -2075,17 +2177,21 @@ export function DocPage() {
             const tags: string[] = doc.tags ? JSON.parse(doc.tags) : [];
             if (!tags.length) return null;
             return (
-              <div className="not-prose mt-8 flex flex-wrap gap-1.5">
+              // A labelled list of real links (open in new tab, copy URL), each
+              // a 28px target (32px on phones) - the 22px pills fell under the
+              // 24px minimum and read as static badges.
+              <nav aria-label="Tags" className="not-prose mt-8 flex flex-wrap gap-1.5">
                 {tags.map(tag => (
-                  <button
+                  <RouterLink
                     key={tag}
-                    onClick={() => navigate(`/projects/${projectId}/tags/${encodeURIComponent(tag)}`)}
-                    className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                    to={`/projects/${projectId}/tags/${encodeURIComponent(tag)}`}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35 max-sm:h-8"
                   >
+                    <Tag className="size-3 shrink-0" aria-hidden="true" />
                     {tag}
-                  </button>
+                  </RouterLink>
                 ))}
-              </div>
+              </nav>
             );
           })()}
 

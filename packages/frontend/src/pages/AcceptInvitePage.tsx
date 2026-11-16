@@ -3,6 +3,7 @@ import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CloudOff, Link2Off } from "lucide-react";
 import { getToken } from "@/lib/auth";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -37,6 +38,9 @@ export function AcceptInvitePage() {
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Network failure (vs. a link the server rejected): retryable, so it gets
+  // its own title and a Try again action instead of "Invalid invite".
+  const [loadFailed, setLoadFailed] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [alreadyProjectId, setAlreadyProjectId] = useState<string | null>(null);
@@ -59,7 +63,10 @@ export function AcceptInvitePage() {
           setError("This invite link is invalid or no longer exists.");
         }
       })
-      .catch(() => setError("Could not load invite details. Please try again."))
+      .catch(() => {
+        setLoadFailed(true);
+        setError("Check your connection and try again.");
+      })
       .finally(() => setLoading(false));
   }, [inviteToken]);
 
@@ -120,16 +127,27 @@ export function AcceptInvitePage() {
           </div>
         ) : error && !alreadyMember ? (
           <div role="alert" className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8">
-            <div className="size-16 rounded-2xl bg-muted flex items-center justify-center text-2xl font-semibold text-muted-foreground ring-1 ring-inset ring-border">
-              ?
+            <div className="size-16 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground ring-1 ring-inset ring-border">
+              {loadFailed
+                ? <CloudOff className="size-7" aria-hidden="true" />
+                : <Link2Off className="size-7" aria-hidden="true" />}
             </div>
             <div className="flex flex-col gap-2">
-              <h1 className="text-xl font-semibold tracking-tight">Invalid invite</h1>
+              <h1 className="text-xl font-semibold tracking-tight">
+                {loadFailed ? "Couldn’t load this invite" : "Invalid invite"}
+              </h1>
               <p className="text-sm text-muted-foreground">{error}</p>
             </div>
-            <Button variant="outline" onClick={handleDecline}>
-              {isLoggedIn ? "Go to dashboard" : "Go to homepage"}
-            </Button>
+            <div className="flex w-full flex-col gap-2">
+              {loadFailed && (
+                <Button className="w-full" onClick={() => window.location.reload()}>
+                  Try again
+                </Button>
+              )}
+              <Button variant={loadFailed ? "ghost" : "outline"} className="w-full" onClick={handleDecline}>
+                {isLoggedIn ? "Go to dashboard" : "Go to homepage"}
+              </Button>
+            </div>
           </div>
         ) : alreadyMember ? (
           <div className="flex flex-col items-center gap-6 text-center rounded-xl border border-border bg-card p-8">

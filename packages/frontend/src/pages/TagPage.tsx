@@ -94,7 +94,8 @@ export function TagPage() {
     <div className={PAGE_PADDING}>
       <div data-testid="tag-column" className={READING_CONTAINER}>
       <div className="mb-6">
-        <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Tag</p>
+        {/* No "TAG" eyebrow: the tag glyph, the breadcrumb (Tags › name) and
+            the "N documents tagged" line already say what this page is. */}
         <div className="flex items-center gap-2.5">
           <Tag className="size-5 shrink-0 text-muted-foreground" aria-hidden />
           <h1 className="min-w-0 truncate text-[1.75rem] font-semibold leading-tight tracking-tight">{decodedTag}</h1>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getToken } from "@/lib/auth";
 
@@ -36,6 +37,7 @@ export function ReportSiteDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const noteId = useId();
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
@@ -102,28 +104,38 @@ export function ReportSiteDialog({
             <DialogHeader>
               <DialogTitle>Report this site</DialogTitle>
               <DialogDescription>
-                Report {siteName} to the moderation team. Tell us what's wrong - abuse, illegal
-                content, spam, or anything else that shouldn't be here.
+                Flag {siteName} for the moderation team: abuse, illegal content, spam, or
+                anything else that shouldn't be here.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={noteId}>What&apos;s wrong?</Label>
               <Textarea
+                id={noteId}
                 value={note}
                 onChange={e => setNote(e.target.value)}
                 maxLength={MAX_NOTE_LENGTH}
                 rows={5}
-                placeholder="What are you reporting, and why?"
-                aria-label="Report justification"
+                placeholder="Which page, and what did you see?"
+                aria-describedby={`${noteId}-count`}
+                aria-invalid={error ? true : undefined}
                 disabled={submitting}
               />
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              <div className="flex items-start justify-between gap-3 text-xs">
+                {/* role=alert so a failed submit is announced, not just painted. */}
+                <p role="alert" className="text-sm text-destructive">{error}</p>
+                <p id={`${noteId}-count`} className="shrink-0 tabular-nums text-muted-foreground">
+                  {note.length} / {MAX_NOTE_LENGTH}
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>
                 Cancel
               </Button>
+              {/* Filing a report deletes nothing, so it's the dialog's normal
+                  primary action rather than a red destructive one. */}
               <Button
-                variant="destructive"
                 onClick={() => void handleSubmit()}
                 disabled={submitting || !note.trim()}
               >

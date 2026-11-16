@@ -535,7 +535,7 @@ export function OrgSettingsPage() {
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              variant="destructive"
                               onClick={() => handleDetach(site)}
                             >
                               Detach
@@ -577,7 +577,7 @@ export function OrgSettingsPage() {
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          variant="destructive"
                           onClick={handleDelete}
                         >
                           Yes, delete
@@ -606,7 +606,7 @@ export function OrgSettingsPage() {
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          variant="destructive"
                           onClick={handleLeave}
                         >
                           Yes, leave

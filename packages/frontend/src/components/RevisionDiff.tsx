@@ -35,8 +35,11 @@ function diffTheme(dark: boolean) {
     },
     ".cm-line": { padding: "0 10px" },
     "&.cm-focused": { outline: "none" },
-    ".cm-changedLine": { backgroundColor: inserted },
-    ".cm-changedText": { background: insertedText },
+    // Scoped like @codemirror/merge's base theme ("&dark.cm-merge-b ...")
+    // plus one class, or its 2px green underline under every inserted
+    // character wins and these fills never apply.
+    "&.cm-merge-b.cm-editor .cm-changedLine": { backgroundColor: inserted },
+    "&.cm-merge-b.cm-editor .cm-changedText": { background: insertedText },
     ".cm-deletedChunk": { backgroundColor: deleted, paddingLeft: "10px" },
     ".cm-deletedChunk .cm-deletedText": { background: deletedText },
     ".cm-collapsedLines": {

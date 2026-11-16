@@ -241,12 +241,12 @@ const WELCOME_CONTENT = `# Welcome to the Annex demo
 This is a live, fully working copy of Annex. Everything you do here, from editing to creating docs and uploading files, stays inside the demo and is cleared when you leave.
 
 > [!tip] Go ahead, break things
-> Click the pencil icon in the top right to edit this document. Your changes will "save" and show up everywhere, but only inside this demo.
+> Click **Edit** in the top right to edit this document. Your changes will "save" and show up everywhere, but only inside this demo.
 
 ## What to try
 
 - [x] Open the demo
-- [ ] Edit this document (pencil icon, top right)
+- [ ] Edit this document (**Edit**, top right)
 - [ ] Browse the **file manager** from the sidebar
 - [ ] Open the [[Editor tour]] for a feature walkthrough
 - [ ] Open **roadmap.excalidraw** in the file manager and try the drawing editor
@@ -258,8 +258,8 @@ This is a live, fully working copy of Annex. Everything you do here, from editin
 | Feature | Where to find it |
 | --- | --- |
 | Documents | The file manager, or the sidebar's recent list |
-| WYSIWYG editing | Pencil icon on any document |
-| Raw markdown mode | The \`</>\` toggle while editing |
+| WYSIWYG editing | **Edit** on any document |
+| Raw markdown mode | **Source** (\`</>\`) while editing |
 | Full-text search | \`Ctrl+K\` anywhere in a site |
 | Files & images | Upload via the file manager |
 
