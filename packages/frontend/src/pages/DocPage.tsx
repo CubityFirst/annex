@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense } from "react";
-import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { useParams, useLocation, useNavigate, useOutletContext, Link as RouterLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -35,7 +35,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House, Tag } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -2077,17 +2077,21 @@ export function DocPage() {
             const tags: string[] = doc.tags ? JSON.parse(doc.tags) : [];
             if (!tags.length) return null;
             return (
-              <div className="not-prose mt-8 flex flex-wrap gap-1.5">
+              // A labelled list of real links (open in new tab, copy URL), each
+              // a 28px target (32px on phones) - the 22px pills fell under the
+              // 24px minimum and read as static badges.
+              <nav aria-label="Tags" className="not-prose mt-8 flex flex-wrap gap-1.5">
                 {tags.map(tag => (
-                  <button
+                  <RouterLink
                     key={tag}
-                    onClick={() => navigate(`/projects/${projectId}/tags/${encodeURIComponent(tag)}`)}
-                    className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                    to={`/projects/${projectId}/tags/${encodeURIComponent(tag)}`}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35 max-sm:h-8"
                   >
+                    <Tag className="size-3 shrink-0" aria-hidden="true" />
                     {tag}
-                  </button>
+                  </RouterLink>
                 ))}
-              </div>
+              </nav>
             );
           })()}
 
