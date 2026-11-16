@@ -768,7 +768,17 @@ export function LoginPage() {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        {/* There's no self-serve reset yet, so point at the same support inbox
+            the moderation notices use rather than leave no way back in. */}
+        <div className="flex items-baseline justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <a
+            href="mailto:docs@cubityfir.st?subject=Annex%20password%20reset"
+            className="-my-1 inline-block py-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Forgot password?
+          </a>
+        </div>
         <PasswordInput
           id="password"
           value={password}
