@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, isValidElement, lazy, Suspense, type ReactNode } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext, Link as RouterLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -35,7 +35,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House, Tag } from "lucide-react";
+import { MoreHorizontal, Pencil, X, Check, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio, ImagePlus, ListTree, FolderInput, Folder, House, Tag, FileQuestion } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -117,6 +117,19 @@ function docOutlineHeadings(doc: { title: string; content: string }): Heading[] 
 // Says why the doc's own folder is greyed out in the Move picker.
 function CurrentFolderMark() {
   return <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current</span>;
+}
+
+// Loading / not-found frame: the same padding, 44rem column and xl outline
+// rail as the reading view, so these states sit exactly where the doc will.
+function DocStateShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-full">
+      <div className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
+        <div className="mx-auto max-w-[44rem]">{children}</div>
+      </div>
+      <aside className="hidden w-60 shrink-0 xl:block" aria-hidden="true" />
+    </div>
+  );
 }
 
 function truncate(s: string, max: number): string {
@@ -1147,18 +1160,45 @@ export function DocPage() {
   }
 
   if (loading) {
+    // The reading page's shape (meta line, title, paragraphs) in its exact
+    // column, so the real content lands without a layout jump.
     return (
-      <div className="mx-auto max-w-[44rem] px-6 py-10">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
+      <DocStateShell>
+        <div aria-busy="true" aria-label="Loading document" className="flex flex-col">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="mt-7 h-9 w-2/3" />
+          <div className="mt-6 flex flex-col gap-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-11/12" />
+            <Skeleton className="h-4 w-4/5" />
+          </div>
+          <Skeleton className="mt-10 h-6 w-1/3" />
+          <div className="mt-4 flex flex-col gap-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        </div>
+      </DocStateShell>
     );
   }
 
   if (!doc) {
+    // Name what happened, the likely reasons, and a way back - not a lone
+    // line of red text with an empty top bar.
     return (
-      <div className="mx-auto max-w-[44rem] px-6 py-10">
-        <p className="text-sm text-destructive">Document not found.</p>
-      </div>
+      <DocStateShell>
+        <div role="alert" className="flex flex-col items-start">
+          <FileQuestion className="mb-4 size-6 text-muted-foreground" aria-hidden="true" />
+          <h1 className="text-xl font-semibold tracking-tight">This document isn&apos;t available</h1>
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            It may have been moved to the recycle bin, the link may be wrong, or you may not have access to it.
+          </p>
+          <Button variant="outline" size="sm" className="mt-5 gap-1.5" onClick={() => navigate(`/projects/${projectId}`)}>
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Back to {projectName || "site"}
+          </Button>
+        </div>
+      </DocStateShell>
     );
   }
 
