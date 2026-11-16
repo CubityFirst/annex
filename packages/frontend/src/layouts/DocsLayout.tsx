@@ -842,8 +842,9 @@ export function DocsLayout() {
         />
       )}
       <aside className={cn(
-        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-64 md:shadow-none",
-        // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
+        "group/sidebar z-40 md:z-20 flex flex-col shrink-0 border-r border-border bg-sidebar w-[min(20rem,85vw)] md:shadow-none",
+        // Mobile: fixed overlay that slides in over the content (doesn't push it wider),
+        // up to 320px / 85vw so the site switcher keeps a readable name.
         // The drop shadow only exists while open - parked off-canvas it would
         // bleed ~30px onto the page's left edge.
         "fixed inset-y-0 left-0 transition-transform duration-200",
@@ -854,7 +855,7 @@ export function DocsLayout() {
         sidebarOpen ? "md:w-64" : "md:w-0 md:border-r-0",
       )}>
         {/* Inner wrapper - clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
-        <div className={cn("flex flex-col flex-1 min-h-0 w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
+        <div className={cn("flex flex-col flex-1 min-h-0 w-[min(20rem,85vw)] md:w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
         {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
           {projectId && currentProject ? (
