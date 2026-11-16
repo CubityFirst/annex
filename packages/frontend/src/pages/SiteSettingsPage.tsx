@@ -210,6 +210,12 @@ function parseToken(token: string): { userId: string; email: string } | null {
   }
 }
 
+/** Branding row: a two-row grid on phones (text, then preview + actions);
+ *  the flat preview | text | actions row from sm up. The text/preview
+ *  wrapper is `display: contents` below sm so its children join this grid. */
+const BRANDING_ROW =
+  "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-4";
+
 export function SiteSettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -1525,11 +1531,13 @@ export function SiteSettingsPage() {
                 + title/description on the left, actions right-aligned. Each
                 preview sits centred in a fixed 128px slot (the 64px square is
                 centred where the 128x64 wordmark fills it) so both rows' text
-                columns start on one left edge. Below sm the actions wrap under
-                the text. */}
-            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex w-32 shrink-0 justify-center">
+                columns start on one left edge. Below sm the row becomes a
+                two-row grid - the text full-width on top, then the preview at
+                its natural size with the actions beside it - instead of
+                squeezing the copy into a ~180px column beside a 128px slot. */}
+            <div className={cn(BRANDING_ROW, SETTINGS_ROW_CARD)}>
+              <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-4">
+                <div className="row-start-2 flex w-16 shrink-0 justify-center sm:w-32">
                   <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                     {project.logo_square_updated_at && logoPreviewUrls.square ? (
                       <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
@@ -1538,14 +1546,14 @@ export function SiteSettingsPage() {
                     )}
                   </div>
                 </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="col-span-2 row-start-1 flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Square icon</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
                     Shown in the site sidebar and on profile cards. PNG, JPG, WebP or GIF, up to 2 MB. You'll crop it to a square.
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              <div className="row-start-2 flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                 <input
                   ref={squareLogoInputRef}
                   type="file"
@@ -1589,23 +1597,23 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+            <div className={cn(BRANDING_ROW, SETTINGS_ROW_CARD)}>
+              <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-4">
+                <div className="row-start-2 flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                   {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
                     <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
                   ) : (
                     <ImageIcon className="size-6 text-muted-foreground" aria-hidden />
                   )}
                 </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="col-span-2 row-start-1 flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Wordmark</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
                     Shown in the top-left of your published site. PNG, JPG, WebP or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              <div className="row-start-2 flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                 <input
                   ref={wideLogoInputRef}
                   type="file"
