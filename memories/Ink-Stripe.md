@@ -100,7 +100,7 @@ The CLI prints a `whsec_...` at startup - that's what goes in `STRIPE_WEBHOOK_SE
 
 ## Production setup
 
-- `STRIPE_INK_PRICE_ID` is a `bindings.text` var in `packages/auth/cloudflare.config.ts` (mirrored in `wrangler.toml` `[vars]`) (live price id - committed). `.dev.vars` overrides locally to the test-mode price id.
+- `STRIPE_INK_PRICE_ID` is a `bindings.text` var in `packages/auth/cloudflare.config.ts` (live price id - committed). `.dev.vars` overrides locally to the test-mode price id.
 - `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set via `wrangler secret put` on the auth worker. `STRIPE_SECRET_KEY` also on admin worker.
 - Webhook endpoint URL in Stripe Dashboard: `https://docs.cubityfir.st/stripe/webhook`. Subscribed events: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`.
 - Customer Portal must be configured separately in **live** mode (Settings → Billing → Customer portal). Test mode and live mode have different portal configs.

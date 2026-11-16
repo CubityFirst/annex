@@ -34,7 +34,8 @@ The API worker hands identity to the DO via `X-User-Id` / `X-User-Name` (URI-enc
 
 ## Enabling for a project locally
 
+With `pnpm dev` running (the helper writes the shared local D1 through the api dev server):
+
 ```
-cd packages/api && npx wrangler d1 execute cubedocs-main --local --persist-to ../../.wrangler/state \
-  --command "UPDATE projects SET features = features | 4 WHERE id = '<projectId>';"
+node scripts/d1-local.mjs main "UPDATE projects SET features = features | 4 WHERE id = '<projectId>';"
 ```

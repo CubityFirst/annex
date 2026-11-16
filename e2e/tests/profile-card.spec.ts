@@ -16,8 +16,7 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
-import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import { d1Local } from "../d1Local";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-prof-${RUN_ID}@example.com`;
@@ -51,12 +50,8 @@ async function injectFakeIp(ctx: BrowserContext) {
 }
 
 function grantInk(uid: string) {
-  const authDir = resolve(__dirname, "../../packages/auth");
   const sql = `INSERT INTO user_billing (user_id, granted_plan, granted_plan_started_at) VALUES ('${uid}', 'ink', ${Date.now()}) ON CONFLICT(user_id) DO UPDATE SET granted_plan = 'ink', granted_plan_started_at = ${Date.now()};`;
-  execSync(
-    `npx wrangler d1 execute cubedocs-auth --local --persist-to ../../.wrangler/state --command "${sql}"`,
-    { cwd: authDir, stdio: "pipe" },
-  );
+  d1Local("auth", sql);
 }
 
 test.describe.configure({ mode: "serial" });

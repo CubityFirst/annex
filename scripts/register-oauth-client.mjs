@@ -17,7 +17,8 @@
 //
 // Then apply the generated file:
 //   cd packages/auth && npx wrangler d1 execute cubedocs-auth --remote --file <printed path>
-//   # local dev:  --local --persist-to ../../.wrangler/state  (instead of --remote)
+//   # local dev (with `pnpm dev` running), from the repo root:
+//   node scripts/d1-local.mjs auth --file <printed path>
 
 import { webcrypto } from "node:crypto";
 import { randomBytes, randomUUID } from "node:crypto";

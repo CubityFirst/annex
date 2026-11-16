@@ -18,13 +18,13 @@
  * clientID, so two tabs of the same user are still distinct peers, which is
  * enough to exercise the DocCollabRoom WebSocket fan-out + persistence path.
  *
- * The REALTIME bit (= 4) on `projects.features` has no API toggle; we shell
- * out to wrangler the same way the in-package size-cap integration test does.
+ * The REALTIME bit (= 4) on `projects.features` has no API toggle; we write
+ * the local D1 directly (e2e/d1Local.ts) the same way the in-package size-cap
+ * integration test does.
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
-import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import { d1Local } from "../d1Local";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-collab-${RUN_ID}@example.com`;
@@ -69,11 +69,7 @@ async function injectFakeIp(ctx: BrowserContext) {
 }
 
 function enableRealtime(pId: string): void {
-  const apiDir = resolve(__dirname, "../../packages/api");
-  execSync(
-    `npx wrangler d1 execute cubedocs-main --local --persist-to ../../.wrangler/state --command "UPDATE projects SET features = features | 4 WHERE id = '${pId}';"`,
-    { cwd: apiDir, stdio: "pipe" },
-  );
+  d1Local("main", `UPDATE projects SET features = features | 4 WHERE id = '${pId}';`);
 }
 
 // Reads the editor's plain text from a page. Uses CodeMirror's `.cm-content`
@@ -176,7 +172,7 @@ test("sets up a project + doc with the realtime flag enabled", async () => {
 
   // Hard reload so the project's `features` field (which the DocsLayout
   // outlet computes `realtimeEnabled` from) re-fetches and picks up the bit
-  // we just flipped via wrangler.
+  // we just flipped in the local D1.
   await pageA.reload();
   await expect(pageA.locator(".cm-content")).toBeVisible({ timeout: 10000 });
 });

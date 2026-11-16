@@ -94,7 +94,7 @@ Annex is an **OpenID Connect identity provider** (authorization-code + PKCE, RS2
 id_tokens via JWKS) so other first-party services can offer "Sign in with Annex".
 Issuer is the dedicated host **`https://auth.cubityfir.st`** (the auth worker serves
 `/oauth/{token,userinfo,jwks}` + `/.well-known/openid-configuration` there via routes
-in its `wrangler.toml`); the browser-facing **authorization_endpoint is a SPA page on
+in its `cloudflare.config.ts`); the browser-facing **authorization_endpoint is a SPA page on
 the app origin** `docs.cubityfir.st/oauth/authorize` because the user's Annex session
 lives there. **Anything touching `oauth_clients`/`oauth_codes` (`0028_*`), `src/oidc.ts`,
 `routes/oauth-*.ts`, the `/oauth/authorize` proxy, the `RATE_LIMITER_OIDC` binding,
@@ -122,13 +122,14 @@ Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperativ
 
 ## CLI Notes
 
-- All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler d1 execute ...`)
+- All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler secret put ...`)
 
 ## Worker Config (cf)
 
-Each worker (`packages/{api,auth,admin,frontend}`) is configured by **`cloudflare.config.ts`** (Worker settings, bindings, vars, routes/domains, crons, DO `exports`) plus **`wrangler.config.ts`** (build settings: assets dir, source maps). That is what **`cf build` / `cf deploy`** and the Workers Builds deploy triggers read. Each package pins `cf` and `wrangler` (the Wrangler bundler must be installed per package, not hoisted).
+Each worker (`packages/{api,auth,admin,frontend}`) is configured by **`cloudflare.config.ts`** (Worker settings, bindings, vars, routes/domains, crons, DO `exports`) plus **`wrangler.config.ts`** (build settings: assets dir, source maps). **These are the only Worker config files - there is no `wrangler.toml`/`wrangler.json`; don't add one.** They are what **`cf build` / `cf deploy`**, the Workers Builds deploy triggers, and local dev read, so a binding/var/route change goes in `cloudflare.config.ts` only. Each package pins `cf` and `wrangler` (the Wrangler bundler must be installed per package, not hoisted).
 
-- **`wrangler.toml` is retained and must be kept in sync** - `pnpm dev` still runs `wrangler dev --persist-to ../../.wrangler/state` (`cf dev` can't share one persist dir across workers yet, and the api reads auth's DB via `AUTH_DB`), and the e2e suites/ops scripts use `npx wrangler d1 execute <db> --local`. **Any binding/var/route change goes in both files.**
+- **Local dev** (`pnpm dev`): api/auth/admin run `wrangler dev --experimental-new-config --port <n> --persist-to ../../.wrangler/state`, which loads `cloudflare.config.ts` + `wrangler.config.ts` (and `.dev.vars`) directly. Plain `cf dev` isn't used because it can't take a persist dir yet, and all workers must share one state dir (the api reads auth's DB via `AUTH_DB`). The frontend's `pnpm dev` is plain Vite.
+- **Local D1 SQL** (no Wrangler config means `wrangler d1 execute --local` can't resolve a database, and `cf d1 query --local` isn't implemented yet): use `node scripts/d1-local.mjs <main|auth> "<sql>"` (or `--file`), which runs through the running api dev server's Local Explorer API against the shared state - see "Local D1 State" below. Remote commands (`npx wrangler d1 execute <db> --remote`, `npx wrangler r2 object ... --remote`) work without a config file.
 - D1 migrations: `pnpm migrate` / `node scripts/migrate.mjs <local|remote>` run `cf d1 migrations apply <DATABASE_ID>` (remote unless `--local`).
 - `annex-api`'s `DocCollabRoom` is declared as `exports.durableObject({ storage: "legacy-kv" })` - it was created with `new_classes` (KV-backed). Never change it to `"sqlite"`.
 - The frontend package depends on Vite, so `cf build` would run `vite build` instead of Wrangler; its deploy is `pnpm build && pnpm build:worker (cf-wrangler build) && cf deploy --prebuilt`.
@@ -138,14 +139,13 @@ Each worker (`packages/{api,auth,admin,frontend}`) is configured by **`cloudflar
 
 The dev servers use a shared wrangler state at the **monorepo root** (`/.wrangler/state`), not inside each package. This is set via `--persist-to ../../.wrangler/state` in each package's dev script.
 
-When running local D1 migrations or queries, always pass `--persist-to ../../.wrangler/state` from the package directory, otherwise the command hits the package-local `.wrangler/state` which the dev server never reads.
+Local migrations (`pnpm migrate` / `node scripts/migrate.mjs local`) pass `--persist-to ../../.wrangler/state` from the package directory; any manual `cf d1 migrations apply <id> --local` must too, otherwise it hits a state the dev servers never read.
+
+Ad-hoc local queries go through `scripts/d1-local.mjs` (needs `pnpm dev` running - it talks to the api worker on :8787, override with `ANNEX_DEV_API_ORIGIN`). `main` = `cubedocs-main`, `auth` = `cubedocs-auth`; it prints the last statement's rows as JSON. Use it for DML/SELECTs - schema changes belong in migrations. e2e specs use the `e2e/d1Local.ts` wrapper.
 
 ```
-# Correct - targets the shared dev state
-cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --persist-to ../../.wrangler/state --command "..."
-
-# Wrong - targets packages/auth/.wrangler/state, ignored by dev server
-cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --command "..."
+node scripts/d1-local.mjs auth "SELECT id, email FROM users LIMIT 5"
+node scripts/d1-local.mjs main "UPDATE projects SET features = features | 4 WHERE id = '<id>'"
 ```
 
 ## Parallel Worktrees (dev review)

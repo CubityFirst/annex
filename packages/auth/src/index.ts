@@ -24,6 +24,8 @@ import { handleWebauthnRegisterStart } from "./routes/webauthn-register-start";
 import { handleWebauthnRegisterFinish } from "./routes/webauthn-register-finish";
 import { handleWebauthnAuthStart } from "./routes/webauthn-auth-start";
 import { handleWebauthnAuthFinish } from "./routes/webauthn-auth-finish";
+import { handlePasskeyAuthStart } from "./routes/passkey-auth-start";
+import { handlePasskeyAuthFinish } from "./routes/passkey-auth-finish";
 import { handleWebauthnCredentialsList } from "./routes/webauthn-credentials-list";
 import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-delete";
 import { handleTotpBackupCodesGenerate } from "./routes/totp-backup-codes-generate";
@@ -255,6 +257,14 @@ export default {
         const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
         if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleWebauthnAuthFinish(request, env);
+      } else if (url.pathname === "/webauthn/auth/passkey/start" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
+        response = await handlePasskeyAuthStart(request, env);
+      } else if (url.pathname === "/webauthn/auth/passkey/finish" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
+        response = await handlePasskeyAuthFinish(request, env);
       } else if (url.pathname === "/webauthn/credentials" && request.method === "POST") {
         response = await handleWebauthnCredentialsList(request, env);
       } else if (url.pathname === "/webauthn/credentials/delete" && request.method === "POST") {

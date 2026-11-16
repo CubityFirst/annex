@@ -156,13 +156,14 @@ async function handlePreAuthContinuation(
   return issueSessionOrForceChange(request, env, row);
 }
 
-// Post-2FA tail shared by the password path and the pre-auth continuation:
-// force-change branch, otherwise issue a session. Assumes the caller has
-// already verified credentials (password or pre-auth token) and any 2FA.
-async function issueSessionOrForceChange(
+// Post-2FA tail shared by the password path, the pre-auth continuation, and
+// passkey sign-in: force-change branch, otherwise issue a session. Assumes the
+// caller has already verified credentials (password, pre-auth token, or
+// passkey), any 2FA, and the moderation / email-verification gates.
+export async function issueSessionOrForceChange(
   request: Request,
   env: Env,
-  row: LoginUserRow,
+  row: Pick<LoginUserRow, "id" | "email" | "name" | "created_at" | "force_password_change" | "is_admin">,
 ): Promise<Response> {
   if (row.force_password_change) {
     // Pre-session token: short-lived, no `sid`. Only valid against

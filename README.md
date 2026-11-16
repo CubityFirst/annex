@@ -197,8 +197,8 @@ npx wrangler secret put R2_SECRET_ACCESS_KEY
 
 Enter each value at the interactive prompt (do **not** pipe it in via
 PowerShell - it appends a CRLF and corrupts the secret). Then set the two vars
-in `packages/api/cloudflare.config.ts` (`R2_BUCKET_NAME` is already there), and
-mirror them in `packages/api/wrangler.toml` `[vars]` (still used by local dev):
+in `packages/api/cloudflare.config.ts` (`R2_BUCKET_NAME` is already there; local
+dev reads the same file):
 
 ```ts
 R2_BUCKET_NAME: bindings.text("cubedocs-assets"),

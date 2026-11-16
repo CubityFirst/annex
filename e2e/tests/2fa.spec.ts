@@ -327,6 +327,20 @@ test("WebAuthn - login triggers the passkey ceremony", async ({ browserName }) =
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
 });
 
+test("WebAuthn - signs in with the passkey alone (no email or password)", async ({ browserName }) => {
+  test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
+  await logout(page);
+  await page.goto("/login");
+  const finish = page.waitForResponse(r => r.url().includes("/api/webauthn/auth/passkey/finish") && r.request().method() === "POST");
+
+  // Empty allowCredentials: the virtual authenticator answers with the
+  // discoverable credential registered above, which names the account.
+  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+
+  expect((await finish).ok()).toBe(true);
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
+});
+
 test("WebAuthn - removes the passkey (requires WebAuthn confirmation)", async ({ browserName }) => {
   test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await page.goto("/settings");

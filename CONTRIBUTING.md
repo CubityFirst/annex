@@ -10,7 +10,7 @@ pnpm migrations:local   # apply D1 migrations to the shared local dev state
 pnpm dev                # frontend :5173, api :8787, auth :8788, admin :8789
 ```
 
-The dev servers share one wrangler state at the monorepo root (`.wrangler/state`). Any manual `wrangler d1` command must pass `--persist-to ../../.wrangler/state` from the package directory or it will hit a state the dev servers never read. All wrangler invocations go through `npx wrangler`.
+The dev servers share one local state at the monorepo root (`.wrangler/state`). Worker config lives only in each package's `cloudflare.config.ts` (+ `wrangler.config.ts` for build settings) - there is no `wrangler.toml`. Local migrations (`pnpm migrate`) pass `--persist-to ../../.wrangler/state` from the package directory; for ad-hoc local SQL use `node scripts/d1-local.mjs <main|auth> "<sql>"` while `pnpm dev` is running. All wrangler invocations go through `npx wrangler`.
 
 ## Packages
 
