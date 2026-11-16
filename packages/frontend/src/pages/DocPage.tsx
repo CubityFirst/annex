@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -2060,29 +2061,31 @@ export function DocPage() {
             )}
             {viewingRevision && revisionView === "diff" ? (
               <div className="not-prose">
-                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                  <span className="text-muted-foreground">Compare against:</span>
-                  <div className="flex overflow-hidden rounded-md border border-border">
-                    <button
-                      className={`px-2.5 py-1 text-xs font-medium transition-colors ${diffBase === "current" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
-                      onClick={() => setDiffBase("current")}
-                    >
-                      Current version
-                    </button>
-                    <button
-                      className={`border-l border-border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${diffBase === "previous" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60"}`}
-                      onClick={() => setDiffBase("previous")}
-                      disabled={!prevRevisionMeta}
-                      title={prevRevisionMeta ? undefined : "No older revision is loaded to compare against."}
-                    >
-                      Previous save
-                    </button>
+                {/* A real segmented control (shadcn Tabs: arrow keys, selected
+                    state announced, 28px targets) with the explanation on its
+                    own line instead of squeezed beside 24px raw buttons. */}
+                <div className="mb-4 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                  <span id="diff-base-label" className="text-sm text-muted-foreground">Compare with</span>
+                  <Tabs value={diffBase} onValueChange={v => setDiffBase(v as "current" | "previous")}>
+                    <TabsList aria-labelledby="diff-base-label" className="h-9">
+                      <TabsTrigger value="current" className="h-7 text-xs">Current version</TabsTrigger>
+                      <TabsTrigger
+                        value="previous"
+                        className="h-7 text-xs"
+                        disabled={!prevRevisionMeta}
+                        title={prevRevisionMeta ? undefined : "No older revision is loaded to compare against."}
+                      >
+                        Previous save
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {diffBase === "current"
-                      ? "What has changed between this version and the live document."
+                      ? "Changes between this version and the live document."
                       : "What this save changed compared to the previous version."}
-                  </span>
+                  </p>
                 </div>
                 {diffBase === "previous" && !prevRevisionMeta ? (
                   <p className="text-sm text-muted-foreground">This is the oldest loaded revision – there is no previous version to compare against.</p>
