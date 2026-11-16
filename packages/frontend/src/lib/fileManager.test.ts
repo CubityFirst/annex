@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  focusNameStem,
   formatBytes,
   isDocImportName,
   moveDestinations,
@@ -156,5 +157,25 @@ describe("countedFolderFor", () => {
   it("stops on a parent cycle instead of looping", () => {
     const cyclic = [folder("x", "y"), folder("y", "x")];
     expect(countedFolderFor("x", new Set(["z"]), cyclic)).toBeNull();
+  });
+});
+
+describe("focusNameStem", () => {
+  const selected = (value: string) => {
+    const input = document.createElement("input");
+    input.value = value;
+    document.body.appendChild(input);
+    focusNameStem(input);
+    const out = value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+    input.remove();
+    return out;
+  };
+  it("selects the name before the extension", () => {
+    expect(selected("kickoff-notes.txt")).toBe("kickoff-notes");
+    expect(selected("archive.tar.gz")).toBe("archive.tar");
+  });
+  it("selects everything for dotfiles and extension-less names", () => {
+    expect(selected(".env")).toBe(".env");
+    expect(selected("README")).toBe("README");
   });
 });
