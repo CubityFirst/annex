@@ -1821,7 +1821,7 @@ export function SiteSettingsPage() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                variant="destructive"
                                 disabled={removingDomain}
                                 onClick={handleRemoveDomain}
                               >
@@ -2534,7 +2534,7 @@ export function SiteSettingsPage() {
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              variant="destructive"
                               onClick={() => handleRevokeKey(key)}
                             >
                               Revoke key
@@ -2685,7 +2685,7 @@ export function SiteSettingsPage() {
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        variant="destructive"
                         disabled={deleting || deleteConfirm !== project.name}
                         onClick={handleDelete}
                       >
@@ -2720,7 +2720,7 @@ export function SiteSettingsPage() {
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        variant="destructive"
                         disabled={leaving}
                         onClick={handleLeave}
                       >

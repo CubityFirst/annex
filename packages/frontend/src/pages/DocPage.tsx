@@ -1992,7 +1992,7 @@ export function DocPage() {
                     <AlertDialogFooter>
                       <AlertDialogCancel disabled={trashing}>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        variant="destructive"
                         onClick={e => { e.preventDefault(); void handleMoveToTrash(); }}
                         disabled={trashing}
                       >
