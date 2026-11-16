@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House } from "lucide-react";
+import { Download, Code, Check, MoreHorizontal, Pencil, FolderInput, Trash2, Folder, House, FileX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -363,10 +363,21 @@ export function FilePage() {
     );
   }
 
+  // Same dashed empty-state card as the File Manager's, with a way back -
+  // a stale link or a binned file otherwise dead-ends on one red line.
   if (!file) {
     return (
       <ViewerLayout>
-        <p className={cn(READING_CONTAINER, "text-sm text-destructive")}>File not found.</p>
+        <div className={cn(READING_CONTAINER, "rounded-lg border border-dashed border-border px-6 py-10 text-center")}>
+          <FileX className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <h1 className="text-sm font-medium">File not found</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            It may have been moved to the recycle bin, or you may not have access to it.
+          </p>
+          <Button size="sm" variant="outline" className="mt-4 h-11 md:h-8" onClick={() => navigate(`/projects/${projectId}`)}>
+            Back to files
+          </Button>
+        </div>
       </ViewerLayout>
     );
   }
