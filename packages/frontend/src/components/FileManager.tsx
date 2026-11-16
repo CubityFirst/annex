@@ -1782,6 +1782,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <Search className="mx-auto mb-3 h-5 w-5 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm font-medium">No results</p>
             <p className="mt-1 text-sm text-muted-foreground">Nothing matches “{searchQuery.trim()}”. Try a different search.</p>
+            <Button size="sm" variant="outline" className="mt-4 h-11 md:h-8" onClick={() => setSearchQuery("")}>
+              Clear search
+            </Button>
           </div>
         ) : !inSearch && folders.length === 0 && docs.length === 0 && files.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
@@ -1789,9 +1792,29 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             <p className="text-sm font-medium">This folder is empty</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {canEdit
-                ? "Create a document, add a folder, or drop files here to upload."
+                ? isDesktop
+                  ? "Start with a document, or drop files anywhere on this page to upload them."
+                  : "Start with a document, or upload files from your device."
                 : "Nothing has been added here yet."}
             </p>
+            {/* The next step, right where the eye already is. Labels differ
+                from the top bar's "New document" so role lookups stay unique;
+                below md the full-width create button already sits just above,
+                so only Upload (otherwise behind its chevron) is repeated. */}
+            {canEdit && (
+              <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center">
+                {createInHeader && (
+                  <Button size="sm" variant="outline" className="h-11 gap-1.5 md:h-8" onClick={handleNewDoc}>
+                    <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Write a document
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" className="h-11 gap-1.5 md:h-8" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                  Upload files
+                </Button>
+              </div>
+            )}
           </div>
         ) : renderTable()}
       </div>
