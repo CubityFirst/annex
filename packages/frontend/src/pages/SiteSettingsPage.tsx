@@ -2682,7 +2682,7 @@ export function SiteSettingsPage() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete "{project.name}"?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete the site and all of its documents. This action cannot be undone.
+                        This permanently deletes the site with all of its documents, files and members. It can't be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-2">
@@ -2710,8 +2710,20 @@ export function SiteSettingsPage() {
                         value={deleteConfirm}
                         onChange={e => setDeleteConfirm(e.target.value)}
                         autoComplete="off"
-                        placeholder={project.name}
+                        spellCheck={false}
+                        aria-invalid={deleteConfirm.length > 0 && !project.name.startsWith(deleteConfirm)}
+                        aria-describedby="delete-confirm-hint"
+                        className="aria-[invalid=true]:border-destructive"
                       />
+                      {/* No placeholder: a greyed copy of the name made the
+                          empty field look already filled in. Once the typed
+                          text stops being a prefix of the name, say so -
+                          otherwise a typo just leaves the button dead. */}
+                      {deleteConfirm.length > 0 && !project.name.startsWith(deleteConfirm) && (
+                        <p id="delete-confirm-hint" className="text-xs text-destructive">
+                          That doesn't match the site name – it's case-sensitive.
+                        </p>
+                      )}
                     </div>
                     {deleteError && (
                       <Alert variant="destructive">
