@@ -49,6 +49,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { UserAvatar } from "@/components/UserAvatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // A row of GET /api/projects. doc_count / member_count are only present when
 // the list was fetched with `?counts=1` (the dashboard cards).
@@ -1152,7 +1153,10 @@ export function DocsLayout() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 app-main-scroller">
-          <Outlet context={outletContext} />
+          {/* A broken page keeps the sidebar and top bar around it. */}
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet context={outletContext} />
+          </ErrorBoundary>
         </div>
       </main>
       </div>
