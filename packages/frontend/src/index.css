@@ -76,7 +76,11 @@
   --destructive-foreground: oklch(0.985 0 0);
 
   --border: oklch(0.905 0 0);
-  --input: oklch(0.88 0 0);
+  /* Control outlines (inputs, checkboxes, radios, off switches) need ≥3:1
+     against the surface - the same rule the dark palette documents below.
+     0.66 clears it on card (3.1:1) and background (3.0:1); the old 0.88 was
+     ~1.4:1, so an off switch or an empty input all but vanished. */
+  --input: oklch(0.66 0 0);
   --ring: oklch(0.55 0 0);
 }
 
