@@ -1277,7 +1277,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} aria-hidden="true" />
-                          <span className="text-sm font-medium truncate">{folder.name}</span>
+                          <span className="text-sm font-medium truncate" title={folder.name}>{folder.name}</span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1377,7 +1377,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                             ? <House className="h-4 w-4 shrink-0 mr-2 text-primary/70" aria-hidden="true" />
                             : <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" aria-hidden="true" />
                           }
-                          <span className="text-sm truncate">{doc.title || "Untitled"}</span>
+                          <span className="text-sm truncate" title={doc.title || "Untitled"}>{doc.title || "Untitled"}</span>
                           {canEdit && (
                             <button
                               type="button"
@@ -1467,7 +1467,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         className="group flex items-center w-full min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                       >
                         <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
-                        <span className="text-sm truncate">{file.name}</span>
+                        <span className="text-sm truncate" title={file.name}>{file.name}</span>
                         {canEdit && (
                           <button
                             type="button"
@@ -1543,7 +1543,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               )}
               <Folder className="h-5 w-5 shrink-0 text-primary/70" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{folder.name}</div>
+                <div className="line-clamp-2 text-sm font-medium [overflow-wrap:anywhere]">{folder.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {folderNewest && <span>{formatRelativeTime(folderNewest)} · </span>}
                   <span title={folderCountLabel(counts) || "Empty folder"}>{folderItemsLabel(counts)}</span>
@@ -1579,7 +1579,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                 : <FileText className="h-5 w-5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
               }
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{doc.title || "Untitled"}</div>
+                <div className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{doc.title || "Untitled"}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {formatRelativeTime(doc.updated_at)}{doc.author_name ? ` · ${doc.author_name}` : ""}
                 </div>
@@ -1608,7 +1608,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             )}
             <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-5 w-5 shrink-0 text-muted-foreground/60" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm">{file.name}</div>
+              <div className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{file.name}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {formatRelativeTime(file.updated_at ?? file.created_at)} · {formatBytes(file.size)}
               </div>
