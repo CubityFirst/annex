@@ -387,6 +387,9 @@ export function FilePage() {
   const kind = fileKind(file.mime_type, file.name);
   const embedMarkdown = fileEmbedMarkdown(file);
   const isSvg = /svg/i.test(file.mime_type) || /\.svg$/i.test(file.name);
+  // Prose-like text (notes, Markdown) soft-wraps; code, CSV and logs keep
+  // their lines and scroll sideways, where line breaks carry meaning.
+  const wrapText = /\.(txt|text|md|markdown|mdx)$/i.test(file.name);
   const actionsInBar = isDesktop && !!headerActionSlot;
 
   function copyEmbed() {
@@ -835,7 +838,7 @@ export function FilePage() {
       )}
 
       {kind === "text" && textContent !== null && (
-        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6")}>
+        <div className={cn(READING_CONTAINER, "mt-8 [&_pre]:text-[13.5px] [&_pre]:leading-6", wrapText && "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere] [&_pre]:!pr-12")}>
           {/* Plain-file preview sits on the card surface (never the
               highlighter theme's own background), framed like the other previews. */}
           <CodeBlock
