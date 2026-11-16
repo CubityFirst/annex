@@ -2887,22 +2887,38 @@ export function UserSettingsPage() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       autoComplete="new-password"
-                      aria-describedby={newPassword ? "password-strength" : undefined}
+                      aria-describedby="new-password-hint"
                       required
                     />
+                    {/* Same rule and copy as RegisterPage: the auth worker
+                        rejects anything below zxcvbn score 3 ("Strong"), and
+                        the submit button stays disabled until then - say so,
+                        or a disabled button gives no reason. */}
+                    <p id="new-password-hint" className="text-xs text-muted-foreground">
+                      Must rate &ldquo;Strong&rdquo; or better on the strength meter. A phrase of a few unrelated words works well.
+                    </p>
                     {newPassword && (() => {
                       const score = zxcvbn(newPassword).score;
                       return (
                         <div className="space-y-1">
-                          <div className="flex gap-1">
+                          <div
+                            className="flex gap-1"
+                            role="meter"
+                            aria-label="Password strength"
+                            aria-valuemin={0}
+                            aria-valuemax={4}
+                            aria-valuenow={score}
+                            aria-valuetext={STRENGTH_LABELS[score]}
+                          >
                             {[0, 1, 2, 3, 4].map(i => (
                               <div
                                 key={i}
+                                aria-hidden="true"
                                 className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
                               />
                             ))}
                           </div>
-                          <p id="password-strength" aria-label={`Password strength: ${STRENGTH_LABELS[score]}`} className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+                          <p className="text-xs text-muted-foreground" aria-live="polite">{STRENGTH_LABELS[score]}</p>
                         </div>
                       );
                     })()}
