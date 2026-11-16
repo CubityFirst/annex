@@ -34,6 +34,7 @@ import {
   Check,
   Network,
   Search,
+  Mail,
   Image,
   Plus,
   Upload,
@@ -981,6 +982,23 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-0.5">
               {searchEntry}
+              {/* Home-level destinations, so Home / Invites / Profile pages
+                  always have a lit row marking where you are (the wordmark
+                  link alone gives no current-location cue). */}
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) => cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)}
+              >
+                <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+                Home
+              </NavLink>
+              <NavLink
+                to="/invites/pending"
+                className={({ isActive }) => cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)}
+              >
+                <Mail className="h-3.5 w-3.5 shrink-0" />
+                Invites
+              </NavLink>
               {visibleProjects.length > 0 && (
                 <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sites</p>
               )}
