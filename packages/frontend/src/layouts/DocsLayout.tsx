@@ -28,6 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronsUpDown,
   FileText,
   SlidersHorizontal,
   Check,
@@ -1013,7 +1014,8 @@ export function DocsLayout() {
                 <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Open profile"
+                  // Name starts with the visible text (WCAG 2.5.3 label in name).
+                  aria-label={`${userName}, account menu`}
                   title={userName}
                   className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -1024,6 +1026,9 @@ export function DocsLayout() {
                       <span className="truncate text-xs capitalize text-muted-foreground">{currentProject.role ?? "owner"}</span>
                     )}
                   </span>
+                  {/* Says "this opens a menu" - without it the row reads as a
+                      static label. */}
+                  <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 </button>
                 </DropdownMenuTrigger>
                 {/* sideOffset clears the footer's top divider: the trigger
