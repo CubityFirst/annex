@@ -796,14 +796,16 @@ export function PublicDocPage() {
     <div className="flex h-screen bg-background text-foreground">
       {/* Mobile sidebar backdrop */}
       {showNav && sidebarOpen && (
-        <div className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+        <div className="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
       {/* Sidebar - only shown when the entire site is published */}
       {showNav && (
         <div className={cn(
           "group/sidebar fixed inset-y-0 left-0 z-40 transition-transform duration-200",
           "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          // Same scrim + lift as the app's mobile sidebar (DocsLayout); the
+          // shadow only exists while open so it can't bleed in from off-canvas.
+          sidebarOpen ? "translate-x-0 shadow-2xl shadow-black/40 md:shadow-none" : "-translate-x-full md:translate-x-0"
         )}>
         <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
           <div className="flex h-14 shrink-0 items-center gap-2 px-4">
