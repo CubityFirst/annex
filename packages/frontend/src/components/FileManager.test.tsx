@@ -474,7 +474,12 @@ describe("FileManager", () => {
     vi.mocked(apiFetchJson).mockResolvedValue({ ok: true, status: 200, data: emptyContents });
     renderManager(null);
     expect(await screen.findByRole("button", { name: "New document" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Upload files" })).toBeNull();
+    // Outside the empty-folder state, Upload lives only behind the chevron;
+    // the empty state repeats it as its next step.
+    const emptyState = screen.getByText("This folder is empty").parentElement!;
+    const uploads = screen.queryAllByRole("button", { name: "Upload files" });
+    expect(uploads.filter((b) => !emptyState.contains(b))).toHaveLength(0);
+    expect(uploads).toHaveLength(1);
     fireEvent.keyDown(screen.getByRole("button", { name: "More create options" }), { key: "Enter" });
     for (const name of ["New folder", "New drawing", "Upload files"]) {
       expect(await screen.findByRole("menuitem", { name })).toBeTruthy();
