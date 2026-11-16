@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { BookOpen, Building2, ChevronLeft, Globe, Plus, Settings, Users } from "lucide-react";
+import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import { BookOpen, Building2, Globe, Plus, Settings, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
+import { PAGE_PADDING, WIDE_CONTAINER } from "@/lib/pageContainer";
+import { SettingsEmptyState } from "@/components/settings/SettingsShell";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -58,6 +61,19 @@ export function OrgPage() {
 
   const canManage = org !== null && (org.role === "admin" || org.role === "owner");
 
+  // Same titled top bar as every other app route (Home › <org>), replacing
+  // the page's own "All sites" back link. Optional so the page still renders
+  // outside DocsLayout (tests).
+  const setBreadcrumbs = useOutletContext<DocsLayoutContext | undefined>()?.setBreadcrumbs;
+  useEffect(() => {
+    if (!setBreadcrumbs) return;
+    setBreadcrumbs([
+      { id: null, name: "Home", onClick: () => navigate("/dashboard") },
+      { id: orgId ?? null, name: org?.name ?? "Organization" },
+    ]);
+    return () => setBreadcrumbs([]);
+  }, [setBreadcrumbs, navigate, orgId, org?.name]);
+
   async function handleCreateSite(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
@@ -83,22 +99,22 @@ export function OrgPage() {
 
   if (notFound) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
-        <p className="text-sm text-muted-foreground">Organization not found, or you don't have access.</p>
-        <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/dashboard")}>Back to dashboard</Button>
+      <div className={PAGE_PADDING}>
+        <div className={WIDE_CONTAINER}>
+          <SettingsEmptyState
+            icon={Building2}
+            title="Organization not found"
+            hint="It may have been deleted, or you don't have access to it."
+            action={<Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>Back to your sites</Button>}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
-      <button
-        type="button"
-        onClick={() => navigate("/dashboard")}
-        className="mb-6 flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" /> All sites
-      </button>
+    <div className={PAGE_PADDING}>
+    <div className={WIDE_CONTAINER}>
 
       <div className="mb-8 flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
@@ -228,6 +244,7 @@ export function OrgPage() {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cleanSearchSnippet } from "@/lib/searchSnippet";
 import { readRecentItems, type RecentItem } from "@/lib/recentDocs";
-import { FileText, Hash, Loader2, Folder, Image, Music, FileCode, FileArchive, File, Plus, Users, SlidersHorizontal, House, Building2, Settings, type LucideIcon } from "lucide-react";
+import { FileText, Hash, Loader2, Folder, FolderOpen, Image, Music, FileCode, FileArchive, File, Plus, Users, SlidersHorizontal, LayoutGrid, Building2, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
@@ -393,10 +393,12 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false,
     { id: "user-settings", label: "Account settings", icon: Settings, keywords: "account profile preferences appearance security", run: () => { close(); navigate("/settings"); } },
   ] : [
     ...(canEdit ? [{ id: "new-doc", label: "New document", icon: Plus, keywords: "create write page", run: createDoc }] : []),
-    { id: "file-manager", label: "File manager", icon: FileText, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
+    // Icons and labels match the sidebar (File manager) and the site
+    // switcher (All sites) so an action reads the same wherever it appears.
+    { id: "file-manager", label: "File manager", icon: FolderOpen, keywords: "files folders browse uploads", run: () => { close(); navigate(`/projects/${projectId}`); } },
     ...(isAdmin ? [{ id: "members", label: "Members", icon: Users, keywords: "invite people team roles", run: () => { close(); navigate(`/projects/${projectId}/settings#members`); } }] : []),
     { id: "settings", label: "Site settings", icon: SlidersHorizontal, keywords: "configure publishing branding", run: () => { close(); navigate(`/projects/${projectId}/settings`); } },
-    { id: "dashboard", label: "Go to dashboard", icon: House, keywords: "home sites switch", run: () => { close(); navigate("/"); } },
+    { id: "dashboard", label: "All sites", icon: LayoutGrid, keywords: "dashboard home sites switch", run: () => { close(); navigate("/dashboard"); } },
   ];
 
   const hasTerm = !!searchTerm.trim();
