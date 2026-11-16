@@ -216,6 +216,9 @@ function parseToken(token: string): { userId: string; email: string } | null {
 const BRANDING_ROW =
   "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-4";
 
+/** Starting colours for new graph tag-colour rules, cycled in order. */
+const TAG_RULE_PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#0ea5e9", "#a855f7"];
+
 export function SiteSettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -902,7 +905,9 @@ export function SiteSettingsPage() {
   }
 
   function addTagRule() {
-    setTagColorRules(prev => [...prev, { id: nextRuleId, tag: "", color: "#6366f1" }]);
+    // Each new rule starts on the next palette colour, so two fresh rules
+    // are never indistinguishable indigo swatches.
+    setTagColorRules(prev => [...prev, { id: nextRuleId, tag: "", color: TAG_RULE_PALETTE[prev.length % TAG_RULE_PALETTE.length] }]);
     setNextRuleId(prev => prev + 1);
   }
 
@@ -2117,7 +2122,8 @@ export function SiteSettingsPage() {
                                 type="button"
                                 className="w-9 h-9 sm:w-6 sm:h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 style={{ backgroundColor: rule.color }}
-                                aria-label="Pick colour"
+                                aria-label={`Colour for ${rule.tag.trim() ? `tag "${rule.tag.trim()}"` : `tag ${i + 1}`}: ${rule.color}`}
+                                title="Pick colour"
                                 onClick={() => {
                                   const el = document.getElementById(`tag-color-${rule.id}`);
                                   if (el) (el as HTMLInputElement).click();
@@ -2126,7 +2132,8 @@ export function SiteSettingsPage() {
                               <input
                                 id={`tag-color-${rule.id}`}
                                 type="color"
-                                aria-label="Tag colour"
+                                aria-hidden
+                                tabIndex={-1}
                                 className="sr-only"
                                 value={rule.color}
                                 onChange={e => updateTagRuleColor(rule.id, e.target.value)}
@@ -2136,10 +2143,12 @@ export function SiteSettingsPage() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9 sm:h-6 sm:w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                              className="h-9 w-9 sm:h-8 sm:w-8 shrink-0 text-muted-foreground hover:text-destructive"
                               onClick={() => removeTagRule(rule.id)}
+                              aria-label={`Remove ${rule.tag.trim() ? `tag "${rule.tag.trim()}"` : `tag ${i + 1}`}`}
+                              title="Remove"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="size-4" aria-hidden />
                             </Button>
                           </div>
                         ))}
