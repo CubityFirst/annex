@@ -483,6 +483,7 @@ export function DocPage() {
   const [collabFatalReason, setCollabFatalReason] = useState<string | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resettingCollab, setResettingCollab] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   const assetsFolderPromiseRef = useRef<Map<string | null, Promise<string>>>(new Map());
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -1043,6 +1044,30 @@ export function DocPage() {
     return () => { cancelled = true; };
   }, [revisionView, diffBase, prevRevisionMeta, prevRevisionContent, docId]);
 
+  // Local edits that leaving edit mode (or the tab) would throw away. In a
+  // live collab session the room already mirrors the body to the server, so
+  // only the title draft counts there.
+  const collabLive = realtimeEnabled && !collabFatal && !isNewDoc && !!currentUser;
+  const hasUnsavedEdits = editing && (isNewDoc
+    ? titleDraft.trim() !== "" || draft.trim() !== ""
+    : !!doc && ((!collabLive && draft !== doc.content) || titleDraft.trim() !== doc.title));
+
+  // Warn before the tab/window closes with unsaved edits (mirrors FilePage's
+  // drawing guard). In-app route changes can't be blocked this way: useBlocker
+  // needs a data router and the app mounts a plain <BrowserRouter>.
+  useEffect(() => {
+    if (!hasUnsavedEdits) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedEdits]);
+
+  // The editor's Cancel: confirm first when it would discard work.
+  function requestExitEditing() {
+    if (hasUnsavedEdits) setDiscardConfirmOpen(true);
+    else cancelEditing();
+  }
+
   async function handleRevert() {
     if (!docId || !viewingRevision) return;
     setReverting(true);
@@ -1252,7 +1277,7 @@ export function DocPage() {
             <Button
               variant={isDirty ? "outline" : "ghost"}
               size="sm"
-              onClick={cancelEditing}
+              onClick={requestExitEditing}
               aria-label={exitLabel}
               title={exitLabel}
               className="gap-1.5"
@@ -1328,6 +1353,27 @@ export function DocPage() {
               <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
                 {resettingCollab ? "Restoring…" : "Restore real-time sync"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {isNewDoc ? "Discard this new document?" : `Discard changes to “${titleDraft.trim() || doc.title}”?`}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {isNewDoc
+                  ? "It hasn't been created yet, so everything you've written will be lost."
+                  : "Your edits since you opened the editor haven't been saved. Discarding can't be undone."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={cancelEditing}>
+                Discard changes
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
