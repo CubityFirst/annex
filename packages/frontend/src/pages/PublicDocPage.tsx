@@ -743,6 +743,7 @@ export function PublicDocPage() {
   // Desktop top bar breadcrumb: site name (links to the home doc, or the
   // generated site index when there is none) › current page.
   const homeDocId = data.docs?.find(d => d.is_home === 1)?.id ?? null;
+  const siteHomeHref = homeDocId ? href(homeDocId) : hostMode ? "/" : `/s/${linkSlug}`;
   const currentNavDoc = data.docs?.find(d => d.id === data.doc.id);
   const pageTitle = isGraph
     ? "Graph"
@@ -806,6 +807,14 @@ export function PublicDocPage() {
         )}>
         <aside className={cn("flex h-full flex-col border-r border-border bg-sidebar overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
           <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+            {/* The site's name/logo is its home link, as on any website - on
+                phones it's the only route back to the site index. */}
+            <Link
+              to={siteHomeHref}
+              onClick={() => setSelectedFile(null)}
+              aria-label={`${data.project.name} home`}
+              className="-mx-2 flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -824,10 +833,11 @@ export function PublicDocPage() {
               </>
             ) : (
               <>
-                <BookOpen className="h-6 w-6 text-primary" />
-                <span className="text-lg font-semibold tracking-tight">{data.project.name}</span>
+                <BookOpen className="h-6 w-6 shrink-0 text-primary" />
+                <span className="truncate text-lg font-semibold tracking-tight">{data.project.name}</span>
               </>
             )}
+            </Link>
             <Button
               variant="ghost"
               size="icon"
@@ -996,6 +1006,12 @@ export function PublicDocPage() {
             >
               <Menu className="h-5 w-5" />
             </Button>
+            <Link
+              to={siteHomeHref}
+              onClick={() => setSelectedFile(null)}
+              aria-label={`${data.project.name} home`}
+              className="flex min-h-10 min-w-0 items-center gap-2 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
             {data.project.logo_wide_updated_at ? (
               <img
                 src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo/wide?v=${encodeURIComponent(data.project.logo_wide_updated_at)}`}
@@ -1018,6 +1034,7 @@ export function PublicDocPage() {
                 <span className="text-sm font-semibold text-foreground truncate">{data.project.name}</span>
               </>
             )}
+            </Link>
             <Button
               variant="ghost"
               size="icon"
