@@ -38,6 +38,7 @@ import {
   Upload,
   Building2,
   Menu,
+  PanelLeftOpen,
   LayoutGrid,
   X,
 } from "lucide-react";
@@ -1085,16 +1086,20 @@ export function DocsLayout() {
         {(displayCrumbs.length > 0 || !sidebarOpen) && (
           <div className={cn(
             "shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap px-2 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]",
-            displayCrumbs.length === 0 && "md:hidden",
+            displayCrumbs.length === 0 && sidebarOpen && "md:hidden",
           )}>
             {!sidebarOpen && (
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
                 aria-label="Open navigation menu"
-                className="md:hidden shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Show sidebar"
+                // Desktop: the collapsed sidebar's only other way back is the
+                // 12px edge tab, so the bar carries a real 32px opener too.
+                className="shrink-0 mr-1 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:-ml-2 md:mr-2 md:h-8 md:w-8"
               >
-                <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5 md:hidden" />
+                <PanelLeftOpen className="hidden h-4 w-4 md:block" />
               </button>
             )}
             {/* Phones show only the final crumb (the current page/doc title,
