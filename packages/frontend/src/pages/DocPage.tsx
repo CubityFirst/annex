@@ -1583,12 +1583,12 @@ export function DocPage() {
                       <DialogHeader>
                         <DialogTitle>Document access</DialogTitle>
                         <DialogDescription>
-                          Grant per-document access to limited members, or uplift viewers to edit this document.
+                          Let limited members read this document, or let viewers edit it. Site roles are unchanged.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="flex flex-col gap-4 py-2">
                         <div className="flex flex-col gap-2">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Members with access</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shared with</p>
                           {sharesLoading ? (
                             <div className="flex flex-col divide-y divide-border rounded-md border border-border">
                               {[0, 1].map(i => (
@@ -1601,7 +1601,7 @@ export function DocPage() {
                               ))}
                             </div>
                           ) : docShares.length === 0 ? (
-                            <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">No users have been granted discrete access yet.</p>
+                            <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Not shared with anyone yet.</p>
                           ) : (
                               <div className="flex flex-col divide-y divide-border rounded-md border border-border">
                                 {docShares.map(share => (
@@ -1718,7 +1718,7 @@ export function DocPage() {
                             </div>
                           )}
                           {!sharesLoading && shareableMembers.length === 0 && (
-                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site settings.</p>
+                            <p className="text-xs text-muted-foreground">Only viewers and limited members can be added here, and this site has none yet. Invite them from Site settings → People &amp; access.</p>
                           )}
                         </div>
                     </DialogContent>

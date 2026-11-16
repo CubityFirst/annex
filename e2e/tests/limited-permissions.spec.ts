@@ -245,13 +245,13 @@ test("owner grants the limited user VIEW access on the doc", async () => {
   await expect(dialog).toBeVisible({ timeout: 5000 });
 
   // Sanity: no shares yet - the empty-state copy is visible.
-  await expect(dialog.getByText("No users have been granted discrete access yet.")).toBeVisible();
+  await expect(dialog.getByText("Not shared with anyone yet.")).toBeVisible();
 
   // Default permission for an addable limited member is already "View" - just
   // click the per-row "Grant access" button.
   await dialog.getByTitle("Grant access").click();
 
-  // After grant, the user moves into the "Members with access" section. The
+  // After grant, the user moves into the "Shared with" section. The
   // "Revoke access" button only renders for existing shares, so its presence
   // is the unambiguous post-grant signal (the user's name is visible in both
   // sections).
