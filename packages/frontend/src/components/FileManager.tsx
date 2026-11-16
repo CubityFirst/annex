@@ -1634,10 +1634,22 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setExternalDragOver(false); }}
       onDrop={handleExternalDrop}
     >
+      {/* Drop zone: a dashed edge (the drop-target convention) and a label
+          that names where the files will land. The label is sticky so it
+          stays in view over a long, scrolled listing. */}
       {externalDragOver && (
-        <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
-          <Upload className="h-8 w-8 text-primary/60" aria-hidden="true" />
-          <p className="text-sm font-medium text-muted-foreground">Drop to upload</p>
+        <div className="pointer-events-none absolute inset-3 z-20 rounded-lg border-2 border-dashed border-primary/50 bg-background/85 backdrop-blur-sm">
+          <div className="sticky top-[30vh] flex flex-col items-center gap-3 px-6 pt-[12vh] text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Upload className="h-5 w-5 text-foreground" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Drop files to upload</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                They'll be added to <span className="font-medium text-foreground">{path[path.length - 1]?.name || projectName}</span>.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
