@@ -93,6 +93,11 @@ export function SettingsSectionHeader({
  * One settings row: label + 13px muted description on the left, its control
  * on the right, in a bordered row card. Used by every settings page so toggle,
  * select and action rows share one geometry.
+ *
+ * `stack` is for wide controls (a select, a text button): below sm the
+ * control drops under the copy, left-aligned with it - the same phone
+ * layout DangerRow uses - instead of squeezing the description into a
+ * ~170px column. Switches are narrow enough to stay inline; leave it off.
  */
 export function SettingsRow({
   title,
@@ -100,6 +105,7 @@ export function SettingsRow({
   description,
   icon,
   children,
+  stack,
   className,
 }: {
   title: ReactNode;
@@ -110,10 +116,19 @@ export function SettingsRow({
   icon?: ReactNode;
   /** The control(s) shown on the right. */
   children?: ReactNode;
+  /** Stack the control under the copy below sm (wide controls only). */
+  stack?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-4", SETTINGS_ROW_CARD, className)}>
+    <div
+      className={cn(
+        "flex justify-between gap-4",
+        stack ? "flex-col gap-3 sm:flex-row sm:items-center sm:gap-4" : "items-center",
+        SETTINGS_ROW_CARD,
+        className,
+      )}
+    >
       <div className="flex min-w-0 flex-col gap-0.5">
         <div id={titleId} className="flex items-center gap-2 text-sm font-medium">
           {icon}
@@ -123,7 +138,9 @@ export function SettingsRow({
           <div className={cn("text-[13px] leading-snug text-muted-foreground", icon && "pl-6")}>{description}</div>
         )}
       </div>
-      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      {children && (
+        <div className={cn("flex shrink-0 items-center gap-2", stack && icon && "max-sm:pl-6")}>{children}</div>
+      )}
     </div>
   );
 }

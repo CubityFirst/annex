@@ -210,6 +210,15 @@ function parseToken(token: string): { userId: string; email: string } | null {
   }
 }
 
+/** Branding row: a two-row grid on phones (text, then preview + actions);
+ *  the flat preview | text | actions row from sm up. The text/preview
+ *  wrapper is `display: contents` below sm so its children join this grid. */
+const BRANDING_ROW =
+  "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-4";
+
+/** Starting colours for new graph tag-colour rules, cycled in order. */
+const TAG_RULE_PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#0ea5e9", "#a855f7"];
+
 export function SiteSettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -896,7 +905,9 @@ export function SiteSettingsPage() {
   }
 
   function addTagRule() {
-    setTagColorRules(prev => [...prev, { id: nextRuleId, tag: "", color: "#6366f1" }]);
+    // Each new rule starts on the next palette colour, so two fresh rules
+    // are never indistinguishable indigo swatches.
+    setTagColorRules(prev => [...prev, { id: nextRuleId, tag: "", color: TAG_RULE_PALETTE[prev.length % TAG_RULE_PALETTE.length] }]);
     setNextRuleId(prev => prev + 1);
   }
 
@@ -1525,11 +1536,13 @@ export function SiteSettingsPage() {
                 + title/description on the left, actions right-aligned. Each
                 preview sits centred in a fixed 128px slot (the 64px square is
                 centred where the 128x64 wordmark fills it) so both rows' text
-                columns start on one left edge. Below sm the actions wrap under
-                the text. */}
-            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex w-32 shrink-0 justify-center">
+                columns start on one left edge. Below sm the row becomes a
+                two-row grid - the text full-width on top, then the preview at
+                its natural size with the actions beside it - instead of
+                squeezing the copy into a ~180px column beside a 128px slot. */}
+            <div className={cn(BRANDING_ROW, SETTINGS_ROW_CARD)}>
+              <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-4">
+                <div className="row-start-2 flex w-16 shrink-0 justify-center sm:w-32">
                   <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                     {project.logo_square_updated_at && logoPreviewUrls.square ? (
                       <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
@@ -1538,14 +1551,14 @@ export function SiteSettingsPage() {
                     )}
                   </div>
                 </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="col-span-2 row-start-1 flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Square icon</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
                     Shown in the site sidebar and on profile cards. PNG, JPG, WebP or GIF, up to 2 MB. You'll crop it to a square.
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              <div className="row-start-2 flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                 <input
                   ref={squareLogoInputRef}
                   type="file"
@@ -1589,23 +1602,23 @@ export function SiteSettingsPage() {
 
             {/* Wide wordmark - used at the top-left of the published-site
                 header. Native aspect, no client-side crop. */}
-            <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", SETTINGS_ROW_CARD)}>
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+            <div className={cn(BRANDING_ROW, SETTINGS_ROW_CARD)}>
+              <div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-4">
+                <div className="row-start-2 flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                   {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
                     <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
                   ) : (
                     <ImageIcon className="size-6 text-muted-foreground" aria-hidden />
                   )}
                 </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="col-span-2 row-start-1 flex min-w-0 flex-col gap-0.5">
                   <p className="text-sm font-medium">Wordmark</p>
                   <p className="text-[13px] leading-snug text-muted-foreground">
                     Shown in the top-left of your published site. PNG, JPG, WebP or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              <div className="row-start-2 flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                 <input
                   ref={wideLogoInputRef}
                   type="file"
@@ -1944,13 +1957,14 @@ export function SiteSettingsPage() {
                     icon={<Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     title="AI summarisation type"
                     description="Automatic generates a summary when a page is loaded. Manual only summarises when the sparkle button is pressed."
+                    stack
                   >
                     <Select
                       value={project.ai_summarization_type ?? "manual"}
                       onValueChange={handleAiSummarizationTypeChange}
                       disabled={togglingAiType}
                     >
-                      <SelectTrigger className="w-32 shrink-0" aria-label="AI summarisation type">
+                      <SelectTrigger className="w-40 shrink-0 sm:w-32" aria-label="AI summarisation type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1966,13 +1980,14 @@ export function SiteSettingsPage() {
               icon={<NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />}
               title="Save changelog"
               description="Prompt editors to leave a note describing their changes when saving a document."
+              stack
             >
               <Select
                 value={project.changelog_mode}
                 onValueChange={handleChangelogModeChange}
                 disabled={togglingChangelog}
               >
-                <SelectTrigger className="w-32 shrink-0" aria-label="Save changelog mode">
+                <SelectTrigger className="w-40 shrink-0 sm:w-32" aria-label="Save changelog mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2005,45 +2020,12 @@ export function SiteSettingsPage() {
                     Show an interactive graph of how documents link to each other.
                   </p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {project.graph_enabled === 1 && (() => {
-                    const now = new Date();
-                    const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
-                    const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
-                    const tip = locked ? `Rebuild available in ${minsLeft} min` : "Rebuild graph";
-                    // The span wrapper keeps the tooltip working while the
-                    // button is disabled (disabled buttons swallow pointer
-                    // events, so Radix never sees the hover).
-                    return (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              disabled={locked || reindexing}
-                              onClick={handleReindex}
-                              aria-label="Rebuild graph"
-                              title={tip}
-                            >
-                              <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} aria-hidden />
-                              Rebuild
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>{tip}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })()}
-                  <Switch
-                    checked={project.graph_enabled === 1}
-                    onCheckedChange={handleToggleGraph}
-                    disabled={togglingGraph}
-                    aria-label="Graph view"
-                  />
-                </div>
+                <Switch
+                  checked={project.graph_enabled === 1}
+                  onCheckedChange={handleToggleGraph}
+                  disabled={togglingGraph}
+                  aria-label="Graph view"
+                />
               </div>
               {project.graph_enabled === 1 && (
                 <>
@@ -2060,6 +2042,49 @@ export function SiteSettingsPage() {
                       disabled={togglingPublishedGraph}
                       aria-label="Show graph view on published site"
                     />
+                  </div>
+                  {/* Rebuild is a one-off maintenance action, so it gets its
+                      own sub-row (title says what it does) instead of sitting
+                      beside the on/off switch, where it read as part of the
+                      toggle and squeezed the description on phones. */}
+                  <div className="flex items-center justify-between gap-4 border-t border-border py-3 pl-10 pr-4">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium">Rebuild graph</p>
+                      <p className="text-[13px] leading-snug text-muted-foreground">
+                        Re-scan every document for links if the graph looks out of date.
+                      </p>
+                    </div>
+                    {(() => {
+                      const now = new Date();
+                      const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
+                      const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
+                      const tip = locked ? `Rebuild available in ${minsLeft} min` : "Rebuild graph";
+                      // The span wrapper keeps the tooltip working while the
+                      // button is disabled (disabled buttons swallow pointer
+                      // events, so Radix never sees the hover).
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex shrink-0">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                disabled={locked || reindexing}
+                                onClick={handleReindex}
+                                aria-label="Rebuild graph"
+                                title={tip}
+                              >
+                                <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} aria-hidden />
+                                Rebuild
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{tip}</TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
                   </div>
                   <div className="border-t border-border">
                     <button
@@ -2097,7 +2122,8 @@ export function SiteSettingsPage() {
                                 type="button"
                                 className="w-9 h-9 sm:w-6 sm:h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 style={{ backgroundColor: rule.color }}
-                                aria-label="Pick colour"
+                                aria-label={`Colour for ${rule.tag.trim() ? `tag "${rule.tag.trim()}"` : `tag ${i + 1}`}: ${rule.color}`}
+                                title="Pick colour"
                                 onClick={() => {
                                   const el = document.getElementById(`tag-color-${rule.id}`);
                                   if (el) (el as HTMLInputElement).click();
@@ -2106,7 +2132,8 @@ export function SiteSettingsPage() {
                               <input
                                 id={`tag-color-${rule.id}`}
                                 type="color"
-                                aria-label="Tag colour"
+                                aria-hidden
+                                tabIndex={-1}
                                 className="sr-only"
                                 value={rule.color}
                                 onChange={e => updateTagRuleColor(rule.id, e.target.value)}
@@ -2116,10 +2143,12 @@ export function SiteSettingsPage() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9 sm:h-6 sm:w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                              className="h-9 w-9 sm:h-8 sm:w-8 shrink-0 text-muted-foreground hover:text-destructive"
                               onClick={() => removeTagRule(rule.id)}
+                              aria-label={`Remove ${rule.tag.trim() ? `tag "${rule.tag.trim()}"` : `tag ${i + 1}`}`}
+                              title="Remove"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="size-4" aria-hidden />
                             </Button>
                           </div>
                         ))}
@@ -2234,7 +2263,7 @@ export function SiteSettingsPage() {
 
             {/* Invite form */}
             <form onSubmit={handleInvite} className="flex flex-col gap-3">
-              <h4 className="text-sm font-medium">Invite a member</h4>
+              <h3 className="text-sm font-medium">Invite a member</h3>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="email"
@@ -2281,7 +2310,7 @@ export function SiteSettingsPage() {
             <div className="flex flex-col gap-3">
               <div>
                 <div className="min-w-0">
-                  <h4 className="text-sm font-medium">Invite links</h4>
+                  <h3 className="text-sm font-medium">Invite links</h3>
                   <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Anyone with a link can join with its role.</p>
                 </div>
                 {/* Opened by the "Create link" action in the link list card. */}
@@ -2435,9 +2464,9 @@ export function SiteSettingsPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <Label>Access</Label>
+                        <Label htmlFor="new-key-scope">Access</Label>
                         <Select value={newKeyScope} onValueChange={val => setNewKeyScope(val as ApiKeyScope)} disabled={!canMintWriteKey}>
-                          <SelectTrigger>
+                          <SelectTrigger id="new-key-scope">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2468,7 +2497,10 @@ export function SiteSettingsPage() {
                         </Alert>
                       )}
                     </div>
+                    {/* Same footer as "Create invite link": an explicit
+                        Cancel beside the primary action. */}
                     <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCreateKeyOpen(false)}>Cancel</Button>
                       <Button type="submit" disabled={creatingKey || !newKeyName.trim()}>
                         {creatingKey ? "Creating…" : "Create key"}
                       </Button>
@@ -2549,13 +2581,16 @@ export function SiteSettingsPage() {
             )}
 
             {/* Usage hint */}
-            <div className="rounded-md border border-border bg-muted/40 p-4">
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Using your key</p>
-              <pre className="overflow-x-auto rounded bg-background p-3 text-xs leading-relaxed text-muted-foreground">
+            {/* A sub-heading like "Invite a member" / "Invite links" (and an
+                h3 under the section's h2), not an uppercase eyebrow, and no
+                card around the code block - one box, not a box in a box. */}
+            <div className="mt-2 flex flex-col gap-2">
+              <h3 className="text-sm font-medium">Using your key</h3>
+              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
 {`curl ${window.location.origin}/api/v1/docs \\
   -H "Authorization: Bearer annx_your_key_here"`}
               </pre>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="text-[13px] leading-snug text-muted-foreground">
                 Base URL <code className={INLINE_CODE}>{window.location.origin}/api/v1</code><span className="-ml-px">.</span> See the{" "}
                 <a
                   href={API_REFERENCE_URL}
@@ -2616,6 +2651,7 @@ export function SiteSettingsPage() {
             <SettingsRow
               title="Download as .zip"
               description="Every document and uploaded file in this site, with folders preserved."
+              stack
             >
               <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
                 {exporting ? "Exporting…" : "Export site"}
@@ -2646,7 +2682,7 @@ export function SiteSettingsPage() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete "{project.name}"?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete the site and all of its documents. This action cannot be undone.
+                        This permanently deletes the site with all of its documents, files and members. It can't be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-2">
@@ -2674,8 +2710,20 @@ export function SiteSettingsPage() {
                         value={deleteConfirm}
                         onChange={e => setDeleteConfirm(e.target.value)}
                         autoComplete="off"
-                        placeholder={project.name}
+                        spellCheck={false}
+                        aria-invalid={deleteConfirm.length > 0 && !project.name.startsWith(deleteConfirm)}
+                        aria-describedby="delete-confirm-hint"
+                        className="aria-[invalid=true]:border-destructive"
                       />
+                      {/* No placeholder: a greyed copy of the name made the
+                          empty field look already filled in. Once the typed
+                          text stops being a prefix of the name, say so -
+                          otherwise a typo just leaves the button dead. */}
+                      {deleteConfirm.length > 0 && !project.name.startsWith(deleteConfirm) && (
+                        <p id="delete-confirm-hint" className="text-xs text-destructive">
+                          That doesn't match the site name – it's case-sensitive.
+                        </p>
+                      )}
                     </div>
                     {deleteError && (
                       <Alert variant="destructive">
