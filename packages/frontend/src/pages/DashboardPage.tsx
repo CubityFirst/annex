@@ -540,7 +540,7 @@ export function DashboardPage() {
 
       {recent.length > 0 && (
         <section className="mt-8 sm:mt-12">
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Recently opened</h2>
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Recent</h2>
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {recent.map(item => (
               <li key={`${item.project.id}:${item.kind}:${item.id}`}>

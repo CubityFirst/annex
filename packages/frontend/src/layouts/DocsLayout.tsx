@@ -943,7 +943,7 @@ export function DocsLayout() {
             {visibleRecentItems.length > 0 && (
               <div className="mt-4">
                 <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
-                  Recently accessed
+                  Recent
                 </p>
                 <nav className="flex flex-col gap-0.5">
                   {visibleRecentItems.map(item => (
