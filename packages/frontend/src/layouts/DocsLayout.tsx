@@ -806,8 +806,13 @@ export function DocsLayout() {
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
-        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
-          <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
+        // One line at every width: phones get the short form so the banner
+        // doesn't eat three lines of a 390px screen above the top bar.
+        <div className="z-30 flex shrink-0 items-center justify-center gap-3 border-b border-amber-500/20 bg-amber-500/[0.07] px-4 py-1.5 text-center text-xs font-medium text-amber-700 dark:text-amber-200/90">
+          <span className="min-w-0">
+            <span className="hidden sm:inline">You&rsquo;re exploring a demo. Changes stay in this tab and are lost when you reload.</span>
+            <span className="sm:hidden">Demo: changes aren&rsquo;t saved.</span>
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -815,7 +820,7 @@ export function DocsLayout() {
               // Full reload so the demo fetch patch and in-memory data are dropped.
               window.location.replace("/");
             }}
-            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+            className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20 max-sm:py-1"
           >
             Exit demo
           </button>
