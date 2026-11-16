@@ -2242,7 +2242,7 @@ export function SiteSettingsPage() {
 
             {/* Invite form */}
             <form onSubmit={handleInvite} className="flex flex-col gap-3">
-              <h4 className="text-sm font-medium">Invite a member</h4>
+              <h3 className="text-sm font-medium">Invite a member</h3>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="email"
@@ -2289,7 +2289,7 @@ export function SiteSettingsPage() {
             <div className="flex flex-col gap-3">
               <div>
                 <div className="min-w-0">
-                  <h4 className="text-sm font-medium">Invite links</h4>
+                  <h3 className="text-sm font-medium">Invite links</h3>
                   <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Anyone with a link can join with its role.</p>
                 </div>
                 {/* Opened by the "Create link" action in the link list card. */}
@@ -2560,13 +2560,16 @@ export function SiteSettingsPage() {
             )}
 
             {/* Usage hint */}
-            <div className="rounded-md border border-border bg-muted/40 p-4">
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Using your key</p>
-              <pre className="overflow-x-auto rounded bg-background p-3 text-xs leading-relaxed text-muted-foreground">
+            {/* A sub-heading like "Invite a member" / "Invite links" (and an
+                h3 under the section's h2), not an uppercase eyebrow, and no
+                card around the code block - one box, not a box in a box. */}
+            <div className="mt-2 flex flex-col gap-2">
+              <h3 className="text-sm font-medium">Using your key</h3>
+              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
 {`curl ${window.location.origin}/api/v1/docs \\
   -H "Authorization: Bearer annx_your_key_here"`}
               </pre>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="text-[13px] leading-snug text-muted-foreground">
                 Base URL <code className={INLINE_CODE}>{window.location.origin}/api/v1</code><span className="-ml-px">.</span> See the{" "}
                 <a
                   href={API_REFERENCE_URL}
