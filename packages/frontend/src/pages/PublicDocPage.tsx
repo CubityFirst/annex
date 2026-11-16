@@ -730,8 +730,10 @@ export function PublicDocPage() {
     return (
       <NotFound404
         subtitle="No published document exists at this location. The document may be unpublished, moved, or the link mistyped."
-        primaryLabel="Go home"
-        primaryHref="/"
+        // A missing page on a site goes back to that site's index, not to
+        // Annex's marketing page (which a reader may never have seen).
+        primaryLabel={docId ? "Back to the site" : "Go home"}
+        primaryHref={docId && !hostMode ? `/s/${projectId}` : "/"}
         secondary={{ label: "Report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
       />
     );
