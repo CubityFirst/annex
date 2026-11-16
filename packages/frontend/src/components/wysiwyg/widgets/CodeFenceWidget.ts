@@ -1,6 +1,6 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { rendererCtxFacet } from "../context/RendererContext";
-import { getHighlighter, highlighterReady } from "@/lib/shiki";
+import { getHighlighter, highlightCode, highlighterReady } from "@/lib/shiki";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -15,8 +15,6 @@ import { cn } from "@/lib/utils";
 // Mermaid blocks still need React (async render, heavy lazy lib) and go through
 // MermaidWidget instead - see decorations/block/codeFence.ts.
 
-const THEME = "vitesse-dark";
-
 // Lucide Copy/Check, inlined so the button needs no React. Classes match
 // lucide-react's output (`<Copy className="h-3.5 w-3.5" />`) exactly.
 const COPY_ICON =
@@ -30,17 +28,6 @@ const COPY_BTN_CLASS = cn(
   buttonVariants({ variant: "ghost", size: "icon" }),
   "pdf-print-hide absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10",
 );
-
-function highlightHtml(code: string, lang: string): string | null {
-  const h = getHighlighter();
-  if (!h) return null;
-  try {
-    return h.codeToHtml(code, { lang, theme: THEME });
-  } catch {
-    // Unknown language - fall back to plain text.
-    return h.codeToHtml(code, { lang: "text", theme: THEME });
-  }
-}
 
 export class CodeFenceWidget extends WidgetType {
   private destroyed = false;
@@ -103,7 +90,7 @@ export class CodeFenceWidget extends WidgetType {
   // (Re)builds the inner content for the current highlighter state. Mirrors the
   // DOM the React ShikiCodeBlock produced so styles.css rules still apply.
   private paint(outer: HTMLElement): void {
-    const html = highlightHtml(this.code, this.lang);
+    const html = highlightCode(this.code, this.lang);
     outer.replaceChildren();
 
     if (html !== null) {

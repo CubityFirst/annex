@@ -413,6 +413,12 @@ pre.shiki {
   border-radius: 0.6rem;
   line-height: 1.65;
 }
+/* Dual-theme Shiki output carries the light colours inline and the dark ones
+   as --shiki-dark (see lib/shiki.ts); switch with the app's .dark class. */
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark) !important;
+}
 
 /* Docked side panel (DocPage's Markdown reference on desktop): the app's main
    column shrinks by the panel's width so nothing sits underneath it. Keep the
