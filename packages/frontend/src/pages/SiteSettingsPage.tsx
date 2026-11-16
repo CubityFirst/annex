@@ -2435,9 +2435,9 @@ export function SiteSettingsPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <Label>Access</Label>
+                        <Label htmlFor="new-key-scope">Access</Label>
                         <Select value={newKeyScope} onValueChange={val => setNewKeyScope(val as ApiKeyScope)} disabled={!canMintWriteKey}>
-                          <SelectTrigger>
+                          <SelectTrigger id="new-key-scope">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2468,7 +2468,10 @@ export function SiteSettingsPage() {
                         </Alert>
                       )}
                     </div>
+                    {/* Same footer as "Create invite link": an explicit
+                        Cancel beside the primary action. */}
                     <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCreateKeyOpen(false)}>Cancel</Button>
                       <Button type="submit" disabled={creatingKey || !newKeyName.trim()}>
                         {creatingKey ? "Creating…" : "Create key"}
                       </Button>
