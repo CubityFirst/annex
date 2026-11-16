@@ -155,6 +155,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
               const contents = trashContentsLabel(entry);
               const daysLeft = daysUntilPurge(entry.deleted_at, retentionDays);
               const busy = busyId === entry.id;
+              const countdown = daysLeft === 0 ? "Deleting soon" : `${daysLeft}d left`;
               const meta = [
                 entry.folder_path ? `from ${entry.folder_path}` : null,
                 contents || null,
@@ -167,11 +168,14 @@ export function RecycleBin({ projectId }: { projectId: string }) {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{entry.name}</div>
                     <div className="truncate text-xs text-muted-foreground" title={new Date(entry.deleted_at).toLocaleString()}>
+                      {/* Phones drop the countdown column, so it leads the
+                          meta line instead - it's the one thing that expires. */}
+                      <span className="sm:hidden">{countdown} · </span>
                       {meta}
                     </div>
                   </div>
                   <span className="hidden sm:inline shrink-0 text-xs text-muted-foreground" title="Permanently deleted after this">
-                    {daysLeft === 0 ? "Deleting soon" : `${daysLeft}d left`}
+                    {countdown}
                   </span>
                   <Button size="sm" variant="outline" className="gap-1.5 h-9 sm:h-8 shrink-0" onClick={() => handleRestore(entry)} disabled={busy} aria-label={`Restore ${entry.name}`}>
                     <RotateCcw className="h-3.5 w-3.5" />
