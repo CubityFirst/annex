@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { KeyRound, Smartphone, Hash } from "lucide-react";
+import { ArrowLeft, KeyRound, Smartphone, Hash } from "lucide-react";
 import { startWebauthnAuth } from "@/lib/webauthn";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
@@ -48,6 +48,22 @@ function adminHandoffErrorMessage(error?: string): string {
   }
 
   return "Could not continue to the admin panel. Please try again.";
+}
+
+// Same "← Back to sign in" ghost action as CheckEmailPage, so every auth step
+// exits the same way (it was a bare text link here, indented off the form edge).
+function BackToSignIn({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="-ml-3 h-11 gap-2 px-3 text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Back to sign in
+    </Button>
+  );
 }
 
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />;
@@ -432,13 +448,7 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         <p className="text-sm text-muted-foreground">
@@ -513,13 +523,7 @@ export function LoginPage() {
         error={error}
         onSubmit={handleSubmit}
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         {usingBackupCode ? (
@@ -590,13 +594,7 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         <p className="text-sm text-muted-foreground">
@@ -651,13 +649,7 @@ export function LoginPage() {
         onSubmit={e => e.preventDefault()}
         hideSubmit
         footer={
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline text-sm inline-flex min-h-11 items-center px-1"
-            onClick={handleBack}
-          >
-            Back to sign in
-          </button>
+          <BackToSignIn onClick={handleBack} />
         }
       >
         <p className="text-sm text-muted-foreground">
