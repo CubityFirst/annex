@@ -114,6 +114,11 @@ function docOutlineHeadings(doc: { title: string; content: string }): Heading[] 
   return outlineHeadings(extractHeadings(doc.content), parseFrontmatter(doc.content).title ?? doc.title);
 }
 
+// Says why the doc's own folder is greyed out in the Move picker.
+function CurrentFolderMark() {
+  return <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">Current</span>;
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
@@ -1572,7 +1577,9 @@ export function DocPage() {
               {isAdmin && (
                 <>
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-                    <DialogContent className="sm:max-w-md">
+                    {/* Opened from a menu (like Document settings): focus the
+                        dialog, not a ring on the close button. */}
+                    <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                       <DialogHeader>
                         <DialogTitle>Document access</DialogTitle>
                         <DialogDescription>
@@ -1895,7 +1902,9 @@ export function DocPage() {
               <>
                 {/* Move-to-folder picker - same rows as the File Manager's. */}
                 <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-                  <DialogContent className="sm:max-w-xs">
+                  {/* Opened from a menu while the folder list is still loading,
+                      so Radix's default lands a focus ring on the close button. */}
+                  <DialogContent className="sm:max-w-xs" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
                     <DialogHeader>
                       <DialogTitle>Move "{doc.title}"</DialogTitle>
                       <DialogDescription>Choose a destination folder.</DialogDescription>
@@ -1915,6 +1924,7 @@ export function DocPage() {
                           >
                             <House className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                             <span className="truncate">{projectName} (home)</span>
+                            {doc.folder_id === null && <CurrentFolderMark />}
                           </button>
                           {moveDestinations.map(({ folder: f, label }) => (
                             <button
@@ -1927,6 +1937,7 @@ export function DocPage() {
                             >
                               <Folder className="h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
                               <span className="truncate">{label}</span>
+                              {doc.folder_id === f.id && <CurrentFolderMark />}
                             </button>
                           ))}
                           {moveDestinations.length === 0 && (
