@@ -28,6 +28,7 @@ import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Spinner } from "@/components/ui/spinner";
+import { DESTRUCTIVE_OUTLINE_BUTTON } from "@/components/settings/SettingsShell";
 import { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentGroup } from "@/components/ui/attachment";
 import { fileEmbedMarkdown } from "@/lib/fileMarkdown";
 import { restoreTrashEntry } from "@/lib/trash";
@@ -1106,6 +1107,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   const selectedCount = selectedFolders.size + selectedDocs.size + selectedFiles.size;
 
+  function clearSelection() {
+    setSelectedFolders(new Set());
+    setSelectedDocs(new Set());
+    setSelectedFiles(new Set());
+    lastCheckedFolderIndex.current = null;
+    lastCheckedDocIndex.current = null;
+    lastCheckedFileIndex.current = null;
+  }
+
   function renderTable() {
     // Mobile card helpers. The kebab mirrors the desktop ContextMenu exactly;
     // on desktop the same kebab renders in the row's last cell so keyboard
@@ -1694,6 +1704,32 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           own full-width row under the search, with the create split button
           there instead of the top bar. */}
       <div className="flex flex-wrap items-center gap-2 pb-3">
+        {canEdit && selectedCount > 0 ? (
+          // Selection bar: takes the search box's slot (same height, so the
+          // rows don't jump when the first box is ticked) with the count, a
+          // way out, and the bulk action - outlined, not a solid red slab.
+          <div
+            role="toolbar"
+            aria-label="Selection"
+            className="flex h-11 w-full items-center gap-1 rounded-md border border-border bg-muted/50 pl-3 pr-1 md:h-9 md:w-auto md:flex-1"
+          >
+            <span className="text-sm font-medium tabular-nums" aria-live="polite">{selectedCount} selected</span>
+            <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground md:h-7" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={`Move ${selectedCount} selected to the recycle bin`}
+              className={`ml-auto h-9 gap-1.5 bg-transparent px-2.5 md:h-7 ${DESTRUCTIVE_OUTLINE_BUTTON}`}
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={deleting}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {deleting ? "Moving…" : "Move to recycle bin"}
+            </Button>
+          </div>
+        ) : (
         <div className="relative w-full md:w-auto md:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
@@ -1715,15 +1751,10 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
             </button>
           )}
         </div>
-        {canEdit && (selectedCount > 0 || !createInHeader) && (
+        )}
+        {canEdit && !createInHeader && (
           <div className="flex w-full flex-col gap-2 md:ml-auto md:w-auto md:flex-row md:items-center">
-            {selectedCount > 0 && (
-              <Button variant="destructive" aria-label={`Delete ${selectedCount} selected`} title="Delete selected" className="h-11 w-full gap-1.5 px-3 md:h-9 md:w-auto" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {deleting ? "Deleting…" : `Delete (${selectedCount})`}
-              </Button>
-            )}
-            {!createInHeader && createSplitButton}
+            {createSplitButton}
           </div>
         )}
       </div>

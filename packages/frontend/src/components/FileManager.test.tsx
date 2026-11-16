@@ -123,10 +123,10 @@ describe("FileManager", () => {
     const { rerenderWith } = renderManager(null);
     const checkbox = (await screen.findAllByLabelText("Select Doc A"))[0];
     fireEvent.click(checkbox);
-    expect(screen.getByLabelText("Delete 1 selected")).toBeTruthy();
+    expect(screen.getByLabelText("Move 1 selected to the recycle bin")).toBeTruthy();
 
     rerenderWith("B");
-    await waitFor(() => expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText(/Move \d+ selected to the recycle bin/)).toBeNull());
   });
 
   // FM-H4 regression: a rejected rename must not apply locally or close the
@@ -217,7 +217,7 @@ describe("FileManager", () => {
     });
     renderManager(null);
     fireEvent.click((await screen.findAllByLabelText("Select Doc A"))[0]);
-    expect(screen.getByLabelText("Delete 1 selected")).toBeTruthy();
+    expect(screen.getByLabelText("Move 1 selected to the recycle bin")).toBeTruthy();
 
     fireEvent.keyDown(screen.getAllByLabelText("Actions for Doc A")[0], { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Move to recycle bin" }));
@@ -226,7 +226,7 @@ describe("FileManager", () => {
     await waitFor(() =>
       expect(vi.mocked(apiFetchJson).mock.calls.some(([u, o]) => u === "/api/docs/d1" && (o as RequestInit)?.method === "DELETE")).toBe(true),
     );
-    await waitFor(() => expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText(/Move \d+ selected to the recycle bin/)).toBeNull());
   });
 
   const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: "", types: ["text/plain"], files: [] });
@@ -359,7 +359,7 @@ describe("FileManager", () => {
 
     await waitFor(() => expect(screen.getAllByLabelText("Select Doc A")).toHaveLength(2));
     expect(screen.getAllByLabelText("Select Doc B")).toHaveLength(2);
-    expect(screen.getByLabelText("Delete 1 selected")).toBeTruthy();
+    expect(screen.getByLabelText("Move 1 selected to the recycle bin")).toBeTruthy();
   });
 
   it("cancels the new-folder dialog without creating anything", async () => {
@@ -398,7 +398,7 @@ describe("FileManager", () => {
     renderManager(null);
     fireEvent.click((await screen.findAllByLabelText("Select folder Specs"))[0]);
     fireEvent.click(screen.getAllByLabelText("Select Doc A")[0]);
-    fireEvent.click(screen.getByLabelText("Delete 2 selected"));
+    fireEvent.click(screen.getByLabelText("Move 2 selected to the recycle bin"));
     expect(await screen.findByText(/Folders go with everything in them/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Move to recycle bin" }));
 
@@ -407,7 +407,7 @@ describe("FileManager", () => {
     );
     expect(vi.mocked(apiFetch).mock.calls.some(([u, o]) => u === "/api/docs/d1" && (o as RequestInit)?.method === "DELETE")).toBe(true);
     await waitFor(() => expect(screen.queryAllByLabelText("Open folder Specs")).toHaveLength(0));
-    expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
+    expect(screen.queryByLabelText(/Move \d+ selected to the recycle bin/)).toBeNull();
   });
 
   // Folder rows: the item count is the folder's Size (breakdown in the
@@ -560,12 +560,12 @@ describe("FileManager", () => {
     expect(header.getAttribute("data-state")).toBe("indeterminate");
 
     fireEvent.click(header);
-    expect(screen.getByLabelText("Delete 3 selected")).toBeTruthy();
+    expect(screen.getByLabelText("Move 3 selected to the recycle bin")).toBeTruthy();
     const deselect = screen.getByRole("checkbox", { name: "Deselect all" });
     expect(deselect.getAttribute("data-state")).toBe("checked");
 
     fireEvent.click(deselect);
-    expect(screen.queryByLabelText(/Delete \d+ selected/)).toBeNull();
+    expect(screen.queryByLabelText(/Move \d+ selected to the recycle bin/)).toBeNull();
     expect(screen.getByRole("checkbox", { name: "Select all" }).getAttribute("data-state")).toBe("unchecked");
   });
 
