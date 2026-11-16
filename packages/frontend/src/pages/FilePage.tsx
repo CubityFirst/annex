@@ -22,6 +22,7 @@ import { formatBytes, formatRelativeTime, folderPathLabel, type MoveFolderLike }
 import { restoreTrashEntry } from "@/lib/trash";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useToast } from "@/hooks/use-toast";
+import { useStemSelection } from "@/hooks/useStemSelection";
 import { isLightTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { pushRecentItem } from "@/lib/recentDocs";
@@ -125,6 +126,7 @@ export function FilePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const renameStem = useStemSelection(true);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveFolders, setMoveFolders] = useState<MoveFolderLike[] | null>(null);
   const [moving, setMoving] = useState(false);
@@ -462,18 +464,22 @@ export function FilePage() {
   const dialogs = (
     <>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent
+          className="sm:max-w-sm"
+          // Open with only the name (not the extension) selected.
+          onOpenAutoFocus={renameStem.onOpenAutoFocus}
+        >
           <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
+            <DialogTitle>Rename file</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col">
             <div className="grid gap-2">
               <Label htmlFor="file-rename-name">Name</Label>
               <Input
                 id="file-rename-name"
+                {...renameStem.inputProps}
                 value={renameName}
                 onChange={e => setRenameName(e.target.value)}
-                autoFocus
                 required
               />
             </div>

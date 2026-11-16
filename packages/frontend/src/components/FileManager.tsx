@@ -23,6 +23,7 @@ import { formatBytes, formatRelativeTime, moveDestinations, folderPathLabel, shi
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { useFolderContents, type FolderItem, type DocItem, type FileItem } from "@/hooks/useFolderContents";
 import { useUploads } from "@/hooks/useUploads";
+import { useStemSelection } from "@/hooks/useStemSelection";
 import { emptyExcalidrawScene, EXCALIDRAW_MIME, EXCALIDRAW_EXT } from "@/lib/excalidraw";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -351,6 +352,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string } | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const renameStem = useStemSelection(renameTarget?.type === "file");
   const [contextDeleteTarget, setContextDeleteTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; name: string } | null>(null);
   const [contextDeleting, setContextDeleting] = useState(false);
 
@@ -1857,18 +1859,22 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent
+          className="sm:max-w-sm"
+          // Files open with only the name (not the extension) selected.
+          onOpenAutoFocus={renameStem.onOpenAutoFocus}
+        >
           <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
+            <DialogTitle>Rename {renameTarget?.type === "folder" ? "folder" : renameTarget?.type === "file" ? "file" : "document"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRename} className="flex flex-col">
             <div className="grid gap-2">
               <Label htmlFor="rename-name">Name</Label>
               <Input
                 id="rename-name"
+                {...renameStem.inputProps}
                 value={renameName}
                 onChange={e => setRenameName(e.target.value)}
-                autoFocus
                 required
               />
             </div>

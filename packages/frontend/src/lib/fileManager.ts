@@ -164,3 +164,17 @@ export function countedFolderFor(
   }
   return null;
 }
+
+/**
+ * Focus a file-rename input with just the name before its extension selected
+ * ("kickoff-notes" of "kickoff-notes.txt"), as Finder/Drive/VS Code do, so
+ * typing replaces the name and keeps the type. Dotfiles and extension-less
+ * names select everything.
+ */
+export function focusNameStem(input: HTMLInputElement | null) {
+  if (!input) return;
+  input.focus();
+  const dot = input.value.lastIndexOf(".");
+  input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+}
+
