@@ -366,7 +366,6 @@ export function LandingPage() {
               className={`site-wrap l-show ${i % 2 ? "l-show-flip" : ""}`}
             >
               <div className="l-show-copy">
-                <div className="l-show-eyebrow">{s.eyebrow}</div>
                 <h2 className="l-show-title">
                   {s.title[0]}<br /><b>{s.title[1]}</b>
                 </h2>
@@ -412,10 +411,9 @@ export function LandingPage() {
         {/* PRICING */}
         <section id="pricing" className="l-pricing" aria-labelledby="l-pricing-title">
           <div className="site-wrap">
-            <h2 className="l-label">Pricing</h2>
-            <h3 id="l-pricing-title" className="l-pricing-headline">
+            <h2 id="l-pricing-title" className="l-pricing-headline">
               Free. <span>Ink is optional.</span>
-            </h3>
+            </h2>
             <p className="l-pricing-sub">
               There's no paywall and no missing buttons. If Annex is useful to you,
               Ink is a way to chip in, and your account gets some quietly fancy

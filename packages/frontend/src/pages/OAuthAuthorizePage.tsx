@@ -204,9 +204,16 @@ export function OAuthAuthorizePage() {
           )}
 
           {status === "error" && (
-            <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
+            <>
+              <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+              {/* The redirect_uri is unvalidated here, so we can't send the user
+                  back to the service - but never leave them on a dead end. */}
+              <Button asChild variant="outline" className="h-11 sm:h-9">
+                <a href={getToken() ? "/dashboard" : "/"}>Go to Annex</a>
+              </Button>
+            </>
           )}
         </CardContent>
       </Card>

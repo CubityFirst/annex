@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
+import { Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm, PasswordInput, AUTH_INPUT_CLASS } from "@/components/AuthForm";
@@ -11,13 +12,16 @@ import { consumePendingOAuthNext } from "@/lib/pendingOAuth";
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-7 w-auto dark:invert" />;
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
+// Scores below the server's bar (3 = "Strong") warm from red to amber; both
+// passing scores share one green, so the meter itself says "good enough".
 const STRENGTH_COLORS = [
   "bg-red-500",
   "bg-orange-500",
-  "bg-yellow-500",
-  "bg-blue-500",
-  "bg-green-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-emerald-500",
 ];
+const MIN_SCORE = 3;
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -43,7 +47,7 @@ export function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (score < 3) {
+    if (score < MIN_SCORE) {
       setError("Please choose a stronger password.");
       return;
     }
@@ -158,11 +162,20 @@ export function RegisterPage() {
                 <div
                   key={i}
                   aria-hidden="true"
-                  className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
                 />
               ))}
             </div>
-            <p className="text-xs text-muted-foreground" aria-live="polite">{STRENGTH_LABELS[score]}</p>
+            <p className="flex items-center gap-1.5 text-xs" aria-live="polite">
+              <span className="font-medium text-foreground">{STRENGTH_LABELS[score]}</span>
+              {score >= MIN_SCORE ? (
+                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" /> Good to go
+                </span>
+              ) : (
+                <span className="text-muted-foreground">· needs to reach Strong</span>
+              )}
+            </p>
           </div>
         )}
       </div>
