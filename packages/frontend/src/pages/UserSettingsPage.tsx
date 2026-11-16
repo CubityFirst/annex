@@ -2361,16 +2361,19 @@ export function UserSettingsPage() {
             </p>
 
             <div className="mt-3 overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full table-fixed min-w-[30rem] text-sm">
+              <table className="w-full min-w-[20rem] table-fixed text-sm">
                 <thead className="bg-muted/40">
                   <tr>
                     <th scope="col" className="px-4 py-2.5 text-left font-medium">Font</th>
                     {/* The last column carries the row's 16px right inset
                         (matching the Font column's left inset) and is widened
                         by the same amount, so every radio column keeps an
-                        equal content width. */}
+                        equal content width. Below sm the radio columns
+                        narrow to 64px so all three fit a 390px phone without
+                        sideways scrolling (the old 30rem floor hid Interface
+                        off-screen with no scroll hint). */}
                     {(["Reading", "Editing", "Interface"] as const).map(label => (
-                      <th key={label} scope="col" className="w-20 px-1 py-2.5 text-center font-medium last:w-[5.75rem] last:pr-4">
+                      <th key={label} scope="col" className="w-16 px-1 py-2.5 text-center font-medium last:w-[4.75rem] last:pr-4 sm:w-20 sm:last:w-[5.75rem]">
                         {label}
                       </th>
                     ))}
