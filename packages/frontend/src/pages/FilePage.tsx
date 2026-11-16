@@ -397,7 +397,7 @@ export function FilePage() {
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
         <Trash2 />
-        Delete
+        Move to recycle bin
       </DropdownMenuItem>
     </>
   );
@@ -526,7 +526,7 @@ export function FilePage() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{file.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>Move "{file.name}" to the recycle bin?</AlertDialogTitle>
             <AlertDialogDescription>
               It will be moved to the recycle bin, where it can be restored for 30 days.
             </AlertDialogDescription>
@@ -538,7 +538,7 @@ export function FilePage() {
               onClick={e => { e.preventDefault(); void handleDelete(); }}
               disabled={deleting}
             >
-              {deleting ? "Deleting…" : "Delete"}
+              {deleting ? "Moving…" : "Move to recycle bin"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
