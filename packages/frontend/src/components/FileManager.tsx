@@ -1890,7 +1890,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={handleDeleteConfirmed}
             >
               Move to recycle bin
@@ -1939,7 +1939,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={handleContextDelete}
               disabled={contextDeleting}
             >

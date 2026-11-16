@@ -534,7 +534,7 @@ export function FilePage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={e => { e.preventDefault(); void handleDelete(); }}
               disabled={deleting}
             >

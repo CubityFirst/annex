@@ -202,7 +202,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
               onClick={handlePurge}
               disabled={!!busyId}
             >
@@ -222,7 +222,7 @@ export function RecycleBin({ projectId }: { projectId: string }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleEmpty}>
+            <AlertDialogAction variant="destructive" onClick={handleEmpty}>
               Empty bin
             </AlertDialogAction>
           </AlertDialogFooter>
