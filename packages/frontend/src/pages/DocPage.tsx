@@ -1547,6 +1547,8 @@ export function DocPage() {
               open={exportOpen}
               onOpenChange={setExportOpen}
               documentName={parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).title ?? doc.title}
+              hasAiSummary={!viewingRevision && aiEnabled && !!doc.ai_summary}
+              hasLastUpdated={!viewingRevision && doc.show_last_updated !== 0}
             />
           {isEditor && (
             <>
