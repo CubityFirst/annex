@@ -918,7 +918,7 @@ export function DocsLayout() {
           /* ── Project sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             {/* Sections */}
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-0.5">
               {searchEntry}
               <NavLink
                 to={`/projects/${projectId}`}
@@ -979,7 +979,7 @@ export function DocsLayout() {
         ) : (
           /* ── Overview sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-0.5">
               {searchEntry}
               {visibleProjects.length > 0 && (
                 <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sites</p>

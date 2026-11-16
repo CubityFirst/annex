@@ -238,7 +238,7 @@ export function SidebarPageTree({
                   <span className="truncate">{folder.name}</span>
                 </button>
                 {open && (
-                  <div id={childrenId} role="group" className="ml-3 flex flex-col gap-px border-l border-border pl-1">
+                  <div id={childrenId} role="group" className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-1">
                     {(index.children.get(folder.id)?.length ?? 0) > 0
                       ? renderLevel(folder.id)
                       : <p className="px-2 py-1 text-xs text-muted-foreground">No items</p>}
@@ -301,7 +301,9 @@ export function SidebarPageTree({
       <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         Contents
       </p>
-      <nav aria-label="Site contents" className="flex flex-col gap-px">
+      {/* Same 2px row gap as the nav rows and Recently accessed in DocsLayout,
+          so every 32px row in the sidebar sits on one 34px pitch. */}
+      <nav aria-label="Site contents" className="flex flex-col gap-0.5">
         {renderLevel(null)}
       </nav>
     </div>
