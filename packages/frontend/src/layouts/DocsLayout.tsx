@@ -113,6 +113,10 @@ const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 // tree's rows (SidebarPageTree ROW_CLASS) and the Search entry. Below md (the
 // slide-over drawer) rows grow to 40px so they're comfortable touch targets.
 const SIDEBAR_ROW_CLASS = "w-full justify-start text-sm font-normal max-md:h-10";
+// Active vs idle tone for those rows (same as SidebarPageTree's rowTone):
+// hover is a lighter tint than the active fill so the two never look alike.
+const SIDEBAR_ACTIVE_CLASS = "bg-accent font-medium text-foreground";
+const SIDEBAR_IDLE_CLASS = "text-muted-foreground hover:bg-accent/50 hover:text-foreground";
 
 // Create-dialog submit buttons stay disabled until Name has text; same muted
 // disabled look as the editor's Save so it reads as "not yet", not "broken".
@@ -916,7 +920,7 @@ export function DocsLayout() {
                     buttonVariants({ variant: "ghost", size: "sm" }),
                     SIDEBAR_ROW_CLASS,
                     // Folder views are still the File manager - keep it lit.
-                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? "bg-accent text-foreground" : "text-muted-foreground",
+                    isActive || location.pathname.startsWith(`/projects/${projectId}/folders/`) ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS,
                   )
                 }
               >
@@ -927,7 +931,7 @@ export function DocsLayout() {
                 <NavLink
                   to={`/projects/${projectId}/graph`}
                   className={({ isActive }) =>
-                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)
                   }
                   title="Graph"
                 >
@@ -952,7 +956,7 @@ export function DocsLayout() {
                         ? `/projects/${projectId}/docs/${item.id}`
                         : `/projects/${projectId}/files/${item.id}`}
                       className={({ isActive }) =>
-                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), SIDEBAR_ROW_CLASS, isActive ? SIDEBAR_ACTIVE_CLASS : SIDEBAR_IDLE_CLASS)
                       }
                       title={item.title}
                     >

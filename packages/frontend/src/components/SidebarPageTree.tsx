@@ -101,7 +101,9 @@ type Row =
 
 // 32px rows on desktop; 40px touch targets in the mobile drawer (below md).
 const ROW_CLASS = "h-8 max-md:h-10 w-full justify-start gap-1.5 px-2 text-sm font-normal";
-const rowTone = (active: boolean) => (active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground");
+// Active = filled + medium weight; hover is a lighter tint, so the current
+// row stays identifiable while the pointer rests on another one.
+const rowTone = (active: boolean) => (active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground");
 
 export function SidebarPageTree({
   projectId,
