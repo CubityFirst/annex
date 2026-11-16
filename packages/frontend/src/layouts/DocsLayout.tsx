@@ -945,7 +945,7 @@ export function DocsLayout() {
 
             {visibleRecentItems.length > 0 && (
               <div className="mt-4">
-                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
+                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   Recently accessed
                 </p>
                 <nav className="flex flex-col gap-0.5">
@@ -974,7 +974,7 @@ export function DocsLayout() {
             <nav className="flex flex-col gap-1">
               {searchEntry}
               {visibleProjects.length > 0 && (
-                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">Sites</p>
+                <p className="mt-3 px-2 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sites</p>
               )}
               {visibleProjects.map(p => (
                 <Button

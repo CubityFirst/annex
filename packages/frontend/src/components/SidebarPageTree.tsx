@@ -241,7 +241,7 @@ export function SidebarPageTree({
                   <div id={childrenId} role="group" className="ml-3 flex flex-col gap-px border-l border-border pl-1">
                     {(index.children.get(folder.id)?.length ?? 0) > 0
                       ? renderLevel(folder.id)
-                      : <p className="px-2 py-1 text-xs text-muted-foreground/70">No items</p>}
+                      : <p className="px-2 py-1 text-xs text-muted-foreground">No items</p>}
                   </div>
                 )}
               </div>
@@ -298,7 +298,7 @@ export function SidebarPageTree({
 
   return (
     <div className="mt-4">
-      <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
+      <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         Contents
       </p>
       <nav aria-label="Site contents" className="flex flex-col gap-px">
