@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { ChevronRight, Type } from "lucide-react";
+import { ChevronRight, History, Type } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -174,7 +174,15 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
               <RowSkeleton />
             </div>
           ) : revisions.length === 0 ? (
-            <p className="text-sm text-muted-foreground px-6 py-4">No history yet. Revisions are created each time the document is saved, and kept for 90 days.</p>
+            // Teach what will appear here (the 90-day rule is already in the
+            // header) instead of a run-on sentence in the corner.
+            <div className="mx-6 mt-6 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-10 text-center">
+              <History className="mb-3 size-5 text-muted-foreground" aria-hidden="true" />
+              <p className="text-sm font-medium">No history yet</p>
+              <p className="mt-1 max-w-[30ch] text-pretty text-sm text-muted-foreground">
+                Each save adds a version here that you can view, compare with the live page, or revert to.
+              </p>
+            </div>
           ) : (
             <div className="flex flex-col py-2">
               {onSelectCurrent && (
