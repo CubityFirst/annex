@@ -1952,13 +1952,14 @@ export function SiteSettingsPage() {
                     icon={<Wand2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     title="AI summarisation type"
                     description="Automatic generates a summary when a page is loaded. Manual only summarises when the sparkle button is pressed."
+                    stack
                   >
                     <Select
                       value={project.ai_summarization_type ?? "manual"}
                       onValueChange={handleAiSummarizationTypeChange}
                       disabled={togglingAiType}
                     >
-                      <SelectTrigger className="w-32 shrink-0" aria-label="AI summarisation type">
+                      <SelectTrigger className="w-40 shrink-0 sm:w-32" aria-label="AI summarisation type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1974,13 +1975,14 @@ export function SiteSettingsPage() {
               icon={<NotebookPen className="h-4 w-4 shrink-0 text-muted-foreground" />}
               title="Save changelog"
               description="Prompt editors to leave a note describing their changes when saving a document."
+              stack
             >
               <Select
                 value={project.changelog_mode}
                 onValueChange={handleChangelogModeChange}
                 disabled={togglingChangelog}
               >
-                <SelectTrigger className="w-32 shrink-0" aria-label="Save changelog mode">
+                <SelectTrigger className="w-40 shrink-0 sm:w-32" aria-label="Save changelog mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2640,6 +2642,7 @@ export function SiteSettingsPage() {
             <SettingsRow
               title="Download as .zip"
               description="Every document and uploaded file in this site, with folders preserved."
+              stack
             >
               <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
                 {exporting ? "Exporting…" : "Export site"}
