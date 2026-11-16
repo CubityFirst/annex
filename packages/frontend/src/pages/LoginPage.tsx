@@ -652,19 +652,39 @@ export function LoginPage() {
           <BackToSignIn onClick={handleBack} />
         }
       >
-        <p className="text-sm text-muted-foreground">
-          {loading
-            ? "Touch your security key when it flashes…"
-            : "Security key verification failed or was cancelled."}
-        </p>
-        {!loading && (
-          <Button
-            type="button"
-            className={AUTH_BUTTON_CLASS}
-            onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
-          >
-            Try again
-          </Button>
+        {/* While waiting, a live status line; after a failure the error Alert
+            above already says what happened, so don't repeat it - just offer
+            the two ways forward at full width like every other auth action. */}
+        {loading ? (
+          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+            Touch your security key when it flashes…
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {!error && (
+              <p className="text-sm text-muted-foreground">Security key verification failed or was cancelled.</p>
+            )}
+            <Button
+              type="button"
+              className={`${AUTH_BUTTON_CLASS} w-full`}
+              onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
+            >
+              Try again
+            </Button>
+            {/* Accounts with more than one factor arrive via the method picker
+                (which issues a preAuthToken) - let them switch instead of
+                retrying a key they may not have with them. */}
+            {preAuthToken && (
+              <Button
+                type="button"
+                variant="outline"
+                className={`${AUTH_BUTTON_CLASS} w-full`}
+                onClick={() => { setError(null); setStep("method_picker"); }}
+              >
+                Use another method
+              </Button>
+            )}
+          </div>
         )}
       </AuthForm>
     );
