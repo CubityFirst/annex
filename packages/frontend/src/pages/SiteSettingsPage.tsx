@@ -2013,45 +2013,12 @@ export function SiteSettingsPage() {
                     Show an interactive graph of how documents link to each other.
                   </p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {project.graph_enabled === 1 && (() => {
-                    const now = new Date();
-                    const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
-                    const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
-                    const tip = locked ? `Rebuild available in ${minsLeft} min` : "Rebuild graph";
-                    // The span wrapper keeps the tooltip working while the
-                    // button is disabled (disabled buttons swallow pointer
-                    // events, so Radix never sees the hover).
-                    return (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              disabled={locked || reindexing}
-                              onClick={handleReindex}
-                              aria-label="Rebuild graph"
-                              title={tip}
-                            >
-                              <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} aria-hidden />
-                              Rebuild
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>{tip}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })()}
-                  <Switch
-                    checked={project.graph_enabled === 1}
-                    onCheckedChange={handleToggleGraph}
-                    disabled={togglingGraph}
-                    aria-label="Graph view"
-                  />
-                </div>
+                <Switch
+                  checked={project.graph_enabled === 1}
+                  onCheckedChange={handleToggleGraph}
+                  disabled={togglingGraph}
+                  aria-label="Graph view"
+                />
               </div>
               {project.graph_enabled === 1 && (
                 <>
@@ -2068,6 +2035,49 @@ export function SiteSettingsPage() {
                       disabled={togglingPublishedGraph}
                       aria-label="Show graph view on published site"
                     />
+                  </div>
+                  {/* Rebuild is a one-off maintenance action, so it gets its
+                      own sub-row (title says what it does) instead of sitting
+                      beside the on/off switch, where it read as part of the
+                      toggle and squeezed the description on phones. */}
+                  <div className="flex items-center justify-between gap-4 border-t border-border py-3 pl-10 pr-4">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium">Rebuild graph</p>
+                      <p className="text-[13px] leading-snug text-muted-foreground">
+                        Re-scan every document for links if the graph looks out of date.
+                      </p>
+                    </div>
+                    {(() => {
+                      const now = new Date();
+                      const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
+                      const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
+                      const tip = locked ? `Rebuild available in ${minsLeft} min` : "Rebuild graph";
+                      // The span wrapper keeps the tooltip working while the
+                      // button is disabled (disabled buttons swallow pointer
+                      // events, so Radix never sees the hover).
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex shrink-0">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                disabled={locked || reindexing}
+                                onClick={handleReindex}
+                                aria-label="Rebuild graph"
+                                title={tip}
+                              >
+                                <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} aria-hidden />
+                                Rebuild
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{tip}</TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
                   </div>
                   <div className="border-t border-border">
                     <button
