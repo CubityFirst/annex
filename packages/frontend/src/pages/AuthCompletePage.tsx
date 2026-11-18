@@ -6,8 +6,10 @@ import { safeReturnTo, signInErrorMessage, startSignIn } from "@/lib/signIn";
 
 // /auth/complete - where /api/auth/callback sends the browser. The outcome is
 // in the URL fragment (never sent to servers or in Referer headers):
-//   #code=<single-use>&return_to=/path   -> redeem for the session JWT
-//   #error=<code>                        -> explain and offer a retry
+//   #status=ok&return_to=/path  -> redeem the single-use handoff cookie the
+//                                  callback set (HttpOnly; it never appears
+//                                  in a URL) for the session JWT
+//   #error=<code>               -> explain and offer a retry
 export function AuthCompletePage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
@@ -20,23 +22,19 @@ export function AuthCompletePage() {
     started.current = true;
 
     const fragment = new URLSearchParams(window.location.hash.slice(1));
-    // Drop the code from the address bar and history straight away.
+    // Clean the address bar and history straight away.
     window.history.replaceState(null, "", window.location.pathname);
     const next = safeReturnTo(fragment.get("return_to")) ?? "/dashboard";
     setReturnTo(next);
 
-    const code = fragment.get("code");
-    if (!code) {
+    if (fragment.get("status") !== "ok") {
       setError(signInErrorMessage(fragment.get("error")));
       return;
     }
     (async () => {
       try {
-        const res = await fetch("/api/auth/exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
-        });
+        // Same-origin POST: the browser sends the handoff cookie itself.
+        const res = await fetch("/api/auth/exchange", { method: "POST" });
         const json = (await res.json()) as { ok: boolean; data?: { token: string }; error?: string };
         if (!json.ok || !json.data) {
           setError(signInErrorMessage(json.error ?? "invalid_code"));

@@ -470,6 +470,13 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
     [...env.DB.calls, ...env.DB.batches.flat()]
       .some(c => /DELETE FROM (users|projects|organizations|project_members)/.test(c.sql));
 
+  it("refuses (503, nothing written) when the live admin role can't be checked", async () => {
+    const env = { ...makeEnv(), IDENTITY: { getUser: vi.fn(async () => { throw new Error("identity down"); }) } };
+    const res = await schedule(env as unknown as ReturnType<typeof makeEnv>, "u-1");
+    expect(res.status).toBe(503);
+    expect(scheduled(env as unknown as ReturnType<typeof makeEnv>)).toBe(false);
+  });
+
   it("refuses the caller's own account", async () => {
     const env = makeEnv();
     expect((await schedule(env, "admin-1")).status).toBe(400);

@@ -659,29 +659,27 @@ export class AdminSignInError extends Error {
   }
 }
 
-async function exchangeAdminCodeUncached(code: string): Promise<AdminCodeExchange> {
-  const res = await fetch("/api/auth/exchange", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
+async function exchangeAdminCodeUncached(): Promise<AdminCodeExchange> {
+  // Same-origin POST: the browser sends the single-use handoff cookie the
+  // callback set (HttpOnly - the code never appears in a URL).
+  const res = await fetch("/api/auth/exchange", { method: "POST" });
   const json = (await res.json()) as { ok: boolean; data?: AdminCodeExchange; error?: string };
   if (!json.ok || !json.data) throw new AdminSignInError(json.error ?? "unknown");
   return json.data;
 }
 
-// The sign-in code from /api/auth/callback is single-use and redeemed
-// atomically server-side, so two concurrent exchanges of the same code (React
-// StrictMode's dev double-mount) would race: the loser gets "invalid_code" and
-// paints an error over a successful sign-in. Cache the in-flight/settled
-// promise per code so every caller observes the SAME exchange outcome.
+// The handoff cookie is single-use and redeemed atomically server-side, so two
+// concurrent exchanges (React StrictMode's dev double-mount) would race: the
+// loser gets "invalid_code" and paints an error over a successful sign-in.
+// Share one in-flight/settled promise per sign-in (keyed by the completion
+// page's mount, see AuthCallbackPage) so every caller observes the SAME outcome.
 const exchangePromises = new Map<string, Promise<AdminCodeExchange>>();
 
-export function exchangeAdminCode(code: string): Promise<AdminCodeExchange> {
-  let promise = exchangePromises.get(code);
+export function exchangeAdminCode(attempt: string): Promise<AdminCodeExchange> {
+  let promise = exchangePromises.get(attempt);
   if (!promise) {
-    promise = exchangeAdminCodeUncached(code);
-    exchangePromises.set(code, promise);
+    promise = exchangeAdminCodeUncached();
+    exchangePromises.set(attempt, promise);
   }
   return promise;
 }

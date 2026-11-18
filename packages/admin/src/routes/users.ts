@@ -753,6 +753,22 @@ usersRouter.post("/:id/deletion", async (c) => {
     return c.json({ ok: false, error: "You can't delete your own account from the admin panel" }, 400);
   }
 
+  // Scheduling blocks the person from Annex at once, so refresh the mirror's
+  // admin flag from the identity service first: a stale "not admin" would
+  // lock out a newly promoted admin. Refuse rather than guess when it can't
+  // be checked.
+  if (c.env.IDENTITY) {
+    try {
+      const live = await c.env.IDENTITY.getUser(id);
+      if (live?.isAdmin) {
+        return c.json({ ok: false, error: "Admin accounts can't be deleted from the admin panel" }, 409);
+      }
+      if (live) await refreshMirror(c.env.DB, live, Date.now());
+    } catch (err) {
+      console.error("[admin] schedule deletion: identity check failed", String(err));
+      return c.json({ ok: false, error: "Couldn't check this account on auth.cubityfir.st - try again shortly" }, 503);
+    }
+  }
   const user = await c.env.DB.prepare(
     `SELECT u.id, u.email, u.is_admin, d.user_id IS NOT NULL AS scheduled
      FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id

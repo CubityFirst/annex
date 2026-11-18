@@ -1,6 +1,6 @@
 import { ROLE_RANK, type Role } from "../lib";
 import type { Env } from "../index";
-import { accountStanding, type MirrorUser } from "../account/identity";
+import { accountStanding, IDENTITY_DELETED_SQL, type MirrorUser } from "../account/identity";
 
 // ── Scoped API keys for the public /v1 API ──────────────────────────────────
 //
@@ -145,6 +145,7 @@ export async function authenticateApiKey(token: string, env: Env): Promise<ApiKe
   // disabled/suspended on the identity service (mirrors loadCurrentSession).
   const owner = await env.DB.prepare(
     `SELECT u.id, u.email, u.name, u.email_verified, u.is_admin, u.status, u.suspended_until, u.created_at,
+            ${IDENTITY_DELETED_SQL},
             (d.user_id IS NOT NULL) AS blocked
      FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id
      WHERE u.id = ?`,

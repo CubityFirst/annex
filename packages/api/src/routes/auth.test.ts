@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { createFakeIdp, type FakeIdp, type FakeUser } from "../test/fakeIdp";
-import { setOidcFetchForTests, STATE_COOKIE } from "./auth";
+import { setOidcFetchForTests, STATE_COOKIE, HANDOFF_COOKIE } from "./auth";
 import { clearOidcCaches, identityFetch } from "../account/oidc";
 import { clearIdentityCache, type IdentityService, type IdentityUser } from "../account/identity";
 import worker, { type Env } from "../index";
@@ -49,8 +49,8 @@ function call(method: string, path: string, init: { token?: string; cookie?: str
   }), env());
 }
 
-function cookieFrom(res: Response): string {
-  const set = res.headers.get("Set-Cookie") ?? "";
+function cookieFrom(res: Response, name = STATE_COOKIE): string {
+  const set = res.headers.getSetCookie().find(c => c.startsWith(`${name}=`)) ?? "";
   return set.split(";")[0];
 }
 
@@ -70,8 +70,8 @@ async function signIn(user: FakeUser = ALICE, returnTo = "/projects"): Promise<R
 
 async function signInToken(user: FakeUser = ALICE): Promise<string> {
   const cb = await signIn(user);
-  const code = fragment(cb).get("code")!;
-  const ex = await call("POST", "/auth/exchange", { body: { code } });
+  expect(fragment(cb).get("status")).toBe("ok");
+  const ex = await call("POST", "/auth/exchange", { cookie: cookieFrom(cb, HANDOFF_COOKIE) });
   expect(ex.status).toBe(200);
   return ((await ex.json()) as { data: { token: string } }).data.token;
 }
@@ -127,14 +127,21 @@ describe("GET /auth/login", () => {
 });
 
 describe("GET /auth/callback", () => {
-  it("verifies the id_token, upserts the users mirror and hands the SPA a single-use code", async () => {
+  it("verifies the id_token, upserts the users mirror and hands the browser a single-use code in a cookie", async () => {
     const res = await signIn(ALICE, "/projects/p1");
     expect(res.status).toBe(302);
-    expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(res.headers.getSetCookie().find(c => c.startsWith(`${STATE_COOKIE}=`))).toContain("Max-Age=0");
     const frag = fragment(res);
     expect(frag.get("return_to")).toBe("/projects/p1");
-    const code = frag.get("code")!;
-    expect(code.length).toBeGreaterThan(20);
+    // The code never appears in a URL: only in an HttpOnly, SameSite=Strict cookie.
+    expect(frag.get("code")).toBeNull();
+    expect(res.headers.get("Location")).not.toContain("code=");
+    const handoff = res.headers.getSetCookie().find(c => c.startsWith(`${HANDOFF_COOKIE}=`))!;
+    expect(handoff).toContain("HttpOnly");
+    expect(handoff).toContain("SameSite=Strict");
+    expect(handoff).toContain("Path=/api/auth");
+    const cookie = cookieFrom(res, HANDOFF_COOKIE);
+    expect(cookie.length).toBeGreaterThan(30);
 
     expect(db.sqlite.prepare("SELECT email, name, is_admin, status FROM users WHERE id = ?").get(ALICE.sub))
       .toEqual({ email: ALICE.email, name: ALICE.name, is_admin: 0, status: "active" });
@@ -143,14 +150,24 @@ describe("GET /auth/callback", () => {
     expect(session.id_token.split(".")).toHaveLength(3);
     expect(session.handoff_hash).toBeTruthy();
 
-    const ex = await call("POST", "/auth/exchange", { body: { code } });
+    const ex = await call("POST", "/auth/exchange", { cookie });
     expect(ex.status).toBe(200);
+    expect(ex.headers.getSetCookie().find(c => c.startsWith(`${HANDOFF_COOKIE}=`))).toContain("Max-Age=0");
     const token = ((await ex.json()) as { data: { token: string } }).data.token;
     // The code is single use.
-    expect((await call("POST", "/auth/exchange", { body: { code } })).status).toBe(400);
+    expect((await call("POST", "/auth/exchange", { cookie })).status).toBe(400);
 
     const me = await call("GET", "/me/favourite-sites", { token });
     expect(me.status).toBe(200);
+  });
+
+  it("signs nobody in from a completion link or a code in the body - only the browser holding the cookie", async () => {
+    const res = await signIn();
+    const value = cookieFrom(res, HANDOFF_COOKIE).split("=")[1];
+    expect((await call("POST", "/auth/exchange")).status).toBe(400);
+    expect((await call("POST", "/auth/exchange", { body: { code: value } })).status).toBe(400);
+    // The rightful browser still can (the failed attempts didn't burn it).
+    expect((await call("POST", "/auth/exchange", { cookie: `${HANDOFF_COOKIE}=${value}` })).status).toBe(200);
   });
 
   it("refreshes name/email on the mirror and the member snapshots at sign-in", async () => {
@@ -323,6 +340,24 @@ describe("session standing", () => {
     const token = await signInToken();
     clearIdentityCache();
     identity.getUser.mockResolvedValue(null);
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+  });
+
+  it("persists a deleted-account answer, so a later identity outage can't fall back to an active mirror row", async () => {
+    const token = await signInToken();
+    clearIdentityCache();
+    identity.getUser.mockResolvedValue(null);
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+    expect(db.sqlite.prepare("SELECT status FROM users WHERE id = ?").get(ALICE.sub)).toEqual({ status: "deleted" });
+    clearIdentityCache();
+    identity.getUser.mockRejectedValue(new Error("identity down"));
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+  });
+
+  it("a deletion recorded by the sync wins over a cached active answer", async () => {
+    const token = await signInToken();
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(200); // caches "active"
+    db.sqlite.prepare("INSERT INTO identity_deletions (user_id, deleted_at, deleted_by) VALUES (?, 1, 'self')").run(ALICE.sub);
     expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
   });
 

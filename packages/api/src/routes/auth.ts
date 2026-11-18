@@ -2,9 +2,11 @@
 //
 //   GET  /auth/login?return_to=/path  -> 302 to the identity service
 //   GET  /auth/callback               -> verifies, upserts the users mirror,
-//                                        creates an Annex session, 302 to the
-//                                        SPA's /auth/complete#code=...
-//   POST /auth/exchange { code }      -> { token } (single use, 60s)
+//                                        creates an Annex session, sets the
+//                                        single-use handoff cookie, 302 to the
+//                                        SPA's /auth/complete#status=ok
+//   POST /auth/exchange               -> { token } (redeems the handoff
+//                                        cookie once, within 60s)
 //   POST /auth/logout                 -> revokes the Annex session and returns
 //                                        the identity service's end-session URL
 //   POST /dev/quick-login             -> local dev only (DEV_QUICK_LOGIN)
@@ -43,6 +45,11 @@ export interface AuthRouteEnv extends SessionEnv {
 }
 
 export const STATE_COOKIE = "annex_oidc";
+// The single-use handoff code travels ONLY in this HttpOnly, SameSite=Strict
+// cookie - never in a URL - so it can be redeemed only by the browser that
+// completed the sign-in (a leaked or crafted /auth/complete link carries
+// nothing that signs anyone in).
+export const HANDOFF_COOKIE = "annex_handoff";
 const STATE_COOKIE_PATH = "/api/auth";
 export const APP_SCOPE = "openid profile email roles";
 
@@ -159,15 +166,21 @@ export async function handleCallback(flow: AuthFlow, env: SessionEnv & { STRIPE_
 
   const outcome = await startSession(env, request, identity, flow.kind);
   if ("error" in outcome) return toComplete(flow, { error: outcome.error }, [clear]);
-  return toComplete(flow, { code: outcome.handoffCode, return_to: login.returnTo }, [clear]);
+  const handoff = handoffCookie(flow, outcome.handoffCode, 60);
+  return toComplete(flow, { status: "ok", return_to: login.returnTo }, [clear, handoff]);
+}
+
+function handoffCookie(flow: AuthFlow, value: string, maxAgeSec: number): string {
+  return stateCookie(HANDOFF_COOKIE, value, cookieOpts(flow, maxAgeSec)).replace("SameSite=Lax", "SameSite=Strict");
 }
 
 export async function handleExchange(flow: AuthFlow, env: SessionEnv, request: Request): Promise<Response> {
-  const body = await request.json<{ code?: unknown }>().catch(() => null);
-  const code = typeof body?.code === "string" ? body.code : "";
-  const token = await redeemHandoff(env, code, flow.kind);
-  if (!token) return Response.json({ ok: false, error: "invalid_code" }, { status: 400 });
-  return okResponse({ token });
+  const code = readCookie(request, HANDOFF_COOKIE) ?? "";
+  const token = code ? await redeemHandoff(env, code, flow.kind) : null;
+  const headers = new Headers({ "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", handoffCookie(flow, "", 0));
+  if (!token) return Response.json({ ok: false, error: "invalid_code" }, { status: 400, headers });
+  return Response.json({ ok: true, data: { token } }, { headers });
 }
 
 export async function handleLogout(flow: AuthFlow, env: SessionEnv, request: Request): Promise<Response> {

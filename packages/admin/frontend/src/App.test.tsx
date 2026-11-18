@@ -38,7 +38,7 @@ vi.mock("@/lib/api", () => {
 });
 
 import { App } from "./App";
-import { TransientVerifyError, verifyAdminSession } from "@/lib/api";
+import { TransientVerifyError, exchangeAdminCode, verifyAdminSession } from "@/lib/api";
 import { getToken, setToken } from "@/lib/auth";
 
 const SESSION = {
@@ -100,5 +100,16 @@ describe("App session gating", () => {
     renderApp();
     expect(await screen.findByText(/Continue to sign-in/)).toBeInTheDocument();
     expect(getToken()).toBeNull();
+  });
+
+  it("lands a completed sign-in on its deep link, through the verification screen", async () => {
+    vi.mocked(exchangeAdminCode).mockResolvedValue({ token: "fresh" });
+    // A real verify round-trips the network, so App's verification screen
+    // replaces (unmounts) the completion page meanwhile.
+    vi.mocked(verifyAdminSession).mockImplementation(() => new Promise(resolve => setTimeout(() => resolve(SESSION), 30)));
+    window.history.replaceState(null, "", "/auth/complete#status=ok&return_to=%2Faudit");
+    renderApp("/auth/complete");
+    expect(await screen.findByRole("heading", { name: "Audit Log" })).toBeInTheDocument();
+    expect(getToken()).toBe("fresh");
   });
 });

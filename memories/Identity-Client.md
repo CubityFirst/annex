@@ -52,9 +52,12 @@ worker on :8790.
    (`account_disabled`), and non-admins for the admin client (`not_admin`).
    Upserts the users mirror (+ member snapshots, Stripe customer email on
    change) and creates a session row with a single-use `handoff_hash`.
-3. 302 to `<APP_ORIGIN>/auth/complete#code=…&return_to=…` (or `#error=<code>`).
-4. SPA `POST /api/auth/exchange {code}` - redeems the code once (60s) for the
-   HS256 session JWT. The docs app keeps it in localStorage, the admin panel
+3. Sets the handoff code as the HttpOnly, SameSite=Strict `annex_handoff`
+   cookie (60s; never in a URL, so a leaked/crafted completion link signs no
+   one in) and 302s to `<APP_ORIGIN>/auth/complete#status=ok&return_to=…`
+   (or `#error=<code>`).
+4. SPA `POST /api/auth/exchange` (no body; the browser sends the cookie) -
+   redeems it once for the HS256 session JWT. The docs app keeps it in localStorage, the admin panel
    in sessionStorage.
 5. `POST /api/auth/logout` - revokes the session, returns the end-session URL
    with `id_token_hint` + `post_logout_redirect_uri`.
@@ -89,19 +92,39 @@ serves Annex logins and **account changes drift** between the two stores.
 
 1. Ship `chore(auth): retire annex-auth's OIDC provider` before/with any
    annex-auth deploy (removes the `auth.cubityfir.st` routes).
-2. Register the two clients above on auth.cubityfir.st; set
+2. Register the two clients above on auth.cubityfir.st, **disabled** (they
+   stay disabled until step 7, so nobody can sign in to Annex before
+   reconciliation); set
    `OIDC_CLIENT_SECRET` on annex-api and annex-admin (`npx wrangler secret put
    OIDC_CLIENT_SECRET --name annex-api` / `--name annex-admin`), move
    `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` to annex-api, and fix
    `OIDC_CLIENT_ID` in the configs if the registered ids differ.
 3. Apply api migration 0065 remotely (`node scripts/migrate.mjs remote`).
-4. Export cubedocs-auth and import Annex's data:
+4. Freeze, then export and import. cubedocs-auth stays writable until the new
+   code is live, and anything written there after the export is lost, so keep
+   the window short and quiet (export, import and step 5 back to back, within
+   minutes, and not across :17 past the hour when the old admin cron runs
+   scheduled deletions): note the time, don't schedule or cancel admin
+   deletions or change grants/badges/handles in the admin panel, then
    `npx wrangler d1 export cubedocs-auth --remote --output migration-data/cubedocs-auth.sql`,
    `node scripts/import-auth-data.mjs migration-data/cubedocs-auth.sql`,
    `npx wrangler d1 execute cubedocs-main --remote --file migration-data/annex-import.sql`.
-   Export as late as possible (prefs/billing written to cubedocs-auth after the
-   export are lost); then delete `migration-data/`.
+   Keep `migration-data/` for the reconciliation in step 7.
 5. Deploy api, then admin, then frontend. Everyone signs in again (old Annex
    JWTs don't validate against the new sessions table).
-6. Retire annex-auth (`npx wrangler delete annex-auth`) once traffic is on the
+6. Replay Stripe: events the old worker handled between the export and the
+   deploy were applied to cubedocs-auth only. In the Stripe Dashboard
+   (Developers → Webhooks → the docs.cubityfir.st endpoint) resend every event
+   since the time noted in step 4. The handler is idempotent
+   (`webhook_events`), so overlap is harmless.
+7. Reconcile deletions, once nothing routes to the old login/delete-account
+   routes (after step 5): take a FINAL export of cubedocs-auth. Candidates are
+   the user ids in the identity service's actual import snapshot (the
+   `import.sql` it was loaded from on 2026-11-18) that are absent from this
+   final export - they were deleted on the old Annex after that import and
+   could otherwise sign back in. Compare ids, not dates: accounts created on
+   auth.cubityfir.st since its import are never candidates. Delete the
+   candidates at auth.cubityfir.st/admin/users, then **enable** the two Annex
+   clients and delete `migration-data/`.
+8. Retire annex-auth (`npx wrangler delete annex-auth`) once traffic is on the
    new code, and later cubedocs-auth after a backup.

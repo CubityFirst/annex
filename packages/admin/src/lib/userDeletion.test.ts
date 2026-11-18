@@ -100,6 +100,22 @@ describe("executeUserDeletion", () => {
     expect(completed(env)).toBe(false);
   });
 
+  it("refuses an account the identity service reports as admin, even when the mirror says otherwise", async () => {
+    const env = { ...makeEnv(), IDENTITY: { getUser: vi.fn(async () => ({ isAdmin: true })) } };
+    env.DB.firstQueue.push(plainUser());
+    const res = await run(env as never, "u-1");
+    expect(res).toEqual({ ok: false, error: "Admin accounts can't be deleted from the admin panel" });
+    expect(env.DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
+  });
+
+  it("leaves the schedule for a retry when the identity service can't be reached", async () => {
+    const env = { ...makeEnv(), IDENTITY: { getUser: vi.fn(async () => { throw new Error("down"); }) } };
+    env.DB.firstQueue.push(plainUser());
+    const res = await run(env as never, "u-1");
+    expect(res.ok).toBe(false);
+    expect(env.DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
+  });
+
   it("refuses (and touches nothing, not even started_at) when an owned site wasn't confirmed", async () => {
     const env = makeEnv();
     env.DB.firstQueue.push(plainUser("cus_1"));
@@ -133,7 +149,8 @@ describe("executeUserDeletion", () => {
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
     const started = env.DB.calls.find(c => c.sql.includes("SET started_at"));
-    expect(started?.binds.slice(1)).toEqual(["u-1", "sched-1"]);
+    // Tied to this schedule AND to the Stripe customer the preflight checked.
+    expect(started?.binds.slice(1)).toEqual(["u-1", "sched-1", "u-1", "cus_1"]);
     // Only the read-only preflight ran - the customer was never deleted.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBeUndefined();

@@ -119,27 +119,46 @@ async function handleCheckoutCompleted(env: Env, sessionObj: Stripe.Checkout.Ses
   //   - stripe_subscription_id: prefer the INCOMING value. A new checkout
   //     means a new subscription; the old sub id (if any) is by definition
   //     stale at this point.
-  await ignoreUnknownUser(userId, env.DB.prepare(
+  await applyBillingWrite(env, userId, customerId, env.DB.prepare(
     `INSERT INTO user_billing (user_id, stripe_customer_id, stripe_subscription_id)
-     VALUES (?, ?, ?)
+     SELECT ?1, ?2, ?3
+     WHERE NOT EXISTS (SELECT 1 FROM identity_deletions WHERE user_id = ?1)
+       AND NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?1 AND started_at IS NOT NULL)
      ON CONFLICT(user_id) DO UPDATE SET
        stripe_customer_id = COALESCE(user_billing.stripe_customer_id, excluded.stripe_customer_id),
        stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, user_billing.stripe_subscription_id)`,
   ).bind(userId, customerId, subscriptionId).run());
 }
 
-// user_billing references the users mirror. An event for a user Annex no
-// longer has (their account was deleted) can't be applied and never will be,
-// so acknowledge it instead of 500ing into Stripe's retry loop.
-async function ignoreUnknownUser(userId: string, write: Promise<unknown>): Promise<void> {
+// The billing upserts are guarded in the same statement against a tombstone:
+// the account deleted on the identity service (identity_deletions, written
+// before the deletion sync cleans up) or an admin deletion past its point of
+// no return (user_deletions.started_at). Outcomes:
+//   - applied: done;
+//   - blocked by the tombstone (0 rows): the account is gone, so delete the
+//     Stripe customer the event carries (it must never be billed) and
+//     acknowledge - this also covers an event racing the cleanup;
+//   - FK failure (no users-mirror row): if tombstoned, as above; otherwise
+//     (e.g. registered on the old auth worker after the cutover export, not
+//     signed in to Annex yet) throw, so Stripe redelivers and the event
+//     applies once the row exists. Never delete without evidence.
+async function applyBillingWrite(env: Env, userId: string, customerId: string | null, write: Promise<D1Result>): Promise<void> {
   try {
-    await write;
+    const res = await write;
+    if ((res?.meta?.changes ?? 1) > 0) return;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("FOREIGN KEY constraint failed")) {
-      console.warn(`Stripe event for unknown user ${userId}; ignoring`);
-      return;
+    if (!(err instanceof Error && err.message.includes("FOREIGN KEY constraint failed"))) throw err;
+    const deleted = await env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(userId).first();
+    if (!deleted) throw new Error(`Stripe event for user ${userId}, who has no users-mirror row yet; retry later`);
+  }
+  console.warn(`Stripe event for deleted user ${userId}; removing its customer`);
+  if (customerId) {
+    try {
+      await getStripe(env.STRIPE_SECRET_KEY!).customers.del(customerId);
+    } catch (delErr) {
+      const code = (delErr as { code?: string; statusCode?: number }) ?? {};
+      if (code.code !== "resource_missing" && code.statusCode !== 404) throw delErr;
     }
-    throw err;
   }
 }
 
@@ -196,12 +215,14 @@ async function handleSubscriptionUpsert(env: Env, eventSub: Stripe.Subscription)
 
   // Only set personal_plan_started_at if it's not already populated -
   // preserves the original supporter date across cancel/resub cycles.
-  await ignoreUnknownUser(userId, env.DB.prepare(
+  await applyBillingWrite(env, userId, customerId, env.DB.prepare(
     `INSERT INTO user_billing (
        user_id, stripe_customer_id, stripe_subscription_id,
        personal_plan, personal_plan_status, personal_period_end,
        personal_plan_cancel_at, personal_plan_started_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+     WHERE NOT EXISTS (SELECT 1 FROM identity_deletions WHERE user_id = ?1)
+       AND NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?1 AND started_at IS NOT NULL)
      ON CONFLICT(user_id) DO UPDATE SET
        stripe_customer_id = excluded.stripe_customer_id,
        stripe_subscription_id = excluded.stripe_subscription_id,

@@ -68,6 +68,17 @@ function makeRequest(body: string, sig = "valid-sig") {
 
 // subscriptions.retrieve returns the live subscription; by default it matches
 // the event payload, `liveSub` overrides it (e.g. a stale event).
+const customersDel = vi.fn().mockResolvedValue({ deleted: true });
+
+// Wraps a MockDB's prepare so the identity_deletions lookup finds the user.
+function withDeletedUser(prepare: MockDB["prepare"]) {
+  const original = prepare.getMockImplementation() as (sql: string) => unknown;
+  return (sql: string) => {
+    if (!sql.startsWith("SELECT 1 AS x FROM identity_deletions")) return original(sql);
+    return { bind: () => ({ first: vi.fn().mockResolvedValue({ x: 1 }) }) };
+  };
+}
+
 function mockConstructEvent(event: unknown, liveSub?: unknown) {
   const evObj = (event as { data?: { object?: unknown } } | null)?.data?.object;
   vi.mocked(getStripe).mockReturnValue({
@@ -77,6 +88,7 @@ function mockConstructEvent(event: unknown, liveSub?: unknown) {
     subscriptions: {
       retrieve: vi.fn().mockResolvedValue(liveSub ?? evObj),
     },
+    customers: { del: customersDel },
   } as unknown as ReturnType<typeof getStripe>);
 }
 
@@ -148,16 +160,59 @@ describe("handleStripeWebhook - checkout.session.completed", () => {
     expect(db._statements[2]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 
-  it("acknowledges (200) an event for a user Annex no longer has instead of retrying forever", async () => {
+  it("acknowledges (200) an event for a user Annex no longer has, deleting its Stripe customer", async () => {
     mockConstructEvent({
       id: "evt_gone",
       type: "checkout.session.completed",
       data: { object: { id: "cs_9", client_reference_id: "deleted-user", customer: "cus_abc", subscription: "sub_xyz" } },
     });
+    // first() answers both the idempotency check (falsy = not processed) and,
+    // after the FK failure, the identity_deletions lookup (truthy = deleted).
     const db = makeDB([new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT")]);
+    db.prepare.mockImplementation(withDeletedUser(db.prepare));
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
     expect(db._statements[2]).toContain("INSERT OR IGNORE INTO webhook_events");
+    // ...and the customer it carries is deleted, so the account isn't billed.
+    expect(customersDel).toHaveBeenCalledWith("cus_abc");
+  });
+
+  it("routes an event blocked by a tombstone (deletion racing the write) to customer deletion, then acknowledges", async () => {
+    mockConstructEvent({
+      id: "evt_race",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_13", client_reference_id: "being-deleted", customer: "cus_race", subscription: "sub_race" } },
+    });
+    // The guarded upsert writes nothing: identity_deletions / a started admin deletion blocked it.
+    const db = makeDB([{ meta: { changes: 0 } }]);
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
+    expect(res.status).toBe(200);
+    expect(db._statements[1]).toContain("NOT EXISTS (SELECT 1 FROM identity_deletions");
+    expect(db._statements[1]).toContain("started_at IS NOT NULL");
+    expect(customersDel).toHaveBeenCalledWith("cus_race");
+  });
+
+  it("never deletes a customer without evidence: an unknown (not deleted) user is retried, not cleaned up", async () => {
+    mockConstructEvent({
+      id: "evt_new_user",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_12", client_reference_id: "registered-after-export", customer: "cus_live", subscription: "sub_live" } },
+    });
+    const db = makeDB([new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT")]);
+    expect((await handleStripeWebhook(makeRequest("{}"), makeEnv(db))).status).toBe(500);
+    expect(customersDel).not.toHaveBeenCalled();
+  });
+
+  it("500s (so Stripe retries) when deleting a gone user's customer fails", async () => {
+    mockConstructEvent({
+      id: "evt_gone2",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_11", client_reference_id: "deleted-user", customer: "cus_x", subscription: "sub_x" } },
+    });
+    customersDel.mockRejectedValueOnce(Object.assign(new Error("stripe down"), { statusCode: 500 }));
+    const db = makeDB([new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT")]);
+    db.prepare.mockImplementation(withDeletedUser(db.prepare));
+    expect((await handleStripeWebhook(makeRequest("{}"), makeEnv(db))).status).toBe(500);
   });
 
   it("still 500s (so Stripe retries) on any other write failure", async () => {
