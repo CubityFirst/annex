@@ -4,9 +4,9 @@
 //   GET  /auth/callback               -> verifies, upserts the users mirror,
 //                                        creates an Annex session, sets the
 //                                        single-use handoff cookie, 302 to the
-//                                        SPA's /auth/complete#status=ok
-//   POST /auth/exchange               -> { token } (redeems the handoff
-//                                        cookie once, within 60s)
+//                                        SPA's /auth/complete#status=ok&attempt=
+//   POST /auth/exchange?attempt=<id>  -> { token } (redeems that attempt's
+//                                        handoff cookie once, within 60s)
 //   POST /auth/logout                 -> revokes the Annex session and returns
 //                                        the identity service's end-session URL
 //   POST /dev/quick-login             -> local dev only (DEV_QUICK_LOGIN)
@@ -30,7 +30,6 @@ import {
 } from "../account/oidc";
 import { createPendingSession, createSessionToken, redeemHandoff, revokeSessionByToken, type SessionEnv, type SessionKind } from "../account/session";
 import { DEV_USER_PREFIX, isLocalDeploy, refreshMirror, type IdentityUser } from "../account/identity";
-import { syncStripeCustomerEmail } from "../account/stripe-client";
 
 export interface AuthRouteEnv extends SessionEnv {
   OIDC_ISSUER?: string;
@@ -48,8 +47,15 @@ export const STATE_COOKIE = "annex_oidc";
 // The single-use handoff code travels ONLY in this HttpOnly, SameSite=Strict
 // cookie - never in a URL - so it can be redeemed only by the browser that
 // completed the sign-in (a leaked or crafted /auth/complete link carries
-// nothing that signs anyone in).
+// nothing that signs anyone in). Each sign-in gets its own cookie, named by a
+// non-secret attempt id the completion page passes back, so two sign-ins
+// finishing at once in one browser each redeem their own session.
 export const HANDOFF_COOKIE = "annex_handoff";
+const ATTEMPT_RE = /^[0-9a-f]{32}$/;
+
+export function handoffCookieName(attempt: string): string {
+  return `${HANDOFF_COOKIE}_${attempt}`;
+}
 const STATE_COOKIE_PATH = "/api/auth";
 export const APP_SCOPE = "openid profile email roles";
 
@@ -168,19 +174,22 @@ export async function handleCallback(flow: AuthFlow, env: SessionEnv & { STRIPE_
 
   const outcome = await startSession(env, request, identity, flow.kind);
   if ("error" in outcome) return toComplete(flow, { error: outcome.error }, [clear]);
-  const handoff = handoffCookie(flow, outcome.handoffCode, 60);
-  return toComplete(flow, { status: "ok", return_to: login.returnTo }, [clear, handoff]);
+  const attempt = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
+  const handoff = handoffCookie(flow, attempt, outcome.handoffCode, 60);
+  return toComplete(flow, { status: "ok", attempt, return_to: login.returnTo }, [clear, handoff]);
 }
 
-function handoffCookie(flow: AuthFlow, value: string, maxAgeSec: number): string {
-  return stateCookie(HANDOFF_COOKIE, value, cookieOpts(flow, maxAgeSec)).replace("SameSite=Lax", "SameSite=Strict");
+function handoffCookie(flow: AuthFlow, attempt: string, value: string, maxAgeSec: number): string {
+  return stateCookie(handoffCookieName(attempt), value, cookieOpts(flow, maxAgeSec)).replace("SameSite=Lax", "SameSite=Strict");
 }
 
 export async function handleExchange(flow: AuthFlow, env: SessionEnv, request: Request): Promise<Response> {
-  const code = readCookie(request, HANDOFF_COOKIE) ?? "";
-  const token = code ? await redeemHandoff(env, code, flow.kind) : null;
+  const attempt = new URL(request.url).searchParams.get("attempt") ?? "";
   const headers = new Headers({ "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", handoffCookie(flow, "", 0));
+  if (!ATTEMPT_RE.test(attempt)) return Response.json({ ok: false, error: "invalid_code" }, { status: 400, headers });
+  const code = readCookie(request, handoffCookieName(attempt)) ?? "";
+  const token = code ? await redeemHandoff(env, code, flow.kind) : null;
+  headers.append("Set-Cookie", handoffCookie(flow, attempt, "", 0));
   if (!token) return Response.json({ ok: false, error: "invalid_code" }, { status: 400, headers });
   return Response.json({ ok: true, data: { token } }, { headers });
 }
@@ -210,7 +219,7 @@ export async function startSession(
   const [gone, blocked, existing] = await env.DB.batch([
     env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(identity.sub),
     env.DB.prepare("SELECT 1 AS x FROM user_deletions WHERE user_id = ?").bind(identity.sub),
-    env.DB.prepare("SELECT created_at, email FROM users WHERE id = ?").bind(identity.sub),
+    env.DB.prepare("SELECT created_at FROM users WHERE id = ?").bind(identity.sub),
   ]);
   if (gone.results.length > 0) return { error: "account_deleted" };
   if (blocked.results.length > 0) return { error: "account_disabled" };
@@ -229,11 +238,7 @@ export async function startSession(
     suspendedUntil: null,
     createdAt: (existing.results[0] as { created_at?: string } | undefined)?.created_at ?? new Date(now).toISOString(),
   };
-  await refreshMirror(env.DB, user, now, { login: true });
-  // The email is changed on the identity service now; keep the Stripe
-  // customer's receipt address in step when a sign-in brings a new one.
-  const previousEmail = (existing.results[0] as { email?: string } | undefined)?.email;
-  if (previousEmail && previousEmail !== user.email) await syncStripeCustomerEmail(env, user.id, user.email);
+  await refreshMirror(env, user, now, { login: true });
   const { handoffCode } = await createPendingSession(env.DB, { userId: user.id, kind, request, idToken: identity.idToken, nowMs: now });
   return { handoffCode };
 }
@@ -277,7 +282,7 @@ export async function handleDevQuickLogin(request: Request, env: AuthRouteEnv & 
     name = `${isAdmin ? "Dev Admin" : "Dev User"}${hasInk ? " (Ink)" : ""}`;
   }
 
-  await refreshMirror(env.DB, {
+  await refreshMirror(env, {
     id, email, name, emailVerified: true, isAdmin, status: "active", suspendedUntil: null, createdAt: new Date(now).toISOString(),
   }, now, { login: true });
   if (hasInk) {

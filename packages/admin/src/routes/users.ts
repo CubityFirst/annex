@@ -354,7 +354,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     try {
       const user = await env.IDENTITY.getUser(id);
       if (user) {
-        await refreshMirror(env.DB, user, Date.now());
+        await refreshMirror(env, user, Date.now());
         live = true;
       }
     } catch (err) {
@@ -593,7 +593,7 @@ usersRouter.post("/:id/resync-name", async (c) => {
   if (c.env.IDENTITY) {
     try {
       const user = await c.env.IDENTITY.getUser(id);
-      if (user) refreshed = await refreshMirror(c.env.DB, user, Date.now());
+      if (user) refreshed = await refreshMirror(c.env, user, Date.now());
     } catch (err) {
       console.error("[admin] resync-name: identity getUser failed; using the mirror", String(err));
     }
@@ -763,7 +763,7 @@ usersRouter.post("/:id/deletion", async (c) => {
       if (live?.isAdmin) {
         return c.json({ ok: false, error: "Admin accounts can't be deleted from the admin panel" }, 409);
       }
-      if (live) await refreshMirror(c.env.DB, live, Date.now());
+      if (live) await refreshMirror(c.env, live, Date.now());
     } catch (err) {
       console.error("[admin] schedule deletion: identity check failed", String(err));
       return c.json({ ok: false, error: "Couldn't check this account on auth.cubityfir.st - try again shortly" }, 503);

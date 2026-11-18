@@ -25,14 +25,14 @@ export interface IdentityService {
   listDeletedUsers(sinceMs: number, limit?: number): Promise<Array<{ userId: string; deletedAt: number; deletedBy: string }>>;
 }
 
-import { syncStripeCustomerEmail } from "./stripe-client";
+import { syncStripeCustomerEmail, type StripeEnv } from "./stripe-client";
 
 // What every consumer of this module needs from its worker's Env.
 export interface IdentityEnv {
   DB: D1Database;
   IDENTITY?: IdentityService;
   // Keeps a linked Stripe customer's receipt address in step when the
-  // identity email changes (see accountStanding).
+  // identity email changes (see refreshMirror).
   STRIPE_SECRET_KEY?: string;
   // Local-dev quick login: dev-* users exist only in the mirror (see
   // routes/auth.ts handleDevQuickLogin), so standing checks skip the RPC.
@@ -162,8 +162,7 @@ export async function accountStanding(
     if (ctx) ctx.waitUntil(write);
     else await write;
   } else if (mirrorDiffers(mirror, user)) {
-    const write = refreshMirror(env.DB, user, nowMs)
-      .then(() => (user.email !== mirror.email ? syncStripeCustomerEmail(env, user.id, user.email) : undefined))
+    const write = refreshMirror(env, user, nowMs)
       .catch(err => console.error("[identity] mirror refresh failed", { userId: user.id, err: String(err) }));
     if (ctx) ctx.waitUntil(write);
     else await write;
@@ -225,13 +224,26 @@ export function mirrorUpsertStatements(db: D1Database, user: IdentityUser, nowMs
 }
 
 // Returns how many member-row snapshots were out of date (and fixed).
+//
+// Every mirror write goes through here, so this is also where a changed
+// email reaches the linked Stripe customer's receipt address: whichever
+// refresh (sign-in, standing check, invite lookup, admin) first writes the
+// new address is the one that sees the change. The leading SELECT runs in the
+// same batch, so it reads the address the upsert replaces.
 export async function refreshMirror(
-  db: D1Database,
+  env: StripeEnv,
   user: IdentityUser,
   nowMs: number,
   opts: { login?: boolean } = {},
 ): Promise<{ project_members: number; organization_members: number }> {
-  const [, projects, orgs] = await db.batch(mirrorUpsertStatements(db, user, nowMs, opts));
+  const [before, upsert, projects, orgs] = await env.DB.batch([
+    env.DB.prepare("SELECT email FROM users WHERE id = ?").bind(user.id),
+    ...mirrorUpsertStatements(env.DB, user, nowMs, opts),
+  ]);
+  const previous = (before?.results?.[0] as { email?: string } | undefined)?.email;
+  if (previous && previous !== user.email && (upsert?.meta?.changes ?? 0) > 0) {
+    await syncStripeCustomerEmail(env, user.id, user.email);
+  }
   return { project_members: projects?.meta?.changes ?? 0, organization_members: orgs?.meta?.changes ?? 0 };
 }
 
@@ -260,7 +272,7 @@ export async function findUserByEmail(env: IdentityEnv, email: string, nowMs: nu
       // Never resurrect an account Annex has already processed as deleted.
       const gone = await env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(user.id).first();
       if (gone) return null;
-      await refreshMirror(env.DB, user, nowMs);
+      await refreshMirror(env, user, nowMs);
       return { id: user.id, email: user.email, name: user.name };
     }
   }

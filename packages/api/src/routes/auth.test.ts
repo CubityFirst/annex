@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { createFakeIdp, type FakeIdp, type FakeUser } from "../test/fakeIdp";
-import { setOidcFetchForTests, STATE_COOKIE, HANDOFF_COOKIE } from "./auth";
+import { setOidcFetchForTests, STATE_COOKIE, handoffCookieName } from "./auth";
 import { clearOidcCaches, identityFetch } from "../account/oidc";
 import { clearIdentityCache, type IdentityService, type IdentityUser } from "../account/identity";
 import worker, { type Env } from "../index";
@@ -60,6 +60,15 @@ function fragment(res: Response): URLSearchParams {
   return new URLSearchParams(loc.slice(loc.indexOf("#") + 1));
 }
 
+// The completion page's exchange for a callback response: its attempt id
+// (from the fragment) and that attempt's handoff cookie.
+function handoff(cb: Response): { path: string; cookie: string; name: string } {
+  const attempt = fragment(cb).get("attempt")!;
+  expect(attempt).toMatch(/^[0-9a-f]{32}$/);
+  const name = handoffCookieName(attempt);
+  return { path: `/auth/exchange?attempt=${attempt}`, cookie: cookieFrom(cb, name), name };
+}
+
 // login -> authorize at the IdP -> callback; returns the callback response.
 async function signIn(user: FakeUser = ALICE, returnTo = "/projects"): Promise<Response> {
   const login = await call("GET", `/auth/login?return_to=${encodeURIComponent(returnTo)}`);
@@ -71,7 +80,8 @@ async function signIn(user: FakeUser = ALICE, returnTo = "/projects"): Promise<R
 async function signInToken(user: FakeUser = ALICE): Promise<string> {
   const cb = await signIn(user);
   expect(fragment(cb).get("status")).toBe("ok");
-  const ex = await call("POST", "/auth/exchange", { cookie: cookieFrom(cb, HANDOFF_COOKIE) });
+  const h = handoff(cb);
+  const ex = await call("POST", h.path, { cookie: h.cookie });
   expect(ex.status).toBe(200);
   return ((await ex.json()) as { data: { token: string } }).data.token;
 }
@@ -136,12 +146,13 @@ describe("GET /auth/callback", () => {
     // The code never appears in a URL: only in an HttpOnly, SameSite=Strict cookie.
     expect(frag.get("code")).toBeNull();
     expect(res.headers.get("Location")).not.toContain("code=");
-    const handoff = res.headers.getSetCookie().find(c => c.startsWith(`${HANDOFF_COOKIE}=`))!;
-    expect(handoff).toContain("HttpOnly");
-    expect(handoff).toContain("SameSite=Strict");
-    expect(handoff).toContain("Path=/api/auth");
-    const cookie = cookieFrom(res, HANDOFF_COOKIE);
-    expect(cookie.length).toBeGreaterThan(30);
+    const h = handoff(res);
+    const set = res.headers.getSetCookie().find(c => c.startsWith(`${h.name}=`))!;
+    expect(set).toContain("HttpOnly");
+    expect(set).toContain("SameSite=Strict");
+    expect(set).toContain("Path=/api/auth");
+    const cookie = h.cookie;
+    expect(cookie.length).toBeGreaterThan(60);
 
     expect(db.sqlite.prepare("SELECT email, name, is_admin, status FROM users WHERE id = ?").get(ALICE.sub))
       .toEqual({ email: ALICE.email, name: ALICE.name, is_admin: 0, status: "active" });
@@ -150,12 +161,12 @@ describe("GET /auth/callback", () => {
     expect(session.id_token.split(".")).toHaveLength(3);
     expect(session.handoff_hash).toBeTruthy();
 
-    const ex = await call("POST", "/auth/exchange", { cookie });
+    const ex = await call("POST", h.path, { cookie });
     expect(ex.status).toBe(200);
-    expect(ex.headers.getSetCookie().find(c => c.startsWith(`${HANDOFF_COOKIE}=`))).toContain("Max-Age=0");
+    expect(ex.headers.getSetCookie().find(c => c.startsWith(`${h.name}=`))).toContain("Max-Age=0");
     const token = ((await ex.json()) as { data: { token: string } }).data.token;
     // The code is single use.
-    expect((await call("POST", "/auth/exchange", { cookie })).status).toBe(400);
+    expect((await call("POST", h.path, { cookie })).status).toBe(400);
 
     const me = await call("GET", "/me/favourite-sites", { token });
     expect(me.status).toBe(200);
@@ -163,11 +174,23 @@ describe("GET /auth/callback", () => {
 
   it("signs nobody in from a completion link or a code in the body - only the browser holding the cookie", async () => {
     const res = await signIn();
-    const value = cookieFrom(res, HANDOFF_COOKIE).split("=")[1];
-    expect((await call("POST", "/auth/exchange")).status).toBe(400);
-    expect((await call("POST", "/auth/exchange", { body: { code: value } })).status).toBe(400);
+    const h = handoff(res);
+    const value = h.cookie.split("=")[1];
+    expect((await call("POST", h.path)).status).toBe(400);
+    expect((await call("POST", h.path, { body: { code: value } })).status).toBe(400);
     // The rightful browser still can (the failed attempts didn't burn it).
-    expect((await call("POST", "/auth/exchange", { cookie: `${HANDOFF_COOKIE}=${value}` })).status).toBe(200);
+    expect((await call("POST", h.path, { cookie: h.cookie })).status).toBe(200);
+  });
+
+  it("redeems each of two sign-ins finishing at once in one browser as its own session", async () => {
+    const BOB: FakeUser = { sub: "user-bob", email: "bob@example.com", name: "Bob", roles: ["user"] };
+    const a = handoff(await signIn(ALICE));
+    const b = handoff(await signIn(BOB));
+    const jar = `${a.cookie}; ${b.cookie}`;
+    const tokenFor = async (path: string) => ((await (await call("POST", path, { cookie: jar })).json()) as { data: { token: string } }).data.token;
+    const userOf = (t: string) => JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).userId;
+    expect(userOf(await tokenFor(a.path))).toBe(ALICE.sub);
+    expect(userOf(await tokenFor(b.path))).toBe(BOB.sub);
   });
 
   it("refreshes name/email on the mirror and the member snapshots at sign-in", async () => {

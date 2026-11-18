@@ -53,13 +53,15 @@ worker on :8790.
    `validateApplicationLevelSignature` (JWKS). Refuses ids in
    `identity_deletions` (`account_deleted`) or `user_deletions`
    (`account_disabled`), and non-admins for the admin client (`not_admin`).
-   Upserts the users mirror (+ member snapshots, Stripe customer email on
-   change) and creates a session row with a single-use `handoff_hash`.
-3. Sets the handoff code as the HttpOnly, SameSite=Strict `annex_handoff`
-   cookie (60s; never in a URL, so a leaked/crafted completion link signs no
-   one in) and 302s to `<APP_ORIGIN>/auth/complete#status=ok&return_to=…`
-   (or `#error=<code>`).
-4. SPA `POST /api/auth/exchange` (no body; the browser sends the cookie) -
+   Upserts the users mirror (+ member snapshots; every mirror write that
+   changes the email also updates the Stripe customer's, `refreshMirror`) and creates a session row with a single-use `handoff_hash`.
+3. Sets the handoff code as the HttpOnly, SameSite=Strict
+   `annex_handoff_<attempt>` cookie (60s; never in a URL, so a leaked/crafted
+   completion link signs no one in; one cookie per sign-in, so two finishing
+   at once in one browser don't swap) and 302s to
+   `<APP_ORIGIN>/auth/complete#status=ok&attempt=<id>&return_to=…` (or
+   `#error=<code>`).
+4. SPA `POST /api/auth/exchange?attempt=<id>` (no body; the browser sends the cookie) -
    redeems it once for the HS256 session JWT. The docs app keeps it in localStorage, the admin panel
    in sessionStorage.
 5. `POST /api/auth/logout` - revokes the session, returns the end-session URL

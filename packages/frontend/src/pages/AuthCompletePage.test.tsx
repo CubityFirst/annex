@@ -25,12 +25,12 @@ describe("AuthCompletePage", () => {
   it("redeems the handoff cookie once, stores the session and goes to the return path", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true, data: { token: "session-jwt" } }));
     vi.stubGlobal("fetch", fetchMock);
-    renderAt("#status=ok&return_to=%2Fprojects%2Fp1");
+    renderAt("#status=ok&attempt=abc123&return_to=%2Fprojects%2Fp1");
     expect(await screen.findByText("PROJECT P1")).toBeInTheDocument();
     expect(localStorage.getItem("token")).toBe("session-jwt");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // No code in the request: the HttpOnly cookie carries it.
-    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange?attempt=abc123", { method: "POST" });
     expect(window.location.hash).toBe("");
   });
 

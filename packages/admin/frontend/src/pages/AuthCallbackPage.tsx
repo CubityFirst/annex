@@ -13,8 +13,9 @@ interface AuthCallbackPageProps {
 
 // /auth/complete - where the admin worker's /api/auth/callback sends the
 // browser. The outcome is in the URL fragment (never sent to servers):
-//   #status=ok&return_to=/path  -> redeem the single-use HttpOnly handoff
-//                                  cookie for the admin session JWT
+//   #status=ok&attempt=<id>&return_to=/path
+//                               -> redeem this attempt's single-use HttpOnly
+//                                  handoff cookie for the admin session JWT
 //   #error=<code>               -> explain and offer a retry
 // Read once at module level of the effect, before the address bar is cleaned.
 function readFragment(): URLSearchParams {
@@ -26,8 +27,9 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [nextPath] = useState(() => normalizeAdminNextPath(readFragment().get("return_to")));
   const [ok] = useState(() => readFragment().get("status") === "ok");
-  // One exchange per mount (StrictMode re-runs the effect; see exchangeAdminCode).
-  const [attempt] = useState(() => crypto.randomUUID());
+  // The sign-in attempt to redeem; also keys one exchange per attempt
+  // (StrictMode re-runs the effect; see exchangeAdminCode).
+  const [attempt] = useState(() => readFragment().get("attempt") ?? "");
   const [errorCode] = useState(() => readFragment().get("error"));
 
   useEffect(() => {

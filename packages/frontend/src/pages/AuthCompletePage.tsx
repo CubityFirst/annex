@@ -6,8 +6,9 @@ import { safeReturnTo, signInErrorMessage, startSignIn } from "@/lib/signIn";
 
 // /auth/complete - where /api/auth/callback sends the browser. The outcome is
 // in the URL fragment (never sent to servers or in Referer headers):
-//   #status=ok&return_to=/path  -> redeem the single-use handoff cookie the
-//                                  callback set (HttpOnly; it never appears
+//   #status=ok&attempt=<id>&return_to=/path
+//                               -> redeem this attempt's single-use handoff
+//                                  cookie (HttpOnly; the code never appears
 //                                  in a URL) for the session JWT
 //   #error=<code>               -> explain and offer a retry
 export function AuthCompletePage() {
@@ -34,7 +35,8 @@ export function AuthCompletePage() {
     (async () => {
       try {
         // Same-origin POST: the browser sends the handoff cookie itself.
-        const res = await fetch("/api/auth/exchange", { method: "POST" });
+        const attempt = encodeURIComponent(fragment.get("attempt") ?? "");
+        const res = await fetch(`/api/auth/exchange?attempt=${attempt}`, { method: "POST" });
         const json = (await res.json()) as { ok: boolean; data?: { token: string }; error?: string };
         if (!json.ok || !json.data) {
           setError(signInErrorMessage(json.error ?? "invalid_code"));

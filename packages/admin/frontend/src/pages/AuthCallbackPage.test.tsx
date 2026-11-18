@@ -39,12 +39,12 @@ function renderComplete(fragment: string, onAuthenticated = vi.fn()) {
 describe("AuthCallbackPage (/auth/complete)", () => {
   it("exchanges the code ONCE despite StrictMode's dev double-mount (AF-C3), stores the token, navigates", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "minted-token" } }));
-    const onAuthenticated = renderComplete("status=ok");
+    const onAuthenticated = renderComplete("status=ok&attempt=a1");
 
     await waitFor(() => expect(screen.getByText("HOME")).toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // No code in the request or the URL: the HttpOnly handoff cookie carries it.
-    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange?attempt=a1", { method: "POST" });
     expect(getToken()).toBe("minted-token");
     expect(onAuthenticated).toHaveBeenCalled();
     expect(screen.queryByText(/didn't complete/)).not.toBeInTheDocument();
@@ -52,13 +52,13 @@ describe("AuthCallbackPage (/auth/complete)", () => {
 
   it("goes to the return path carried in the fragment, but never off-site", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "t" } }));
-    renderComplete("status=ok&return_to=%2Faudit");
+    renderComplete("status=ok&attempt=a2&return_to=%2Faudit");
     await waitFor(() => expect(screen.getByText("AUDIT")).toBeInTheDocument());
   });
 
   it("cleans the fragment from the address bar", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "t" } }));
-    renderComplete("status=ok&return_to=%2Fsecret");
+    renderComplete("status=ok&attempt=a3&return_to=%2Fsecret");
     await waitFor(() => expect(window.location.hash).toBe(""));
   });
 
@@ -71,7 +71,7 @@ describe("AuthCallbackPage (/auth/complete)", () => {
 
   it("explains a consumed/expired code", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: "invalid_code" }, 400));
-    renderComplete("status=ok");
+    renderComplete("status=ok&attempt=a4");
     expect(await screen.findByText(/took too long or was already used/)).toBeInTheDocument();
     expect(getToken()).toBeNull();
   });

@@ -659,10 +659,10 @@ export class AdminSignInError extends Error {
   }
 }
 
-async function exchangeAdminCodeUncached(): Promise<AdminCodeExchange> {
-  // Same-origin POST: the browser sends the single-use handoff cookie the
-  // callback set (HttpOnly - the code never appears in a URL).
-  const res = await fetch("/api/auth/exchange", { method: "POST" });
+async function exchangeAdminCodeUncached(attempt: string): Promise<AdminCodeExchange> {
+  // Same-origin POST: the browser sends this attempt's single-use handoff
+  // cookie the callback set (HttpOnly - the code never appears in a URL).
+  const res = await fetch(`/api/auth/exchange?attempt=${encodeURIComponent(attempt)}`, { method: "POST" });
   const json = (await res.json()) as { ok: boolean; data?: AdminCodeExchange; error?: string };
   if (!json.ok || !json.data) throw new AdminSignInError(json.error ?? "unknown");
   return json.data;
@@ -671,14 +671,14 @@ async function exchangeAdminCodeUncached(): Promise<AdminCodeExchange> {
 // The handoff cookie is single-use and redeemed atomically server-side, so two
 // concurrent exchanges (React StrictMode's dev double-mount) would race: the
 // loser gets "invalid_code" and paints an error over a successful sign-in.
-// Share one in-flight/settled promise per sign-in (keyed by the completion
-// page's mount, see AuthCallbackPage) so every caller observes the SAME outcome.
+// Share one in-flight/settled promise per sign-in attempt (the id the
+// callback put in the fragment) so every caller observes the SAME outcome.
 const exchangePromises = new Map<string, Promise<AdminCodeExchange>>();
 
 export function exchangeAdminCode(attempt: string): Promise<AdminCodeExchange> {
   let promise = exchangePromises.get(attempt);
   if (!promise) {
-    promise = exchangeAdminCodeUncached();
+    promise = exchangeAdminCodeUncached(attempt);
     exchangePromises.set(attempt, promise);
   }
   return promise;
