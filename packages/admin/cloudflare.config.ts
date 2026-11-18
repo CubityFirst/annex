@@ -44,7 +44,8 @@ export default defineConfig({
 			// Sign in with auth.cubityfir.st: the admin panel is its own first-party
 			// OIDC client (scopes `openid profile email roles`, sign-in requires the
 			// admin role), registered with redirect URI APP_ORIGIN/api/auth/callback
-			// and post-logout redirect URI APP_ORIGIN/. OIDC_CLIENT_ID must be the id
+			// and post-logout redirect URI APP_ORIGIN (no trailing slash; matched byte
+			// for byte). OIDC_CLIENT_ID must be the id
 			// it was registered with at auth.cubityfir.st/admin/clients;
 			// OIDC_CLIENT_SECRET is a secret.
 			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),

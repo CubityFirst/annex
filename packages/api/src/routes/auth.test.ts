@@ -399,7 +399,7 @@ describe("POST /auth/logout", () => {
     const url = new URL(((await res.json()) as { data: { logoutUrl: string } }).data.logoutUrl);
     expect(`${url.origin}${url.pathname}`).toBe(`${idp.issuer}/oauth/logout`);
     expect(url.searchParams.get("id_token_hint")).toBe(idToken);
-    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${APP}/`);
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(APP);
     expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
   });
 

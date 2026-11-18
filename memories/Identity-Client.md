@@ -21,19 +21,22 @@ Annex's workers share the cubityfir.st zone with auth.cubityfir.st. A Worker's
 placeholder record), not to that Worker, so server-side OIDC requests must use
 `IDENTITY_OIDC` (`identityFetch` in `packages/api/src/account/oidc.ts`). Only
 the browser redirects (authorize, logout) use the public URL. Requests over a
-binding carry no `CF-Connecting-IP`, so all of Annex's token calls share one
-rate-limit bucket on the provider (100/min) - fine at current volume.
+binding carry no `CF-Connecting-IP`, so the provider rate-limits them per
+client_id (100/min for token, again for userinfo) - fine at current volume.
 
-Vars: `OIDC_ISSUER`, `OIDC_CLIENT_ID` (`annex-docs` / `annex-admin`; must match
-the registration), `APP_ORIGIN`; optional `OIDC_REDIRECT_URI`,
+Post-logout URIs are matched byte for byte: they're registered as the bare
+origin (no trailing slash), which is the default `APP_ORIGIN` sends.
+
+Vars: `OIDC_ISSUER`, `OIDC_CLIENT_ID` (docs: `oidc_7369d6d5736d2bea35f1ab47`;
+admin: `annex-admin` placeholder until registered), `APP_ORIGIN`; optional `OIDC_REDIRECT_URI`,
 `OIDC_POST_LOGOUT_REDIRECT_URI`. Secret: `OIDC_CLIENT_SECRET`.
 
 ## Registering the clients (auth.cubityfir.st/admin/clients)
 
 | Client | Redirect URI | Post-logout URI | Scopes | First-party |
 | --- | --- | --- | --- | --- |
-| docs app | `https://docs.cubityfir.st/api/auth/callback` | `https://docs.cubityfir.st/` | `openid profile email roles` | yes |
-| admin panel | `https://admin.cubityfir.st/api/auth/callback` | `https://admin.cubityfir.st/` | `openid profile email roles` | yes |
+| docs app (`oidc_7369d6d5736d2bea35f1ab47`) | `https://docs.cubityfir.st/api/auth/callback` | `https://docs.cubityfir.st` | `openid profile email roles` | yes |
+| admin panel | `https://admin.cubityfir.st/api/auth/callback` | `https://admin.cubityfir.st` | `openid profile email roles` | yes |
 
 Local dev clients: `http://localhost:5173/api/auth/callback` (docs) and
 `http://localhost:5174/api/auth/callback` (admin), against a local identity

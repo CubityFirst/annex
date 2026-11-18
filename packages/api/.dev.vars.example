@@ -11,7 +11,7 @@ APP_ORIGIN=http://localhost:5173
 # :8787, so run it on another port: `npx wrangler dev --port 8790`, with
 # ISSUER=http://localhost:8790 in its own .dev.vars. Register a client there
 # with redirect URI http://localhost:5173/api/auth/callback and post-logout
-# URI http://localhost:5173/, scopes `openid profile email roles`, first-party.
+# URI http://localhost:5173 (no trailing slash), scopes `openid profile email roles`, first-party.
 # The IDENTITY/IDENTITY_OIDC bindings reach it through wrangler's dev registry;
 # without it running, server-side OIDC falls back to OIDC_ISSUER directly and
 # account standing falls back to the users mirror.

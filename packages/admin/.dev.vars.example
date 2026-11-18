@@ -9,7 +9,7 @@ APP_ORIGIN=http://localhost:5174
 # The admin panel is its own OIDC client of the identity service. With a local
 # identity worker on :8790 (see packages/api/.dev.vars.example), register a
 # client with redirect URI http://localhost:5174/api/auth/callback and
-# post-logout URI http://localhost:5174/, scopes `openid profile email roles`,
+# post-logout URI http://localhost:5174 (no trailing slash), scopes `openid profile email roles`,
 # first-party. Sign-in requires an account with the admin role.
 OIDC_ISSUER=http://localhost:8790
 OIDC_CLIENT_ID=annex-admin-local

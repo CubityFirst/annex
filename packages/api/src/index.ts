@@ -60,7 +60,7 @@ export interface Env {
   IDENTITY_OIDC?: Fetcher;
   // OIDC client settings (see routes/auth.ts). OIDC_CLIENT_SECRET is a secret;
   // the rest are vars. Redirect URIs default to APP_ORIGIN/api/auth/callback
-  // and APP_ORIGIN/.
+  // and APP_ORIGIN (no trailing slash).
   OIDC_ISSUER?: string;
   OIDC_CLIENT_ID?: string;
   OIDC_CLIENT_SECRET?: string;

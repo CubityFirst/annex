@@ -86,7 +86,9 @@ export function oidcConfigFor(env: AuthRouteEnv, origin: string): OidcClientConf
     clientId: env.OIDC_CLIENT_ID,
     clientSecret: env.OIDC_CLIENT_SECRET || undefined,
     redirectUri: env.OIDC_REDIRECT_URI || `${base}/api/auth/callback`,
-    postLogoutRedirectUri: env.OIDC_POST_LOGOUT_REDIRECT_URI || `${base}/`,
+    // The provider matches this byte for byte against the registration,
+    // which is the bare origin (no trailing slash).
+    postLogoutRedirectUri: env.OIDC_POST_LOGOUT_REDIRECT_URI || base,
     scope: APP_SCOPE,
     binding: env.IDENTITY_OIDC,
     allowPublicFallback: isLocalDeploy({ APP_ORIGIN: base }),

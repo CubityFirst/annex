@@ -59,13 +59,15 @@ export default defineConfig({
 			// Sign in with auth.cubityfir.st (src/routes/auth.ts). Annex is a
 			// first-party OIDC client with scopes `openid profile email roles`,
 			// redirect URI APP_ORIGIN/api/auth/callback and post-logout redirect
-			// URI APP_ORIGIN/ (override with OIDC_REDIRECT_URI /
+			// URI APP_ORIGIN, no trailing slash - the provider matches byte for byte
+			// (override with OIDC_REDIRECT_URI /
 			// OIDC_POST_LOGOUT_REDIRECT_URI). OIDC_CLIENT_ID must be the id the
 			// client was registered with at auth.cubityfir.st/admin/clients;
 			// OIDC_CLIENT_SECRET is a secret. Local dev overrides all of these in
 			// .dev.vars (see .dev.vars.example).
 			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),
-			OIDC_CLIENT_ID: bindings.text("annex-docs"),
+			// Registered at auth.cubityfir.st/admin/clients (not a secret).
+			OIDC_CLIENT_ID: bindings.text("oidc_7369d6d5736d2bea35f1ab47"),
 			APP_ORIGIN: bindings.text("https://docs.cubityfir.st"),
 			// Stripe price id for the Annex Ink supporter tier ($5/mo recurring).
 			// Not a secret - safe to commit. (Billing moved here from annex-auth.)
@@ -142,7 +144,8 @@ export default defineConfig({
 			// Secrets (set via `npx wrangler secret put <NAME> --name annex-api`;
 			// existing secrets are kept across `cf deploy`):
 			//   JWT_SECRET            (signs Annex's own session JWTs; Annex-only)
-			//   OIDC_CLIENT_SECRET    (the annex-docs client's secret from auth.cubityfir.st)
+			//   OIDC_CLIENT_SECRET    (the docs client's secret from auth.cubityfir.st;
+			//                          prefixed sk_ - never commit or log it)
 			//   STRIPE_SECRET_KEY     (sk_test_... or sk_live_... - moved from annex-auth)
 			//   STRIPE_WEBHOOK_SECRET (whsec_... for the docs.cubityfir.st/stripe/webhook
 			//                          endpoint; the frontend worker forwards it here, so
