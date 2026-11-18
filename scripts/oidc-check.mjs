@@ -11,7 +11,9 @@
 //
 // Usage (PowerShell: $env:OIDC_CLIENT_SECRET = Read-Host -MaskInput):
 //   OIDC_CLIENT_SECRET=... node scripts/oidc-check.mjs
-// Optional: OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_REDIRECT_URI.
+// Optional: OIDC_ISSUER (https only - oauth4webapi refuses http, so this
+// doesn't work against a local identity worker), OIDC_CLIENT_ID,
+// OIDC_REDIRECT_URI.
 // The secret is read from the environment and never printed; tokens aren't
 // printed either.
 //

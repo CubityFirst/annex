@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { createFakeIdp, type FakeIdp, type FakeUser } from "../test/fakeIdp";
-import { setOidcFetchForTests, STATE_COOKIE, handoffCookieName } from "./auth";
+import { setOidcFetchForTests, STATE_COOKIE, handoffCookieName, stateCookieName } from "./auth";
 import { clearOidcCaches, identityFetch } from "../account/oidc";
 import { clearIdentityCache, type IdentityService, type IdentityUser } from "../account/identity";
 import worker, { type Env } from "../index";
@@ -50,7 +50,9 @@ function call(method: string, path: string, init: { token?: string; cookie?: str
 }
 
 function cookieFrom(res: Response, name = STATE_COOKIE): string {
-  const set = res.headers.getSetCookie().find(c => c.startsWith(`${name}=`)) ?? "";
+  // The login-state cookie is named per sign-in (annex_oidc_<state>).
+  const prefix = name === STATE_COOKIE ? `${STATE_COOKIE}_` : `${name}=`;
+  const set = res.headers.getSetCookie().find(c => c.startsWith(prefix)) ?? "";
   return set.split(";")[0];
 }
 
@@ -116,7 +118,7 @@ describe("GET /auth/login", () => {
     expect(loc.searchParams.get("state")).toBeTruthy();
     expect(loc.searchParams.get("nonce")).toBeTruthy();
     const cookie = res.headers.get("Set-Cookie")!;
-    expect(cookie).toContain(`${STATE_COOKIE}=`);
+    expect(cookie).toContain(`${stateCookieName(loc.searchParams.get("state")!)}=`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Secure");
@@ -140,7 +142,7 @@ describe("GET /auth/callback", () => {
   it("verifies the id_token, upserts the users mirror and hands the browser a single-use code in a cookie", async () => {
     const res = await signIn(ALICE, "/projects/p1");
     expect(res.status).toBe(302);
-    expect(res.headers.getSetCookie().find(c => c.startsWith(`${STATE_COOKIE}=`))).toContain("Max-Age=0");
+    expect(res.headers.getSetCookie().find(c => c.startsWith(`${STATE_COOKIE}_`))).toContain("Max-Age=0");
     const frag = fragment(res);
     expect(frag.get("return_to")).toBe("/projects/p1");
     // The code never appears in a URL: only in an HttpOnly, SameSite=Strict cookie.
@@ -224,11 +226,12 @@ describe("GET /auth/callback", () => {
     expect(fragment(res).get("error")).toBe("login_expired");
   });
 
-  it("refuses a state mismatch (callback from another login)", async () => {
+  it("refuses a state mismatch (another login's sealed state under this login's cookie name)", async () => {
     const first = await call("GET", "/auth/login");
     const second = await call("GET", "/auth/login");
     const cb = new URL(idp.authorize(first.headers.get("Location")!, ALICE));
-    const res = await call("GET", `/auth/callback${cb.search}`, { cookie: cookieFrom(second) });
+    const secondValue = cookieFrom(second).split("=")[1];
+    const res = await call("GET", `/auth/callback${cb.search}`, { cookie: `${stateCookieName(cb.searchParams.get("state")!)}=${secondValue}` });
     expect(fragment(res).get("error")).toBeTruthy();
     expect(fragment(res).get("code")).toBeNull();
     expect(idp.tokenRequests).toBe(0);
@@ -262,9 +265,23 @@ describe("GET /auth/callback", () => {
     expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM users").get()).toEqual({ n: 0 });
   });
 
+  it("keeps two sign-ins started in different tabs apart until both callbacks land", async () => {
+    const BOB: FakeUser = { sub: "user-bob", email: "bob@example.com", name: "Bob", roles: ["user"] };
+    const first = await call("GET", "/auth/login?return_to=/a");
+    const second = await call("GET", "/auth/login?return_to=/b");
+    const jar = `${cookieFrom(first)}; ${cookieFrom(second)}`;
+    const cbA = await call("GET", `/auth/callback${new URL(idp.authorize(first.headers.get("Location")!, ALICE)).search}`, { cookie: jar });
+    // The first callback clears only its own state cookie.
+    expect(cbA.headers.getSetCookie().filter(c => c.includes("Max-Age=0")).map(c => c.split("=")[0])).toEqual([cookieFrom(first).split("=")[0]]);
+    const cbB = await call("GET", `/auth/callback${new URL(idp.authorize(second.headers.get("Location")!, BOB)).search}`, { cookie: jar });
+    expect([fragment(cbA).get("return_to"), fragment(cbB).get("return_to")]).toEqual(["/a", "/b"]);
+    expect([fragment(cbA).get("status"), fragment(cbB).get("status")]).toEqual(["ok", "ok"]);
+  });
+
   it("passes an OAuth error code through, never the description", async () => {
     const login = await call("GET", "/auth/login");
-    const res = await call("GET", "/auth/callback?error=access_denied&error_description=%3Cscript%3E", { cookie: cookieFrom(login) });
+    const state = new URL(login.headers.get("Location")!).searchParams.get("state")!;
+    const res = await call("GET", `/auth/callback?error=access_denied&error_description=%3Cscript%3E&state=${state}`, { cookie: cookieFrom(login) });
     const frag = fragment(res);
     expect(frag.get("error")).toBe("access_denied");
     expect([...frag.keys()]).toEqual(["error"]);

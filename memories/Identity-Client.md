@@ -45,8 +45,8 @@ worker on :8790.
 ## Flow (packages/api/src/routes/auth.ts, shared by admin via AuthFlow)
 
 1. `GET /api/auth/login?return_to=` - PKCE S256 verifier, state, nonce sealed
-   (HMAC with `JWT_SECRET`) into the HttpOnly `annex_oidc` cookie (path
-   `/api/auth`, 10 min); 302 to the authorize endpoint from discovery.
+   (HMAC with `JWT_SECRET`) into the HttpOnly `annex_oidc_<state>` cookie (one
+   per sign-in, so two tabs don't clobber each other; path `/api/auth`, 10 min); 302 to the authorize endpoint from discovery.
 2. `GET /api/auth/callback` - opens the cookie, `validateAuthResponse` (state,
    `iss`), code exchange with `client_secret_basic`,
    `processAuthorizationCodeResponse` (iss, aud, exp, nonce, RS256 pinned) and
@@ -122,14 +122,25 @@ serves Annex logins and **account changes drift** between the two stores.
    (Developers → Webhooks → the docs.cubityfir.st endpoint) resend every event
    since the time noted in step 4. The handler is idempotent
    (`webhook_events`), so overlap is harmless.
-7. Reconcile deletions, once nothing routes to the old login/delete-account
-   routes (after step 5): take a FINAL export of cubedocs-auth. Candidates are
-   the user ids in the identity service's actual import snapshot (the
-   `import.sql` it was loaded from on 2026-11-18) that are absent from this
-   final export - they were deleted on the old Annex after that import and
-   could otherwise sign back in. Compare ids, not dates: accounts created on
-   auth.cubityfir.st since its import are never candidates. Delete the
-   candidates at auth.cubityfir.st/admin/users, then **enable** the two Annex
-   clients and delete `migration-data/`.
+7. Reconcile, once nothing routes to the old login/register/delete-account
+   routes (after step 5): take a FINAL export of cubedocs-auth and compare its
+   user ids with the identity service's actual import snapshot (the
+   `import.sql` it was loaded from on 2026-11-18). Compare ids, not dates:
+   accounts created on auth.cubityfir.st since its import are never involved.
+   - **Deletions** - ids in the snapshot but absent from the final export were
+     deleted on the old Annex after that import and could otherwise sign back
+     in. Delete them at auth.cubityfir.st/admin/users.
+   - **Additions** - ids in the final export but absent from the snapshot
+     registered on the old Annex after that import. Step 4 already mirrored
+     them (with their sites and billing) under that id, but auth.cubityfir.st
+     has no such account: registering there would mint a new id and strand
+     their Annex data. Add them to cubityfirst-auth **with their original
+     ids** (users + recovery codes, from the final export). The identity
+     repo's `import-from-annex.mjs` replaces every user, so it can't be re-run
+     now; this needs an additions-only import from that repo. If an addition's
+     email has since been registered on auth.cubityfir.st under a new id,
+     resolve it by hand.
+
+   Then **enable** the two Annex clients and delete `migration-data/`.
 8. Retire annex-auth (`npx wrangler delete annex-auth`) once traffic is on the
    new code, and later cubedocs-auth after a backup.

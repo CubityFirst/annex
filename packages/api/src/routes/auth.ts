@@ -43,7 +43,14 @@ export interface AuthRouteEnv extends SessionEnv {
   IDENTITY_OIDC?: { fetch(input: string, init?: RequestInit): Promise<Response> };
 }
 
+// One login-state cookie per sign-in, named by its OAuth `state`, so sign-ins
+// started in two tabs don't overwrite (or clear) each other's.
 export const STATE_COOKIE = "annex_oidc";
+const OAUTH_STATE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+
+export function stateCookieName(state: string): string {
+  return `${STATE_COOKIE}_${state}`;
+}
 // The single-use handoff code travels ONLY in this HttpOnly, SameSite=Strict
 // cookie - never in a URL - so it can be redeemed only by the browser that
 // completed the sign-in (a leaked or crafted /auth/complete link carries
@@ -138,15 +145,18 @@ export async function handleLogin(flow: AuthFlow, env: SessionEnv, url: URL): Pr
     return toComplete(flow, { error: "identity_unavailable" }, []);
   }
   const sealed = await sealLoginState(login.state, env.JWT_SECRET);
-  return redirect(login.url, [stateCookie(STATE_COOKIE, sealed, cookieOpts(flow, LOGIN_STATE_TTL_MS / 1000))]);
+  return redirect(login.url, [stateCookie(stateCookieName(login.state.state), sealed, cookieOpts(flow, LOGIN_STATE_TTL_MS / 1000))]);
 }
 
 export async function handleCallback(flow: AuthFlow, env: SessionEnv & { STRIPE_SECRET_KEY?: string }, request: Request, url: URL): Promise<Response> {
   const cfg = flow.oidc;
   if (!cfg) return Response.json({ ok: false, error: "sign_in_not_configured" }, { status: 503 });
-  const clear = stateCookie(STATE_COOKIE, "", cookieOpts(flow, 0));
+  const oauthState = url.searchParams.get("state") ?? "";
+  if (!OAUTH_STATE_RE.test(oauthState)) return toComplete(flow, { error: "login_expired" }, []);
+  const name = stateCookieName(oauthState);
+  const clear = stateCookie(name, "", cookieOpts(flow, 0));
 
-  const login = await openLoginState(readCookie(request, STATE_COOKIE), env.JWT_SECRET);
+  const login = await openLoginState(readCookie(request, name), env.JWT_SECRET);
   if (!login) return toComplete(flow, { error: "login_expired" }, [clear]);
 
   // The user cancelled or the identity service refused: pass the OAuth error
