@@ -29,6 +29,11 @@ export interface DeletionSyncEnv {
   STRIPE_SECRET_KEY?: string;
 }
 
+// Must match the hourly trigger in cloudflare.config.ts. Lives here, not in
+// src/index.ts: every named export of the worker's main module is loaded as
+// an entrypoint, and a non-handler export stops the worker from starting.
+export const DELETION_SYNC_CRON = "23 * * * *";
+
 const PAGE_SIZE = 100;
 // IdentityService.listDeletedUsers' maximum page size.
 const MAX_PAGE_SIZE = 500;

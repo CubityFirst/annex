@@ -23,7 +23,7 @@ export default defineConfig({
 			}),
 			// Hourly deletion sync: accounts deleted on auth.cubityfir.st have their
 			// Annex data removed (owned sites/orgs are kept for an operator). The
-			// schedule string must match DELETION_SYNC_CRON in src/index.ts.
+			// schedule string must match DELETION_SYNC_CRON in src/lib/identityDeletions.ts.
 			triggers.scheduled({
 				schedule: "23 * * * *",
 			}),

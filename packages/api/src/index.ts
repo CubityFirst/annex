@@ -27,10 +27,7 @@ import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from 
 import { resolveAccess } from "./lib/access";
 import type { IdentityService } from "./account/identity";
 import { sweepSessions } from "./account/session";
-import { syncIdentityDeletions } from "./lib/identityDeletions";
-
-// Must match the hourly trigger in cloudflare.config.ts.
-export const DELETION_SYNC_CRON = "23 * * * *";
+import { DELETION_SYNC_CRON, syncIdentityDeletions } from "./lib/identityDeletions";
 import { handleAuthCallback, handleAuthExchange, handleAuthLogin, handleAuthLogout, handleDevQuickLogin } from "./routes/auth";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripeWebhook";
