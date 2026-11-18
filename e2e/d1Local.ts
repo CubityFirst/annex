@@ -11,7 +11,7 @@ const SCRIPT = resolve(__dirname, "../scripts/d1-local.mjs");
  * e2e spec already does. Spawned without a shell, so SQL quotes pass through
  * verbatim. Throws with the helper's error message on failure.
  */
-export function d1Local(db: "main" | "auth", sql: string): void {
+export function d1Local(db: "main", sql: string): void {
   try {
     execFileSync(process.execPath, [SCRIPT, db, sql], { stdio: "pipe" });
   } catch (err) {

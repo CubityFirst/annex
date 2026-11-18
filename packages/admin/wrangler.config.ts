@@ -6,7 +6,7 @@ import { defineWranglerConfig } from "wrangler/experimental-config";
 // There is no wrangler.toml. Local dev (`pnpm dev`) runs
 // `wrangler dev --experimental-new-config --persist-to ../../.wrangler/state`,
 // which reads this file + cloudflare.config.ts directly: every worker must share
-// one local state dir (the api worker reads the auth DB via AUTH_DB), and
+// one local state dir (the api and admin workers share cubedocs-main), and
 // `cf dev` cannot set a persist directory yet.
 export default defineWranglerConfig({
 	// Built by `pnpm build` (the admin SPA in ./frontend).

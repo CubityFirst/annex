@@ -55,7 +55,7 @@ async function injectFakeIp(ctx: BrowserContext) {
 
 function grantInk(uid: string) {
   const sql = `INSERT INTO user_billing (user_id, granted_plan, granted_plan_started_at) VALUES ('${uid}', 'ink', ${Date.now()}) ON CONFLICT(user_id) DO UPDATE SET granted_plan = 'ink', granted_plan_started_at = ${Date.now()};`;
-  d1Local("auth", sql);
+  d1Local("main", sql);
 }
 
 test.describe.configure({ mode: "serial" });
