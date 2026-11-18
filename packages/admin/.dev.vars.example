@@ -15,5 +15,9 @@ OIDC_ISSUER=http://localhost:8790
 OIDC_CLIENT_ID=annex-admin-local
 OIDC_CLIENT_SECRET=
 
+# Skip the identity service: POST /api/dev/quick-login mints an admin dev
+# session (the e2e admin suite uses it). Localhost APP_ORIGIN only.
+DEV_QUICK_LOGIN=true
+
 # Admin-driven Stripe actions (test mode).
 # STRIPE_SECRET_KEY=sk_test_...

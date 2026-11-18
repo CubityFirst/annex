@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { adminAuthFlow, requireAdminSession, verifySession, type AdminSession } from "./auth";
-import { handleCallback, handleExchange, handleLogin, handleLogout } from "../../api/src/routes/auth";
+import { handleCallback, handleDevQuickLogin, handleExchange, handleLogin, handleLogout } from "../../api/src/routes/auth";
 import type { IdentityService } from "../../api/src/account/identity";
 import { usersRouter } from "./routes/users";
 import { projectsRouter } from "./routes/projects";
@@ -32,6 +32,9 @@ export interface Env {
   OIDC_REDIRECT_URI?: string;
   OIDC_POST_LOGOUT_REDIRECT_URI?: string;
   APP_ORIGIN?: string;
+  // Local dev only: POST /api/dev/quick-login mints an admin dev session
+  // (needs "true" AND a localhost APP_ORIGIN; the e2e admin suite uses it).
+  DEV_QUICK_LOGIN?: string;
   // IP-keyed rate limiters (Cloudflare ratelimit bindings - see cloudflare.config.ts).
   // RATE_LIMITER_ADMIN gates every authenticated admin API route and the
   // sign-in endpoints; RATE_LIMITER_AVATAR gates the public avatar route on
@@ -93,6 +96,9 @@ app.post("/api/auth/exchange", async (c) => (await limited(c)) ?? handleExchange
 // enforceAdmin: an operator whose admin role was just removed (or whose
 // account was disabled) must still be able to kill the session.
 app.post("/api/auth/logout", async (c) => (await limited(c)) ?? handleLogout(adminAuthFlow(c.env), c.env, c.req.raw));
+
+// Local dev only (404 unless DEV_QUICK_LOGIN=true and APP_ORIGIN is localhost).
+app.post("/api/dev/quick-login", async (c) => (await limited(c)) ?? handleDevQuickLogin(c.req.raw, c.env, "admin"));
 
 app.get("/api/verify", async (c) => {
   // Same IP limiter as the authenticated routes: this is otherwise the one

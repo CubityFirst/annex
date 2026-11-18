@@ -263,7 +263,9 @@ type DevVariant = "standard-free" | "standard-ink" | "admin-free" | "admin-ink";
 //
 // Body: { variant } for a fresh dev user, or { email, name?, admin? } to sign
 // in as (or create) a specific dev user - the e2e suites use the latter.
-export async function handleDevQuickLogin(request: Request, env: AuthRouteEnv & { DEV_QUICK_LOGIN?: string }): Promise<Response> {
+// The admin worker serves the same route with kind "admin" (always an admin
+// dev user, an admin session).
+export async function handleDevQuickLogin(request: Request, env: AuthRouteEnv & { DEV_QUICK_LOGIN?: string }, kind: SessionKind = "app"): Promise<Response> {
   if (env.DEV_QUICK_LOGIN !== "true" || !isLocalDeploy(env)) return errorResponse(Errors.NOT_FOUND);
 
   const body = await request.json<{ variant?: DevVariant; email?: string; name?: string; admin?: boolean }>().catch(() => null);
@@ -292,6 +294,7 @@ export async function handleDevQuickLogin(request: Request, env: AuthRouteEnv & 
     name = `${isAdmin ? "Dev Admin" : "Dev User"}${hasInk ? " (Ink)" : ""}`;
   }
 
+  if (kind === "admin") isAdmin = true;
   await refreshMirror(env, {
     id, email, name, emailVerified: true, isAdmin, status: "active", suspendedUntil: null, createdAt: new Date(now).toISOString(),
   }, now, { login: true });
@@ -300,6 +303,6 @@ export async function handleDevQuickLogin(request: Request, env: AuthRouteEnv & 
       "INSERT OR IGNORE INTO user_billing (user_id, granted_plan, granted_plan_reason, granted_plan_started_at) VALUES (?, 'ink', 'dev', ?)",
     ).bind(id, now).run();
   }
-  const token = await createSessionToken(env, { userId: id, email, isAdmin, kind: "app", request });
+  const token = await createSessionToken(env, { userId: id, email, isAdmin, kind, request });
   return okResponse({ token, userId: id });
 }
