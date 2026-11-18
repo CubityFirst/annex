@@ -88,25 +88,16 @@ A site owner can map their **own domain** (e.g. `docs.example.com`) to their pub
 
 **Critical invariant:** the custom domain serves a **published, read-only** public site only - never the authenticated app (sessions/JWT are per-origin). Host detection (`isCustomDomain` in `lib/siteUrl.ts`) treats `localhost`/`*.cubityfir.st`/`*.workers.dev`/`*.pages.dev`/`*.local` as app hosts; anything else is a custom domain and boots `CustomDomainApp` (site-only routes). When `CF_API_TOKEN`/`CF_ZONE_ID` are unset the endpoints report "not configured" and never call Cloudflare.
 
-## Sign in with Annex (OIDC provider)
+## Identity provider (auth.cubityfir.st)
 
-Annex is an **OpenID Connect identity provider** (authorization-code + PKCE, RS256
-id_tokens via JWKS) so other first-party services can offer "Sign in with Annex".
-Issuer is the dedicated host **`https://auth.cubityfir.st`** (the auth worker serves
-`/oauth/{token,userinfo,jwks}` + `/.well-known/openid-configuration` there via routes
-in its `cloudflare.config.ts`); the browser-facing **authorization_endpoint is a SPA page on
-the app origin** `docs.cubityfir.st/oauth/authorize` because the user's Annex session
-lives there. **Anything touching `oauth_clients`/`oauth_codes` (`0028_*`), `src/oidc.ts`,
-`routes/oauth-*.ts`, the `/oauth/authorize` proxy, the `RATE_LIMITER_OIDC` binding,
-`OAuthAuthorizePage`, the `OIDC_*` vars/secret, the admin client-management surface
-(`packages/admin` `routes/oauth.ts` proxy + `OAuthClientsPage` "OAuth" tab → auth worker
-`/admin/oauth/clients*`), or the `scripts/{gen-oidc-key,register-oauth-client}.mjs`
-helpers belongs to this system** - see `memories/Oidc-Provider.md` and `docs/oauth/README.md`.
-
-**Critical invariants:** exact redirect-URI match only (no wildcards; never redirect to an
-unvalidated URI); PKCE S256 mandatory and verified *before* the single-use code is consumed;
-RS256 signs with a dedicated `OIDC_PRIVATE_KEY` (never the session `JWT_SECRET`) and the verifier
-pins `alg`; disabled clients + suspended users are refused at authorize, token, AND userinfo.
+Annex is **not** an OpenID Connect provider any more. Since 2026-11-18 the
+provider is the standalone `cubityfirst-auth` worker at `https://auth.cubityfir.st`
+(its own repo and D1). annex-auth no longer serves `/oauth/*` or `/.well-known/*`,
+has no `auth.cubityfir.st` routes (that hostname is cubityfirst-auth's Custom
+Domain - **never re-add those triggers**), and holds no OIDC signing key. OAuth
+clients are managed at `auth.cubityfir.st/admin/clients`. The old
+`docs.cubityfir.st/oauth/authorize` URL redirects to the provider. See
+`docs/oauth/README.md`.
 
 ## Tests
 

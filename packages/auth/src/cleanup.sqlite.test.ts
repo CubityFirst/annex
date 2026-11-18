@@ -16,7 +16,6 @@ import { sweepExpiredRows, SWEEP_RETENTION_MS } from "./cleanup";
 import { createSession, SESSION_TTL_MS } from "./sessions";
 import { handleLookupById } from "./routes/lookup-by-id";
 import { handleAdminHandoffStart } from "./routes/admin-handoff-start";
-import { handleOAuthAuthorize } from "./routes/oauth-authorize";
 import { requireAuthenticatedSession } from "./auth-session";
 import type { Env } from "./index";
 
@@ -27,7 +26,6 @@ function setup() {
   const { db, sqlite } = createSqliteD1(AUTH_MIGRATIONS);
   const env = {
     DB: db,
-    RATE_LIMITER_OIDC: { limit: async () => ({ success: true }) },
   } as unknown as Env;
   const addUser = (id: string) =>
     sqlite.prepare(
@@ -208,36 +206,5 @@ describe("handoff / authorization-code GC", () => {
     expect(left).toContain("h-consumed-live");
     expect(left).not.toContain("h-expired");
     expect(left).not.toContain("h-expired-consumed");
-  });
-
-  it("oauth-authorize drops expired codes and keeps unexpired (incl. consumed) ones", async () => {
-    const { env, sqlite, addUser, ids } = setup();
-    addUser("u1");
-    const now = Date.now();
-    sqlite.prepare(
-      "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, allowed_scopes, trusted, disabled, created_at) VALUES ('c1', 'App', ?, 'openid profile email', 1, 0, ?)",
-    ).run(JSON.stringify(["https://app.example/cb"]), now);
-    const add = sqlite.prepare(
-      `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scope, code_challenge, created_at, expires_at, consumed_at)
-       VALUES (?, 'c1', 'u1', 'https://app.example/cb', 'openid', 'x', ?, ?, ?)`,
-    );
-    add.run("code-expired", now - 10 * 60 * 1000, now - 5 * 60 * 1000, null);
-    add.run("code-consumed-live", now - 60 * 1000, now + 4 * 60 * 1000, now - 30 * 1000);
-
-    const res = await handleOAuthAuthorize(
-      new Request("http://auth/oauth/authorize", {
-        method: "POST",
-        body: JSON.stringify({
-          client_id: "c1", redirect_uri: "https://app.example/cb", response_type: "code",
-          scope: "openid", code_challenge: "abc", code_challenge_method: "S256",
-        }),
-      }),
-      env,
-    );
-    expect(res.status).toBe(200);
-    const left = ids("SELECT code AS id FROM oauth_codes");
-    expect(left).toHaveLength(2);
-    expect(left).toContain("code-consumed-live");
-    expect(left).not.toContain("code-expired");
   });
 });

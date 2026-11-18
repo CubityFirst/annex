@@ -56,7 +56,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
 
   // email_verified starts at 0 unconditionally: even when the flag isn't
   // enforcing verification, the address genuinely hasn't been verified, and
-  // the column feeds truthful surfaces (OIDC email_verified claim, admin
+  // the column feeds truthful surfaces (admin
   // dashboard). Enforcement (login gate, verification email) stays flag-only.
   await env.DB.prepare(
     "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 0)",
