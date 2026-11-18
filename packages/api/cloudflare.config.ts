@@ -50,6 +50,23 @@ export default defineConfig({
 			// route.
 			R2_BUCKET_NAME: bindings.text("cubedocs-assets"),
 			R2_ACCOUNT_ID: bindings.text("d843ae90cab33e54f4d284bc65d2fd6a"),
+			// Sign in with auth.cubityfir.st (src/routes/auth.ts). Annex is a
+			// first-party OIDC client with scopes `openid profile email roles`,
+			// redirect URI APP_ORIGIN/api/auth/callback and post-logout redirect
+			// URI APP_ORIGIN/ (override with OIDC_REDIRECT_URI /
+			// OIDC_POST_LOGOUT_REDIRECT_URI). OIDC_CLIENT_ID must be the id the
+			// client was registered with at auth.cubityfir.st/admin/clients;
+			// OIDC_CLIENT_SECRET is a secret. Local dev overrides all of these in
+			// .dev.vars (see .dev.vars.example).
+			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),
+			OIDC_CLIENT_ID: bindings.text("annex-docs"),
+			APP_ORIGIN: bindings.text("https://docs.cubityfir.st"),
+			// Identity service RPC (cubityfirst-auth's IdentityService entrypoint):
+			// account standing, invite-by-email lookups and the deletion sync.
+			IDENTITY: bindings.worker({
+				worker: "cubityfirst-auth",
+				exportName: "IdentityService",
+			}),
 			DB: bindings.d1({
 				name: "cubedocs-main",
 				id: "267490be-7141-4d00-ab23-152742f2f6ef",
@@ -119,7 +136,8 @@ export default defineConfig({
 			}),
 			// Secrets (set via `npx wrangler secret put <NAME> --name annex-api`;
 			// existing secrets are kept across `cf deploy`):
-			//   JWT_SECRET            (same value as auth worker - used for local JWT verification)
+			//   JWT_SECRET            (signs Annex's own session JWTs; Annex-only)
+			//   OIDC_CLIENT_SECRET    (the annex-docs client's secret from auth.cubityfir.st)
 			//   OPENAI_API_KEY        (OpenAI API key for AI summarisation feature)
 			//   CF_API_TOKEN          (Cloudflare token scoped to the zone with "SSL and
 			//                          Certificates: Edit" - used to create/poll custom hostnames)

@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { createSqliteD1, type SqliteD1 } from "./test/sqliteD1";
-import { signJwt } from "../../auth/src/jwt";
+import { seedSession } from "./test/session";
 import worker, { type Env } from "./index";
 
 const AUTH_MIGRATIONS = fileURLToPath(new URL("../../auth/migrations", import.meta.url));
@@ -62,10 +62,8 @@ beforeEach(async () => {
   auth = createSqliteD1(AUTH_MIGRATIONS);
   r2 = new FakeR2();
   authFetch = vi.fn(async () => Response.json({ ok: true }));
-  const now = Date.now();
   auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u1', 'u1@example.com', 'User One', 'x', datetime('now'))").run();
-  auth.sqlite.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at, last_used_at) VALUES ('s1', 'u1', ?, ?, ?)").run(now, now + 3_600_000, now);
-  token = await signJwt({ userId: "u1", email: "u1@example.com", expiresAt: now + 3_600_000, sid: "s1" }, JWT_SECRET);
+  token = await seedSession(api.sqlite, { userId: "u1", email: "u1@example.com", name: "User One", sid: "s1", secret: JWT_SECRET });
 });
 
 describe("POST /me/favourite-sites/:id cap", () => {

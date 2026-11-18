@@ -2,7 +2,7 @@ import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Member } 
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 import type { Session } from "../lib";
-import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
+import { resolvePersonalPlan, type PersonalPlan } from "../account/plan";
 
 const VALID_ROLES: Role[] = ["limited", "viewer", "editor", "admin", "owner"];
 

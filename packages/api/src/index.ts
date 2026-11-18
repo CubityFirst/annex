@@ -24,9 +24,12 @@ import { handleUserByHandle } from "./routes/userHandles";
 import { pruneDocRevisions } from "./lib/docOps";
 import { purgeExpiredTrash } from "./lib/trash";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
-import { resolvePersonalPlan } from "../../auth/src/plan";
+import { resolvePersonalPlan } from "./account/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
 import { resolveAccess } from "./lib/access";
+import type { IdentityService } from "./account/identity";
+import { sweepSessions } from "./account/session";
+import { handleAuthCallback, handleAuthExchange, handleAuthLogin, handleAuthLogout, handleDevQuickLogin } from "./routes/auth";
 
 export { DocCollabRoom };
 
@@ -36,7 +39,24 @@ export interface Env {
   ASSETS: R2Bucket;
   AUTH: Fetcher; // Service binding to cubedocs-auth (mutating routes only)
   DOC_COLLAB?: DurableObjectNamespace;
+  // Annex-only HS256 secret for Annex's own session JWTs (no longer shared
+  // with the identity service).
   JWT_SECRET: string;
+  // Identity service (auth.cubityfir.st) RPC: account lookups, standing and
+  // deletions. Optional so unit tests and a local stack without the identity
+  // worker fall back to the users mirror.
+  IDENTITY?: IdentityService;
+  // OIDC client settings (see routes/auth.ts). OIDC_CLIENT_SECRET is a secret;
+  // the rest are vars. Redirect URIs default to APP_ORIGIN/api/auth/callback
+  // and APP_ORIGIN/.
+  OIDC_ISSUER?: string;
+  OIDC_CLIENT_ID?: string;
+  OIDC_CLIENT_SECRET?: string;
+  OIDC_REDIRECT_URI?: string;
+  OIDC_POST_LOGOUT_REDIRECT_URI?: string;
+  APP_ORIGIN?: string;
+  // "true" (with a localhost APP_ORIGIN) enables POST /dev/quick-login.
+  DEV_QUICK_LOGIN?: string;
   OPENAI_API_KEY?: string;
   // Cloudflare-for-SaaS custom domains (see routes/customDomains.ts). Optional:
   // when unset, the custom-domain endpoints report "not configured" instead of
@@ -82,6 +102,10 @@ export default {
         .then(n => { if (n > 0) console.log(`[graph] reindexed ${n} stale site graphs`); })
         .catch(err => console.error("[graph] stale reindex failed:", err)),
     );
+    // Dead Annex sessions, abandoned sign-in handoffs, old webhook markers.
+    ctx.waitUntil(
+      sweepSessions(env.DB).catch(err => console.error("[sessions] sweep failed:", err)),
+    );
   },
 
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -108,6 +132,15 @@ export default {
         return addCorsHeaders(await handlePublicApi(request, env, url));
       }
 
+      // Sign in with auth.cubityfir.st (routes/auth.ts). login/callback are
+      // top-level browser navigations (redirects, no CORS); exchange/logout
+      // are called by the SPA.
+      if (url.pathname === "/auth/login" && request.method === "GET") return await handleAuthLogin(request, env, url);
+      if (url.pathname === "/auth/callback" && request.method === "GET") return await handleAuthCallback(request, env, url);
+      if (url.pathname === "/auth/exchange" && request.method === "POST") return addCorsHeaders(await handleAuthExchange(request, env));
+      if (url.pathname === "/auth/logout" && request.method === "POST") return addCorsHeaders(await handleAuthLogout(request, env));
+      if (url.pathname === "/dev/quick-login" && request.method === "POST") return addCorsHeaders(await handleDevQuickLogin(request, env));
+
       // Proxy auth routes to the auth worker
       if (
         url.pathname === "/register" ||
@@ -115,8 +148,7 @@ export default {
         url.pathname === "/force-change-password" ||
         url.pathname === "/verify-email/resend" ||
         url.pathname === "/admin/handoff/start" ||
-        url.pathname === "/oauth/authorize" ||
-        url.pathname === "/dev/quick-login"
+        url.pathname === "/oauth/authorize"
       ) {
         return env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request));
       }

@@ -1,6 +1,9 @@
 export interface Session {
   userId: string;
   email: string;
+  // Display name from the users mirror (owned by the identity service).
+  // Optional so hand-built test sessions don't need it.
+  name?: string;
   expiresAt: number;
   personalPlan?: "free" | "ink";
   personalPlanSince?: number | null;
