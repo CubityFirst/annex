@@ -1,0 +1,19 @@
+# Copy to packages/admin/.dev.vars (gitignored).
+
+# Signs the admin panel's own session JWTs. Any random string locally.
+JWT_SECRET=change-me
+
+# The admin SPA's origin (its Vite dev server proxies /api to :8789).
+APP_ORIGIN=http://localhost:5174
+
+# The admin panel is its own OIDC client of the identity service. With a local
+# identity worker on :8790 (see packages/api/.dev.vars.example), register a
+# client with redirect URI http://localhost:5174/api/auth/callback and
+# post-logout URI http://localhost:5174/, scopes `openid profile email roles`,
+# first-party. Sign-in requires an account with the admin role.
+OIDC_ISSUER=http://localhost:8790
+OIDC_CLIENT_ID=annex-admin-local
+OIDC_CLIENT_SECRET=
+
+# Admin-driven Stripe actions (test mode).
+# STRIPE_SECRET_KEY=sk_test_...
