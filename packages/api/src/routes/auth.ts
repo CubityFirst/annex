@@ -26,7 +26,7 @@ import {
   LOGIN_STATE_TTL_MS,
   type OidcClientConfig,
 } from "../account/oidc";
-import { createPendingSession, createSessionToken, redeemHandoff, revokeSessionByToken, type SessionEnv } from "../account/session";
+import { createPendingSession, createSessionToken, redeemHandoff, revokeSessionByToken, type SessionEnv, type SessionKind } from "../account/session";
 import { DEV_USER_PREFIX, isLocalDeploy, refreshMirror, type IdentityUser } from "../account/identity";
 import { syncStripeCustomerEmail } from "../account/stripe-client";
 
@@ -52,28 +52,44 @@ export function setOidcFetchForTests(f: typeof fetch | undefined): void {
   fetchOverride = f;
 }
 
-function appOrigin(env: AuthRouteEnv): string {
-  return (env.APP_ORIGIN ?? "https://docs.cubityfir.st").replace(/\/+$/, "");
+// One sign-in flow: the docs app and the admin panel each run the same
+// login/callback/exchange/logout handlers with their own OIDC client, origin
+// and session kind.
+export interface AuthFlow {
+  kind: SessionKind;
+  oidc: OidcClientConfig | null;
+  // Origin of the SPA that owns /auth/complete.
+  appOrigin: string;
+}
+
+function trimOrigin(origin: string): string {
+  return origin.replace(/\/+$/, "");
 }
 
 export function appOidcConfig(env: AuthRouteEnv): OidcClientConfig | null {
+  return oidcConfigFor(env, env.APP_ORIGIN ?? "https://docs.cubityfir.st");
+}
+
+// Builds a client config from the OIDC_* vars of whichever worker is asking.
+export function oidcConfigFor(env: AuthRouteEnv, origin: string): OidcClientConfig | null {
   if (!env.OIDC_ISSUER || !env.OIDC_CLIENT_ID) return null;
-  const origin = appOrigin(env);
+  const base = trimOrigin(origin);
   return {
-    issuer: env.OIDC_ISSUER.replace(/\/+$/, ""),
+    issuer: trimOrigin(env.OIDC_ISSUER),
     clientId: env.OIDC_CLIENT_ID,
     clientSecret: env.OIDC_CLIENT_SECRET || undefined,
-    redirectUri: env.OIDC_REDIRECT_URI || `${origin}/api/auth/callback`,
-    postLogoutRedirectUri: env.OIDC_POST_LOGOUT_REDIRECT_URI || `${origin}/`,
+    redirectUri: env.OIDC_REDIRECT_URI || `${base}/api/auth/callback`,
+    postLogoutRedirectUri: env.OIDC_POST_LOGOUT_REDIRECT_URI || `${base}/`,
     scope: APP_SCOPE,
     binding: env.IDENTITY_OIDC,
-    allowPublicFallback: isLocalDeploy(env),
+    allowPublicFallback: isLocalDeploy({ APP_ORIGIN: base }),
     fetchImpl: fetchOverride,
   };
 }
 
-function isSecure(env: AuthRouteEnv): boolean {
-  return appOrigin(env).startsWith("https://");
+export function appAuthFlow(env: AuthRouteEnv): AuthFlow {
+  const appOrigin = trimOrigin(env.APP_ORIGIN ?? "https://docs.cubityfir.st");
+  return { kind: "app", oidc: oidcConfigFor(env, appOrigin), appOrigin };
 }
 
 function redirect(location: string, cookies: string[] = []): Response {
@@ -84,16 +100,16 @@ function redirect(location: string, cookies: string[] = []): Response {
 
 // Sends the browser to the SPA's /auth/complete with the outcome in the URL
 // fragment (fragments never reach servers, logs or Referer headers).
-function toComplete(env: AuthRouteEnv, fragment: Record<string, string>, cookies: string[]): Response {
-  return redirect(`${appOrigin(env)}/auth/complete#${new URLSearchParams(fragment).toString()}`, cookies);
+function toComplete(flow: AuthFlow, fragment: Record<string, string>, cookies: string[]): Response {
+  return redirect(`${flow.appOrigin}/auth/complete#${new URLSearchParams(fragment).toString()}`, cookies);
 }
 
-function clearStateCookie(env: AuthRouteEnv): string {
-  return stateCookie(STATE_COOKIE, "", { path: STATE_COOKIE_PATH, secure: isSecure(env), maxAgeSec: 0 });
+function cookieOpts(flow: AuthFlow, maxAgeSec: number) {
+  return { path: STATE_COOKIE_PATH, secure: flow.appOrigin.startsWith("https://"), maxAgeSec };
 }
 
-export async function handleAuthLogin(request: Request, env: AuthRouteEnv, url: URL): Promise<Response> {
-  const cfg = appOidcConfig(env);
+export async function handleLogin(flow: AuthFlow, env: SessionEnv, url: URL): Promise<Response> {
+  const cfg = flow.oidc;
   if (!cfg) return Response.json({ ok: false, error: "sign_in_not_configured" }, { status: 503 });
   const returnTo = safeReturnTo(url.searchParams.get("return_to"));
   // Only `login` (force re-authentication) is passed through; anything else
@@ -104,28 +120,26 @@ export async function handleAuthLogin(request: Request, env: AuthRouteEnv, url: 
     login = await buildLoginRedirect(cfg, { returnTo, prompt });
   } catch (err) {
     console.error("[auth] login redirect failed", String(err));
-    return toComplete(env, { error: "identity_unavailable" }, []);
+    return toComplete(flow, { error: "identity_unavailable" }, []);
   }
   const sealed = await sealLoginState(login.state, env.JWT_SECRET);
-  return redirect(login.url, [
-    stateCookie(STATE_COOKIE, sealed, { path: STATE_COOKIE_PATH, secure: isSecure(env), maxAgeSec: LOGIN_STATE_TTL_MS / 1000 }),
-  ]);
+  return redirect(login.url, [stateCookie(STATE_COOKIE, sealed, cookieOpts(flow, LOGIN_STATE_TTL_MS / 1000))]);
 }
 
-export async function handleAuthCallback(request: Request, env: AuthRouteEnv, url: URL): Promise<Response> {
-  const cfg = appOidcConfig(env);
+export async function handleCallback(flow: AuthFlow, env: SessionEnv & { STRIPE_SECRET_KEY?: string }, request: Request, url: URL): Promise<Response> {
+  const cfg = flow.oidc;
   if (!cfg) return Response.json({ ok: false, error: "sign_in_not_configured" }, { status: 503 });
-  const clear = clearStateCookie(env);
+  const clear = stateCookie(STATE_COOKIE, "", cookieOpts(flow, 0));
 
   const login = await openLoginState(readCookie(request, STATE_COOKIE), env.JWT_SECRET);
-  if (!login) return toComplete(env, { error: "login_expired" }, [clear]);
+  if (!login) return toComplete(flow, { error: "login_expired" }, [clear]);
 
   // The user cancelled or the identity service refused: pass the OAuth error
   // code through (a fixed vocabulary - never the free-text description).
   const oauthError = url.searchParams.get("error");
   if (oauthError) {
     const code = /^[a-z_]{1,64}$/.test(oauthError) ? oauthError : "sign_in_failed";
-    return toComplete(env, { error: code }, [clear]);
+    return toComplete(flow, { error: code }, [clear]);
   }
 
   // The callback URL the identity service redirected to is our registered
@@ -140,13 +154,35 @@ export async function handleAuthCallback(request: Request, env: AuthRouteEnv, ur
   } catch (err) {
     const code = err instanceof OidcError ? err.code : "sign_in_failed";
     console.error("[auth] callback failed", { code, err: String(err) });
-    return toComplete(env, { error: /^[a-z_]{1,64}$/.test(code) ? code : "sign_in_failed" }, [clear]);
+    return toComplete(flow, { error: /^[a-z_]{1,64}$/.test(code) ? code : "sign_in_failed" }, [clear]);
   }
 
-  const outcome = await startSession(env, request, identity, "app");
-  if ("error" in outcome) return toComplete(env, { error: outcome.error }, [clear]);
-  return toComplete(env, { code: outcome.handoffCode, return_to: login.returnTo }, [clear]);
+  const outcome = await startSession(env, request, identity, flow.kind);
+  if ("error" in outcome) return toComplete(flow, { error: outcome.error }, [clear]);
+  return toComplete(flow, { code: outcome.handoffCode, return_to: login.returnTo }, [clear]);
 }
+
+export async function handleExchange(flow: AuthFlow, env: SessionEnv, request: Request): Promise<Response> {
+  const body = await request.json<{ code?: unknown }>().catch(() => null);
+  const code = typeof body?.code === "string" ? body.code : "";
+  const token = await redeemHandoff(env, code, flow.kind);
+  if (!token) return Response.json({ ok: false, error: "invalid_code" }, { status: 400 });
+  return okResponse({ token });
+}
+
+export async function handleLogout(flow: AuthFlow, env: SessionEnv, request: Request): Promise<Response> {
+  const authHeader = request.headers.get("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const { idToken } = token ? await revokeSessionByToken(env, token, flow.kind) : { idToken: null };
+  const logoutUrl = flow.oidc ? await buildLogoutUrl(flow.oidc, idToken) : `${flow.appOrigin}/`;
+  return okResponse({ logoutUrl });
+}
+
+// The docs app's routes (src/index.ts).
+export const handleAuthLogin = (_request: Request, env: AuthRouteEnv, url: URL) => handleLogin(appAuthFlow(env), env, url);
+export const handleAuthCallback = (request: Request, env: AuthRouteEnv, url: URL) => handleCallback(appAuthFlow(env), env, request, url);
+export const handleAuthExchange = (request: Request, env: AuthRouteEnv) => handleExchange(appAuthFlow(env), env, request);
+export const handleAuthLogout = (request: Request, env: AuthRouteEnv) => handleLogout(appAuthFlow(env), env, request);
 
 // Shared by the app and admin callbacks: refuses accounts Annex has blocked
 // or processed as deleted, upserts the mirror, creates a pending session.
@@ -154,7 +190,7 @@ export async function startSession(
   env: SessionEnv & { STRIPE_SECRET_KEY?: string },
   request: Request,
   identity: { sub: string; email: string; emailVerified: boolean; name: string; roles: string[]; idToken: string },
-  kind: "app" | "admin",
+  kind: SessionKind,
 ): Promise<{ handoffCode: string } | { error: string }> {
   const [gone, blocked, existing] = await env.DB.batch([
     env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(identity.sub),
@@ -185,23 +221,6 @@ export async function startSession(
   if (previousEmail && previousEmail !== user.email) await syncStripeCustomerEmail(env, user.id, user.email);
   const { handoffCode } = await createPendingSession(env.DB, { userId: user.id, kind, request, idToken: identity.idToken, nowMs: now });
   return { handoffCode };
-}
-
-export async function handleAuthExchange(request: Request, env: AuthRouteEnv): Promise<Response> {
-  const body = await request.json<{ code?: unknown }>().catch(() => null);
-  const code = typeof body?.code === "string" ? body.code : "";
-  const token = await redeemHandoff(env, code, "app");
-  if (!token) return Response.json({ ok: false, error: "invalid_code" }, { status: 400 });
-  return okResponse({ token });
-}
-
-export async function handleAuthLogout(request: Request, env: AuthRouteEnv): Promise<Response> {
-  const cfg = appOidcConfig(env);
-  const authHeader = request.headers.get("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  const { idToken } = token ? await revokeSessionByToken(env, token, "app") : { idToken: null };
-  const logoutUrl = cfg ? await buildLogoutUrl(cfg, idToken) : `${appOrigin(env)}/`;
-  return okResponse({ logoutUrl });
 }
 
 type DevVariant = "standard-free" | "standard-ink" | "admin-free" | "admin-ink";

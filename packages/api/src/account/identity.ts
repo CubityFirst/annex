@@ -197,8 +197,15 @@ export function mirrorUpsertStatements(db: D1Database, user: IdentityUser, nowMs
   ];
 }
 
-export async function refreshMirror(db: D1Database, user: IdentityUser, nowMs: number, opts: { login?: boolean } = {}): Promise<void> {
-  await db.batch(mirrorUpsertStatements(db, user, nowMs, opts));
+// Returns how many member-row snapshots were out of date (and fixed).
+export async function refreshMirror(
+  db: D1Database,
+  user: IdentityUser,
+  nowMs: number,
+  opts: { login?: boolean } = {},
+): Promise<{ project_members: number; organization_members: number }> {
+  const [, projects, orgs] = await db.batch(mirrorUpsertStatements(db, user, nowMs, opts));
+  return { project_members: projects?.meta?.changes ?? 0, organization_members: orgs?.meta?.changes ?? 0 };
 }
 
 // Finds a person by email for "invite by email". Annex's mirror only knows

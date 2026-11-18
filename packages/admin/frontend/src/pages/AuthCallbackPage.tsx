@@ -1,74 +1,58 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AdminHandoffError, exchangeAdminHandoff } from "@/lib/api";
+import { AdminSignInError, exchangeAdminCode } from "@/lib/api";
 import { setToken } from "@/lib/auth";
-import { buildDocsAdminLoginUrl, normalizeAdminNextPath } from "@/lib/handoff";
-
-function buildNormalizedCallbackUrl(location: Location): string {
-  const url = new URL(location.href);
-  url.searchParams.delete("code");
-  return url.toString();
-}
+import { adminSignInUrl, normalizeAdminNextPath, signInErrorMessage } from "@/lib/signIn";
 
 interface AuthCallbackPageProps {
   onAuthenticated: () => Promise<void> | void;
 }
 
+// /auth/complete - where the admin worker's /api/auth/callback sends the
+// browser. The outcome is in the URL fragment (never sent to servers):
+//   #code=<single-use>&return_to=/path  -> redeem for the admin session JWT
+//   #error=<code>                       -> explain and offer a retry
+// Read once at module level of the effect, before the address bar is cleaned.
+function readFragment(): URLSearchParams {
+  return new URLSearchParams(window.location.hash.slice(1));
+}
+
 export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
-  const location = useLocation();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-
-  const params = new URLSearchParams(location.search);
-  const code = params.get("code");
-  const nextPath = normalizeAdminNextPath(params.get("next"));
+  const [nextPath] = useState(() => normalizeAdminNextPath(readFragment().get("return_to")));
+  const [code] = useState(() => readFragment().get("code"));
+  const [errorCode] = useState(() => readFragment().get("error"));
 
   useEffect(() => {
+    // Strip the one-time code from the address bar / history immediately,
+    // before (and regardless of) the exchange.
+    window.history.replaceState(null, "", window.location.pathname);
+
     if (!code) {
-      setError("The admin sign-in handoff was missing a code. Please try again.");
+      setError(signInErrorMessage(errorCode));
       return;
     }
 
-    const handoffCode = code;
-    const callbackUrl = buildNormalizedCallbackUrl(window.location);
-
-    // Strip the one-time code from the address bar / history / referrer
-    // immediately on mount - before (and regardless of) the exchange -
-    // so it can't leak to subresources or be replayed from history on
-    // the error path.
-    window.history.replaceState(null, "", callbackUrl);
-
     let cancelled = false;
-
-    async function exchange() {
+    (async () => {
       try {
-        const { token } = await exchangeAdminHandoff(handoffCode, callbackUrl);
+        const { token } = await exchangeAdminCode(code);
         setToken(token);
         await onAuthenticated();
-
-        if (!cancelled) {
-          navigate(nextPath, { replace: true });
-        }
+        if (!cancelled) navigate(nextPath, { replace: true });
       } catch (err) {
-        if (!cancelled) {
-          if (err instanceof AdminHandoffError && err.code === "not_admin") {
-            setError("This Annex account does not have admin access.");
-          } else {
-            setError("The admin sign-in handoff expired or failed. Please try again.");
-          }
-        }
+        if (!cancelled) setError(signInErrorMessage(err instanceof AdminSignInError ? err.code : null));
       }
-    }
-
-    void exchange();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [code, navigate, nextPath, onAuthenticated]);
+  }, [code, errorCode, navigate, nextPath, onAuthenticated]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground">
@@ -87,12 +71,13 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
                 {error}
               </div>
               <Button asChild>
-                <a href={buildDocsAdminLoginUrl(nextPath)}>Return to Annex sign-in</a>
+                {/* prompt=login so a non-admin can switch to another account */}
+                <a href={adminSignInUrl(nextPath, { prompt: "login" })}>Try again</a>
               </Button>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              We&apos;re exchanging your Annex session for an admin session now.
+              Exchanging your sign-in for an admin session now.
             </p>
           )}
         </CardContent>

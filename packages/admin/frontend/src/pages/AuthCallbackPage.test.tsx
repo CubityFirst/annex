@@ -17,14 +17,16 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 
-// Uses the REAL api module (fetch stubbed), so the per-code exchange promise
-// cache is part of what's under test.
-function renderCallback(code: string, onAuthenticated = vi.fn()) {
+// /api/auth/callback hands the outcome over in the URL fragment of the real
+// window location. Uses the REAL api module (fetch stubbed), so the per-code
+// exchange promise cache is part of what's under test.
+function renderComplete(fragment: string, onAuthenticated = vi.fn()) {
+  window.history.replaceState(null, "", `/auth/complete#${fragment}`);
   render(
     <StrictMode>
-      <MemoryRouter initialEntries={[`/auth/callback?code=${code}`]}>
+      <MemoryRouter initialEntries={["/auth/complete"]}>
         <Routes>
-          <Route path="/auth/callback" element={<AuthCallbackPage onAuthenticated={onAuthenticated} />} />
+          <Route path="/auth/complete" element={<AuthCallbackPage onAuthenticated={onAuthenticated} />} />
           <Route path="/" element={<div>HOME</div>} />
           <Route path="/audit" element={<div>AUDIT</div>} />
         </Routes>
@@ -34,59 +36,43 @@ function renderCallback(code: string, onAuthenticated = vi.fn()) {
   return onAuthenticated;
 }
 
-describe("AuthCallbackPage", () => {
+describe("AuthCallbackPage (/auth/complete)", () => {
   it("exchanges the code ONCE despite StrictMode's dev double-mount (AF-C3), stores the token, navigates", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "minted-token" } }));
-    const onAuthenticated = renderCallback("cb-success");
+    const onAuthenticated = renderComplete("code=cb-success");
 
     await waitFor(() => expect(screen.getByText("HOME")).toBeInTheDocument());
-    // Single-use code: the double-mounted effect must not consume it twice.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange", expect.objectContaining({ method: "POST", body: JSON.stringify({ code: "cb-success" }) }));
     expect(getToken()).toBe("minted-token");
     expect(onAuthenticated).toHaveBeenCalled();
-    // And no error painted over the successful sign-in.
-    expect(screen.queryByText(/expired or failed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/didn't complete/)).not.toBeInTheDocument();
   });
 
-  it("strips the one-time code from the address before exchanging", async () => {
-    // The page strips the code from the real window URL (MemoryRouter's
-    // location never reaches the address bar), so put it there first.
-    window.history.pushState({}, "", "/auth/callback?code=cb-strip");
-    const replaceState = vi.spyOn(window.history, "replaceState");
+  it("goes to the return path carried in the fragment, but never off-site", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "t" } }));
-    renderCallback("cb-strip");
-    await waitFor(() => expect(replaceState).toHaveBeenCalled());
-    const strippedUrl = String(replaceState.mock.calls[0][2]);
-    expect(strippedUrl).toContain("/auth/callback");
-    expect(strippedUrl).not.toContain("cb-strip");
-    replaceState.mockRestore();
+    renderComplete("code=cb-next&return_to=%2Faudit");
+    await waitFor(() => expect(screen.getByText("AUDIT")).toBeInTheDocument());
   });
 
-  it("shows the not-an-admin message for the not_admin error", async () => {
-    fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: "not_admin" }, 403));
-    renderCallback("cb-not-admin");
-    await waitFor(() =>
-      expect(screen.getByText(/does not have admin access/)).toBeInTheDocument(),
-    );
+  it("strips the one-time code from the address bar", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "t" } }));
+    renderComplete("code=cb-strip");
+    await waitFor(() => expect(window.location.hash).toBe(""));
+    expect(window.location.href).not.toContain("cb-strip");
   });
 
-  it("shows the generic message for a consumed/expired code", async () => {
-    fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: "Unauthorized" }, 401));
-    renderCallback("cb-consumed");
-    await waitFor(() =>
-      expect(screen.getByText(/expired or failed/)).toBeInTheDocument(),
-    );
-  });
-
-  it("errors immediately when the code is missing", async () => {
-    render(
-      <MemoryRouter initialEntries={["/auth/callback"]}>
-        <Routes>
-          <Route path="/auth/callback" element={<AuthCallbackPage onAuthenticated={vi.fn()} />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    expect(await screen.findByText(/missing a code/)).toBeInTheDocument();
+  it("explains a missing admin role and offers a fresh sign-in", async () => {
+    renderComplete("error=not_admin");
+    expect(await screen.findByText(/does not have admin access/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /try again/i })).toHaveAttribute("href", "/api/auth/login?prompt=login");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("explains a consumed/expired code", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: "invalid_code" }, 400));
+    renderComplete("code=cb-consumed");
+    expect(await screen.findByText(/took too long or was already used/)).toBeInTheDocument();
+    expect(getToken()).toBeNull();
   });
 });

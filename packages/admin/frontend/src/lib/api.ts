@@ -8,14 +8,18 @@ export interface AdminUser {
   moderation: number;
   force_password_change: number;
   email_verified: number;
-  // Set while a deletion is scheduled (unix seconds it runs after); the
-  // account is disabled until then. deletion_error = the last failed attempt.
+  // Set while a deletion of the person's Annex data is scheduled (unix
+  // seconds it runs after); they're blocked from Annex from scheduling on.
+  // deletion_error = the last failed attempt.
   deletion_execute_after?: number | null;
   deletion_requested_by_email?: string | null;
   deletion_error?: string | null;
   // Set once the cron has begun executing it; from then on it can only be
   // finished (retried), not cancelled.
   deletion_started_at?: number | null;
+  // Set once the Annex data is gone. The person stays blocked until their
+  // account is deleted on auth.cubityfir.st.
+  deletion_completed_at?: number | null;
   // Opt-in `/@handle` profile link, null when the user has it off.
   handle?: string | null;
   latest_moderation_action: "disabled" | "suspended" | "re_enabled" | null;
@@ -50,18 +54,14 @@ export interface AdminUserDetails {
       actor_email: string | null;
     }>;
   };
-  security: {
-    totp_enabled: boolean;
-    passkeys: Array<{
-      id: string;
-      name: string;
-      registered_at: string;
-    }>;
-    backup_codes: {
-      total: number;
-      active: number;
-      used: number;
-    };
+  // Sign-in methods, sessions, moderation and the admin role live on the
+  // identity service (auth.cubityfir.st); manage_url opens this user there.
+  identity: {
+    manage_url: string;
+    // False when the identity service was unreachable and the standing shown
+    // is the users mirror's last known value.
+    live: boolean;
+    is_admin: boolean;
   };
   projects: {
     owned_projects: Array<{
@@ -176,7 +176,7 @@ export interface AdminAuthSession {
   isAdmin: true;
 }
 
-interface AdminHandoffExchange {
+interface AdminCodeExchange {
   token: string;
 }
 
@@ -313,20 +313,6 @@ export async function resyncUserName(id: string): Promise<{ project_members: num
   return readData<{ project_members: number; organization_members: number }>(res, "Failed to resync display name");
 }
 
-export async function forceUserPasswordChange(id: string): Promise<void> {
-  const res = await authFetch(`/api/users/${id}/force-password-change`, { method: "POST" });
-  await readOk(res, "Failed to force password change");
-}
-
-export async function updateUserModeration(id: string, moderation: number, reason?: string): Promise<void> {
-  const res = await authFetch(`/api/users/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ moderation, reason }),
-  });
-  await readOk(res, "Failed to update user");
-}
-
 export interface DeletePreviewSite {
   id: string;
   name: string;
@@ -366,8 +352,8 @@ export async function previewUserDeletion(ids: string[]): Promise<DeletePreviewU
   return (await readData<{ users: DeletePreviewUser[] }>(res, "Failed to load deletion preview")).users;
 }
 
-// Schedules one account for permanent deletion after the grace window (it is
-// disabled immediately; any admin can cancel until then). The worker refuses
+// Schedules the deletion of one person's Annex data after the grace window
+// (they're blocked from Annex immediately; any admin can cancel until then). The worker refuses
 // unless confirmSiteIds / confirmOrgIds name exactly the sites/orgs the account
 // owns right now - pass them only after the operator explicitly agreed to
 // delete them. Returns when the deletion will run (unix seconds).
@@ -383,7 +369,7 @@ export async function scheduleUserDeletion(
   return readData<{ execute_after: number }>(res, "Failed to schedule deletion");
 }
 
-// Cancels a scheduled deletion; the account's previous moderation state is restored.
+// Cancels a scheduled deletion, which also lifts the Annex block.
 export async function cancelUserDeletion(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/deletion`, { method: "DELETE" });
   await readOk(res, "Failed to cancel deletion");
@@ -642,139 +628,46 @@ export async function verifyAdminSession(): Promise<AdminAuthSession> {
   return readData<AdminAuthSession>(res, "Failed to verify admin session");
 }
 
-// Server-side sign-out: revokes the session row the current token points
-// at (via the auth worker), so a copied token dies with the sign-out
-// instead of staying valid until its TTL. Best-effort by design - the
-// caller clears local state regardless.
-export async function logoutAdminSession(): Promise<void> {
+// Server-side sign-out: revokes the admin session row the current token
+// points at, so a copied token dies with the sign-out instead of staying
+// valid until its TTL. Returns the identity service's end-session URL (to
+// sign out there too). Best-effort by design - the caller clears local state
+// regardless.
+export async function logoutAdminSession(): Promise<string | null> {
   const res = await authFetch("/api/auth/logout", { method: "POST" });
-  await readOk(res, "Failed to sign out");
+  const data = await readData<{ logoutUrl?: string }>(res, "Failed to sign out");
+  return data.logoutUrl ?? null;
 }
 
-export class AdminHandoffError extends Error {
+export class AdminSignInError extends Error {
   constructor(public readonly code: string) {
     super(code);
   }
 }
 
-async function exchangeAdminHandoffUncached(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
-  const res = await fetch("/api/auth/handoff/exchange", {
+async function exchangeAdminCodeUncached(code: string): Promise<AdminCodeExchange> {
+  const res = await fetch("/api/auth/exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, callbackUrl }),
+    body: JSON.stringify({ code }),
   });
-  const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange; error?: string };
-  if (!json.ok || !json.data) throw new AdminHandoffError(json.error ?? "unknown");
+  const json = (await res.json()) as { ok: boolean; data?: AdminCodeExchange; error?: string };
+  if (!json.ok || !json.data) throw new AdminSignInError(json.error ?? "unknown");
   return json.data;
 }
 
-// The handoff code is single-use and consumed atomically server-side, so two
-// concurrent exchanges of the same code (React StrictMode's dev double-mount)
-// would race: the loser gets "consumed" and paints an error over a successful
-// sign-in. Cache the in-flight/settled promise per code so every caller
-// observes the SAME exchange outcome.
-const exchangePromises = new Map<string, Promise<AdminHandoffExchange>>();
+// The sign-in code from /api/auth/callback is single-use and redeemed
+// atomically server-side, so two concurrent exchanges of the same code (React
+// StrictMode's dev double-mount) would race: the loser gets "invalid_code" and
+// paints an error over a successful sign-in. Cache the in-flight/settled
+// promise per code so every caller observes the SAME exchange outcome.
+const exchangePromises = new Map<string, Promise<AdminCodeExchange>>();
 
-export function exchangeAdminHandoff(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
+export function exchangeAdminCode(code: string): Promise<AdminCodeExchange> {
   let promise = exchangePromises.get(code);
   if (!promise) {
-    promise = exchangeAdminHandoffUncached(code, callbackUrl);
+    promise = exchangeAdminCodeUncached(code);
     exchangePromises.set(code, promise);
   }
   return promise;
-}
-
-// ---------------------------------------------------------------------------
-// "Sign in with Annex" - OIDC client management
-// ---------------------------------------------------------------------------
-
-export interface OAuthClient {
-  client_id: string;
-  client_name: string;
-  is_public: boolean;
-  redirect_uris: string[];
-  allowed_scopes: string;
-  trusted: boolean;
-  disabled: boolean;
-  created_at: number;
-}
-
-// The create/rotate responses additionally carry the plaintext secret, which
-// the server returns exactly ONCE and never stores.
-export interface CreatedOAuthClient {
-  client_id: string;
-  client_secret: string | null;
-  client_name: string;
-  is_public: boolean;
-  redirect_uris: string[];
-  allowed_scopes: string;
-  trusted: boolean;
-  disabled: boolean;
-}
-
-export interface CreateOAuthClientInput {
-  name: string;
-  redirect_uris: string[];
-  scopes?: string;
-  trusted?: boolean;
-  public?: boolean;
-}
-
-// Map the server's machine error codes to operator-friendly messages.
-function oauthClientError(error?: string): string {
-  if (error === "invalid_redirect_uri") return "Every redirect URI must be a valid https URL (or localhost for dev).";
-  if (error === "invalid_scope") return "Scopes must be a subset of 'openid profile email' and include openid.";
-  if (error === "public_client_no_secret") return "Public clients have no secret to rotate.";
-  return error ?? "Request failed";
-}
-
-export async function listOAuthClients(signal?: AbortSignal): Promise<OAuthClient[]> {
-  const res = await authFetch("/api/oauth-clients", { signal });
-  const data = await readData<{ clients: OAuthClient[] }>(res, "Failed to load OAuth clients");
-  return data.clients;
-}
-
-export async function createOAuthClient(input: CreateOAuthClientInput): Promise<CreatedOAuthClient> {
-  const res = await authFetch("/api/oauth-clients", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  try {
-    return await readData<CreatedOAuthClient>(res, "Failed to register client");
-  } catch (err) {
-    throw new Error(oauthClientError(err instanceof Error ? err.message : undefined));
-  }
-}
-
-export async function setOAuthClientDisabled(clientId: string, disabled: boolean): Promise<void> {
-  const res = await authFetch("/api/oauth-clients/set-disabled", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: clientId, disabled }),
-  });
-  await readOk(res, "Failed to update client");
-}
-
-export async function deleteOAuthClient(clientId: string): Promise<void> {
-  const res = await authFetch("/api/oauth-clients/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: clientId }),
-  });
-  await readOk(res, "Failed to delete client");
-}
-
-export async function rotateOAuthClientSecret(clientId: string): Promise<string> {
-  const res = await authFetch("/api/oauth-clients/rotate-secret", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: clientId }),
-  });
-  try {
-    const data = await readData<{ client_secret: string }>(res, "Failed to rotate secret");
-    return data.client_secret;
-  } catch (err) {
-    throw new Error(oauthClientError(err instanceof Error ? err.message : undefined));
-  }
 }

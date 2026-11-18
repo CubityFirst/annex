@@ -1,20 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { fileURLToPath } from "node:url";
 import { createSqliteD1 } from "../../api/src/test/sqliteD1";
 import { writeAdminAudit } from "./audit";
 import type { Env } from "./index";
 import type { AdminSession } from "./auth";
 
-// Real SQLite with every auth migration applied, so the INSERT's column list is
+// Real SQLite with every main migration applied, so the INSERT's column list is
 // checked against the real admin_audit_log schema (a mock only sees bind order).
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../auth/migrations", import.meta.url));
 
 function makeEnv() {
-  const { db, sqlite } = createSqliteD1(AUTH_MIGRATIONS);
-  sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('admin-1', 'admin@example.com', 'A', 'x', datetime('now'))").run();
+  const { db, sqlite } = createSqliteD1();
+  sqlite.prepare("INSERT INTO users (id, email, name, is_admin, created_at, first_seen_at, synced_at) VALUES ('admin-1', 'admin@example.com', 'A', 1, datetime('now'), 0, 0)").run();
   const rows = () =>
     sqlite.prepare("SELECT id, actor_user_id, actor_email, action, target_type, target_id, detail FROM admin_audit_log").all().map(r => ({ ...r }));
-  return { env: { AUTH_DB: db } as unknown as Env, rows };
+  return { env: { DB: db } as unknown as Env, rows };
 }
 
 const ACTOR: AdminSession = {

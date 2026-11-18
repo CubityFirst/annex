@@ -290,9 +290,8 @@ export interface ProjectDetails {
 
 // Aggregates one project's admin detail view. The project row (+ org name) is
 // fetched first to short-circuit on a missing id; everything else fans out in
-// one Promise.all. The owner identity comes from AUTH_DB (cross-DB) since the
-// main DB only stores owner_id; member name/email are denormalized on
-// project_members so no auth lookup is needed for the roster.
+// one Promise.all. The owner identity comes from the users mirror; member
+// name/email are also denormalized on project_members for the roster.
 async function loadProjectDetails(env: Env, id: string): Promise<ProjectDetails | null> {
   const project = await env.DB.prepare(
     `SELECT p.id, p.name, p.description, p.owner_id, p.created_at, p.published_at,
@@ -310,7 +309,7 @@ async function loadProjectDetails(env: Env, id: string): Promise<ProjectDetails 
 
   const [owner, customDomain, docStats, aiSummaries, folderCount, fileStats, memberCounts, byRole, members] =
     await Promise.all([
-      env.AUTH_DB.prepare("SELECT id, name, email FROM users WHERE id = ?")
+      env.DB.prepare("SELECT id, name, email FROM users WHERE id = ?")
         .bind(project.owner_id)
         .first<{ id: string; name: string | null; email: string | null }>(),
       env.DB.prepare("SELECT hostname, status FROM project_custom_domains WHERE project_id = ?")

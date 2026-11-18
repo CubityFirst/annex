@@ -1,38 +1,46 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { requireAdminSession, verifySession, type AdminSession } from "./auth";
+import { adminAuthFlow, requireAdminSession, verifySession, type AdminSession } from "./auth";
+import { handleCallback, handleExchange, handleLogin, handleLogout } from "../../api/src/routes/auth";
+import type { IdentityService } from "../../api/src/account/identity";
 import { usersRouter } from "./routes/users";
 import { projectsRouter } from "./routes/projects";
 import { auditRouter } from "./routes/audit";
-import { oauthRouter } from "./routes/oauth";
 import { reportsRouter } from "./routes/reports";
 import { runDueUserDeletions } from "./lib/userDeletion";
 
 export interface Env {
+  // cubedocs-main: sites, Annex's users mirror, sessions (incl. this panel's
+  // 'admin' sessions), billing/preferences, deletions and the audit log.
   DB: D1Database;
-  AUTH_DB: D1Database;
   ASSETS: R2Bucket;
   SITE_ASSETS: Fetcher;
-  AUTH: Fetcher;
-  // Same value as the auth worker's JWT_SECRET. The admin worker verifies
-  // sessions inline against AUTH_DB (see src/auth.ts) instead of calling
-  // the auth worker's /verify route, so it needs the signing secret. A
-  // schema change to users/sessions/user_billing/user_preferences columns
-  // read by loadCurrentSession requires redeploying auth + api + admin.
+  // Annex-only secret for Annex session JWTs (the admin panel signs its own
+  // 'admin' sessions; nothing is shared with the identity service).
   JWT_SECRET: string;
+  // Identity service (auth.cubityfir.st): IdentityService RPC for live account
+  // standing / admin role, and its HTTP surface (default export) for
+  // server-side OIDC requests - a same-zone fetch() to auth.cubityfir.st would
+  // reach the origin, not the identity worker.
+  IDENTITY?: IdentityService;
+  IDENTITY_OIDC?: Fetcher;
+  // This panel's OIDC client (vars; OIDC_CLIENT_SECRET is a secret). The
+  // redirect URIs default to APP_ORIGIN/api/auth/callback and APP_ORIGIN/.
+  OIDC_ISSUER?: string;
+  OIDC_CLIENT_ID?: string;
+  OIDC_CLIENT_SECRET?: string;
+  OIDC_REDIRECT_URI?: string;
+  OIDC_POST_LOGOUT_REDIRECT_URI?: string;
+  APP_ORIGIN?: string;
   // IP-keyed rate limiters (Cloudflare ratelimit bindings - see cloudflare.config.ts).
-  // RATE_LIMITER_ADMIN gates every authenticated admin API route;
-  // RATE_LIMITER_ADMIN_HANDOFF gates the unauthenticated exchange proxy;
-  // RATE_LIMITER_AVATAR gates the public avatar route on its own budget so
-  // dashboard avatar fan-out (25 per page) can't starve the operator's
-  // API-route budget or vice versa.
+  // RATE_LIMITER_ADMIN gates every authenticated admin API route and the
+  // sign-in endpoints; RATE_LIMITER_AVATAR gates the public avatar route on
+  // its own budget so dashboard avatar fan-out (25 per page) can't starve the
+  // operator's API-route budget or vice versa.
   RATE_LIMITER_ADMIN: { limit(opts: { key: string }): Promise<{ success: boolean }> };
-  RATE_LIMITER_ADMIN_HANDOFF: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AVATAR: { limit(opts: { key: string }): Promise<{ success: boolean }> };
-  // Used only for admin-driven Stripe operations (cancel-on-grant). The
-  // auth worker still owns the rest of the Stripe lifecycle (Checkout,
-  // Customer Portal, webhook); admin reaches the Stripe API directly
-  // here to keep the cancel-on-grant path on a single worker.
+  // Used for admin-driven Stripe operations (cancel-on-grant, gift month,
+  // cancel subscription). Same key as the API worker.
   STRIPE_SECRET_KEY: string;
   // Cloudflare-for-SaaS custom domains (see api/src/lib/customDomains.ts).
   // Used only to release a site's custom hostname when an admin deletes the
@@ -67,43 +75,24 @@ const enforceAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-app.post("/api/auth/handoff/exchange", async (c) => {
-  const ip = c.req.raw.headers.get("CF-Connecting-IP") ?? "unknown";
-  const { success } = await c.env.RATE_LIMITER_ADMIN_HANDOFF.limit({ key: ip });
-  if (!success) return c.json({ ok: false, error: "rate_limited" }, 429);
-
-  const body = await c.req.json();
-  // Forward client provenance across the service-binding hop (which drops
-  // CF-Connecting-IP): the auth worker's createSession stamps the minted
-  // admin session's ip/device from X-Client-IP + User-Agent - the repo's
-  // standard proxy convention (see packages/auth/src/lib.ts clientIp).
-  const headers = new Headers({ "Content-Type": "application/json" });
-  const clientIp = c.req.raw.headers.get("CF-Connecting-IP");
-  if (clientIp) headers.set("X-Client-IP", clientIp);
-  const userAgent = c.req.raw.headers.get("User-Agent");
-  if (userAgent) headers.set("User-Agent", userAgent);
-  return c.env.AUTH.fetch("https://auth/admin/handoff/exchange", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-});
-
-// POST /api/auth/logout - revoke the caller's own session server-side.
-// Deliberately NOT behind enforceAdmin: an operator whose admin bit was
-// just removed (or whose account was disabled) must still be able to kill
-// the session their token points at. The auth worker's /sessions/logout
-// authenticates the bearer token itself and revokes only that session.
-app.post("/api/auth/logout", async (c) => {
+// Sign in with auth.cubityfir.st (this panel's own OIDC client; see
+// src/auth.ts). login/callback are top-level browser navigations; exchange
+// and logout are called by the SPA. All share the admin IP limiter.
+async function limited(c: { env: Env; req: { raw: Request } }): Promise<Response | null> {
   const ip = c.req.raw.headers.get("CF-Connecting-IP") ?? "unknown";
   const { success } = await c.env.RATE_LIMITER_ADMIN.limit({ key: ip });
-  if (!success) return c.json({ ok: false, error: "rate_limited" }, 429);
+  return success ? null : Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
+}
 
-  const headers = new Headers();
-  const authHeader = c.req.raw.headers.get("Authorization");
-  if (authHeader) headers.set("Authorization", authHeader);
-  return c.env.AUTH.fetch("https://auth/sessions/logout", { method: "POST", headers });
-});
+app.get("/api/auth/login", async (c) => (await limited(c)) ?? handleLogin(adminAuthFlow(c.env), c.env, new URL(c.req.url)));
+app.get("/api/auth/callback", async (c) => (await limited(c)) ?? handleCallback(adminAuthFlow(c.env), c.env, c.req.raw, new URL(c.req.url)));
+app.post("/api/auth/exchange", async (c) => (await limited(c)) ?? handleExchange(adminAuthFlow(c.env), c.env, c.req.raw));
+
+// POST /api/auth/logout - revoke the caller's own admin session and return
+// the identity service's end-session URL. Deliberately NOT behind
+// enforceAdmin: an operator whose admin role was just removed (or whose
+// account was disabled) must still be able to kill the session.
+app.post("/api/auth/logout", async (c) => (await limited(c)) ?? handleLogout(adminAuthFlow(c.env), c.env, c.req.raw));
 
 app.get("/api/verify", async (c) => {
   // Same IP limiter as the authenticated routes: this is otherwise the one
@@ -162,15 +151,12 @@ app.use("/api/projects", enforceAdmin);
 app.use("/api/projects/*", enforceAdmin);
 app.use("/api/audit", enforceAdmin);
 app.use("/api/audit/*", enforceAdmin);
-app.use("/api/oauth-clients", enforceAdmin);
-app.use("/api/oauth-clients/*", enforceAdmin);
 app.use("/api/reports", enforceAdmin);
 app.use("/api/reports/*", enforceAdmin);
 
 app.route("/api/users", usersRouter);
 app.route("/api/projects", projectsRouter);
 app.route("/api/audit", auditRouter);
-app.route("/api/oauth-clients", oauthRouter);
 app.route("/api/reports", reportsRouter);
 
 // Unknown API paths must NOT fall through to the SPA shell: a JSON caller

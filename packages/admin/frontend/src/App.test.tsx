@@ -4,23 +4,21 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/api", () => {
   class TransientVerifyError extends Error {}
-  class AdminHandoffError extends Error {
+  class AdminSignInError extends Error {
     constructor(public readonly code: string) {
       super(code);
     }
   }
   return {
     TransientVerifyError,
-    AdminHandoffError,
+    AdminSignInError,
     LIST_PAGE_SIZE: 25,
     verifyAdminSession: vi.fn(),
-    logoutAdminSession: vi.fn(async () => undefined),
-    exchangeAdminHandoff: vi.fn(),
+    logoutAdminSession: vi.fn(async () => null),
+    exchangeAdminCode: vi.fn(),
     searchUsers: vi.fn(async () => ({ users: [], nextCursor: null })),
     getUserDetails: vi.fn(),
     updateUserBadges: vi.fn(),
-    updateUserModeration: vi.fn(),
-    forceUserPasswordChange: vi.fn(),
     deleteUserAvatar: vi.fn(),
     exportUserData: vi.fn(),
     grantInk: vi.fn(),
@@ -36,11 +34,6 @@ vi.mock("@/lib/api", () => {
     removeProjectDomain: vi.fn(),
     listAuditLog: vi.fn(async () => ({ entries: [], nextCursor: null })),
     listAuditActions: vi.fn(async () => []),
-    listOAuthClients: vi.fn(async () => []),
-    createOAuthClient: vi.fn(),
-    deleteOAuthClient: vi.fn(),
-    rotateOAuthClientSecret: vi.fn(),
-    setOAuthClientDisabled: vi.fn(),
   };
 });
 
@@ -71,7 +64,7 @@ beforeEach(() => {
 describe("App session gating", () => {
   it("shows the login page with no token", async () => {
     renderApp();
-    expect(await screen.findByText(/Continue to Annex sign-in/)).toBeInTheDocument();
+    expect(await screen.findByText(/Continue to sign-in/)).toBeInTheDocument();
     expect(verifyAdminSession).not.toHaveBeenCalled();
   });
 
@@ -87,7 +80,7 @@ describe("App session gating", () => {
     setToken("tok");
     vi.mocked(verifyAdminSession).mockRejectedValue(new Error("Unauthorized"));
     renderApp();
-    expect(await screen.findByText(/Continue to Annex sign-in/)).toBeInTheDocument();
+    expect(await screen.findByText(/Continue to sign-in/)).toBeInTheDocument();
     expect(getToken()).toBeNull();
   });
 
@@ -97,7 +90,7 @@ describe("App session gating", () => {
     renderApp();
     expect(await screen.findByText(/Couldn't reach the admin API/)).toBeInTheDocument();
     expect(screen.getByText("Retry")).toBeInTheDocument();
-    expect(screen.queryByText(/Continue to Annex sign-in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Continue to sign-in/)).not.toBeInTheDocument();
     expect(getToken()).toBe("tok");
   });
 
@@ -105,7 +98,7 @@ describe("App session gating", () => {
     setToken("tok");
     vi.mocked(verifyAdminSession).mockResolvedValue({ ...SESSION, expiresAt: Date.now() - 1000 });
     renderApp();
-    expect(await screen.findByText(/Continue to Annex sign-in/)).toBeInTheDocument();
+    expect(await screen.findByText(/Continue to sign-in/)).toBeInTheDocument();
     expect(getToken()).toBeNull();
   });
 });

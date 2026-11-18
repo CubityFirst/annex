@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   TransientVerifyError,
-  exchangeAdminHandoff,
+  exchangeAdminCode,
   getUserDetails,
   getProjectDetails,
   verifyAdminSession,
@@ -87,12 +87,12 @@ describe("verifyAdminSession transient-vs-fatal split (AF-C6)", () => {
   });
 });
 
-describe("exchangeAdminHandoff promise cache (AF-C3)", () => {
+describe("exchangeAdminCode promise cache (AF-C3)", () => {
   it("two concurrent exchanges of the same code share ONE network call and outcome", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ ok: true, data: { token: "minted" } }));
     const [a, b] = await Promise.all([
-      exchangeAdminHandoff("dm-code-1", "https://admin.example/auth/callback"),
-      exchangeAdminHandoff("dm-code-1", "https://admin.example/auth/callback"),
+      exchangeAdminCode("dm-code-1"),
+      exchangeAdminCode("dm-code-1"),
     ]);
     expect(a.token).toBe("minted");
     expect(b.token).toBe("minted");
@@ -101,8 +101,8 @@ describe("exchangeAdminHandoff promise cache (AF-C3)", () => {
 
   it("different codes do not share the cache", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, data: { token: "minted" } }));
-    await exchangeAdminHandoff("dm-code-2", "https://admin.example/auth/callback");
-    await exchangeAdminHandoff("dm-code-3", "https://admin.example/auth/callback");
+    await exchangeAdminCode("dm-code-2");
+    await exchangeAdminCode("dm-code-3");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

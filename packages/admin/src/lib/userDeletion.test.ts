@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("../audit", () => ({
   writeAdminAudit: vi.fn(),
   // Route the batched audit insert through the mock DB so tests can see it
-  // land in the same batch as the users-row delete.
+  // land in the same batch as the completion mark.
   adminAuditStatement: vi.fn(
-    (env: { AUTH_DB: { prepare(sql: string): { bind(...a: unknown[]): unknown } } }, _actor: unknown, action: string, _type: string, id: string, detail: unknown) =>
-      env.AUTH_DB.prepare("INSERT INTO admin_audit_log").bind(action, id, detail),
+    (env: { DB: { prepare(sql: string): { bind(...a: unknown[]): unknown } } }, _actor: unknown, action: string, _type: string, id: string, detail: unknown) =>
+      env.DB.prepare("INSERT INTO admin_audit_log").bind(action, id, detail),
   ),
 }));
 vi.mock("./projectDelete", () => ({
@@ -49,7 +49,6 @@ function makeDb() {
 }
 function makeEnv() {
   return {
-    AUTH_DB: makeDb(),
     DB: makeDb(),
     ASSETS: { delete: vi.fn(async () => undefined) },
     STRIPE_SECRET_KEY: "sk_test_x",
@@ -60,8 +59,9 @@ type TestEnv = ReturnType<typeof makeEnv>;
 const actor: AdminSession = { userId: "admin-1", email: "admin@example.com", expiresAt: 0, isAdmin: true };
 const run = (env: TestEnv, userId: string, confirm: { siteIds: string[]; orgIds: string[] } = { siteIds: [], orgIds: [] }) =>
   executeUserDeletion(env as never, actor, { userId, scheduleId: "sched-1", confirm });
-const userDeleted = (env: TestEnv) =>
-  [...env.AUTH_DB.calls, ...env.AUTH_DB.batches.flat()].some(c => c.sql.includes("DELETE FROM users"));
+// The run finished: the final batch marks the schedule completed.
+const completed = (env: TestEnv) =>
+  [...env.DB.calls, ...env.DB.batches.flat()].some(c => c.sql.includes("SET completed_at"));
 const plainUser = (stripe: string | null = null) => ({ id: "u-1", email: "a@x.com", is_admin: 0, stripe_customer_id: stripe });
 
 const realFetch = globalThis.fetch;
@@ -94,55 +94,55 @@ describe("parseIdList", () => {
 describe("executeUserDeletion", () => {
   it("refuses an account that became an admin during the grace window", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ ...plainUser(), is_admin: 1 });
+    env.DB.firstQueue.push({ ...plainUser(), is_admin: 1 });
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("refuses (and touches nothing, not even started_at) when an owned site wasn't confirmed", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], []);
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as typeof fetch;
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
-    expect(env.AUTH_DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
+    expect(env.DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
     expect(deleteProjectCascade).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("refuses unconfirmed owned orgs", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     env.DB.allQueue.push([], [{ id: "o-1", name: "Org" }]);
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("aborts if the schedule was cancelled/replaced before the point of no return", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([], []);
-    env.AUTH_DB.runChanges.push(0); // started_at UPDATE matched no (user_id, id)
+    env.DB.runChanges.push(0); // started_at UPDATE matched no (user_id, id)
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ id: "cus_1" }));
     globalThis.fetch = fetchMock as typeof fetch;
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
-    const started = env.AUTH_DB.calls.find(c => c.sql.includes("SET started_at"));
+    const started = env.DB.calls.find(c => c.sql.includes("SET started_at"));
     expect(started?.binds.slice(1)).toEqual(["u-1", "sched-1"]);
     // Only the read-only preflight ran - the customer was never deleted.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBeUndefined();
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
-  it("deletes a plain account; the audit row and the users delete share one batch", async () => {
+  it("deletes a plain account's Annex data; the audit row and the completion mark share one batch", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     env.DB.allQueue.push([], [], [], []);
     const res = await run(env, "u-1");
     expect(res).toEqual({ ok: true, sites_deleted: 0, orgs_deleted: 0 });
@@ -155,18 +155,29 @@ describe("executeUserDeletion", () => {
       expect.stringContaining("DELETE FROM user_favourite_projects"),
     ]);
     expect(env.ASSETS.delete).toHaveBeenCalledWith(["avatars/u-1-dark", "avatars/u-1-light", "avatars/u-1"]);
-    const finalBatch = env.AUTH_DB.batches.at(-1)!;
-    expect(finalBatch[0].sql).toContain("INSERT INTO admin_audit_log");
+    const finalBatch = env.DB.batches.at(-1)!;
+    expect(finalBatch.map(c => c.sql)).toEqual([
+      expect.stringContaining("INSERT INTO admin_audit_log"),
+      expect.stringContaining("DELETE FROM user_billing"),
+      expect.stringContaining("DELETE FROM user_preferences"),
+      expect.stringContaining("DELETE FROM sessions"),
+      expect.stringContaining("UPDATE user_deletions SET completed_at"),
+    ]);
     expect(finalBatch[0].binds[0]).toBe("user.delete");
-    expect(finalBatch[1].sql).toContain("DELETE FROM email_verification_tokens");
-    expect(finalBatch[2].sql).toContain("DELETE FROM users");
+    expect(finalBatch[0].binds[2]).toMatchObject({ scope: "annex_data" });
+    expect(finalBatch[4].binds.slice(1)).toEqual(["u-1", "sched-1"]);
+    // The users mirror row anchors the block: it's never deleted (nor the schedule row).
+    const allSql = [...env.DB.calls, ...env.DB.batches.flat()].map(c => c.sql);
+    expect(allSql.some(q => /DELETE FROM users/.test(q))).toBe(false);
+    expect(allSql.some(q => q.includes("DELETE FROM user_deletions"))).toBe(false);
+    expect(allSql.some(q => q.includes("moderation"))).toBe(false);
     expect(writeAdminAudit).not.toHaveBeenCalled();
     expect(adminAuditStatement).toHaveBeenCalledTimes(1);
   });
 
-  it("deletes the confirmed sites + orgs, then the account", async () => {
+  it("deletes the confirmed sites + orgs, then the account's data", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     const owned = () => [[{ id: "p-1", name: "One" }, { id: "p-2", name: "Two" }], [{ id: "o-1", name: "Org" }]];
     env.DB.allQueue.push(...owned(), ...owned());
     const res = await run(env, "u-1", { siteIds: ["p-2", "p-1"], orgIds: ["o-1"] });
@@ -174,22 +185,22 @@ describe("executeUserDeletion", () => {
     expect(vi.mocked(deleteProjectCascade).mock.calls.map(c => c[1])).toEqual(["p-1", "p-2"]);
     const orgDelete = env.DB.calls.find(c => c.sql.includes("DELETE FROM organizations "));
     expect(orgDelete?.binds).toEqual(["u-1", "o-1"]);
-    expect(userDeleted(env)).toBe(true);
+    expect(completed(env)).toBe(true);
     expect(writeAdminAudit).toHaveBeenCalledTimes(2); // one project.delete per site
   });
 
   it("fails closed if a confirmed site still exists under someone else", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     env.DB.allQueue.push([], [], [{ id: "p-1" }]);
     const res = await run(env, "u-1", { siteIds: ["p-1"], orgIds: [] });
     expect(res.ok).toBe(false);
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("deletes many orgs in statements under D1's 100-parameter cap", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     const orgs = Array.from({ length: 120 }, (_, i) => ({ id: `o-${i}`, name: `Org ${i}` }));
     env.DB.allQueue.push([], orgs, [], orgs);
     const res = await run(env, "u-1", { siteIds: [], orgIds: orgs.map(o => o.id) });
@@ -202,7 +213,7 @@ describe("executeUserDeletion", () => {
 
   it("preflights the Stripe customer, then deletes it first; a delete failure aborts everything", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], []);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ id: "cus_1" }))
@@ -214,12 +225,12 @@ describe("executeUserDeletion", () => {
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBeUndefined(); // GET
     expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("DELETE");
     expect(deleteProjectCascade).not.toHaveBeenCalled();
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("skips the delete when Stripe reports the customer already deleted (a retry)", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([], [], [], []);
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ id: "cus_1", deleted: true }));
     globalThis.fetch = fetchMock as typeof fetch;
@@ -230,21 +241,21 @@ describe("executeUserDeletion", () => {
 
   it("a key that can't see the customer (wrong account/mode) fails BEFORE the point of no return", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([], []);
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 404 }));
     globalThis.fetch = fetchMock as typeof fetch;
     const res = await run(env, "u-1");
     expect(res).toMatchObject({ ok: false, error: expect.stringContaining("wrong account or test/live mode") });
     // Still cancellable: started_at was never set, and no DELETE was sent.
-    expect(env.AUTH_DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
+    expect(env.DB.calls.some(c => c.sql.includes("started_at"))).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
   it("a 404 on the delete itself (race) still requires Stripe to confirm deletion", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser("cus_1"));
+    env.DB.firstQueue.push(plainUser("cus_1"));
     env.DB.allQueue.push([], []);
     globalThis.fetch = vi.fn()
       .mockResolvedValueOnce(Response.json({ id: "cus_1" }))
@@ -252,19 +263,19 @@ describe("executeUserDeletion", () => {
       .mockResolvedValueOnce(new Response("{}", { status: 404 })) as typeof fetch;
     const res = await run(env, "u-1");
     expect(res.ok).toBe(false);
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 
-  it("re-freezes and stops if an unconfirmed site appears after the first check", async () => {
+  it("stops (account stays blocked by the schedule) if an unconfirmed site appears after the first check", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(plainUser());
+    env.DB.firstQueue.push(plainUser());
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], []);
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }, { id: "p-new", name: "New" }], []);
     const res = await run(env, "u-1", { siteIds: ["p-1"], orgIds: [] });
     expect(res.ok).toBe(false);
-    expect(env.AUTH_DB.calls.find(c => c.sql.includes("SET moderation = -1"))?.binds).toEqual(["u-1"]);
+    expect(res).toMatchObject({ error: expect.stringContaining("the account stays blocked") });
     expect(deleteProjectCascade).not.toHaveBeenCalled();
-    expect(userDeleted(env)).toBe(false);
+    expect(completed(env)).toBe(false);
   });
 });
 
@@ -276,27 +287,27 @@ describe("runDueUserDeletions", () => {
 
   it("skips a row it can't claim (cancelled, rescheduled, or leased since the SELECT)", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([row("u-1")]);
-    env.AUTH_DB.runChanges.push(1, 0); // interrupted sweep, then the claim matches nothing
+    env.DB.allQueue.push([row("u-1")]);
+    env.DB.runChanges.push(1, 0); // interrupted sweep, then the claim matches nothing
     const result = await runDueUserDeletions(env as never, 10);
     expect(result).toEqual({ deleted: 0, failed: 0 });
-    const claim = env.AUTH_DB.calls.find(c => c.sql.includes("SET lease_until = ?"))!;
+    const claim = env.DB.calls.find(c => c.sql.includes("SET lease_until = ?"))!;
     expect(claim.sql).toContain("AND id = ? AND execute_after <= ?");
     // The attempt is stamped at claim time, so a killed run still rotates.
     expect(claim.sql).toContain("last_attempt_at = datetime('now')");
     expect(claim.binds).toEqual([10 + 30 * 60, "u-1", "sched-u-1", 10, 10]);
     // Never looked the user up, let alone deleted anything.
-    expect(env.AUTH_DB.calls.some(c => c.sql.includes("FROM users u"))).toBe(false);
+    expect(env.DB.calls.some(c => c.sql.includes("FROM users u"))).toBe(false);
   });
 
   it("executes with the stored consent, attributes audit to the scheduler, and records failures", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([row("u-ok", { confirm_site_ids: '["p-1"]' }), row("u-bad")]);
+    env.DB.allQueue.push([row("u-ok", { confirm_site_ids: '["p-1"]' }), row("u-bad")]);
     // u-ok: user row, then ownership x2 (matches the stored ["p-1"]).
-    env.AUTH_DB.firstQueue.push({ id: "u-ok", email: "ok@x.com", is_admin: 0, stripe_customer_id: null });
+    env.DB.firstQueue.push({ id: "u-ok", email: "ok@x.com", is_admin: 0, stripe_customer_id: null });
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], [], [{ id: "p-1", name: "Site" }], []);
     // u-bad: owns a site that was never confirmed.
-    env.AUTH_DB.firstQueue.push({ id: "u-bad", email: "bad@x.com", is_admin: 0, stripe_customer_id: null });
+    env.DB.firstQueue.push({ id: "u-bad", email: "bad@x.com", is_admin: 0, stripe_customer_id: null });
     env.DB.allQueue.push([{ id: "p-2", name: "Unreviewed" }], []);
 
     const result = await runDueUserDeletions(env as never, 10);
@@ -308,7 +319,7 @@ describe("runDueUserDeletions", () => {
       "user.delete", "user", "u-ok",
       expect.objectContaining({ executed_by: "scheduler" }),
     );
-    const failure = env.AUTH_DB.calls.find(c => c.sql.includes("SET last_error"))!;
+    const failure = env.DB.calls.find(c => c.sql.includes("SET last_error"))!;
     expect(failure.sql).toContain("lease_until = NULL");
     expect(failure.binds.slice(1)).toEqual(["u-bad", "sched-u-bad"]);
     expect(String(failure.binds[0])).toMatch(/weren't confirmed/);
