@@ -37,10 +37,10 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-filelock-${RUN_ID}@example.com`;
-const PASSWORD = "E2eTest-P@ssw0rd!";
 const NAME = "E2E FileLock User";
 const PROJECT_A_NAME = `E2E FileLock Site A ${RUN_ID}`;
 const PROJECT_B_NAME = `E2E FileLock Site B ${RUN_ID}`;
@@ -67,21 +67,6 @@ let projectBId = "";
 let fileAId = "";
 let fileBId = "";
 let docId = "";
-
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_c: unknown, opts: { callback: (t: string) => void }) {
-          setTimeout(() => opts.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {}, remove() {},
-      },
-      writable: true, configurable: true,
-    });
-  });
-}
 
 async function injectFakeIp(ctx: BrowserContext) {
   await ctx.route("**/api/**", async (route) => {
@@ -140,7 +125,7 @@ async function uploadImage(p: Page, projectId: string, name: string): Promise<st
 
 async function putDoc(p: Page, id: string, title: string, content: string) {
   // Local wrangler dev intermittently drops requests through the
-  // browser → vite → API worker → auth worker chain (per playwright.config.ts).
+  // browser → vite → API worker chain (per playwright.config.ts).
   // Retry once on 5xx so transient infra hiccups don't cause spurious failures.
   const result = await p.evaluate(async ({ id, title, content }) => {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -214,7 +199,6 @@ test.beforeAll(async ({ browser }) => {
   if (isChromium) {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   }
-  await mockTurnstile(context);
   await injectFakeIp(context);
   await mockExternalImage(context);
   page = await context.newPage();
@@ -233,18 +217,7 @@ test.afterAll(async () => {
 });
 
 test("registers, creates Site A + Site B, uploads an image to each, and a doc in Site B", async () => {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(NAME);
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: EMAIL, name: NAME });
 
   projectAId = await createSite(page, PROJECT_A_NAME);
   fileAId = await uploadImage(page, projectAId, FILE_A_NAME);

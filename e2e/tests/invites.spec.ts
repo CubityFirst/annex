@@ -3,21 +3,22 @@
  *
  * Prerequisites:
  *   pnpm dev  (from the monorepo root)
- *   packages/auth/.dev.vars: TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+ *   packages/api/.dev.vars: DEV_QUICK_LOGIN=true + APP_ORIGIN=http://localhost:5173 (devSignIn)
  *
  * Three accounts are created: owner, email-invitee, link-invitee.
  * The project and all three accounts are deleted in afterAll even on failure.
  */
 
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 // ── Unique-per-run values ────────────────────────────────────────────────────
 
 const RUN_ID = Date.now();
 const PROJECT_NAME = `Invite Test ${RUN_ID}`;
 
-const OWNER        = { name: "Invite Owner",  email: `e2e-inv-owner-${RUN_ID}@example.com`, password: "OwnerP@ssw0rd!" };
-const EMAIL_USER   = { name: "Email Invitee", email: `e2e-inv-email-${RUN_ID}@example.com`, password: "InviteeP@ssw0rd!" };
+const OWNER        = { name: "Invite Owner",  email: `e2e-inv-owner-${RUN_ID}@example.com` };
+const EMAIL_USER   = { name: "Email Invitee", email: `e2e-inv-email-${RUN_ID}@example.com` };
 const LINK_USER    = { name: "Link Invitee",  email: `e2e-inv-link-${RUN_ID}@example.com`,  password: "LinkP@ssw0rd!" };
 
 // Offsets +3/+4/+5 keep each account in its own rate-limit bucket,
@@ -39,25 +40,6 @@ let inviteLinkToken = "";
 
 async function setupContext(browser: Browser, ip: string): Promise<[BrowserContext, Page]> {
   const ctx = await browser.newContext();
-  await ctx.addInitScript(() => {
-    // reset() must replay the callback like real Turnstile does - the login
-    // form clears its token after a failed submit and stays disabled until a
-    // fresh one arrives.
-    let verify: ((t: string) => void) | null = null;
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_: unknown, opts: { callback: (t: string) => void }) {
-          verify = opts.callback;
-          setTimeout(() => verify?.("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() { setTimeout(() => verify?.("e2e-bypass-token"), 50); },
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
   await ctx.route("**/api/**", async (route) => {
     await route.continue({ headers: { ...route.request().headers(), "CF-Connecting-IP": ip } });
   });
@@ -65,32 +47,13 @@ async function setupContext(browser: Browser, ip: string): Promise<[BrowserConte
 }
 
 async function register(page: Page, user: typeof OWNER) {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(user.name);
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill(user.password);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: user.email, name: user.name });
 }
 
+// The same email always signs the same dev user back in (replacing any
+// session this page had).
 async function login(page: Page, user: typeof OWNER) {
-  // /login?logout=1 clears any existing token first so this is always reliable.
-  await page.goto("/login?logout=1");
-  // Retry the whole attempt: the local wrangler chain can drop the login POST
-  // under full-suite load, which surfaces an error and re-arms the form.
-  await expect(async () => {
-    await page.getByLabel("Email").fill(user.email);
-    await page.getByLabel("Password").fill(user.password);
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: user.email, name: user.name });
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

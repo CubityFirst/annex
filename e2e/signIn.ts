@@ -22,5 +22,7 @@ export async function devSignIn(
   // The SPA keeps its session JWT in localStorage["token"] (src/lib/auth.ts).
   await page.goto("/");
   await page.evaluate(token => window.localStorage.setItem("token", token), data.token);
+  // Land where a sign-in does.
+  await page.goto("/dashboard");
   return data;
 }

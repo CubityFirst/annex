@@ -6,8 +6,8 @@ const SCRIPT = resolve(__dirname, "../scripts/d1-local.mjs");
 /**
  * Run SQL against the local dev D1 (the shared .wrangler/state behind
  * `pnpm dev`) via scripts/d1-local.mjs - the config-free replacement for
- * `npx wrangler d1 execute <db> --local`. `main` = cubedocs-main (api DB),
- * `auth` = cubedocs-auth. Needs the api dev server (:8787) running, which every
+ * `npx wrangler d1 execute <db> --local`. `main` = cubedocs-main (the only
+ * database). Needs the api dev server (:8787) running, which every
  * e2e spec already does. Spawned without a shell, so SQL quotes pass through
  * verbatim. Throws with the helper's error message on failure.
  */
