@@ -109,7 +109,9 @@ serves Annex logins and **account changes drift** between the two stores.
    code is live, and anything written there after the export is lost, so keep
    the window short and quiet (export, import and step 5 back to back, within
    minutes, and not across :17 past the hour when the old admin cron runs
-   scheduled deletions): note the time, don't schedule or cancel admin
+   scheduled deletions): turn off sign-ups on the old Annex and let in-flight
+   registrations finish (an account made between the export and step 5
+   misses this import), note the time, don't schedule or cancel admin
    deletions or change grants/badges/handles in the admin panel, then
    `npx wrangler d1 export cubedocs-auth --remote --output migration-data/cubedocs-auth.sql`,
    `node scripts/import-auth-data.mjs migration-data/cubedocs-auth.sql`,
