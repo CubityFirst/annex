@@ -61,11 +61,25 @@ describe("app-host robots.txt", () => {
   });
 
   it("blocks the app, auth flows and private API but keeps published sites crawlable", () => {
-    for (const path of ["/api/", "/oauth/", "/login", "/register", "/settings", "/projects/", "/dashboard", "/invite/", "/u/", "/@"]) {
+    for (const path of ["/api/", "/oauth/", "/auth/", "/login", "/register", "/settings", "/projects/", "/dashboard", "/invite/", "/u/", "/@"]) {
       expect(APP_ROBOTS_TXT).toContain(`Disallow: ${path}\n`);
     }
     expect(APP_ROBOTS_TXT).toContain("Allow: /api/public/\n");
     expect(APP_ROBOTS_TXT).not.toMatch(/Disallow: \/s\//);
     expect(APP_ROBOTS_TXT).not.toMatch(/Disallow: \/\n/);
+  });
+});
+
+describe("/oauth/authorize redirect shim", () => {
+  it("sends the old app-origin authorization URL to the identity service, query string included", async () => {
+    const env = { IDENTITY_ORIGIN: "https://auth.example" } as Env;
+    const res = await worker.fetch(new Request("https://docs.cubityfir.st/oauth/authorize?client_id=x&state=s%20t&redirect_uri=https%3A%2F%2Fapp"), env);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("https://auth.example/oauth/authorize?client_id=x&state=s%20t&redirect_uri=https%3A%2F%2Fapp");
+  });
+
+  it("defaults to auth.cubityfir.st", async () => {
+    const res = await worker.fetch(new Request("https://docs.cubityfir.st/oauth/authorize?a=1"), {} as Env);
+    expect(res.headers.get("Location")).toBe("https://auth.cubityfir.st/oauth/authorize?a=1");
   });
 });

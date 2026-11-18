@@ -41,7 +41,7 @@ export function resolveThemeMode(value: string | null | undefined, fallback: The
 // (dark) brand look - the per-user theme is an in-app preference and must not
 // leak onto these. Everything else (the DocsLayout app, public docs, etc.)
 // uses the saved theme. Exact-match paths: none of these have sub-routes.
-const UNTHEMED_PATHS = new Set(["/", "/login", "/register"]);
+const UNTHEMED_PATHS = new Set(["/", "/login", "/register", "/auth/complete"]);
 
 export function pathUsesUserTheme(pathname: string): boolean {
   return !UNTHEMED_PATHS.has(pathname);

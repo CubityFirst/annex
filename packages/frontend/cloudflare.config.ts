@@ -37,6 +37,9 @@ export default defineConfig({
 				worker: "annex-api",
 			}),
 			ASSETS: bindings.assets(),
+			// Identity service public origin: /oauth/authorize redirects here (the
+			// authorization endpoint moved off this app origin).
+			IDENTITY_ORIGIN: bindings.text("https://auth.cubityfir.st"),
 		},
 	},
 });

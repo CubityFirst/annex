@@ -724,14 +724,10 @@ function searchStore(s: Store, q: string | null, tag: string | null) {
 // ---------------------------------------------------------------------------
 
 // Anonymous auth/public endpoints keep hitting the real network even while the
-// demo flag is set - e.g. someone opening /login mid-demo should still be able
-// to sign in for real (setToken exits demo mode).
+// demo flag is set - e.g. someone signing in mid-demo still completes the real
+// /api/auth/* round trip (setToken exits demo mode).
 const PASSTHROUGH_PREFIXES = [
-  "/api/login",
-  "/api/register",
-  "/api/webauthn/",
-  "/api/verify-email",
-  "/api/force-change-password",
+  "/api/auth/",
   "/api/public/",
   "/api/admin/",
   "/api/dev/",
@@ -742,25 +738,6 @@ const PASSTHROUGH_PREFIXES = [
 // data - every demo entity id starts with "demo-" (seeded ids and nextId ids
 // alike), which real ids (UUIDs) never do. Those requests are answered from
 // the in-memory store so publishing is browsable inside the demo.
-/** Session row for this browser, shaped like the real GET /me/sessions entry. */
-function demoCurrentSession() {
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const deviceKind = /iPad|Tablet/i.test(ua) ? "tablet" : /Mobi|iPhone|Android/i.test(ua) ? "phone" : "laptop";
-  const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
-  const os = /Windows/.test(ua) ? "Windows" : /Mac OS X|Macintosh/.test(ua) ? (/iPhone|iPad/.test(ua) ? "iOS" : "macOS") : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : null;
-  const now = Date.now();
-  return {
-    id: "demo-session-current",
-    createdAt: now - 20 * 60_000,
-    lastUsedAt: now,
-    expiresAt: now + 30 * 24 * 60 * 60_000,
-    deviceKind,
-    clientLabel: os ? `${browser} on ${os}` : browser,
-    ip: null,
-    current: true,
-  };
-}
-
 function isDemoPublicRequest(url: URL): boolean {
   if (!url.pathname.startsWith("/api/public/")) return false;
   return url.pathname.includes("/demo-") || (url.searchParams.get("projectId")?.startsWith("demo-") ?? false);
@@ -776,8 +753,6 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
       name: s.userName,
       userId: DEMO_USER_ID,
       email: DEMO_USER_EMAIL,
-      emailVerified: true,
-      emailVerificationEnabled: false,
       timezone: s.userTimezone,
       bio: s.userBio,
       handle: s.userHandle,
@@ -800,15 +775,10 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
   }
   if (seg[0] === "me" && seg.length === 1 && method === "PATCH") {
     const body = await readJsonBody(input, init);
-    if (typeof body.name === "string" && body.name.trim()) s.userName = body.name.trim();
+    // Like the real API: the name is managed on the identity service.
+    if ("name" in body) return json({ ok: false, error: "name_managed_by_identity" }, 400);
     if ("timezone" in body) s.userTimezone = typeof body.timezone === "string" ? body.timezone : null;
-    return ok({ name: s.userName, timezone: s.userTimezone });
-  }
-  if (seg[0] === "me" && seg.length === 1 && method === "DELETE") {
-    return blocked("Account deletion is disabled in the demo.");
-  }
-  if (seg[0] === "me" && seg[1] === "email") {
-    return blocked("Email changes are disabled in the demo.");
+    return ok({ timezone: s.userTimezone });
   }
   if (seg[0] === "me" && seg[1] === "bio" && method === "PATCH") {
     const body = await readJsonBody(input, init);
@@ -831,15 +801,6 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     if ("editingFont" in body) s.editingFont = typeof body.editingFont === "string" ? body.editingFont : null;
     if ("uiFont" in body) s.uiFont = typeof body.uiFont === "string" ? body.uiFont : null;
     return ok();
-  }
-  if (seg[0] === "me" && seg[1] === "sessions" && seg[2] === "logout" && method === "POST") return ok();
-  // The demo visitor is "signed in" on exactly one device - this one - so the
-  // Active sessions list always shows the current session, never an empty state.
-  if (seg[0] === "me" && seg[1] === "sessions" && seg.length === 2 && method === "GET") {
-    return ok({ sessions: [demoCurrentSession()] });
-  }
-  if (seg[0] === "me" && seg[1] === "sessions" && (seg[2] === "revoke" || seg[2] === "revoke-others") && method === "POST") {
-    return blocked("Session management is disabled in the demo.");
   }
   if (seg[0] === "avatar") return blocked("Avatar changes are disabled in the demo.");
   if (seg[0] === "billing") return blocked("Billing is disabled in the demo.");

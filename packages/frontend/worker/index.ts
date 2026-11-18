@@ -8,6 +8,19 @@ import {
 export interface Env {
   API: Fetcher;
   ASSETS: Fetcher;
+  // Public origin of the identity service (auth.cubityfir.st).
+  IDENTITY_ORIGIN?: string;
+}
+
+// The OIDC authorization endpoint moved from this app origin to the identity
+// service. Keep the old URL working (query string included) for any service
+// that hard-coded https://docs.cubityfir.st/oauth/authorize.
+export function oauthAuthorizeRedirect(env: Pick<Env, "IDENTITY_ORIGIN">, url: URL): Response {
+  const origin = (env.IDENTITY_ORIGIN || "https://auth.cubityfir.st").replace(/\/+$/, "");
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${origin}/oauth/authorize${url.search}`, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
+  });
 }
 
 function extractFirstParagraph(content: string, maxLength = 160): string {
@@ -218,8 +231,7 @@ export const APP_ROBOTS_TXT = [
   "Disallow: /stripe/",
   "Disallow: /login",
   "Disallow: /register",
-  "Disallow: /check-email",
-  "Disallow: /verify-email",
+  "Disallow: /auth/",
   "Disallow: /demo",
   "Disallow: /dashboard",
   "Disallow: /projects/",
@@ -395,6 +407,8 @@ export default {
       if (!isAppHost(host)) {
         const customResponse = await handleCustomHost(request, env, url, host);
         if (customResponse) return customResponse;
+      } else if (url.pathname === "/oauth/authorize") {
+        return oauthAuthorizeRedirect(env, url);
       } else if (url.pathname === "/robots.txt") {
         return new Response(APP_ROBOTS_TXT, {
           headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "public, max-age=3600" },
