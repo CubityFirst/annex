@@ -13,3 +13,6 @@ coverage/
 .claude/worktrees/
 /.worktree-ports.json
 /research/
+
+# One-time identity-split data exports (personal data - never commit)
+migration-data/
