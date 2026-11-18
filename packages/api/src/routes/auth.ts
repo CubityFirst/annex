@@ -28,6 +28,7 @@ import {
 } from "../account/oidc";
 import { createPendingSession, createSessionToken, redeemHandoff, revokeSessionByToken, type SessionEnv } from "../account/session";
 import { DEV_USER_PREFIX, isLocalDeploy, refreshMirror, type IdentityUser } from "../account/identity";
+import { syncStripeCustomerEmail } from "../account/stripe-client";
 
 export interface AuthRouteEnv extends SessionEnv {
   OIDC_ISSUER?: string;
@@ -36,6 +37,9 @@ export interface AuthRouteEnv extends SessionEnv {
   OIDC_REDIRECT_URI?: string;
   OIDC_POST_LOGOUT_REDIRECT_URI?: string;
   APP_ORIGIN?: string;
+  // Service binding to the identity worker's HTTP surface (default export of
+  // cubityfirst-auth): discovery, JWKS and the token exchange go through it.
+  IDENTITY_OIDC?: { fetch(input: string, init?: RequestInit): Promise<Response> };
 }
 
 export const STATE_COOKIE = "annex_oidc";
@@ -62,6 +66,8 @@ export function appOidcConfig(env: AuthRouteEnv): OidcClientConfig | null {
     redirectUri: env.OIDC_REDIRECT_URI || `${origin}/api/auth/callback`,
     postLogoutRedirectUri: env.OIDC_POST_LOGOUT_REDIRECT_URI || `${origin}/`,
     scope: APP_SCOPE,
+    binding: env.IDENTITY_OIDC,
+    allowPublicFallback: isLocalDeploy(env),
     fetchImpl: fetchOverride,
   };
 }
@@ -145,7 +151,7 @@ export async function handleAuthCallback(request: Request, env: AuthRouteEnv, ur
 // Shared by the app and admin callbacks: refuses accounts Annex has blocked
 // or processed as deleted, upserts the mirror, creates a pending session.
 export async function startSession(
-  env: SessionEnv,
+  env: SessionEnv & { STRIPE_SECRET_KEY?: string },
   request: Request,
   identity: { sub: string; email: string; emailVerified: boolean; name: string; roles: string[]; idToken: string },
   kind: "app" | "admin",
@@ -153,7 +159,7 @@ export async function startSession(
   const [gone, blocked, existing] = await env.DB.batch([
     env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(identity.sub),
     env.DB.prepare("SELECT 1 AS x FROM user_deletions WHERE user_id = ?").bind(identity.sub),
-    env.DB.prepare("SELECT created_at FROM users WHERE id = ?").bind(identity.sub),
+    env.DB.prepare("SELECT created_at, email FROM users WHERE id = ?").bind(identity.sub),
   ]);
   if (gone.results.length > 0) return { error: "account_deleted" };
   if (blocked.results.length > 0) return { error: "account_disabled" };
@@ -173,6 +179,10 @@ export async function startSession(
     createdAt: (existing.results[0] as { created_at?: string } | undefined)?.created_at ?? new Date(now).toISOString(),
   };
   await refreshMirror(env.DB, user, now, { login: true });
+  // The email is changed on the identity service now; keep the Stripe
+  // customer's receipt address in step when a sign-in brings a new one.
+  const previousEmail = (existing.results[0] as { email?: string } | undefined)?.email;
+  if (previousEmail && previousEmail !== user.email) await syncStripeCustomerEmail(env, user.id, user.email);
   const { handoffCode } = await createPendingSession(env.DB, { userId: user.id, kind, request, idToken: identity.idToken, nowMs: now });
   return { handoffCode };
 }

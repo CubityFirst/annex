@@ -17,8 +17,43 @@ export interface OidcClientConfig {
   redirectUri: string;
   postLogoutRedirectUri: string;
   scope: string;
-  // Test hook: replaces fetch for discovery, token and JWKS requests.
+  // Service binding to the identity worker (cubityfirst-auth, default
+  // export). Every server-side request whose host is the issuer's host
+  // (discovery, JWKS, token) goes through it: Annex's workers share the
+  // cubityfir.st zone with auth.cubityfir.st, and a Worker's fetch() to
+  // another Worker's hostname on the same zone skips that Worker and hits
+  // the origin (a placeholder record), so a public fetch would fail in
+  // production. Only the browser redirects (authorize, logout) use the
+  // public URL.
+  binding?: { fetch(input: string, init?: RequestInit): Promise<Response> };
+  // Local dev only: when the binding has no running target (no local
+  // `wrangler dev` of the identity worker), fall back to a direct fetch of
+  // the issuer URL.
+  allowPublicFallback?: boolean;
+  // Test hook: replaces the direct fetch (non-binding requests).
   fetchImpl?: typeof fetch;
+}
+
+// Routes requests for the issuer's host through the service binding.
+export function identityFetch(cfg: Pick<OidcClientConfig, "issuer" | "binding" | "allowPublicFallback" | "fetchImpl">): (url: string, init?: RequestInit) => Promise<Response> {
+  const direct = cfg.fetchImpl ?? ((u: string, i?: RequestInit) => fetch(u, i));
+  const binding = cfg.binding;
+  if (!binding) return direct;
+  const issuerHost = new URL(cfg.issuer).host;
+  return async (url, init) => {
+    if (new URL(url).host !== issuerHost) return direct(url, init);
+    if (!cfg.allowPublicFallback) return binding.fetch(url, init);
+    // A request body can only be read once; keep a copy for the retry.
+    const body = typeof init?.body === "string" || init?.body instanceof URLSearchParams ? init.body : undefined;
+    try {
+      const res = await binding.fetch(url, init);
+      // wrangler dev answers a binding with no local target with a 503.
+      if (res.status !== 503) return res;
+    } catch {
+      // fall through to the direct fetch
+    }
+    return direct(url, { ...init, body });
+  };
 }
 
 export interface VerifiedIdentity {
@@ -53,8 +88,8 @@ function httpOptions(cfg: OidcClientConfig): oauth.HttpRequestOptions<"GET" | "P
   const opts: oauth.HttpRequestOptions<"GET" | "POST", unknown> = { signal: () => AbortSignal.timeout(10_000) };
   // Local dev points at `wrangler dev` of the identity worker over http.
   if (new URL(cfg.issuer).protocol === "http:") opts[oauth.allowInsecureRequests] = true;
-  if (cfg.fetchImpl) {
-    const f = cfg.fetchImpl;
+  if (cfg.binding || cfg.fetchImpl) {
+    const f = identityFetch(cfg);
     opts[oauth.customFetch] = (url, init) => f(url, init as RequestInit);
   }
   return opts;

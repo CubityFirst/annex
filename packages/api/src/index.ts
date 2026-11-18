@@ -19,25 +19,29 @@ import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
 import { handleTrash } from "./routes/trash";
-import { cleanupDeletedAccount } from "./lib/projectDelete";
 import { handleUserByHandle } from "./routes/userHandles";
 import { pruneDocRevisions } from "./lib/docOps";
 import { purgeExpiredTrash } from "./lib/trash";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
-import { resolvePersonalPlan } from "./account/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
 import { resolveAccess } from "./lib/access";
 import type { IdentityService } from "./account/identity";
 import { sweepSessions } from "./account/session";
 import { handleAuthCallback, handleAuthExchange, handleAuthLogin, handleAuthLogout, handleDevQuickLogin } from "./routes/auth";
+import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
+import { handleStripeWebhook } from "./routes/stripeWebhook";
+import { handleGetMe, handlePatchMe, handleUserProfile } from "./routes/me/me";
+import { handleUpdateInkPrefs } from "./routes/me/update-ink-prefs";
+import { handleUpdateReadingFont } from "./routes/me/update-reading-font";
+import { handleUpdateTheme } from "./routes/me/update-theme";
+import { handleUpdateBio } from "./routes/me/update-bio";
+import { handleUpdateHandle } from "./routes/me/update-handle";
 
 export { DocCollabRoom };
 
 export interface Env {
   DB: D1Database;
-  AUTH_DB: D1Database; // Read-only: users + sessions, used for inline JWT verify
   ASSETS: R2Bucket;
-  AUTH: Fetcher; // Service binding to cubedocs-auth (mutating routes only)
   DOC_COLLAB?: DurableObjectNamespace;
   // Annex-only HS256 secret for Annex's own session JWTs (no longer shared
   // with the identity service).
@@ -46,6 +50,10 @@ export interface Env {
   // deletions. Optional so unit tests and a local stack without the identity
   // worker fall back to the users mirror.
   IDENTITY?: IdentityService;
+  // The identity worker's HTTP surface (cubityfirst-auth default export) for
+  // server-side OIDC requests. Required in production: a fetch() to
+  // auth.cubityfir.st from a Worker on the same zone never reaches it.
+  IDENTITY_OIDC?: Fetcher;
   // OIDC client settings (see routes/auth.ts). OIDC_CLIENT_SECRET is a secret;
   // the rest are vars. Redirect URIs default to APP_ORIGIN/api/auth/callback
   // and APP_ORIGIN/.
@@ -57,6 +65,11 @@ export interface Env {
   APP_ORIGIN?: string;
   // "true" (with a localhost APP_ORIGIN) enables POST /dev/quick-login.
   DEV_QUICK_LOGIN?: string;
+  // Annex Ink billing (routes/billing.ts, routes/stripeWebhook.ts). The keys
+  // are secrets; STRIPE_INK_PRICE_ID is a var.
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_INK_PRICE_ID?: string;
   OPENAI_API_KEY?: string;
   // Cloudflare-for-SaaS custom domains (see routes/customDomains.ts). Optional:
   // when unset, the custom-domain endpoints report "not configured" instead of
@@ -141,378 +154,58 @@ export default {
       if (url.pathname === "/auth/logout" && request.method === "POST") return addCorsHeaders(await handleAuthLogout(request, env));
       if (url.pathname === "/dev/quick-login" && request.method === "POST") return addCorsHeaders(await handleDevQuickLogin(request, env));
 
-      // Proxy auth routes to the auth worker
-      if (
-        url.pathname === "/register" ||
-        url.pathname === "/login" ||
-        url.pathname === "/force-change-password" ||
-        url.pathname === "/verify-email/resend" ||
-        url.pathname === "/admin/handoff/start" ||
-        url.pathname === "/oauth/authorize"
-      ) {
-        return env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request));
+      // Stripe webhook - public, signature-verified (routes/stripeWebhook.ts).
+      // The frontend worker forwards docs.cubityfir.st/stripe/webhook here
+      // verbatim; the raw body must reach the handler untouched.
+      if (url.pathname === "/stripe/webhook" && request.method === "POST") {
+        return await handleStripeWebhook(request, env);
       }
 
-      // /verify-email - public like the passthrough list above, but the
-      // response is inspected: a change-confirm token applies a new email
-      // inside the auth worker, and the denormalized member-row snapshots in
-      // THIS worker's DB must be synced at that exact apply event.
-      if (url.pathname === "/verify-email") {
-        const authRes = await env.AUTH.fetch("https://auth/verify-email", await proxyAuthInit(request));
-        const json = await authRes.clone().json<{ ok?: boolean; data?: { emailChanged?: boolean; userId?: string; email?: string } }>().catch(() => null);
-        if (json?.ok && json.data?.emailChanged && json.data.userId && json.data.email) {
-          await syncMemberEmails(env, json.data.userId, json.data.email);
-        }
-        return addCorsHeaders(authRes);
-      }
-
-      // TOTP management routes - authenticated, proxied to auth worker with userId injected
-      if (url.pathname.startsWith("/me/totp")) {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const totpPath = url.pathname.replace("/me/totp", "/totp");
-        const body = request.method !== "GET" ? await request.json<Record<string, unknown>>() : {};
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch(`https://auth${totpPath}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(authRes);
-      }
-
-      // WebAuthn management routes - authenticated, proxied to auth worker with userId injected
-      if (url.pathname.startsWith("/me/webauthn")) {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const webauthnPath = url.pathname.replace("/me/webauthn", "/webauthn");
-        const body = await request.json<Record<string, unknown>>();
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch(`https://auth${webauthnPath}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify({ ...body, userId: session.userId }),
-        });
-        return addCorsHeaders(authRes);
-      }
-
-      // WebAuthn login ceremony - unauthenticated, forwarded directly
-      if (url.pathname.startsWith("/webauthn/auth")) {
-        return addCorsHeaders(
-          await env.AUTH.fetch(`https://auth${url.pathname}`, await proxyAuthInit(request)),
-        );
-      }
-
-      // /me/sessions/* - authenticated, proxied to auth worker.
-      // GET   /me/sessions          → list user's active sessions
-      // POST  /me/sessions/revoke   → revoke a specific session by id
-      // POST  /me/sessions/revoke-others → revoke all but the current
-      // POST  /me/sessions/logout   → revoke the current session (proper logout)
-      if (url.pathname === "/me/sessions" && request.method === "GET") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/sessions/list", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
-      }
-      if (url.pathname === "/me/sessions/revoke" && request.method === "POST") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<Record<string, unknown>>();
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/sessions/revoke", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(authRes);
-      }
-      if (url.pathname === "/me/sessions/revoke-others" && request.method === "POST") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/sessions/revoke-others", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
-      }
-      if (url.pathname === "/me/sessions/logout" && request.method === "POST") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/sessions/logout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
-      }
-
-      // /billing/* - authenticated, proxied to auth worker (Stripe Checkout
-      // and Customer Portal session creation). Public Stripe webhook is
-      // hit directly on the auth worker, not through here.
+      // /billing/* - Stripe Checkout and Customer Portal sessions.
       if (url.pathname === "/billing/checkout" && request.method === "POST") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/billing/checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
+        return addCorsHeaders(await handleBillingCheckout(env, session));
       }
       if (url.pathname === "/billing/portal" && request.method === "POST") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/billing/portal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
+        return addCorsHeaders(await handleBillingPortal(env, session));
       }
 
-      // PATCH /me/password - change password
-      if (url.pathname === "/me/password" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<Record<string, unknown>>();
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/change-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(authRes);
-      }
-
-      // PATCH /me/email - change account email (password + MFA gated in the
-      // auth worker). When the change applies immediately (verification flag
-      // off), sync the denormalized member-row snapshots in this worker's DB.
-      if (url.pathname === "/me/email" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<Record<string, unknown>>();
-        const authHeader = request.headers.get("Authorization");
-        // /change-email is IP-rate-limited in the auth worker; the service
-        // binding drops CF-Connecting-IP, so re-forward the edge-observed IP
-        // as X-Client-IP or every user shares one "unknown" bucket.
-        const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
-        const authRes = await env.AUTH.fetch("https://auth/change-email", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authHeader ? { Authorization: authHeader } : {}),
-            ...(ip ? { "X-Client-IP": ip } : {}),
-          },
-          body: JSON.stringify(body),
-        });
-        const json = await authRes.clone().json<{ ok?: boolean; data?: { applied?: boolean; email?: string } }>().catch(() => null);
-        if (json?.ok && json.data?.applied && json.data.email) {
-          await syncMemberEmails(env, session.userId, json.data.email);
-        }
-        return addCorsHeaders(authRes);
-      }
-
-      // POST /me/email/resend | /me/email/cancel - manage a pending
-      // confirm-first email change.
-      if ((url.pathname === "/me/email/resend" || url.pathname === "/me/email/cancel") && request.method === "POST") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const authPath = url.pathname === "/me/email/resend" ? "/change-email/resend" : "/change-email/cancel";
-        // Resend is IP-rate-limited in the auth worker - forward the client IP
-        // (see the /me/email comment above).
-        const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
-        const authRes = await env.AUTH.fetch(`https://auth${authPath}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authHeader ? { Authorization: authHeader } : {}),
-            ...(ip ? { "X-Client-IP": ip } : {}),
-          },
-          body: "{}",
-        });
-        return addCorsHeaders(authRes);
-      }
-
-      // GET /me - returns authenticated user's name and email
+      // GET /me - the signed-in user: identity facts from the users mirror,
+      // Annex prefs/plan from the session (routes/me/me.ts).
       if (url.pathname === "/me" && request.method === "GET") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const authHeader = request.headers.get("Authorization");
-        const [lookupRes, customThemingEnabled] = await Promise.all([
-          env.AUTH.fetch("https://auth/lookup-by-id", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-            body: JSON.stringify({ userId: session.userId }),
-          }),
-          env.FLAGS
-            ? env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
-            : Promise.resolve(true),
-        ]);
-        if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean } }>();
-        if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        return addCorsHeaders(Response.json({
-          ok: true,
-          data: {
-            name: data.data.name,
-            email: data.data.email,
-            emailVerified: data.data.emailVerified,
-            emailVerificationEnabled: data.data.emailVerificationEnabled,
-            pendingEmail: data.data.pendingEmail ?? null,
-            userId: session.userId,
-            timezone: data.data.timezone,
-            bio: data.data.bio,
-            handle: data.data.handle ?? null,
-            handleLocked: data.data.handleLocked ?? false,
-            personalPlan: session.personalPlan ?? "free",
-            personalPlanSince: session.personalPlanSince ?? null,
-            personalPlanStatus: session.personalPlanStatus ?? null,
-            personalPlanCancelAt: session.personalPlanCancelAt ?? null,
-            personalPlanStyle: session.personalPlanStyle ?? null,
-            personalPresenceColor: session.personalPresenceColor ?? null,
-            personalCritSparkles: session.personalCritSparkles ?? true,
-            readingFont: session.readingFont ?? null,
-            editingFont: session.editingFont ?? null,
-            uiFont: session.uiFont ?? null,
-            isAdmin: session.isAdmin ?? false,
-            themeMode: session.themeMode ?? null,
-            themeCustomColor: session.themeCustomColor ?? null,
-            customThemingEnabled,
-          },
-        }));
+        return addCorsHeaders(await handleGetMe(env, session));
       }
 
-      // PATCH /me - update authenticated user's name and/or timezone
+      // PATCH /me - timezone. The name is managed on auth.cubityfir.st.
       if (url.pathname === "/me" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const body = await request.json<{ name?: string; timezone?: string | null }>();
-        const authHeader = request.headers.get("Authorization");
-        const responseData: { name?: string; timezone?: string | null } = {};
+        return addCorsHeaders(await handlePatchMe(request, env, session));
+      }
 
-        if (body.name !== undefined) {
-          if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
-          const updateRes = await env.AUTH.fetch("https://auth/update-name", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-            body: JSON.stringify({ name: body.name.trim() }),
-          });
-          if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-          const trimmedName = body.name.trim();
-          // Keep the denormalized site- and org-membership name snapshots in
-          // sync; the <> guard skips rows that already match.
-          await env.DB.batch([
-            env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ? AND name <> ?")
-              .bind(trimmedName, session.userId, trimmedName),
-            env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ? AND name <> ?")
-              .bind(trimmedName, session.userId, trimmedName),
-          ]);
-          responseData.name = trimmedName;
+      // Annex preferences (routes/me/*). Each handler authenticates itself.
+      if (request.method === "PATCH") {
+        if (url.pathname === "/me/ink-prefs") return addCorsHeaders(await handleUpdateInkPrefs(request, env));
+        if (url.pathname === "/me/reading-font") return addCorsHeaders(await handleUpdateReadingFont(request, env));
+        if (url.pathname === "/me/bio") return addCorsHeaders(await handleUpdateBio(request, env));
+        if (url.pathname === "/me/handle") return addCorsHeaders(await handleUpdateHandle(request, env));
+        // Site theme: admins always; other users need the custom-theming flag.
+        if (url.pathname === "/me/theme") {
+          const session = await getSession(request, env);
+          if (session instanceof Response) return session;
+          if (!session.isAdmin) {
+            const flagEnabled = env.FLAGS
+              ? await env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
+              : true;
+            if (!flagEnabled) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
+          }
+          return addCorsHeaders(await handleUpdateTheme(request, env));
         }
-
-        if ("timezone" in body) {
-          const updateRes = await env.AUTH.fetch("https://auth/update-timezone", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-            body: JSON.stringify({ timezone: body.timezone ?? null }),
-          });
-          if (!updateRes.ok) return addCorsHeaders(updateRes.status === 400 ? errorResponse(Errors.BAD_REQUEST) : errorResponse(Errors.INTERNAL));
-          responseData.timezone = body.timezone ?? null;
-        }
-
-        if (!responseData.name && !("timezone" in body)) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
-        return addCorsHeaders(Response.json({ ok: true, data: responseData }));
-      }
-
-      // PATCH /me/ink-prefs - update Ink supporter cosmetic prefs (ring style + presence colour)
-      if (url.pathname === "/me/ink-prefs" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<unknown>();
-        const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-ink-prefs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(updateRes);
-      }
-
-      // PATCH /me/reading-font - update user's reading/editing prose-font choices
-      if (url.pathname === "/me/reading-font" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<unknown>();
-        const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-reading-font", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(updateRes);
-      }
-
-      // PATCH /me/theme - set site theme (dark/light/custom). Admins always
-      // have access; other users require the custom-theming Flagship flag.
-      if (url.pathname === "/me/theme" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        if (!session.isAdmin) {
-          const flagEnabled = env.FLAGS
-            ? await env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
-            : true;
-          if (!flagEnabled) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
-        }
-        const body = await request.json<unknown>();
-        const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-theme", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(updateRes);
-      }
-
-      // PATCH /me/bio - Ink-only supporter bio. Proxied so the auth worker
-      // can plan-gate against the live row (avoids JWT-staleness writes).
-      if (url.pathname === "/me/bio" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<unknown>();
-        const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-bio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(updateRes);
-      }
-
-      // PATCH /me/handle - set or clear the opt-in public profile handle (the
-      // /@<handle> link). The auth worker validates + enforces uniqueness
-      // (409 when taken).
-      if (url.pathname === "/me/handle" && request.method === "PATCH") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        const body = await request.json<unknown>();
-        const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-handle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        return addCorsHeaders(updateRes);
       }
 
       // GET /me/favourite-sites/search?q= - find published sites by name for
@@ -685,47 +378,6 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
-      // DELETE /me - delete the authenticated user's account
-      if (url.pathname === "/me" && request.method === "DELETE") {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-
-        const ownedCount = await env.DB.prepare(
-          "SELECT COUNT(*) as count FROM projects WHERE owner_id = ?",
-        ).bind(session.userId).first<{ count: number }>();
-        if (ownedCount && ownedCount.count > 0) {
-          return addCorsHeaders(Response.json({ ok: false, error: "owns_projects" }, { status: 400 }));
-        }
-
-        // Same guard for organizations: an owned org has no transfer path and
-        // its owner row can't be removed/re-roled, so deleting the account would
-        // orphan it. Force the user to delete/hand off owned orgs first.
-        const ownedOrgCount = await env.DB.prepare(
-          "SELECT COUNT(*) as count FROM organizations WHERE owner_id = ?",
-        ).bind(session.userId).first<{ count: number }>();
-        if (ownedOrgCount && ownedOrgCount.count > 0) {
-          return addCorsHeaders(Response.json({ ok: false, error: "owns_organizations" }, { status: 400 }));
-        }
-
-        const body = await request.json<Record<string, unknown>>();
-        const authHeader = request.headers.get("Authorization");
-        const authRes = await env.AUTH.fetch("https://auth/delete-account", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
-        });
-        const authJson = await authRes.json<{ ok: boolean; error?: string }>();
-        if (!authJson.ok) return addCorsHeaders(Response.json(authJson, { status: authRes.status }));
-
-        // The account is gone: delete any owned site in full (same cleanup as
-        // DELETE /projects/:id - R2, revisions, FTS, custom domain), then the
-        // remaining memberships and the avatar. Best-effort per step (see
-        // lib/projectDelete.ts) - there is nothing left to roll back to.
-        await cleanupDeletedAccount(env, session.userId);
-
-        return addCorsHeaders(Response.json({ ok: true }));
-      }
-
       // GET /users/by-handle/:handle - authenticated, resolves a /@<handle>
       // profile link to a user id (routes/userHandles.ts).
       const userHandleMatch = url.pathname.match(/^\/users\/by-handle\/([^/]+)$/);
@@ -749,84 +401,7 @@ export default {
       if (userProfileMatch && request.method === "GET") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const targetUserId = userProfileMatch[1];
-
-        const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: targetUserId }),
-        });
-        if (!lookupRes.ok) {
-          return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
-        }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null; handle?: string | null } }>();
-        if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
-
-        const sharedRows = await env.DB.prepare(
-          `SELECT p.id, p.name, target.role as their_role
-           FROM projects p
-           JOIN project_members caller ON caller.project_id = p.id AND caller.user_id = ? AND caller.accepted = 1
-           JOIN project_members target ON target.project_id = p.id AND target.user_id = ? AND target.accepted = 1
-           ORDER BY p.name ASC`,
-        ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
-
-        const favouriteRows = await env.DB.prepare(
-          `SELECT p.id, p.name, p.vanity_slug, p.logo_square_updated_at, p.logo_wide_updated_at, ufp.note
-           FROM user_favourite_projects ufp
-           JOIN projects p ON p.id = ufp.project_id
-           WHERE ufp.user_id = ? AND p.published_at IS NOT NULL
-           ORDER BY ufp.created_at DESC`,
-        ).bind(targetUserId).all<{ id: string; name: string; vanity_slug: string | null; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; note: string | null }>();
-
-        const planRow = await env.AUTH_DB.prepare(
-          `SELECT p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
-                  b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
-                  b.personal_plan_cancel_at,
-                  b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
-           FROM users u
-           LEFT JOIN user_billing b ON b.user_id = u.id
-           LEFT JOIN user_preferences p ON p.user_id = u.id
-           WHERE u.id = ?`,
-        ).bind(targetUserId).first<{
-          personal_plan: string | null;
-          personal_plan_status: string | null;
-          personal_plan_started_at: number | null;
-          personal_plan_cancel_at: number | null;
-          personal_plan_style: string | null;
-          personal_presence_color: string | null;
-          personal_crit_sparkles: number | null;
-          granted_plan: string | null;
-          granted_plan_expires_at: number | null;
-          granted_plan_started_at: number | null;
-        }>();
-        const resolvedPlan = planRow ? resolvePersonalPlan(planRow) : { plan: "free" as const, since: null, style: null, presenceColor: null };
-
-        const profileData: Record<string, unknown> = {
-          userId: lookupData.data.userId,
-          name: lookupData.data.name,
-          createdAt: lookupData.data.createdAt,
-          sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
-          favouriteSites: favouriteRows.results.map(r => ({
-            id: r.id,
-            name: r.name,
-            vanitySlug: r.vanity_slug,
-            logoSquareUpdatedAt: r.logo_square_updated_at,
-            logoWideUpdatedAt: r.logo_wide_updated_at,
-            note: r.note,
-          })),
-          personalPlan: resolvedPlan.plan,
-          personalPlanSince: resolvedPlan.since,
-          personalPlanStyle: resolvedPlan.style,
-          badges: lookupData.data.badges ?? 0,
-        };
-        if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
-        if (lookupData.data.handle) profileData.handle = lookupData.data.handle;
-        // Bio is supporter-gated on display: only render if the target user
-        // currently holds Ink. The column persists across cancel/resub cycles
-        // so a user gets their bio back if they re-subscribe.
-        if (resolvedPlan.plan === "ink" && lookupData.data.bio) profileData.bio = lookupData.data.bio;
-
-        return addCorsHeaders(Response.json({ ok: true, data: profileData }));
+        return addCorsHeaders(await handleUserProfile(env, session, decodeURIComponent(userProfileMatch[1])));
       }
 
       // Pending invites
@@ -946,8 +521,8 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
   if (!collabEnabled) return new Response("Realtime collaboration is temporarily disabled", { status: 503 });
 
   // Token arrives as a query param (browsers can't set headers on WS).
-  // Re-wrap it as a Bearer header so authenticate() / the AUTH service binding handles it
-  // the same way every other route does - works in local dev without JWT_SECRET.
+  // Re-wrap it as a Bearer header so authenticate() handles it the same way
+  // every other route does.
   const token = url.searchParams.get("token");
   if (!token) return new Response("Unauthorized", { status: 401 });
   const authReq = new Request("https://placeholder/", {
@@ -991,58 +566,6 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
   else headers.delete("X-Session-Id");
   const upstream = new Request(request.url, { method: request.method, headers });
   return stub.fetch(upstream);
-}
-
-// Builds the fetch init for re-dispatching an incoming request over the AUTH
-// service binding.
-//
-// X-Client-IP: service-binding hops drop CF-Connecting-IP, so the edge-observed
-// client IP travels as X-Client-IP - the frontend worker's /api proxy sets it,
-// and we re-forward it here for the auth worker's login/register rate limiters
-// and session-row IP capture. CF-Connecting-IP always wins when present (it's
-// set by the Cloudflare edge and unspoofable), so a client-supplied X-Client-IP
-// on a directly-routed request is never trusted.
-//
-// Shape: `fetch(url, init)` with a buffered body, NOT a forwarded Request
-// object - wrangler's cross-process dev registry 503s when handed the original
-// streamed request. These auth payloads are small JSON, so buffering is free.
-// Keep the denormalized member-row email snapshots in this worker's DB in sync
-// when the account email changes in the auth worker (same precedent as the
-// name sync in PATCH /me). Pending invites are keyed by user_id, so they keep
-// working either way - this only refreshes the displayed/stored address.
-// Best-effort: by the time this runs the change has already applied in the
-// auth DB, so a snapshot-sync failure must not turn the response into an
-// error (on /verify-email that would read as "invalid link" after a
-// successful change).
-async function syncMemberEmails(env: Env, userId: string, email: string): Promise<void> {
-  try {
-    await env.DB.batch([
-      env.DB.prepare("UPDATE project_members SET email = ? WHERE user_id = ? AND email <> ?")
-        .bind(email, userId, email),
-      env.DB.prepare("UPDATE organization_members SET email = ? WHERE user_id = ? AND email <> ?")
-        .bind(email, userId, email),
-    ]);
-  } catch (err) {
-    console.error("syncMemberEmails failed", { userId, err });
-  }
-}
-
-async function proxyAuthInit(request: Request): Promise<RequestInit> {
-  const headers = new Headers(request.headers);
-  // Hop-by-hop headers must not survive re-dispatch. Host must match the
-  // binding URL, Content-Length is re-derived from the buffered body, and a
-  // forwarded `Expect: 100-continue` makes wrangler's cross-process dev tunnel
-  // return the interim 100 as the final response when the handler outlasts the
-  // continue window (e.g. PBKDF2 on register/login).
-  headers.delete("Host");
-  headers.delete("Content-Length");
-  headers.delete("Expect");
-  const ip = request.headers.get("CF-Connecting-IP") ?? request.headers.get("X-Client-IP");
-  if (ip) headers.set("X-Client-IP", ip);
-  else headers.delete("X-Client-IP");
-  const body =
-    request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-  return { method: request.method, headers, body };
 }
 
 async function getSession(request: Request, env: Env): Promise<Session | Response> {

@@ -7,8 +7,7 @@
 //      shows a banner but the perks stay on)
 //   3. free
 //
-// Keep this a pure function so the api worker can import it via the
-// same cross-package path it already uses for loadCurrentSession.
+// Keep this a pure function: the admin worker imports it cross-package.
 
 export type PersonalPlan = "free" | "ink";
 

@@ -31,8 +31,8 @@ export async function handleUserReport(
   const note = typeof body.note === "string" ? body.note.trim() : "";
   if (!note || note.length > MAX_REPORT_NOTE_LENGTH) return errorResponse(Errors.BAD_REQUEST);
 
-  // Target must be a real account (AUTH_DB is read-only by convention).
-  const target = await env.AUTH_DB.prepare("SELECT id FROM users WHERE id = ?")
+  // Target must be a real account (one Annex knows: the users mirror).
+  const target = await env.DB.prepare("SELECT id FROM users WHERE id = ?")
     .bind(targetUserId).first<{ id: string }>();
   if (!target) return errorResponse(Errors.NOT_FOUND);
 

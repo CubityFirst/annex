@@ -129,16 +129,20 @@ interface StubRow {
   revoked_at: string | null;
 }
 
-type OwnerRow = { moderation: number; force_password_change: number };
+// The owner's users-mirror row (+ whether an admin deletion blocks them).
+type OwnerRow = { status: string; suspended_until: number | null; blocked: number };
+const ACTIVE: OwnerRow = { status: "active", suspended_until: null, blocked: 0 };
 
-function makeEnv(row: StubRow | null, owner: OwnerRow | null = { moderation: 0, force_password_change: 0 }) {
+function makeEnv(row: StubRow | null, owner: OwnerRow | null = ACTIVE) {
   const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
   const first = vi.fn().mockResolvedValue(row);
   const bind = vi.fn().mockReturnValue({ first, run });
-  const prepare = vi.fn().mockReturnValue({ bind });
-  const ownerFirst = vi.fn().mockResolvedValue(owner);
-  const authPrepare = vi.fn().mockReturnValue({ bind: vi.fn().mockReturnValue({ first: ownerFirst }) });
-  return { env: { DB: { prepare }, AUTH_DB: { prepare: authPrepare } } as unknown as Env, prepare, bind, first, run };
+  const ownerFirst = vi.fn().mockResolvedValue(
+    owner && { id: "user-1", email: "o@example.com", name: "O", email_verified: 1, is_admin: 0, created_at: "2025", ...owner },
+  );
+  const ownerBind = vi.fn().mockReturnValue({ first: ownerFirst });
+  const prepare = vi.fn((sql: string) => (/FROM users u/.test(sql) ? { bind: ownerBind } : { bind }));
+  return { env: { DB: { prepare } } as unknown as Env, prepare, bind, first, run };
 }
 
 function validRow(over: Partial<StubRow> = {}): StubRow {
@@ -177,13 +181,13 @@ describe("authenticateApiKey", () => {
     expect(await authenticateApiKey("annx_expired", env)).toBeNull();
   });
 
-  it("returns null when the owner's account is gone, disabled, suspended, or force-reset", async () => {
+  it("returns null when the owner's account is gone, disabled, suspended, or blocked by a pending deletion", async () => {
     const future = Math.floor(Date.now() / 1000) + 3600;
     for (const owner of [
       null,
-      { moderation: -1, force_password_change: 0 },
-      { moderation: future, force_password_change: 0 },
-      { moderation: 0, force_password_change: 1 },
+      { ...ACTIVE, status: "disabled" },
+      { ...ACTIVE, status: "suspended", suspended_until: future },
+      { ...ACTIVE, blocked: 1 },
     ]) {
       const { env } = makeEnv(validRow(), owner);
       expect(await authenticateApiKey("annx_owner_blocked", env)).toBeNull();
@@ -191,7 +195,7 @@ describe("authenticateApiKey", () => {
   });
 
   it("accepts a key whose owner's suspension has elapsed", async () => {
-    const { env } = makeEnv(validRow(), { moderation: Math.floor(Date.now() / 1000) - 10, force_password_change: 0 });
+    const { env } = makeEnv(validRow(), { ...ACTIVE, status: "suspended", suspended_until: Math.floor(Date.now() / 1000) - 10 });
     expect(await authenticateApiKey("annx_valid", env)).not.toBeNull();
   });
 

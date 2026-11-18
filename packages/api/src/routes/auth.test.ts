@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { createFakeIdp, type FakeIdp, type FakeUser } from "../test/fakeIdp";
 import { setOidcFetchForTests, STATE_COOKIE } from "./auth";
-import { clearOidcCaches } from "../account/oidc";
+import { clearOidcCaches, identityFetch } from "../account/oidc";
 import { clearIdentityCache, type IdentityService, type IdentityUser } from "../account/identity";
 import worker, { type Env } from "../index";
 
@@ -246,6 +246,54 @@ describe("GET /auth/callback", () => {
     for (const bad of ["https://evil.test/", "//evil.test", "/\\evil.test", "javascript:alert(1)"]) {
       const res = await signIn(ALICE, bad);
       expect(fragment(res).get("return_to")).toBe("/");
+    }
+  });
+});
+
+describe("server-side OIDC requests over the IDENTITY_OIDC service binding", () => {
+  it("does discovery, JWKS and the token exchange through the binding, never a direct fetch", async () => {
+    const direct = vi.fn(async () => { throw new Error("same-zone fetch would hit the origin"); });
+    setOidcFetchForTests(direct as unknown as typeof fetch);
+    const viaBinding = vi.fn((url: string, init?: RequestInit) => idp.fetch(url, init));
+    extraEnv = { IDENTITY_OIDC: { fetch: viaBinding } as unknown as Fetcher };
+
+    const token = await signInToken();
+    expect(token.split(".")).toHaveLength(3);
+    expect(direct).not.toHaveBeenCalled();
+    const paths = viaBinding.mock.calls.map(([u]) => new URL(u).pathname);
+    expect(paths).toEqual(expect.arrayContaining(["/.well-known/openid-configuration", "/oauth/token", "/oauth/jwks"]));
+    // The browser still goes to the public authorize URL.
+    const login = await call("GET", "/auth/login");
+    expect(login.headers.get("Location")!.startsWith(`${idp.issuer}/oauth/authorize?`)).toBe(true);
+  });
+});
+
+describe("identityFetch", () => {
+  const ISSUER = "https://auth.example";
+  it("routes only the issuer's host through the binding", async () => {
+    const binding = { fetch: vi.fn(async () => new Response("b")) };
+    const direct = vi.fn(async () => new Response("d"));
+    const f = identityFetch({ issuer: ISSUER, binding, fetchImpl: direct as unknown as typeof fetch });
+    expect(await (await f(`${ISSUER}/oauth/token`, { method: "POST", body: "x" })).text()).toBe("b");
+    expect(await (await f("https://elsewhere.example/x")).text()).toBe("d");
+  });
+
+  it("never falls back to a direct fetch outside local dev", async () => {
+    const binding = { fetch: vi.fn(async () => new Response("down", { status: 503 })) };
+    const direct = vi.fn(async () => new Response("d"));
+    const f = identityFetch({ issuer: ISSUER, binding, fetchImpl: direct as unknown as typeof fetch });
+    expect((await f(`${ISSUER}/oauth/jwks`)).status).toBe(503);
+    expect(direct).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the public issuer in local dev when the binding has no target", async () => {
+    const direct = vi.fn(async (_u: string, init?: RequestInit) => new Response(String(init?.body ?? "")));
+    for (const binding of [
+      { fetch: vi.fn(async () => new Response("no local session", { status: 503 })) },
+      { fetch: vi.fn(async () => { throw new Error("binding unavailable"); }) },
+    ]) {
+      const f = identityFetch({ issuer: ISSUER, binding, allowPublicFallback: true, fetchImpl: direct as unknown as typeof fetch });
+      expect(await (await f(`${ISSUER}/oauth/token`, { method: "POST", body: "grant" })).text()).toBe("grant");
     }
   });
 });

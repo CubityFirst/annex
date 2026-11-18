@@ -407,3 +407,9 @@ export async function serveR2Object(
     headers: { ...baseHeaders, "Content-Length": String(size) },
   });
 }
+
+// True only for a SQLite/D1 UNIQUE-constraint violation (e.g. two users
+// racing to claim the same profile handle).
+export function isUniqueConstraintError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("UNIQUE constraint failed");
+}

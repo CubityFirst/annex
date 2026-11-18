@@ -1,3 +1,4 @@
+import { findUserByEmail } from "../account/identity";
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Session } from "../lib";
 import type { Env } from "../index";
 import { loadMemberPlans } from "./members";
@@ -34,18 +35,10 @@ export async function getOrgRole(db: D1Database, orgId: string, userId: string):
 
 // Mirror projects.ts: resolve the caller's display name from the auth worker,
 // falling back to their email so a row is always created with *some* name.
-async function callerDisplayName(env: Env, request: Request, user: Session): Promise<string> {
-  const authHeader = request.headers.get("Authorization");
-  const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-    body: JSON.stringify({ userId: user.userId }),
-  });
-  if (lookupRes.ok) {
-    const data = await lookupRes.json<{ ok: boolean; data?: { name: string } }>();
-    if (data.ok && data.data) return data.data.name;
-  }
-  return user.email;
+async function callerDisplayName(env: Env, user: Session): Promise<string> {
+  if (user.name) return user.name;
+  const row = await env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(user.userId).first<{ name: string }>();
+  return row?.name ?? user.email;
 }
 
 export async function handleOrganizations(
@@ -82,7 +75,7 @@ export async function handleOrganizations(
       if (!body.name || !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
       const name = body.name.trim();
 
-      const ownerName = await callerDisplayName(env, request, user);
+      const ownerName = await callerDisplayName(env, user);
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       // One batch so a failed member insert can't leave an ownerless org.
@@ -256,20 +249,13 @@ async function handleOrgMembers(
     const { success } = await env.RATE_LIMITER_INVITE_LOOKUP.limit({ key: user.userId });
     if (!success) return errorResponse(Errors.RATE_LIMITED);
 
-    const lookupRes = await env.AUTH.fetch("https://auth/lookup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: body.email }),
-    });
-    if (!lookupRes.ok) {
-      if (lookupRes.status === 404) {
-        return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
-      }
-      return errorResponse(Errors.INTERNAL);
+    // Look the person up on the identity service (they may never have used
+    // Annex yet); findUserByEmail mirrors them so the member row has a user.
+    const invitee = await findUserByEmail(env, String(body.email));
+    if (!invitee) {
+      return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
     }
-    const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; email: string; name: string } }>();
-    if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
-    const { userId: inviteeId, email: inviteeEmail, name: inviteeName } = lookupData.data;
+    const { id: inviteeId, email: inviteeEmail, name: inviteeName } = invitee;
 
     const existing = await env.DB.prepare("SELECT id FROM organization_members WHERE organization_id = ? AND user_id = ?")
       .bind(orgId, inviteeId).first();

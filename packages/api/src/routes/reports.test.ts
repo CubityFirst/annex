@@ -11,7 +11,7 @@ interface PreparedCall {
   binds: unknown[];
 }
 
-// Handler order: AUTH_DB target-user lookup (.first), then the DB insert
+// Handler order: users-mirror target lookup (.first), then the report insert
 // (.run). Each prepared statement records its SQL + binds.
 function makeEnv(opts: { targetExists?: boolean; limiterSuccess?: boolean; hasLimiter?: boolean } = {}) {
   const calls: PreparedCall[] = [];
@@ -35,8 +35,10 @@ function makeEnv(opts: { targetExists?: boolean; limiterSuccess?: boolean; hasLi
   }
   const limit = vi.fn().mockResolvedValue({ success: opts.limiterSuccess ?? true });
   const env = {
-    AUTH_DB: { prepare: vi.fn((sql: string) => makeStmt(sql, (opts.targetExists ?? true) ? { id: "user-target" } : null)) },
-    DB: { prepare: vi.fn((sql: string) => makeStmt(sql, null)) },
+    DB: {
+      prepare: vi.fn((sql: string) =>
+        makeStmt(sql, /FROM users/.test(sql) && (opts.targetExists ?? true) ? { id: "user-target" } : null)),
+    },
     ...(opts.hasLimiter === false ? {} : { RATE_LIMITER_REPORT: { limit } }),
   } as unknown as Env;
   return { env, calls, limit };

@@ -1,14 +1,12 @@
-// /me routes driven through the worker's fetch handler with a real signed JWT,
-// real SQLite for both the API and auth DBs, and an in-memory R2: the
-// favourites cap, DELETE /me's site cleanup and PATCH /me's name sync.
+// /me routes driven through the worker's fetch handler with a real signed
+// session JWT and real SQLite: the favourites cap, GET/PATCH /me from the
+// users mirror, and the profile card.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { fileURLToPath } from "node:url";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "./test/sqliteD1";
 import { seedSession } from "./test/session";
 import worker, { type Env } from "./index";
 
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../auth/migrations", import.meta.url));
 const JWT_SECRET = "test-secret";
 const T = "2026-10-01T00:00:00.000Z";
 
@@ -24,13 +22,11 @@ class FakeR2 {
 }
 
 let api: SqliteD1;
-let auth: SqliteD1;
 let r2: FakeR2;
-let authFetch: ReturnType<typeof vi.fn>;
 let token: string;
 
 function env(): Env {
-  return { DB: api.db, AUTH_DB: auth.db, ASSETS: r2, JWT_SECRET, AUTH: { fetch: authFetch } } as unknown as Env;
+  return { DB: api.db, ASSETS: r2, JWT_SECRET, OIDC_ISSUER: "https://auth.example" } as unknown as Env;
 }
 
 function call(method: string, path: string, body?: unknown) {
@@ -59,10 +55,7 @@ function addFavourite(projectId: string, createdAt = Date.now()) {
 
 beforeEach(async () => {
   api = createSqliteD1();
-  auth = createSqliteD1(AUTH_MIGRATIONS);
   r2 = new FakeR2();
-  authFetch = vi.fn(async () => Response.json({ ok: true }));
-  auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u1', 'u1@example.com', 'User One', 'x', datetime('now'))").run();
   token = await seedSession(api.sqlite, { userId: "u1", email: "u1@example.com", name: "User One", sid: "s1", secret: JWT_SECRET });
 });
 
@@ -94,70 +87,62 @@ describe("POST /me/favourite-sites/:id cap", () => {
   });
 });
 
-describe("DELETE /me", () => {
-  it("refuses while the caller owns a site, before touching the auth worker", async () => {
-    addSite("mine", true, "u1");
-    const res = await call("DELETE", "/me", { password: "pw" });
-    expect(res.status).toBe(400);
-    expect(authFetch).not.toHaveBeenCalled();
-  });
-
-  it("fully deletes a site that appeared after the ownership check (revisions, FTS, R2), plus memberships + avatar", async () => {
-    // Someone else's site the user is a member of: must survive.
-    addSite("other", true);
-    exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES ('m-other', 'other', 'u1', 'u1@example.com', 'User One', 'editor', 'owner-x', ?)", T);
-    exec("INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at) VALUES ('r-other', 'doc', 'd-other', 'other', 'u1', 'U', ?)", T);
-    r2.keys.add("other/d-other");
-
-    // The auth worker deletes the account; a site created in the race window
-    // between the owns_projects check and that call gets cleaned up after it.
-    authFetch.mockImplementation(async () => {
-      addSite("race", false, "u1");
-      exec("INSERT INTO docs (id, title, project_id, author_id, created_at, updated_at) VALUES ('d1', 'Doc', 'race', 'u1', ?, ?)", T, T);
-      exec("INSERT INTO files (id, name, mime_type, size, project_id, uploaded_by, created_at) VALUES ('f1', 'f', 'image/png', 1, 'race', 'u1', ?)", T);
-      exec("INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at) VALUES ('r1', 'doc', 'd1', 'race', 'u1', 'U', ?)", T);
-      exec("INSERT INTO docs_fts (title, body, pid, doc_id, project_id) VALUES ('Doc', 'b', hex('race'), 'd1', 'race')");
-      exec("INSERT INTO docs_fts_map (rid, doc_id) VALUES (last_insert_rowid(), 'd1')");
-      for (const k of ["race/d1", "race/d1/v/r1", "files/f1", "site-logos/race-square"]) r2.keys.add(k);
-      return Response.json({ ok: true });
-    });
-    for (const k of ["avatars/u1-dark", "avatars/u1-light"]) r2.keys.add(k);
-
-    const res = await call("DELETE", "/me", { password: "pw" });
+describe("GET /me", () => {
+  it("serves identity facts from the users mirror plus Annex prefs and account links", async () => {
+    exec("INSERT INTO user_preferences (user_id, timezone, handle, handle_locked) VALUES ('u1', 'Europe/London', 'one', 1)");
+    const res = await call("GET", "/me");
     expect(res.status).toBe(200);
-
-    expect(count("SELECT COUNT(*) AS n FROM projects WHERE id = 'race'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM asset_revisions WHERE project_id = 'race'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM docs_fts WHERE project_id = 'race'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM docs_fts_map WHERE doc_id = 'd1'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM project_members WHERE user_id = 'u1'")).toBe(0);
-    expect([...r2.keys].sort()).toEqual(["other/d-other"]);
-    expect(count("SELECT COUNT(*) AS n FROM asset_revisions WHERE project_id = 'other'")).toBe(1);
-  });
-
-  it("does no cleanup when the auth worker refuses (wrong password)", async () => {
-    addSite("other", true);
-    exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES ('m1', 'other', 'u1', 'e', 'n', 'editor', 'x', ?)", T);
-    r2.keys.add("avatars/u1-dark");
-    authFetch.mockResolvedValue(Response.json({ ok: false, error: "invalid_password" }, { status: 401 }));
-
-    const res = await call("DELETE", "/me", { password: "nope" });
-    expect(res.status).toBe(401);
-    expect(count("SELECT COUNT(*) AS n FROM project_members WHERE user_id = 'u1'")).toBe(1);
-    expect(r2.keys.has("avatars/u1-dark")).toBe(true);
+    expect(((await res.json()) as { data: unknown }).data).toMatchObject({
+      userId: "u1",
+      name: "User One",
+      email: "u1@example.com",
+      timezone: "Europe/London",
+      handle: "one",
+      handleLocked: true,
+      personalPlan: "free",
+      accountUrl: "https://auth.example/account",
+      securityUrl: "https://auth.example/account/security",
+    });
   });
 });
 
-describe("PATCH /me name sync", () => {
-  it("updates the denormalized name on site and org memberships", async () => {
-    addSite("s1", true);
-    exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES ('m1', 's1', 'u1', 'e', 'Old', 'editor', 'x', ?)", T);
-    exec("INSERT INTO organizations (id, name, owner_id, created_at) VALUES ('o1', 'Org', 'x', ?)", T);
-    exec("INSERT INTO organization_members (id, organization_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES ('om1', 'o1', 'u1', 'e', 'Old', 'viewer', 'x', ?, 1)", T);
+describe("PATCH /me", () => {
+  it("refuses a name change: the name is managed on the identity service", async () => {
+    const res = await call("PATCH", "/me", { name: "New Name" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "name_managed_by_identity", accountUrl: "https://auth.example/account" });
+    expect(api.sqlite.prepare("SELECT name FROM users WHERE id = 'u1'").get()).toEqual({ name: "User One" });
+  });
 
-    const res = await call("PATCH", "/me", { name: "  New Name " });
-    expect(res.status).toBe(200);
-    expect(api.sqlite.prepare("SELECT name FROM project_members WHERE id = 'm1'").get()).toEqual({ name: "New Name" });
-    expect(api.sqlite.prepare("SELECT name FROM organization_members WHERE id = 'om1'").get()).toEqual({ name: "New Name" });
+  it("sets and clears the timezone, rejecting unknown zones", async () => {
+    expect((await call("PATCH", "/me", { timezone: "Not/AZone" })).status).toBe(400);
+    expect((await call("PATCH", "/me", { timezone: "Asia/Tokyo" })).status).toBe(200);
+    expect(api.sqlite.prepare("SELECT timezone FROM user_preferences WHERE user_id = 'u1'").get()).toEqual({ timezone: "Asia/Tokyo" });
+    expect((await call("PATCH", "/me", { timezone: null })).status).toBe(200);
+    expect(api.sqlite.prepare("SELECT timezone FROM user_preferences WHERE user_id = 'u1'").get()).toEqual({ timezone: null });
+  });
+});
+
+describe("DELETE /me", () => {
+  it("is gone: accounts are deleted on the identity service", async () => {
+    expect((await call("DELETE", "/me")).status).toBe(404);
+    expect(count("SELECT COUNT(*) AS n FROM users WHERE id = 'u1'")).toBe(1);
+  });
+});
+
+describe("GET /users/:userId", () => {
+  it("builds the profile card from the mirror, shows the bio only while the user holds Ink, and 404s unknown users", async () => {
+    exec("INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at) VALUES ('u2', 'u2@example.com', 'Two', '2025-01-01', 0, 0)");
+    exec("INSERT INTO user_preferences (user_id, bio, badges, handle) VALUES ('u2', 'hello', 3, 'two')");
+    let data = ((await (await call("GET", "/users/u2")).json()) as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ userId: "u2", name: "Two", badges: 3, handle: "two", personalPlan: "free" });
+    expect(data.bio).toBeUndefined();
+    expect(data.email).toBeUndefined();
+
+    exec("INSERT INTO user_billing (user_id, granted_plan, granted_plan_started_at) VALUES ('u2', 'ink', 1)");
+    data = ((await (await call("GET", "/users/u2")).json()) as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ personalPlan: "ink", bio: "hello" });
+
+    expect((await call("GET", "/users/nobody")).status).toBe(404);
   });
 });

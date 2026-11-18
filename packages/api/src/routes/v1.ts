@@ -1,3 +1,4 @@
+import { findUserByEmail } from "../account/identity";
 import { okResponse, errorResponse, Errors, ROLE_RANK, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveAccess } from "../lib/access";
@@ -364,20 +365,13 @@ async function handleV1Members(request: Request, env: Env, auth: ApiKeyAuth, res
       if (!success) return errorResponse(Errors.RATE_LIMITED);
     }
 
-    const lookupRes = await env.AUTH.fetch("https://auth/lookup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: body.email }),
-    });
-    if (!lookupRes.ok) {
-      if (lookupRes.status === 404) {
-        return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
-      }
-      return errorResponse(Errors.INTERNAL);
+    // Look the person up on the identity service (they may never have used
+    // Annex yet); findUserByEmail mirrors them so the member row has a user.
+    const invitee = await findUserByEmail(env, String(body.email));
+    if (!invitee) {
+      return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
     }
-    const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; email: string; name: string } }>();
-    if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
-    const { userId: inviteeId, email: inviteeEmail, name: inviteeName } = lookupData.data;
+    const { id: inviteeId, email: inviteeEmail, name: inviteeName } = invitee;
 
     const existing = await env.DB.prepare("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(auth.projectId, inviteeId).first();

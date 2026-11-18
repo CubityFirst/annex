@@ -6,6 +6,12 @@ vi.mock("./members", () => ({ loadMemberPlans: vi.fn() }));
 
 import { loadMemberPlans } from "./members";
 
+// Invite-by-email lookups go to the identity service (account/identity.ts);
+// the tests drive its result directly.
+vi.mock("../account/identity", () => ({ findUserByEmail: vi.fn() }));
+
+import { findUserByEmail } from "../account/identity";
+
 const user = { userId: "caller-1", email: "a@example.com" } as unknown as Parameters<typeof handleOrganizations>[2];
 
 function makeEnv(opts?: { lookupStatus?: number; lookupUser?: { userId: string; email: string; name: string }; rateOk?: boolean }) {
@@ -17,19 +23,18 @@ function makeEnv(opts?: { lookupStatus?: number; lookupUser?: { userId: string; 
   const run = vi.fn(() => Promise.resolve(runs.shift() ?? { meta: { changes: 1 } }));
   const bind = vi.fn(() => ({ first, all, run }));
   const prepare = vi.fn(() => ({ bind }));
-  const authFetch = vi.fn(async (input: string) => {
-    // callerDisplayName hits /lookup-by-id; member-invite hits /lookup.
-    if (String(input).includes("lookup-by-id")) {
-      return Response.json({ ok: true, data: { name: "Caller Name" } }, { status: 200 });
-    }
+  // Stands in for the identity-service lookup (named for the old auth-worker
+  // fetch it replaced so the assertions below read the same).
+  const authFetch = vi.mocked(findUserByEmail);
+  authFetch.mockImplementation(async () => {
     const status = opts?.lookupStatus ?? 200;
-    if (status !== 200) return new Response("", { status });
-    return Response.json({ ok: true, data: opts?.lookupUser ?? { userId: "invitee-1", email: "b@example.com", name: "Bob" } }, { status: 200 });
+    if (status !== 200) return null;
+    const u = opts?.lookupUser ?? { userId: "invitee-1", email: "b@example.com", name: "Bob" };
+    return { id: u.userId, email: u.email, name: u.name };
   });
   return {
     env: {
       DB: { prepare },
-      AUTH: { fetch: authFetch },
       RATE_LIMITER_INVITE_LOOKUP: { limit: vi.fn(async () => ({ success: opts?.rateOk ?? true })) },
     } as unknown as Parameters<typeof handleOrganizations>[1],
     run,
@@ -75,6 +80,8 @@ describe("handleOrganizations collection", () => {
   // Real SQLite so the org row + owner membership are checked as one batch.
   function sqliteEnv() {
     const { db, sqlite } = createSqliteD1();
+    // The owner row's name snapshot comes from the caller's users-mirror row.
+    sqlite.prepare("INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at) VALUES ('caller-1', 'a@example.com', 'Caller Name', 't', 0, 0)").run();
     const { env } = makeEnv();
     return { env: { ...env, DB: db } as typeof env, sqlite };
   }

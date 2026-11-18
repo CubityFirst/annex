@@ -61,26 +61,30 @@ export default defineConfig({
 			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),
 			OIDC_CLIENT_ID: bindings.text("annex-docs"),
 			APP_ORIGIN: bindings.text("https://docs.cubityfir.st"),
+			// Stripe price id for the Annex Ink supporter tier ($5/mo recurring).
+			// Not a secret - safe to commit. (Billing moved here from annex-auth.)
+			STRIPE_INK_PRICE_ID: bindings.text("price_1TVJk5Rckd4Ls9nPHpnY4tAN"),
 			// Identity service RPC (cubityfirst-auth's IdentityService entrypoint):
 			// account standing, invite-by-email lookups and the deletion sync.
 			IDENTITY: bindings.worker({
 				worker: "cubityfirst-auth",
 				exportName: "IdentityService",
 			}),
+			// The identity worker's HTTP surface (default export) for server-side
+			// OIDC requests: discovery, JWKS and the token exchange. Required: a
+			// Worker's fetch() to auth.cubityfir.st from this same zone goes to the
+			// origin (a placeholder record), not to the identity worker. Only the
+			// browser redirects to /oauth/authorize and /oauth/logout use the
+			// public URL. Requests over a binding carry no CF-Connecting-IP, so all
+			// of Annex's token calls share one rate-limit bucket on the provider.
+			IDENTITY_OIDC: bindings.worker({
+				worker: "cubityfirst-auth",
+			}),
 			DB: bindings.d1({
 				name: "cubedocs-main",
 				id: "267490be-7141-4d00-ab23-152742f2f6ef",
 			}),
-			// Read-only access to the auth DB so this worker can verify sessions
-			// inline (one D1 batch read of users + sessions) instead of
-			// round-tripping through the auth worker's /verify route on every
-			// request. Migrations live with the auth worker - never apply
-			// migrations to cubedocs-auth from this package.
-			AUTH_DB: bindings.d1({
-				name: "cubedocs-auth",
-				id: "db327d85-b8c2-4fed-adaa-25e748778c86",
-			}),
-			// Cloudflare Flagship feature flags. Shared app with the auth worker.
+			// Cloudflare Flagship feature flags. Shared with the admin worker.
 			// Flags in use:
 			//   api              (default on)  - killswitch for the whole /v1 public API surface (v1.ts).
 			//   custom-theming   (default off) - per-user gate for custom themes (index.ts).
@@ -95,18 +99,13 @@ export default defineConfig({
 			ASSETS: bindings.r2({
 				name: "cubedocs-assets",
 			}),
-			// Service binding to auth worker (zero-latency internal calls).
-			AUTH: bindings.worker({
-				worker: "annex-auth",
-			}),
 			DOC_COLLAB: bindings.durableObject({
 				worker: "annex-api",
 				exportName: "DocCollabRoom",
 			}),
-			// Per-user limiter for the invite-by-email lookup. The auth worker's
-			// /lookup also has its own coarser IP-keyed limiter - this one caps any
-			// single account from scraping the email→user map even when multiple
-			// users share an IP (office NAT).
+			// Per-user limiter for the invite-by-email lookup (routed to the
+			// identity service's findUserByEmail RPC): caps any single account from
+			// scraping the email→user map even when users share an IP (office NAT).
 			RATE_LIMITER_INVITE_LOOKUP: bindings.rateLimit({
 				namespace: "2001",
 				simple: {
@@ -138,6 +137,10 @@ export default defineConfig({
 			// existing secrets are kept across `cf deploy`):
 			//   JWT_SECRET            (signs Annex's own session JWTs; Annex-only)
 			//   OIDC_CLIENT_SECRET    (the annex-docs client's secret from auth.cubityfir.st)
+			//   STRIPE_SECRET_KEY     (sk_test_... or sk_live_... - moved from annex-auth)
+			//   STRIPE_WEBHOOK_SECRET (whsec_... for the docs.cubityfir.st/stripe/webhook
+			//                          endpoint; the frontend worker forwards it here, so
+			//                          the URL in the Stripe dashboard is unchanged)
 			//   OPENAI_API_KEY        (OpenAI API key for AI summarisation feature)
 			//   CF_API_TOKEN          (Cloudflare token scoped to the zone with "SSL and
 			//                          Certificates: Edit" - used to create/poll custom hostnames)
