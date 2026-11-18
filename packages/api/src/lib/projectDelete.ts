@@ -1,15 +1,12 @@
 import { deleteR2Prefix } from "./docOps";
 import { ftsDeleteProjectStatements } from "./fts";
 import { releaseCustomDomain, type CustomDomainEnv } from "./customDomains";
-import { deleteAllAvatarVariants } from "../avatar";
 import type { Env } from "../index";
 
 type ProjectDeleteEnv = Pick<Env, "DB" | "ASSETS"> & CustomDomainEnv;
 
-// Permanently deletes one site and everything hanging off it. Shared by the
-// owner-driven site delete (DELETE /projects/:id) and self-service account
-// deletion (DELETE /me, via cleanupDeletedAccount below), so both paths remove
-// the same data. The admin worker keeps its own mirror in
+// Permanently deletes one site and everything hanging off it (the owner-driven
+// site delete, DELETE /projects/:id). The admin worker keeps its own mirror in
 // packages/admin/src/lib/projectDelete.ts.
 //
 // Includes recycle-bin items (lib/trash.ts): their rows cascade away with the
@@ -55,57 +52,4 @@ export async function deleteProjectCascade(
     ...ftsDeleteProjectStatements(env.DB, projectId),
     env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId),
   ]);
-}
-
-// API-DB + R2 cleanup for DELETE /me, run AFTER the auth worker has deleted
-// the account (which verifies the password/2FA, so nothing here may run
-// before it). DELETE /me already refuses while the caller owns any site, so
-// the owned-site loop only catches sites created in the window between that
-// check and the auth delete.
-//
-// The account is already gone when this runs, so there is no way to roll back
-// or to let the user retry: every step is best-effort and logged, and a
-// failure in one site's cleanup doesn't stop the rest (the old inline code
-// threw on the first failure, skipping the membership + avatar cleanup and
-// 500ing a deletion that had in fact happened). A site whose cleanup failed
-// keeps its row with `owner_id` pointing at the deleted user, so it stays
-// findable for an admin delete.
-export async function cleanupDeletedAccount(
-  env: ProjectDeleteEnv,
-  userId: string,
-): Promise<{ failedProjectIds: string[] }> {
-  const failedProjectIds: string[] = [];
-  let ownedIds: string[] = [];
-  try {
-    const owned = await env.DB.prepare("SELECT id FROM projects WHERE owner_id = ?")
-      .bind(userId).all<{ id: string }>();
-    ownedIds = owned.results.map(p => p.id);
-  } catch (err) {
-    console.error("account cleanup: owned-site lookup failed", { userId, err });
-  }
-  for (const projectId of ownedIds) {
-    try {
-      await deleteProjectCascade(env, projectId);
-    } catch (err) {
-      failedProjectIds.push(projectId);
-      console.error("account cleanup: site delete failed", { userId, projectId, err });
-    }
-  }
-
-  try {
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(userId),
-      env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(userId),
-    ]);
-  } catch (err) {
-    console.error("account cleanup: membership delete failed", { userId, err });
-  }
-
-  try {
-    await deleteAllAvatarVariants(env.ASSETS, userId);
-  } catch (err) {
-    console.error("account cleanup: avatar delete failed", { userId, err });
-  }
-
-  return { failedProjectIds };
 }

@@ -1,10 +1,10 @@
-// deleteProjectCascade / cleanupDeletedAccount against real SQLite (every API
+// deleteProjectCascade against real SQLite (every API
 // migration applied) and an in-memory R2, so the cascades, the recycle-bin
 // UNION and the batch atomicity are the real ones.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
-import { deleteProjectCascade, cleanupDeletedAccount } from "./projectDelete";
+import { deleteProjectCascade } from "./projectDelete";
 import type { Env } from "../index";
 
 // Covers the R2 surface the helpers use: paged prefix list + array delete.
@@ -122,45 +122,5 @@ describe("deleteProjectCascade", () => {
     api.sqlite.exec("DROP TRIGGER fail_project_delete");
     await deleteProjectCascade(env(), "p1");
     expect(siteRowCounts("p1")).toEqual(GONE);
-  });
-});
-
-describe("cleanupDeletedAccount", () => {
-  it("fully deletes owned sites and drops memberships + avatar, sparing other sites", async () => {
-    // u1 is also an editor on u2's site and a member of an org.
-    exec("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES ('m-u1-p2', 'p2', 'u1', 'a@x', 'A', 'editor', 'u2', ?)", T);
-    exec("INSERT INTO organizations (id, name, owner_id, created_at) VALUES ('o1', 'Org', 'u2', ?)", T);
-    exec("INSERT INTO organization_members (id, organization_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES ('om1', 'o1', 'u1', 'a@x', 'A', 'viewer', 'u2', ?, 1)", T);
-
-    const res = await cleanupDeletedAccount(env(), "u1");
-    expect(res).toEqual({ failedProjectIds: [] });
-
-    expect(siteRowCounts("p1")).toEqual(GONE);
-    for (const k of p1Keys) expect(r2.keys.has(k), k).toBe(false);
-    expect(count("SELECT COUNT(*) AS n FROM project_members WHERE user_id = 'u1'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM organization_members WHERE user_id = 'u1'")).toBe(0);
-    for (const k of ["avatars/u1-dark", "avatars/u1-light", "avatars/u1"]) expect(r2.keys.has(k), k).toBe(false);
-
-    // u2's site, membership and avatar are untouched.
-    expect(siteRowCounts("p2")).toEqual({ projects: 1, docs: 1, files: 1, members: 1, trash: 2, revisions: 3, fts: 1, ftsMap: 1 });
-    for (const k of [...p2Keys, "avatars/u2-dark"]) expect(r2.keys.has(k), k).toBe(true);
-  });
-
-  it("keeps going when one owned site's cleanup fails, and reports it", async () => {
-    exec("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p3', 'Second', 'u1', ?)", T);
-    api.sqlite.exec("CREATE TRIGGER fail_p1 BEFORE DELETE ON projects WHEN OLD.id = 'p1' BEGIN SELECT RAISE(ABORT, 'boom'); END");
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const res = await cleanupDeletedAccount(env(), "u1");
-    expect(res).toEqual({ failedProjectIds: ["p1"] });
-    expect(err).toHaveBeenCalled();
-    err.mockRestore();
-
-    // p1's rows survive (findable by owner_id for an admin delete), p3 is gone,
-    // and the membership + avatar cleanup still ran.
-    expect(count("SELECT COUNT(*) AS n FROM projects WHERE id = 'p1' AND owner_id = 'u1'")).toBe(1);
-    expect(count("SELECT COUNT(*) AS n FROM projects WHERE id = 'p3'")).toBe(0);
-    expect(count("SELECT COUNT(*) AS n FROM project_members WHERE user_id = 'u1'")).toBe(0);
-    expect(r2.keys.has("avatars/u1-dark")).toBe(false);
   });
 });

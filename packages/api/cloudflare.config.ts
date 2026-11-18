@@ -21,6 +21,12 @@ export default defineConfig({
 			triggers.scheduled({
 				schedule: "0 4 * * *",
 			}),
+			// Hourly deletion sync: accounts deleted on auth.cubityfir.st have their
+			// Annex data removed (owned sites/orgs are kept for an operator). The
+			// schedule string must match DELETION_SYNC_CRON in src/index.ts.
+			triggers.scheduled({
+				schedule: "23 * * * *",
+			}),
 		],
 		// Replaces the Wrangler `[[migrations]]` history (tag "v1",
 		// new_classes = ["DocCollabRoom"]). DocCollabRoom was created with

@@ -82,6 +82,47 @@ projectsRouter.get("/", async (c) => {
 // sheet: branding, ownership/org, granted feature flags + owner-enabled
 // toggles, member breakdown, and doc/file/folder content stats. Read-only and
 // not audited, mirroring GET /api/users/:id.
+// GET /api/projects/orphaned - sites and orgs whose owner deleted their
+// account on auth.cubityfir.st. The deletion sync (api
+// lib/identityDeletions.ts) deliberately keeps them, with their other members,
+// for an operator to delete (or keep) from here. Also lists deletions the sync
+// hasn't been able to finish (e.g. a Stripe error), so they don't go unseen.
+// Registered before "/:id" so "orphaned" isn't read as a site id.
+projectsRouter.get("/orphaned", async (c) => {
+  const [sites, orgs, pending] = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `SELECT p.id, p.name, p.owner_id, p.published_at,
+              (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id <> p.owner_id) AS other_members,
+              d.deleted_at
+       FROM identity_deletions d JOIN projects p ON p.owner_id = d.user_id
+       ORDER BY d.deleted_at DESC, p.name ASC
+       LIMIT 200`,
+    ),
+    c.env.DB.prepare(
+      `SELECT o.id, o.name, o.owner_id,
+              (SELECT COUNT(*) FROM projects p WHERE p.organization_id = o.id) AS sites,
+              d.deleted_at
+       FROM identity_deletions d JOIN organizations o ON o.owner_id = d.user_id
+       ORDER BY d.deleted_at DESC, o.name ASC
+       LIMIT 200`,
+    ),
+    c.env.DB.prepare(
+      `SELECT user_id, deleted_at, last_error FROM identity_deletions
+       WHERE processed_at IS NULL ORDER BY deleted_at ASC LIMIT 100`,
+    ),
+  ]);
+  return c.json({
+    ok: true,
+    data: {
+      sites: (sites.results as Array<{ id: string; name: string; owner_id: string; published_at: string | null; other_members: number; deleted_at: number }>)
+        .map(r => ({ id: r.id, name: r.name, owner_id: r.owner_id, published: r.published_at !== null, other_members: r.other_members, owner_deleted_at: r.deleted_at })),
+      orgs: (orgs.results as Array<{ id: string; name: string; owner_id: string; sites: number; deleted_at: number }>)
+        .map(r => ({ id: r.id, name: r.name, owner_id: r.owner_id, sites: r.sites, owner_deleted_at: r.deleted_at })),
+      pending_deletions: pending.results,
+    },
+  });
+});
+
 projectsRouter.get("/:id", async (c) => {
   const id = c.req.param("id");
   const details = await loadProjectDetails(c.env, id);

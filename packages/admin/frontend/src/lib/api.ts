@@ -392,6 +392,20 @@ export async function listProjects(
   return readData<ProjectListResult>(res, "Failed to list projects");
 }
 
+export interface OrphanedOwnership {
+  // Sites/orgs whose owner deleted their account on auth.cubityfir.st; kept
+  // by the deletion sync for an operator to resolve.
+  sites: Array<{ id: string; name: string; owner_id: string; published: boolean; other_members: number; owner_deleted_at: number }>;
+  orgs: Array<{ id: string; name: string; owner_id: string; sites: number; owner_deleted_at: number }>;
+  // Deletions the sync couldn't finish yet (retried hourly).
+  pending_deletions: Array<{ user_id: string; deleted_at: number; last_error: string | null }>;
+}
+
+export async function listOrphanedOwnership(signal?: AbortSignal): Promise<OrphanedOwnership> {
+  const res = await authFetch("/api/projects/orphaned", { signal });
+  return readData<OrphanedOwnership>(res, "Failed to load sites with deleted owners");
+}
+
 export async function updateProjectFeatures(id: string, features: number): Promise<void> {
   const res = await authFetch(`/api/projects/${id}/features`, {
     method: "PATCH",
