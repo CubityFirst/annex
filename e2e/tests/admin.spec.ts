@@ -32,15 +32,15 @@ async function adminFrontendUp(): Promise<boolean> {
 
 // Mints an admin session and hands it to the admin SPA, which keeps it in
 // sessionStorage["admin_token"] (src/lib/auth.ts).
-async function signInToAdmin(page: Page, email: string): Promise<string> {
+async function signInToAdmin(page: Page, email: string): Promise<{ token: string; userId: string }> {
   const res = await page.request.post(`${ADMIN_ORIGIN}/api/dev/quick-login`, { data: { email, name: "E2E Admin" } });
   expect(res.ok(), "admin dev quick-login must be enabled locally (DEV_QUICK_LOGIN=true in packages/admin/.dev.vars)").toBeTruthy();
-  const { data } = (await res.json()) as { data: { token: string } };
+  const { data } = (await res.json()) as { data: { token: string; userId: string } };
   await page.goto(ADMIN_ORIGIN);
   await page.evaluate(token => window.sessionStorage.setItem("admin_token", token), data.token);
   await page.goto(ADMIN_ORIGIN);
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible({ timeout: 15_000 });
-  return data.token;
+  return data;
 }
 
 test.describe("admin panel", () => {
@@ -50,16 +50,16 @@ test.describe("admin panel", () => {
 
   test("sign in → auto-loaded search → details sheet → audited action in the log", async ({ page }) => {
     const email = `e2e-admin-${RUN_ID}-a@example.com`;
-    await signInToAdmin(page, email);
+    const { userId } = await signInToAdmin(page, email);
 
     // AF-U1: the user list auto-loads without a search being submitted, and
-    // the freshly minted dev admin is newest-first on page 1.
-    const firstRow = page.locator("table tbody tr").first();
-    await expect(firstRow).toBeVisible();
-    await expect(page.getByText(email).first()).toBeVisible();
+    // the freshly minted dev admin is on page 1 (newest first). Address this
+    // run's row by its email: parallel specs mint users too.
+    const ownRow = page.locator("table tbody tr", { hasText: email });
+    await expect(ownRow).toBeVisible();
 
-    // Expand the newest user's row and open the details sheet.
-    await firstRow.click();
+    // Expand this user's row (the only expanded one) and open the details sheet.
+    await ownRow.click();
     await page.getByRole("button", { name: "User details" }).click();
     await expect(page.getByText("Profile Badges").first()).toBeVisible({ timeout: 10_000 });
     await page.keyboard.press("Escape");
@@ -69,7 +69,11 @@ test.describe("admin panel", () => {
     await expect(page.getByText(/Display name/).first()).toBeVisible({ timeout: 10_000 });
     await page.getByRole("link", { name: "Audit" }).click();
     await expect(page.getByRole("heading", { name: "Audit Log" })).toBeVisible();
-    await expect(page.getByText("User · Name · Resync").first()).toBeVisible({ timeout: 10_000 });
+    // This run's entry: this actor, this target, this action.
+    const entry = page.locator("table tbody tr", { hasText: `user:${userId}` })
+      .filter({ hasText: "User · Name · Resync" })
+      .filter({ hasText: email });
+    await expect(entry.first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("sign out revokes the session server-side (AF-S3)", async ({ page }) => {
