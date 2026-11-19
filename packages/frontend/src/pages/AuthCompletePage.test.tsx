@@ -22,21 +22,21 @@ afterEach(() => {
 });
 
 describe("AuthCompletePage", () => {
-  it("redeems the code once, stores the session and goes to the return path", async () => {
+  it("redeems the handoff cookie once, stores the session and goes to the return path", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true, data: { token: "session-jwt" } }));
     vi.stubGlobal("fetch", fetchMock);
-    renderAt("#code=abc123&return_to=%2Fprojects%2Fp1");
+    renderAt("#status=ok&attempt=abc123&return_to=%2Fprojects%2Fp1");
     expect(await screen.findByText("PROJECT P1")).toBeInTheDocument();
     expect(localStorage.getItem("token")).toBe("session-jwt");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown[])[1] && ((fetchMock.mock.calls[0] as unknown[])[1] as RequestInit).body))).toEqual({ code: "abc123" });
-    // The code doesn't linger in the address bar.
+    // No code in the request: the HttpOnly cookie carries it.
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/exchange?attempt=abc123", { method: "POST" });
     expect(window.location.hash).toBe("");
   });
 
   it("ignores an off-site return path", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, data: { token: "t" } })));
-    renderAt("#code=abc123&return_to=https%3A%2F%2Fevil.test");
+    renderAt("#status=ok&return_to=https%3A%2F%2Fevil.test");
     expect(await screen.findByText("DASHBOARD")).toBeInTheDocument();
   });
 
@@ -51,7 +51,7 @@ describe("AuthCompletePage", () => {
 
   it("explains a code that was already used or expired", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: false, error: "invalid_code" }, { status: 400 })));
-    renderAt("#code=used");
+    renderAt("#status=ok");
     await waitFor(() => expect(screen.getByText(/took too long or was already used/i)).toBeInTheDocument());
     expect(localStorage.getItem("token")).toBeNull();
   });

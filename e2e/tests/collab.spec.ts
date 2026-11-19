@@ -4,8 +4,8 @@
  * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
- * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
- * packages/auth/.dev.vars (Cloudflare's always-pass test secret).
+ * Signs in with e2e/signIn.ts (devSignIn): needs DEV_QUICK_LOGIN=true and
+ * APP_ORIGIN=http://localhost:5173 in packages/api/.dev.vars.
  *
  * Covers:
  *   1. Two pages on the same doc see each other's edits within the editor
@@ -25,10 +25,10 @@
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import { d1Local } from "../d1Local";
+import { devSignIn } from "../signIn";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-collab-${RUN_ID}@example.com`;
-const PASSWORD = "E2eTest-P@ssw0rd!";
 const NAME = "E2E Collab User";
 // Prefix matches the "E2E Project %" pattern in global-teardown, so the
 // safety-net cleanup catches this project even if afterAll never runs.
@@ -42,23 +42,6 @@ let pageB: Page;
 let projectId = "";
 let docId = "";
 let projectSettingsUrl = "";
-
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_container: unknown, options: { callback: (t: string) => void }) {
-          setTimeout(() => options.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {},
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
-}
 
 async function injectFakeIp(ctx: BrowserContext) {
   await ctx.route("**/api/**", async (route) => {
@@ -86,7 +69,6 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
-  await mockTurnstile(context);
   await injectFakeIp(context);
   pageA = await context.newPage();
 });
@@ -115,18 +97,7 @@ test.afterAll(async () => {
 
 test("sets up a project + doc with the realtime flag enabled", async () => {
   // Register
-  await pageA.goto("/register");
-  await pageA.getByLabel("Name").fill(NAME);
-  await pageA.getByLabel("Email").fill(EMAIL);
-  await pageA.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(pageA.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await pageA.getByRole("button", { name: "Create account" }).click();
-    await expect(pageA).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(pageA, { email: EMAIL, name: NAME });
 
   // Create project
   await pageA.goto("/dashboard");

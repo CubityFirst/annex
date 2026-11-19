@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DetailField } from "@/components/DetailField";
@@ -49,58 +51,37 @@ export function UserDetailsPanel({
                 value={formatModerationUntil(details.profile.account_suspended_until)}
               />
             )}
-            <DetailField
-              label="Password Reset"
-              value={details.profile.force_password_change ? "Required on next sign in" : "Not required"}
-            />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Security</CardTitle>
+            <CardTitle>Sign-in &amp; moderation</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Passwords, two-factor, passkeys, sessions, disabling/suspending and the admin role are managed on the
+              identity service. Deleting the account itself also happens there.
+            </p>
             <DetailField
-              label="TOTP"
-              value={details.security.totp_enabled ? <Badge variant="default">Enabled</Badge> : <Badge variant="outline">Disabled</Badge>}
+              label="Standing"
+              value={details.identity.live
+                ? "Live from auth.cubityfir.st"
+                : <span className="text-amber-600">Last known (identity service unreachable)</span>}
             />
             <DetailField
-              label="Passkeys"
-              value={`${details.security.passkeys.length} registered`}
+              label="Admin"
+              value={details.identity.is_admin ? <Badge variant="default">Admin</Badge> : <Badge variant="outline">No</Badge>}
             />
-            <DetailField
-              label="Backup Codes"
-              value={`${details.security.backup_codes.active} active of ${details.security.backup_codes.total}`}
-            />
-            <DetailField
-              label="Used Backup Codes"
-              value={String(details.security.backup_codes.used)}
-            />
+            <Button asChild variant="outline" size="sm" className="self-start">
+              <a href={details.identity.manage_url} target="_blank" rel="noreferrer">
+                Manage on auth.cubityfir.st
+                <ExternalLink className="ml-1 h-3.5 w-3.5" aria-hidden />
+              </a>
+            </Button>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Passkeys</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {details.security.passkeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No passkeys registered.</p>
-          ) : (
-            details.security.passkeys.map(passkey => (
-              <div key={passkey.id} className="rounded-lg border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium">{passkey.name}</p>
-                  <p className="text-xs text-muted-foreground">{formatDateTime(passkey.registered_at)}</p>
-                </div>
-                <p className="mt-2 font-mono text-xs text-muted-foreground">{passkey.id}</p>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
 
       <InkBillingCard userId={userId} userName={userName} details={details} onChanged={onChanged} />
 

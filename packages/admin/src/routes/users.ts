@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { zipSync, strToU8 } from "fflate";
-import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
-import { ALL_BADGE_BITS } from "../../../auth/src/badges";
-import { normalizeHandle, handleProblem, HANDLE_MIN_LENGTH, HANDLE_MAX_LENGTH } from "../../../auth/src/handle";
+import { resolvePersonalPlan, type PersonalPlan } from "../../../api/src/account/plan";
+import { ALL_BADGE_BITS } from "../../../api/src/account/badges";
+import { normalizeHandle, handleProblem, HANDLE_MIN_LENGTH, HANDLE_MAX_LENGTH } from "../../../api/src/account/handle";
 import { writeAdminAudit } from "../audit";
 import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 import { escapeLike, LIKE_ESCAPE_CLAUSE } from "../lib/sql";
 import { USER_DELETION_GRACE_SECONDS, checkOwnership, placeholders } from "../lib/userDeletion";
+import { refreshMirror } from "../../../api/src/account/identity";
 import type { AppEnv, Env } from "../index";
 
 const usersRouter = new Hono<AppEnv>();
@@ -33,6 +34,7 @@ interface UserRow {
   deletion_requested_by_email?: string | null;
   deletion_error?: string | null;
   deletion_started_at?: number | null;
+  deletion_completed_at?: number | null;
   badges?: number | null;
   handle?: string | null;
   handle_locked?: number | null;
@@ -98,18 +100,14 @@ interface UserDetails {
       actor_email: string | null;
     }>;
   };
-  security: {
-    totp_enabled: boolean;
-    passkeys: Array<{
-      id: string;
-      name: string;
-      registered_at: string;
-    }>;
-    backup_codes: {
-      total: number;
-      active: number;
-      used: number;
-    };
+  // Sign-in methods, sessions and moderation are managed on the identity
+  // service; the panel links there.
+  identity: {
+    manage_url: string;
+    // True when standing came live from the identity service, false when it's
+    // the users mirror's last known value (service unreachable).
+    live: boolean;
+    is_admin: boolean;
   };
   projects: {
     owned_projects: Array<{
@@ -126,6 +124,13 @@ interface UserDetails {
   };
   billing: BillingDetails;
 }
+
+// Account standing lives on the identity service now (moderated at
+// auth.cubityfir.st/admin/users). The users mirror keeps its last known
+// value as status + suspended_until; this expression re-encodes it as the
+// legacy `moderation` number (0 active, -1 disabled, >0 suspended-until unix
+// seconds) the panel's list/details shapes are built on.
+export const MODERATION_SQL = "CASE u.status WHEN 'disabled' THEN -1 WHEN 'suspended' THEN COALESCE(u.suspended_until, 0) ELSE 0 END";
 
 export function getModerationAction(moderation: number): ModerationAction {
   if (moderation === 0) return "re_enabled";
@@ -154,14 +159,13 @@ export function buildUserStatusClause(
 ): { sql: string; binds: number[] } {
   switch (status) {
     case "active":
-      return { sql: "(u.moderation = 0 OR (u.moderation > 0 AND u.moderation <= ?))", binds: [nowSeconds] };
-    // "disabled" (`u.moderation = -1`) can use the partial
-    // idx_users_disabled_created ... WHERE moderation = -1 index (auth 0036).
-    // The redundant `u.moderation <> 0` is harmless; "suspended" still scans.
+      return { sql: "(u.status = 'active' OR (u.status = 'suspended' AND COALESCE(u.suspended_until, 0) <= ?))", binds: [nowSeconds] };
+    // The `u.status <> 'active'` term lets SQLite use the partial
+    // idx_users_not_active index (api 0065) for the two rare statuses.
     case "disabled":
-      return { sql: "u.moderation = -1 AND u.moderation <> 0", binds: [] };
+      return { sql: "u.status <> 'active' AND u.status = 'disabled'", binds: [] };
     case "suspended":
-      return { sql: "u.moderation > ? AND u.moderation <> 0", binds: [nowSeconds] };
+      return { sql: "u.status <> 'active' AND u.status = 'suspended' AND u.suspended_until > ?", binds: [nowSeconds] };
     case "pending_deletion":
       return { sql: "d.user_id IS NOT NULL", binds: [] };
     default:
@@ -229,8 +233,8 @@ export function buildUserSearchQuery(opts: {
     where.push("u.id = ?");
     binds.push(opts.q.trim());
   } else if (opts.match === "email") {
-    // Stored addresses are normalized (trimmed, lowercased) by the auth worker.
-    where.push("u.email = ?");
+    // The identity service stores addresses normalized (trimmed, lowercased).
+    where.push("lower(u.email) = ?");
     binds.push(opts.q.trim().toLowerCase());
   } else if (opts.q) {
     // The handle match is exact on the normalized form, so `@Name` finds the
@@ -260,10 +264,11 @@ export function buildUserSearchQuery(opts: {
         u.email,
         u.name,
         u.created_at,
-        u.moderation,
-        u.force_password_change,
+        ${MODERATION_SQL} AS moderation,
+        0 AS force_password_change,
         u.email_verified,
         d.execute_after AS deletion_execute_after,
+        d.completed_at AS deletion_completed_at,
         d.requested_by_email AS deletion_requested_by_email,
         d.last_error AS deletion_error,
         d.started_at AS deletion_started_at,
@@ -330,20 +335,37 @@ type ProfileRow = BillingRow & {
   moderation: number;
   force_password_change: number;
   email_verified: number;
-  has_totp: number;
+  is_admin: number;
   badges: number | null;
   handle: string | null;
   handle_locked: number | null;
 };
 
+export function identityAdminUrl(env: Pick<Env, "OIDC_ISSUER">, userId: string): string {
+  const issuer = (env.OIDC_ISSUER ?? "https://auth.cubityfir.st").replace(/\/+$/, "");
+  return `${issuer}/admin/users/${encodeURIComponent(userId)}`;
+}
+
 async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null> {
-  // The users row (profile + TOTP flag) and its preferences/billing
-  // satellites in one read, in parallel with everything else; for an
-  // unknown id the other lookups just come back empty.
-  const [profile, webauthn, backupCodeSummary, moderationHistory, ownedProjects, memberships] = await Promise.all([
-    env.AUTH_DB.prepare(
-      `SELECT u.id, u.email, u.name, u.created_at, u.moderation, u.force_password_change,
-              u.email_verified, u.totp_secret IS NOT NULL AS has_totp,
+  // Live standing from the identity service first, so the mirror (and the
+  // profile read below) reflects it; the mirror is the fallback.
+  let live = false;
+  if (env.IDENTITY) {
+    try {
+      const user = await env.IDENTITY.getUser(id);
+      if (user) {
+        await refreshMirror(env, user, Date.now());
+        live = true;
+      }
+    } catch (err) {
+      console.error("[admin] identity getUser failed; showing mirror standing", String(err));
+    }
+  }
+
+  const [profile, moderationHistory, ownedProjects, memberships] = await Promise.all([
+    env.DB.prepare(
+      `SELECT u.id, u.email, u.name, u.created_at, ${MODERATION_SQL} AS moderation, 0 AS force_password_change,
+              u.email_verified, u.is_admin,
               p.badges, p.handle, p.handle_locked,
               p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
               b.stripe_customer_id, b.stripe_subscription_id,
@@ -356,20 +378,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
        LEFT JOIN user_billing b ON b.user_id = u.id
        WHERE u.id = ?`,
     ).bind(id).first<ProfileRow>(),
-    env.AUTH_DB.prepare(
-      "SELECT id, name, created_at FROM webauthn_credentials WHERE user_id = ? ORDER BY created_at DESC",
-    ).bind(id).all<{ id: string; name: string; created_at: string }>(),
-    env.AUTH_DB.prepare(
-      `
-        SELECT
-          COUNT(*) AS total,
-          SUM(CASE WHEN used_at IS NULL THEN 1 ELSE 0 END) AS active,
-          SUM(CASE WHEN used_at IS NOT NULL THEN 1 ELSE 0 END) AS used
-        FROM backup_codes
-        WHERE user_id = ?
-      `,
-    ).bind(id).first<{ total: number; active: number | null; used: number | null }>(),
-    env.AUTH_DB.prepare(
+    env.DB.prepare(
       `
         SELECT id, user_id, action, moderation_value, reason, created_at, actor_user_id, actor_email
         FROM user_moderation_events
@@ -426,14 +435,10 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
         actor_email: event.actor_email,
       })),
     },
-    security: {
-      totp_enabled: Boolean(profile.has_totp),
-      passkeys: webauthn.results.map(k => ({ id: k.id, name: k.name, registered_at: k.created_at })),
-      backup_codes: {
-        total: backupCodeSummary?.total ?? 0,
-        active: backupCodeSummary?.active ?? 0,
-        used: backupCodeSummary?.used ?? 0,
-      },
+    identity: {
+      manage_url: identityAdminUrl(env, profile.id),
+      live,
+      is_admin: Boolean(profile.is_admin),
     },
     projects: {
       owned_projects: ownedProjects.results.map(p => ({ id: p.id, name: p.name, created_at: p.created_at })),
@@ -459,7 +464,7 @@ usersRouter.get("/search", async (c) => {
   // One extra row tells us whether an older page exists without a count.
   const run = async (match: UserSearchMatch) => {
     const { sql, binds } = buildUserSearchQuery({ q, match, status, cursor, nowSeconds });
-    return (await c.env.AUTH_DB.prepare(sql).bind(...binds, USER_PAGE_SIZE + 1).all<UserSearchRaw>()).results;
+    return (await c.env.DB.prepare(sql).bind(...binds, USER_PAGE_SIZE + 1).all<UserSearchRaw>()).results;
   };
   const match = exactUserMatch(q);
   let results = await run(match);
@@ -475,90 +480,6 @@ usersRouter.get("/search", async (c) => {
     hasMore && last ? encodeCursor({ ts: last.created_at, id: last.id }) : null;
 
   return c.json({ ok: true, data: { users, nextCursor } });
-});
-
-// PATCH /api/users/:id - { moderation: 0 | -1 | unix timestamp, reason?: string }
-usersRouter.patch("/:id", async (c) => {
-  const session = c.get("session");
-
-  const id = c.req.param("id");
-  const body = await c.req.json<{ moderation: number; reason?: string }>()
-    .catch(() => ({} as { moderation?: number; reason?: string }));
-  const moderation = body.moderation;
-  const reason = body.reason?.trim() ?? "";
-  const nowSeconds = Math.floor(Date.now() / 1000);
-
-  if (!Number.isInteger(moderation) || (moderation !== 0 && moderation !== -1 && moderation! <= 0)) {
-    return c.json({ ok: false, error: "Invalid moderation value" }, 400);
-  }
-
-  if (moderation! > 0 && moderation! <= nowSeconds) {
-    return c.json({ ok: false, error: "Suspension time must be in the future" }, 400);
-  }
-
-  if (moderation !== 0 && !reason) {
-    return c.json({ ok: false, error: "Moderation reason is required" }, 400);
-  }
-
-  // A bulk "Disable" over a selection that includes the operator would
-  // otherwise lock them out of the panel mid-run.
-  if (moderation !== 0 && id === session.userId) {
-    return c.json({ ok: false, error: "You can't disable your own account" }, 400);
-  }
-
-  // Verify the user exists before the batch: the user_moderation_events
-  // INSERT has a NOT NULL FK to users(id), so a bad id would otherwise
-  // reject the whole batch as an opaque 500 instead of a clean 404.
-  const userRow = await c.env.AUTH_DB.prepare(
-    "SELECT u.id, d.user_id IS NOT NULL AS scheduled FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id WHERE u.id = ?",
-  ).bind(id).first<{ id: string; scheduled: number }>();
-  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
-
-  // A scheduled deletion owns the account's moderation state (disabled until
-  // deleted). Any change - a re-enable, or a suspension that would lapse into
-  // "active" - must go through "Cancel deletion" so the two can't disagree.
-  if (userRow.scheduled) {
-    return c.json({ ok: false, error: "This account is scheduled for deletion - cancel the deletion first" }, 409);
-  }
-
-  // The check above gives a clean error; the same NOT EXISTS guard on both
-  // writes closes the race with a schedule committing in between (a batch is
-  // one transaction, so they apply together or not at all).
-  const action = getModerationAction(moderation!);
-  const [updated] = await c.env.AUTH_DB.batch([
-    c.env.AUTH_DB.prepare(
-      "UPDATE users SET moderation = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?)",
-    ).bind(moderation, id, id),
-    c.env.AUTH_DB.prepare(
-      `
-        INSERT INTO user_moderation_events (
-          id,
-          user_id,
-          action,
-          moderation_value,
-          reason,
-          actor_user_id,
-          actor_email
-        )
-        SELECT ?, ?, ?, ?, ?, ?, ?
-        WHERE NOT EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ?)
-      `,
-    ).bind(crypto.randomUUID(), id, action, moderation, reason || null, session.userId, session.email, id),
-  ]);
-  if ((updated?.meta?.changes ?? 0) === 0) {
-    return c.json({ ok: false, error: "This account is scheduled for deletion - cancel the deletion first" }, 409);
-  }
-
-  // Also record in the central admin_audit_log so the unified /api/audit
-  // view surfaces moderation alongside every other privileged action. The
-  // user_moderation_events row above stays as the per-user moderation history.
-  await writeAdminAudit(c.env, session, "user.moderation.update", "user", id, {
-    action,
-    moderation,
-    reason: reason || null,
-  });
-
-  return c.json({ ok: true });
 });
 
 // PATCH /api/users/:id/badges - { badges: number } (bitmask)
@@ -577,11 +498,11 @@ usersRouter.patch("/:id/badges", async (c) => {
   // Verify the user exists; we used to infer 404 from changes=0, but a fresh
   // user with no preferences row would now also produce changes=0 even though
   // they exist (the upsert creates the row).
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+  const userRow = await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?")
     .bind(id).first<{ "1": number }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
-  await c.env.AUTH_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO user_preferences (user_id, badges) VALUES (?, ?)
      ON CONFLICT(user_id) DO UPDATE SET badges = excluded.badges`,
   ).bind(id, badges).run();
@@ -624,7 +545,7 @@ usersRouter.patch("/:id/handle", async (c) => {
   if (hasLocked && typeof body.locked !== "boolean") return c.json({ ok: false, error: "Invalid locked value" }, 400);
   const locked = body.locked === true;
 
-  const current = await c.env.AUTH_DB.prepare(
+  const current = await c.env.DB.prepare(
     `SELECT u.id, p.handle, p.handle_locked
      FROM users u LEFT JOIN user_preferences p ON p.user_id = u.id
      WHERE u.id = ?`,
@@ -635,7 +556,7 @@ usersRouter.patch("/:id/handle", async (c) => {
   if (hasHandle) sets.push("handle = excluded.handle");
   if (hasLocked) sets.push("handle_locked = excluded.handle_locked");
   try {
-    await c.env.AUTH_DB.prepare(
+    await c.env.DB.prepare(
       `INSERT INTO user_preferences (user_id, handle, handle_locked) VALUES (?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET ${sets.join(", ")}`,
     ).bind(id, hasHandle ? handle : null, hasLocked && locked ? 1 : 0).run();
@@ -657,35 +578,27 @@ usersRouter.patch("/:id/handle", async (c) => {
   return c.json({ ok: true, data: result });
 });
 
-// POST /api/users/:id/force-password-change
-usersRouter.post("/:id/force-password-change", async (c) => {
-  const session = c.get("session");
-
-  const id = c.req.param("id");
-  // Confirm the user exists so we don't log an audit row + report success
-  // for a no-op against a deleted/typo'd id (UPDATE silently affects 0 rows).
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
-    .bind(id).first<{ "1": number }>();
-  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
-
-  await c.env.AUTH_DB.prepare("UPDATE users SET force_password_change = 1 WHERE id = ?")
-    .bind(id)
-    .run();
-  await writeAdminAudit(c.env, session, "user.force_password_change", "user", id);
-  return c.json({ ok: true });
-});
-
-// POST /api/users/:id/resync-name - re-copies the canonical users.name
-// (auth DB) over the denormalized name snapshots in the API DB
-// (project_members + organization_members). Normally PATCH /me keeps these
-// in sync when a user renames themselves; this repairs rows that captured a
-// wrong snapshot at insert time (e.g. the site-create owner row that fell
-// back to the email while the owner-name lookup was broken).
+// POST /api/users/:id/resync-name - refreshes the users mirror from the
+// identity service (the source of truth for name/email) and re-copies the
+// name over the denormalized snapshots (project_members +
+// organization_members). Sign-in and the standing check keep these in sync;
+// this repairs rows that captured a wrong snapshot at insert time.
 usersRouter.post("/:id/resync-name", async (c) => {
   const session = c.get("session");
 
   const id = c.req.param("id");
-  const userRow = await c.env.AUTH_DB.prepare("SELECT name FROM users WHERE id = ?")
+  // The mirror refresh fixes stale name AND email snapshots itself; count
+  // what it fixed so the response and audit row report the real total.
+  let refreshed = { project_members: 0, organization_members: 0 };
+  if (c.env.IDENTITY) {
+    try {
+      const user = await c.env.IDENTITY.getUser(id);
+      if (user) refreshed = await refreshMirror(c.env, user, Date.now());
+    } catch (err) {
+      console.error("[admin] resync-name: identity getUser failed; using the mirror", String(err));
+    }
+  }
+  const userRow = await c.env.DB.prepare("SELECT name FROM users WHERE id = ?")
     .bind(id).first<{ name: string }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
@@ -698,8 +611,8 @@ usersRouter.post("/:id/resync-name", async (c) => {
       .bind(userRow.name, id, userRow.name),
   ]);
   const updated = {
-    project_members: projectRes?.meta?.changes ?? 0,
-    organization_members: orgRes?.meta?.changes ?? 0,
+    project_members: refreshed.project_members + (projectRes?.meta?.changes ?? 0),
+    organization_members: refreshed.organization_members + (orgRes?.meta?.changes ?? 0),
   };
 
   await writeAdminAudit(c.env, session, "user.name.resync", "user", id, updated);
@@ -713,10 +626,12 @@ usersRouter.post("/:id/resync-name", async (c) => {
 //      (with doc + other-member counts), owned orgs, Stripe state, and
 //      whether it can't be scheduled (self / admin / already scheduled).
 //   2. POST /:id/deletion { confirm_site_ids, confirm_org_ids } - schedules
-//      one account: disables it now, deletes it after the grace window. Owned
-//      sites/orgs go with it ONLY when the caller lists exactly the set the
-//      account owns; the cron re-checks the same sets before deleting.
-//   3. DELETE /:id/deletion - cancels, restoring the previous moderation.
+//      the deletion of one person's ANNEX data: blocks them from Annex now,
+//      deletes after the grace window. Owned sites/orgs go with it ONLY when
+//      the caller lists exactly the set the account owns; the cron re-checks
+//      the same sets before deleting. The identity account is deleted
+//      separately at auth.cubityfir.st.
+//   3. DELETE /:id/deletion - cancels, unblocking them.
 // ---------------------------------------------------------------------------
 
 // The Users page selects at most a few loaded pages; this bounds the IN (...)
@@ -769,7 +684,7 @@ usersRouter.post("/delete-preview", async (c) => {
   const ph = placeholders(ids.length);
 
   const [users, sites, orgs] = await Promise.all([
-    c.env.AUTH_DB.prepare(
+    c.env.DB.prepare(
       `SELECT u.id, u.email, u.name, u.is_admin, b.stripe_customer_id, b.stripe_subscription_id,
               d.user_id IS NOT NULL AS scheduled
        FROM users u
@@ -823,9 +738,9 @@ usersRouter.post("/delete-preview", async (c) => {
 
 // POST /api/users/:id/deletion - { confirm_site_ids?: string[], confirm_org_ids?: string[] }
 //
-// Schedules the account for permanent deletion after the grace window and
-// disables it now (recorded as a normal moderation event so the history and
-// the Users-page status show why). Nothing irreversible happens here.
+// Schedules the deletion of the person's Annex data after the grace window
+// and blocks them from Annex now (the user_deletions row itself is the block -
+// see api account/session.ts). Nothing irreversible happens here.
 usersRouter.post("/:id/deletion", async (c) => {
   const session = c.get("session");
   const id = c.req.param("id");
@@ -838,11 +753,27 @@ usersRouter.post("/:id/deletion", async (c) => {
     return c.json({ ok: false, error: "You can't delete your own account from the admin panel" }, 400);
   }
 
-  const user = await c.env.AUTH_DB.prepare(
-    `SELECT u.id, u.email, u.is_admin, u.moderation, d.user_id IS NOT NULL AS scheduled
+  // Scheduling blocks the person from Annex at once, so refresh the mirror's
+  // admin flag from the identity service first: a stale "not admin" would
+  // lock out a newly promoted admin. Refuse rather than guess when it can't
+  // be checked.
+  if (c.env.IDENTITY) {
+    try {
+      const live = await c.env.IDENTITY.getUser(id);
+      if (live?.isAdmin) {
+        return c.json({ ok: false, error: "Admin accounts can't be deleted from the admin panel" }, 409);
+      }
+      if (live) await refreshMirror(c.env, live, Date.now());
+    } catch (err) {
+      console.error("[admin] schedule deletion: identity check failed", String(err));
+      return c.json({ ok: false, error: "Couldn't check this account on auth.cubityfir.st - try again shortly" }, 503);
+    }
+  }
+  const user = await c.env.DB.prepare(
+    `SELECT u.id, u.email, u.is_admin, d.user_id IS NOT NULL AS scheduled
      FROM users u LEFT JOIN user_deletions d ON d.user_id = u.id
      WHERE u.id = ?`,
-  ).bind(id).first<{ id: string; email: string; is_admin: number; moderation: number; scheduled: number }>();
+  ).bind(id).first<{ id: string; email: string; is_admin: number; scheduled: number }>();
   if (!user) return c.json({ ok: false, error: "User not found" }, 404);
   if (user.is_admin) {
     return c.json({ ok: false, error: "Admin accounts can't be deleted from the admin panel" }, 409);
@@ -855,32 +786,20 @@ usersRouter.post("/:id/deletion", async (c) => {
   if (ownership.error) return c.json({ ok: false, error: ownership.error }, 409);
 
   const executeAfter = Math.floor(Date.now() / 1000) + USER_DELETION_GRACE_SECONDS;
-  const reason = `Scheduled for permanent deletion on ${new Date(executeAfter * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  const inserted = await c.env.AUTH_DB.batch([
-    // previous_moderation is read from users INSIDE this transaction (before
-    // the disable below), not from the earlier SELECT - a moderation change
-    // committed in between must be what a later cancel restores.
-    c.env.AUTH_DB.prepare(
-      `INSERT INTO user_deletions
-         (user_id, id, requested_by, requested_by_email, execute_after, confirm_site_ids, confirm_org_ids, previous_moderation)
-       SELECT u.id, ?, ?, ?, ?, ?, ?, u.moderation FROM users u WHERE u.id = ?`,
-    ).bind(
-      crypto.randomUUID(), session.userId, session.email, executeAfter,
-      JSON.stringify(ownership.sites.map(s => s.id)), JSON.stringify(ownership.orgs.map(o => o.id)),
-      id,
-    ),
-    c.env.AUTH_DB.prepare("UPDATE users SET moderation = -1 WHERE id = ?").bind(id),
-    c.env.AUTH_DB.prepare(
-      `INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, actor_user_id, actor_email)
-       VALUES (?, ?, 'disabled', -1, ?, ?, ?)`,
-    ).bind(crypto.randomUUID(), id, reason, session.userId, session.email),
-  ]).then(
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO user_deletions
+       (user_id, id, requested_by, requested_by_email, execute_after, confirm_site_ids, confirm_org_ids)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    id, crypto.randomUUID(), session.userId, session.email, executeAfter,
+    JSON.stringify(ownership.sites.map(s => s.id)), JSON.stringify(ownership.orgs.map(o => o.id)),
+  ).run().then(
     () => true,
     // Another admin scheduling the same account at the same moment loses on
-    // the user_deletions primary key (the whole batch rolls back) - report
-    // that as the clean 409 the pre-check would have given.
+    // the user_deletions primary key - report that as the clean 409 the
+    // pre-check would have given.
     async (err: unknown) => {
-      const raced = await c.env.AUTH_DB.prepare("SELECT 1 AS x FROM user_deletions WHERE user_id = ?").bind(id).first();
+      const raced = await c.env.DB.prepare("SELECT 1 AS x FROM user_deletions WHERE user_id = ?").bind(id).first();
       if (raced) return false;
       throw err;
     },
@@ -897,18 +816,18 @@ usersRouter.post("/:id/deletion", async (c) => {
   return c.json({ ok: true, data: { execute_after: executeAfter } });
 });
 
-// DELETE /api/users/:id/deletion - cancel a scheduled deletion and restore the
-// account's moderation state from before it was scheduled. Refused once the
-// cron has started executing it (started_at) or while a cron run holds its
-// lease - a half-run deletion can only be finished, never rolled back.
+// DELETE /api/users/:id/deletion - cancel a scheduled deletion, which also
+// lifts the Annex block. Refused once the cron has started executing it
+// (started_at) or while a cron run holds its lease - a half-run deletion can
+// only be finished, never rolled back.
 usersRouter.delete("/:id/deletion", async (c) => {
   const session = c.get("session");
   const id = c.req.param("id");
   const nowSeconds = Math.floor(Date.now() / 1000);
 
-  const row = await c.env.AUTH_DB.prepare(
-    "SELECT id, previous_moderation, started_at, lease_until FROM user_deletions WHERE user_id = ?",
-  ).bind(id).first<{ id: string; previous_moderation: number; started_at: number | null; lease_until: number | null }>();
+  const row = await c.env.DB.prepare(
+    "SELECT id, started_at, lease_until FROM user_deletions WHERE user_id = ?",
+  ).bind(id).first<{ id: string; started_at: number | null; lease_until: number | null }>();
   if (!row) return c.json({ ok: false, error: "No deletion is scheduled for this account" }, 404);
   const inProgress = "This deletion has already started and can't be cancelled";
   if (row.started_at !== null) return c.json({ ok: false, error: inProgress }, 409);
@@ -916,38 +835,19 @@ usersRouter.delete("/:id/deletion", async (c) => {
     return c.json({ ok: false, error: "This deletion is being processed right now - try again in a few minutes" }, 409);
   }
 
-  // One transaction. Every write is conditioned on THIS schedule (by id) still
-  // existing and being cancellable, checked before it's deleted - so a cron
-  // claim, or another admin's cancel, landing in between turns the whole
-  // cancel into a no-op instead of restoring (or un-banning) the account.
-  // previous_moderation is fixed per schedule id, so the value read above is
-  // the one this schedule recorded.
-  const restored = row.previous_moderation;
-  const cancellable =
-    "EXISTS (SELECT 1 FROM user_deletions WHERE user_id = ? AND id = ? AND started_at IS NULL AND (lease_until IS NULL OR lease_until < ?))";
-  const guard = [id, row.id, nowSeconds];
-  const [, , removed] = await c.env.AUTH_DB.batch([
-    c.env.AUTH_DB.prepare(`UPDATE users SET moderation = ? WHERE id = ? AND ${cancellable}`)
-      .bind(restored, id, ...guard),
-    c.env.AUTH_DB.prepare(
-      `INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, actor_user_id, actor_email)
-       SELECT ?, ?, ?, ?, ?, ?, ?
-       WHERE ${cancellable}`,
-    ).bind(
-      crypto.randomUUID(), id, getModerationAction(restored), restored,
-      "Scheduled deletion cancelled", session.userId, session.email, ...guard,
-    ),
-    c.env.AUTH_DB.prepare(
-      `DELETE FROM user_deletions
-       WHERE user_id = ? AND id = ? AND started_at IS NULL AND (lease_until IS NULL OR lease_until < ?)`,
-    ).bind(...guard),
-  ]);
+  // Conditioned on THIS schedule (by id) still existing and being
+  // cancellable, so a cron claim or another admin's cancel landing in between
+  // turns the cancel into a no-op.
+  const removed = await c.env.DB.prepare(
+    `DELETE FROM user_deletions
+     WHERE user_id = ? AND id = ? AND started_at IS NULL AND (lease_until IS NULL OR lease_until < ?)`,
+  ).bind(id, row.id, nowSeconds).run();
   if ((removed?.meta?.changes ?? 0) === 0) {
     return c.json({ ok: false, error: "This deletion is being processed right now - try again in a few minutes" }, 409);
   }
 
-  await writeAdminAudit(c.env, session, "user.delete.cancel", "user", id, { restored_moderation: restored });
-  return c.json({ ok: true, data: { moderation: restored } });
+  await writeAdminAudit(c.env, session, "user.delete.cancel", "user", id);
+  return c.json({ ok: true });
 });
 
 
@@ -968,7 +868,7 @@ usersRouter.delete("/:id/avatar", async (c) => {
   const id = c.req.param("id");
   // Confirm the user exists so we don't log an audit row + report success
   // for a no-op delete against a nonexistent id.
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+  const userRow = await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?")
     .bind(id).first<{ "1": number }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
@@ -1012,7 +912,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
     if (!c.env.STRIPE_SECRET_KEY) {
       cancelStripeWarning = "STRIPE_SECRET_KEY is unset on the admin worker; paid sub was not cancelled";
     } else {
-      const subRow = await c.env.AUTH_DB.prepare(
+      const subRow = await c.env.DB.prepare(
         "SELECT stripe_subscription_id FROM user_billing WHERE user_id = ?",
       ).bind(id).first<{ stripe_subscription_id: string | null }>();
       const subId = subRow?.stripe_subscription_id;
@@ -1037,13 +937,13 @@ usersRouter.post("/:id/grant-ink", async (c) => {
   // Verify the user exists before upserting - UPSERT into user_billing
   // would otherwise silently create a row for a non-existent id (well,
   // the FK would reject it, but a cleaner error is nicer).
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+  const userRow = await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?")
     .bind(id).first<{ "1": number }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
   // Preserve granted_plan_started_at across re-grants (admin re-grants
   // the same user shouldn't reset their "supporter since" date).
-  await c.env.AUTH_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO user_billing (user_id, granted_plan, granted_plan_expires_at, granted_plan_reason, granted_plan_started_at)
      VALUES (?, 'ink', ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
@@ -1080,7 +980,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
   }
 
   const id = c.req.param("id");
-  const row = await c.env.AUTH_DB.prepare(
+  const row = await c.env.DB.prepare(
     "SELECT stripe_customer_id, stripe_subscription_id FROM user_billing WHERE user_id = ?",
   ).bind(id).first<{ stripe_customer_id: string | null; stripe_subscription_id: string | null }>();
   if (!row?.stripe_customer_id || !row.stripe_subscription_id) {
@@ -1166,7 +1066,7 @@ usersRouter.post("/:id/cancel-subscription", async (c) => {
     .catch(() => ({} as { immediate?: boolean }));
   const immediate = body.immediate === true;
 
-  const subRow = await c.env.AUTH_DB.prepare(
+  const subRow = await c.env.DB.prepare(
     "SELECT stripe_subscription_id FROM user_billing WHERE user_id = ?",
   ).bind(id).first<{ stripe_subscription_id: string | null }>();
   const subId = subRow?.stripe_subscription_id;
@@ -1208,14 +1108,14 @@ usersRouter.delete("/:id/grant-ink", async (c) => {
   // Verify the user exists; we used to infer 404 from changes=0 on the
   // UPDATE, but a user without any billing row legitimately has nothing
   // to clear, which is now changes=0 as well.
-  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+  const userRow = await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?")
     .bind(id).first<{ "1": number }>();
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
   // We clear granted_plan_started_at too, so the next grant gets a
   // fresh "supporter since" date - revoke is a hard reset of the
   // grant relationship, not just a pause.
-  await c.env.AUTH_DB.prepare(
+  await c.env.DB.prepare(
     `UPDATE user_billing
      SET granted_plan = NULL,
          granted_plan_expires_at = NULL,
@@ -1239,7 +1139,6 @@ usersRouter.get("/:id/export", async (c) => {
   const zip = zipSync({
     "profile.json": strToU8(JSON.stringify(details.profile, null, 2)),
     "moderation.json": strToU8(JSON.stringify(details.moderation, null, 2)),
-    "security.json": strToU8(JSON.stringify(details.security, null, 2)),
     "projects.json": strToU8(JSON.stringify(details.projects, null, 2)),
     "billing.json": strToU8(JSON.stringify(details.billing, null, 2)),
   });

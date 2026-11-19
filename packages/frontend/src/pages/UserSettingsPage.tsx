@@ -51,7 +51,7 @@ import {
 import { getAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
-// Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
+// Mirrors INK_RING_STYLES in packages/api/src/account/plan.ts. Order is the
 // display order in the picker. 'shimmer' is the default - selecting it
 // stores NULL on the row.
 const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "none"; label: string }[] = [

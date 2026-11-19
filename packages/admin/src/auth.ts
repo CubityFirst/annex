@@ -1,5 +1,6 @@
 import type { Env } from "./index";
-import { loadCurrentSession, sessionResultToResponse } from "../../auth/src/session";
+import { loadCurrentSession, sessionResultToResponse } from "../../api/src/account/session";
+import { oidcConfigFor, type AuthFlow } from "../../api/src/routes/auth";
 
 export interface AdminSession {
   userId: string;
@@ -8,18 +9,25 @@ export interface AdminSession {
   isAdmin: boolean;
 }
 
-// Verifies the JWT and re-derives the session against the auth DB inline
-// via the AUTH_DB binding (one D1 batch), mirroring the API worker
-// (packages/api/src/auth.ts) instead of round-tripping the auth worker's
-// /verify route - that doubled the billable Worker invocations on every
-// admin request and contradicted the documented verification boundary.
+// The admin panel is its own first-party OIDC client of auth.cubityfir.st
+// (scopes `openid profile email roles`); sign-in requires the `admin` role.
+// It runs the same login/callback/exchange/logout handlers as the docs app
+// (packages/api/src/routes/auth.ts) with its own client and an 'admin'
+// session kind, so a docs-app token is refused here and vice versa.
+export function adminAuthFlow(env: Env): AuthFlow {
+  const appOrigin = (env.APP_ORIGIN ?? "https://admin.cubityfir.st").replace(/\/+$/, "");
+  return { kind: "admin", oidc: oidcConfigFor(env, appOrigin), appOrigin };
+}
+
+// Verifies the admin session JWT and re-derives it from cubedocs-main (the
+// same loader the API worker uses), with live standing + admin flag from the
+// identity service (cached ~60s).
 //
 // Returns:
 //   AdminSession - token valid; account in good standing.
 //   Response     - token valid but the account is disabled / suspended.
-//                  Pass this straight back to the client.
-//   null         - no/malformed Authorization header, or the token itself
-//                  was invalid/expired (incl. force-password-change).
+//   null         - no/malformed Authorization header, or the token/session
+//                  is invalid, revoked, expired or not an admin session.
 export async function verifySession(
   request: Request,
   env: Env,
@@ -28,16 +36,13 @@ export async function verifySession(
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
 
-  // `ctx` lets loadCurrentSession refresh the session row's last_used_at
-  // (bounded, post-response) so admin sessions show up as in-use in the
-  // "Active sessions" view instead of appearing dormant forever.
-  const result = await loadCurrentSession(authHeader.slice(7), env.AUTH_DB, env.JWT_SECRET, ctx);
+  const result = await loadCurrentSession(authHeader.slice(7), env, "admin", ctx);
   if (result.kind === "ok") {
     return {
       userId: result.session.userId,
       email: result.session.email,
       expiresAt: result.session.expiresAt,
-      isAdmin: result.session.isAdmin ?? false,
+      isAdmin: result.session.isAdmin,
     };
   }
   if (result.kind === "invalid") return null;
@@ -57,6 +62,8 @@ export async function requireAdminSession(
   if (session instanceof Response) {
     return session;
   }
+  // The admin role is re-checked live (identity service, ~60s cache), not
+  // just at sign-in: removing it on auth.cubityfir.st locks the panel.
   if (!session.isAdmin) {
     return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Trash2, Undo2, UserCheck } from "lucide-react";
+import { Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,9 +28,8 @@ import { CursorPaginationFooter } from "@/components/CursorPaginationFooter";
 import { SearchInput } from "@/components/SearchInput";
 import { UserRow } from "@/components/users/UserRow";
 import { BulkDeleteUsersDialog } from "@/components/users/BulkDeleteUsersDialog";
-import { BulkDisableUsersDialog } from "@/components/users/BulkDisableUsersDialog";
 import { useCursorPagination } from "@/hooks/useCursorPagination";
-import { type AdminUser, cancelUserDeletion, searchUsers, updateUserModeration } from "@/lib/api";
+import { type AdminUser, cancelUserDeletion, searchUsers } from "@/lib/api";
 import { runBulk } from "@/lib/bulk";
 
 // Radix Select disallows an empty-string item value, so the default
@@ -128,11 +127,6 @@ export function UsersPage() {
   // after each run, and the dialog must keep showing (and re-checking) the
   // accounts the operator actually reviewed.
   const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null);
-  const [disableOpen, setDisableOpen] = useState(false);
-  const [reEnabling, setReEnabling] = useState(false);
-  // Accounts pending deletion are excluded: their state belongs to the
-  // schedule (the worker refuses), so they go through "Cancel deletion".
-  const reEnableTargets = selectedUsers.filter(u => u.moderation !== 0 && u.deletion_execute_after == null);
   // A deletion the cron has started can only be finished, not cancelled.
   const cancelDeletionTargets = selectedUsers.filter(u => u.deletion_execute_after != null && u.deletion_started_at == null);
   const [cancellingDeletions, setCancellingDeletions] = useState(false);
@@ -153,27 +147,17 @@ export function UsersPage() {
     }
   }
 
-  async function handleBulkReEnable() {
-    setReEnabling(true);
-    try {
-      const result = await runBulk(reEnableTargets.map(u => u.id), id => updateUserModeration(id, 0));
-      if (result.succeeded.length > 0) {
-        toast.success(`Re-enabled ${result.succeeded.length} account${result.succeeded.length === 1 ? "" : "s"}`);
-      }
-      for (const f of result.failed) {
-        toast.error(`${visibleUsers.find(u => u.id === f.id)?.email ?? f.id}: ${f.error}`);
-      }
-      pager.refresh();
-    } finally {
-      setReEnabling(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Users</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Search and moderate user accounts.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          People who use Annex. Disabling, suspending and sign-in methods are managed on{" "}
+          <a href="https://auth.cubityfir.st/admin/users" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            auth.cubityfir.st
+          </a>
+          ; status here is the last known standing from there.
+        </p>
       </div>
 
       <Card>
@@ -240,8 +224,7 @@ export function UsersPage() {
                             Cancel {cancelDeletionTargets.length} scheduled deletion{cancelDeletionTargets.length === 1 ? "" : "s"}?
                           </AlertDialogTitle>
                           <AlertDialogDescription>
-                            These accounts won't be deleted, and each returns to the state it was in before its deletion
-                            was scheduled.
+                            Their Annex data won't be deleted, and they can use Annex again.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -251,32 +234,6 @@ export function UsersPage() {
                       </AlertDialogContent>
                     </AlertDialog>
                   )}
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" disabled={reEnabling || reEnableTargets.length === 0}>
-                        <UserCheck className="h-3.5 w-3.5" />
-                        Re-enable
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Re-enable {reEnableTargets.length} account{reEnableTargets.length === 1 ? "" : "s"}?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          These disabled or suspended accounts will be able to sign in again.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleBulkReEnable}>Re-enable</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                  <Button size="sm" variant="outline" onClick={() => setDisableOpen(true)}>
-                    <Ban className="h-3.5 w-3.5" />
-                    Disable
-                  </Button>
                   <Button size="sm" variant="destructive" onClick={() => setDeleteTargets(selectedUsers.map(u => u.id))}>
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete
@@ -330,12 +287,6 @@ export function UsersPage() {
         onOpenChange={open => { if (!open) setDeleteTargets(null); }}
         userIds={deleteTargets ?? []}
         onScheduled={() => pager.refresh()}
-      />
-      <BulkDisableUsersDialog
-        open={disableOpen}
-        onOpenChange={setDisableOpen}
-        users={selectedUsers}
-        onDone={() => pager.refresh()}
       />
     </div>
   );

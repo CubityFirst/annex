@@ -12,7 +12,7 @@
 //
 // Setting the theme is admin-only - the settings UI is hidden and the write
 // route is 403-guarded unless the user is a global site admin. THEME_MODES
-// must stay in sync with packages/auth/src/theme.ts.
+// must stay in sync with packages/api/src/account/theme.ts.
 
 import { converter, formatCss, clampChroma } from "culori";
 

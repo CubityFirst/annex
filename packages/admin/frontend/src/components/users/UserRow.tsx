@@ -1,18 +1,11 @@
 import { useRef, useState } from "react";
-import { format } from "date-fns";
-import { CalendarDays, ChevronDown, ChevronRight, Download, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,15 +17,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Sheet,
   SheetBody,
@@ -52,23 +36,17 @@ import {
   cancelUserDeletion,
   deleteUserAvatar,
   exportUserData,
-  forceUserPasswordChange,
   getUserDetails,
   resyncUserName,
-  updateUserModeration,
 } from "@/lib/api";
 import { downloadBlob } from "@/lib/download";
 import { formatDate, formatTimestampSeconds, initials } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
-  type DisableMode,
-  createDefaultDisableDate,
   formatModerationUntil,
-  formatTimeInput,
   getModerationState,
   latestModerationSummary,
-  mergeDateAndTime,
 } from "@/lib/moderation";
-import { cn } from "@/lib/utils";
 
 export interface UserRowProps {
   user: AdminUser;
@@ -82,8 +60,6 @@ export interface UserRowProps {
 
 export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerated }: UserRowProps) {
   const [expanded, setExpanded] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [forcingPasswordChange, setForcingPasswordChange] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [resyncingName, setResyncingName] = useState(false);
   const [avatarCacheBust, setAvatarCacheBust] = useState(0);
@@ -91,18 +67,10 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [details, setDetails] = useState<AdminUserDetails | null>(null);
-  const [disableDialogOpen, setDisableDialogOpen] = useState(false);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [disableMode, setDisableMode] = useState<DisableMode>("indefinitely");
-  const [disableDate, setDisableDate] = useState<Date | undefined>(() => createDefaultDisableDate());
-  const [disableTime, setDisableTime] = useState(() => formatTimeInput(createDefaultDisableDate()));
-  const [disableReason, setDisableReason] = useState("");
   const moderationState = getModerationState(user.moderation);
   const deletionScheduled = user.deletion_execute_after != null;
   const deletionStarted = user.deletion_started_at != null;
   const [cancellingDeletion, setCancellingDeletion] = useState(false);
-  const isReasonRequired = disableMode === "indefinitely" || disableMode === "until";
-  const canSubmitDisable = !pending && disableReason.trim().length > 0;
 
   // A refresh requested while one is already in flight is queued instead of
   // dropped - the Stripe-webhook backoff refetches (2s/5s timers in
@@ -110,25 +78,6 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
   // silently swallowing them would defeat the point.
   const detailsInFlight = useRef(false);
   const queuedRefresh = useRef<{ showError: boolean } | null>(null);
-
-  function resetDisableForm() {
-    const nextDate = createDefaultDisableDate();
-    setDatePickerOpen(false);
-    setDisableMode("indefinitely");
-    setDisableDate(nextDate);
-    setDisableTime(formatTimeInput(nextDate));
-    setDisableReason("");
-  }
-
-  function handleDisableDialogChange(open: boolean) {
-    setDisableDialogOpen(open);
-    if (!open) resetDisableForm();
-  }
-
-  function handleDisableDateSelect(date: Date | undefined) {
-    setDisableDate(date);
-    if (date) setDatePickerOpen(false);
-  }
 
   async function loadDetails(force = false, showError = true) {
     if (detailsInFlight.current) {
@@ -157,20 +106,6 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
     // Always refetch on open: cached details go stale across close/reopen
     // (any cached copy still renders while the refresh is in flight).
     if (open) void loadDetails(true, true);
-  }
-
-  async function handleForcePasswordChange() {
-    setForcingPasswordChange(true);
-    try {
-      await forceUserPasswordChange(user.id);
-      onUpdated(user.id, { force_password_change: 1 });
-      if (detailsOpen || details) void loadDetails(true, false);
-      toast.success(`${user.name} will be required to change their password on next sign in`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to force password change");
-    } finally {
-      setForcingPasswordChange(false);
-    }
   }
 
   async function handleExport() {
@@ -233,74 +168,6 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
     }
   }
 
-  async function handleEnableAccount() {
-    setPending(true);
-    try {
-      await updateUserModeration(user.id, 0);
-      onUpdated(user.id, {
-        moderation: 0,
-        latest_moderation_action: "re_enabled",
-        latest_moderation_reason: null,
-        latest_moderation_created_at: new Date().toISOString(),
-      });
-      if (detailsOpen || details) void loadDetails(true, false);
-      onModerated();
-      toast.success("Account re-enabled");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update user");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleDisableAccount() {
-    const trimmedReason = disableReason.trim();
-    if (!trimmedReason) {
-      toast.error("Enter a moderation reason");
-      return;
-    }
-
-    let moderation = -1;
-
-    if (disableMode === "until") {
-      if (!disableDate) {
-        toast.error("Choose a date before disabling the account");
-        return;
-      }
-
-      const disableUntil = mergeDateAndTime(disableDate, disableTime);
-      if (Number.isNaN(disableUntil.getTime()) || disableUntil.getTime() <= Date.now()) {
-        toast.error("Choose a future date and time");
-        return;
-      }
-
-      moderation = Math.floor(disableUntil.getTime() / 1000);
-    }
-
-    setPending(true);
-    try {
-      await updateUserModeration(user.id, moderation, trimmedReason);
-      onUpdated(user.id, {
-        moderation,
-        latest_moderation_action: moderation === -1 ? "disabled" : "suspended",
-        latest_moderation_reason: trimmedReason,
-        latest_moderation_created_at: new Date().toISOString(),
-      });
-      if (detailsOpen || details) void loadDetails(true, false);
-      onModerated();
-      toast.success(
-        moderation === -1
-          ? "Account disabled indefinitely"
-          : `Account disabled until ${formatModerationUntil(moderation)}`,
-      );
-      handleDisableDialogChange(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update user");
-    } finally {
-      setPending(false);
-    }
-  }
-
   const latestSummary = latestModerationSummary(user);
   const currentReason = moderationState.kind === "active" ? null : user.latest_moderation_reason;
 
@@ -351,7 +218,9 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
         <TableCell>
           <div className="flex flex-wrap items-center gap-1">
             {deletionScheduled
-              ? <Badge variant="destructive">Deleting {formatTimestampSeconds(user.deletion_execute_after!)}</Badge>
+              ? user.deletion_completed_at != null
+                ? <Badge variant="destructive">Annex data deleted</Badge>
+                : <Badge variant="destructive">Deleting {formatTimestampSeconds(user.deletion_execute_after!)}</Badge>
               : moderationState.kind === "disabled"
               ? <Badge variant="destructive">Disabled</Badge>
               : moderationState.kind === "suspended"
@@ -373,10 +242,20 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
               {deletionScheduled && (
                 <div className="text-sm">
                   <p>
-                    <span className="font-medium text-destructive">Scheduled for permanent deletion</span> on{" "}
-                    {formatTimestampSeconds(user.deletion_execute_after!)}
-                    {user.deletion_requested_by_email ? ` (requested by ${user.deletion_requested_by_email})` : ""}.
-                    The account is disabled until then.
+                    {user.deletion_completed_at != null ? (
+                      <>
+                        <span className="font-medium text-destructive">Annex data deleted</span> on{" "}
+                        {formatTimestampSeconds(user.deletion_completed_at)}. They stay blocked from Annex; delete the
+                        account itself on auth.cubityfir.st.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium text-destructive">Annex data scheduled for deletion</span> on{" "}
+                        {formatTimestampSeconds(user.deletion_execute_after!)}
+                        {user.deletion_requested_by_email ? ` (requested by ${user.deletion_requested_by_email})` : ""}.
+                        They&apos;re blocked from Annex until then.
+                      </>
+                    )}
                   </p>
                   {user.deletion_error && (
                     <p className="mt-1 text-xs text-destructive">
@@ -482,33 +361,7 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
                   Resync display name
                 </Button>
 
-                {user.force_password_change ? (
-                  <Badge variant="outline" className="text-xs">Password change pending</Badge>
-                ) : (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" disabled={forcingPasswordChange}>
-                        Force password change
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Force password change?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          <strong>{user.email}</strong> will be required to set a new password the next time they sign in.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleForcePasswordChange}>
-                          Confirm
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {deletionScheduled && deletionStarted ? (
+                {deletionScheduled && user.deletion_completed_at != null ? null : deletionScheduled && deletionStarted ? (
                   <Badge variant="outline" className="text-xs">Deletion in progress - can't be cancelled</Badge>
                 ) : deletionScheduled ? (
                   <AlertDialog>
@@ -521,8 +374,8 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
                       <AlertDialogHeader>
                         <AlertDialogTitle>Cancel scheduled deletion?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          <strong>{user.email}</strong> will not be deleted, and the account returns to the state it
-                          was in before the deletion was scheduled.
+                          <strong>{user.email}</strong>&apos;s Annex data will not be deleted, and they can use
+                          Annex again.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -531,143 +384,14 @@ export function UserRow({ user, selected, onSelectedChange, onUpdated, onModerat
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                ) : moderationState.kind === "active" ? (
-                  <Dialog open={disableDialogOpen} onOpenChange={handleDisableDialogChange}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" variant="destructive" disabled={pending}>
-                        Disable account
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Disable account?</DialogTitle>
-                        <DialogDescription>
-                          This will prevent <strong>{user.email}</strong> from logging in until the selected time,
-                          or until an administrator manually re-enables the account.
-                        </DialogDescription>
-                      </DialogHeader>
+                ) : null}
 
-                      <div className="flex flex-col gap-4">
-                      <RadioGroup
-                        value={disableMode}
-                        onValueChange={v => setDisableMode(v as DisableMode)}
-                        className="flex flex-col gap-4"
-                      >
-                        <Label
-                          htmlFor={`disable-mode-indefinitely-${user.id}`}
-                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal"
-                        >
-                          <RadioGroupItem
-                            id={`disable-mode-indefinitely-${user.id}`}
-                            value="indefinitely"
-                            className="mt-0.5"
-                          />
-                          <div className="flex flex-col gap-1">
-                            <span className="text-sm font-medium">Indefinitely</span>
-                            <span className="text-sm text-muted-foreground">
-                              Keep the account disabled until an administrator re-enables it.
-                            </span>
-                          </div>
-                        </Label>
-
-                        <div className="flex flex-col gap-3 rounded-md border p-3">
-                          <Label
-                            htmlFor={`disable-mode-until-${user.id}`}
-                            className="flex cursor-pointer items-start gap-3 font-normal"
-                          >
-                            <RadioGroupItem
-                              id={`disable-mode-until-${user.id}`}
-                              value="until"
-                              className="mt-0.5"
-                            />
-                            <div className="flex flex-col gap-1">
-                              <span className="text-sm font-medium">Until X time</span>
-                              <span className="text-sm text-muted-foreground">
-                                Re-enable the account automatically at a specific date and time.
-                              </span>
-                            </div>
-                          </Label>
-
-                          {disableMode === "until" && (
-                            <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
-                                <div className="flex flex-col gap-2">
-                                  <Label>Date</Label>
-                                  <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-                                    <PopoverTrigger asChild>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        className={cn(
-                                          "w-full justify-start text-left font-normal",
-                                          !disableDate && "text-muted-foreground",
-                                        )}
-                                      >
-                                        <CalendarDays className="h-4 w-4" />
-                                        {disableDate ? format(disableDate, "PPP") : "Pick a date"}
-                                      </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                      <Calendar
-                                        mode="single"
-                                        selected={disableDate}
-                                        onSelect={handleDisableDateSelect}
-                                        disabled={(date) => {
-                                          const today = new Date();
-                                          today.setHours(0, 0, 0, 0);
-                                          return date < today;
-                                        }}
-                                        initialFocus
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                  <Label htmlFor={`disable-time-${user.id}`}>Time</Label>
-                                  <Input
-                                    id={`disable-time-${user.id}`}
-                                    type="time"
-                                    value={disableTime}
-                                    onChange={e => setDisableTime(e.target.value)}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </RadioGroup>
-
-                        <div className="flex flex-col gap-2">
-                          <Label htmlFor={`disable-reason-${user.id}`}>
-                            Moderation reason
-                          </Label>
-                          <Textarea
-                            id={`disable-reason-${user.id}`}
-                            value={disableReason}
-                            onChange={e => setDisableReason(e.target.value)}
-                            placeholder="Explain why this account is being disabled or suspended."
-                            required={isReasonRequired}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            This reason is stored in admin moderation history and included in user export data.
-                          </p>
-                        </div>
-                      </div>
-
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => handleDisableDialogChange(false)} disabled={pending}>
-                          Cancel
-                        </Button>
-                        <Button type="button" variant="destructive" onClick={handleDisableAccount} disabled={!canSubmitDisable}>
-                          Disable
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                ) : (
-                  <Button size="sm" variant="outline" disabled={pending} onClick={handleEnableAccount}>
-                    Re-enable account
-                  </Button>
-                )}
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`https://auth.cubityfir.st/admin/users/${encodeURIComponent(user.id)}`} target="_blank" rel="noreferrer">
+                    Moderate on auth.cubityfir.st
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                  </a>
+                </Button>
               </div>
             </div>
           </TableCell>

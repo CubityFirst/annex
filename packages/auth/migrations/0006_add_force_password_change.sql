@@ -1,1 +1,0 @@
-ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0;

@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The gate itself is the unit under test, so mock only the session
 // verification underneath it - the real enforceAdmin middleware, routers,
-// and 404/asset fallbacks all run.
-vi.mock("./auth", () => ({
+// sign-in routes and 404/asset fallbacks all run.
+vi.mock("./auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./auth")>()),
   requireAdminSession: vi.fn(),
   verifySession: vi.fn(),
 }));
@@ -11,6 +12,11 @@ vi.mock("./audit", () => ({ writeAdminAudit: vi.fn() }));
 
 import { app } from "./index";
 import { requireAdminSession, verifySession } from "./auth";
+import { createSqliteD1 } from "../../api/src/test/sqliteD1";
+import { seedSession } from "../../api/src/test/session";
+import { createFakeIdp } from "../../api/src/test/fakeIdp";
+import { setOidcFetchForTests } from "../../api/src/routes/auth";
+import { clearOidcCaches } from "../../api/src/account/oidc";
 
 const session = { userId: "admin-1", email: "admin@example.com", expiresAt: Date.now() + 3600_000, isAdmin: true };
 
@@ -35,15 +41,12 @@ function makeDb() {
 function makeEnv(overrides: Record<string, unknown> = {}) {
   return {
     DB: makeDb(),
-    AUTH_DB: makeDb(),
     ASSETS: { get: vi.fn(async () => null), delete: vi.fn(), list: vi.fn(async () => ({ objects: [], truncated: false })) },
     SITE_ASSETS: {
       fetch: vi.fn(async () => new Response("<!doctype html><html></html>", { headers: { "Content-Type": "text/html" } })),
     },
-    AUTH: { fetch: vi.fn(async () => Response.json({ ok: true, data: {} })) },
     JWT_SECRET: "secret",
     RATE_LIMITER_ADMIN: makeLimiter(),
-    RATE_LIMITER_ADMIN_HANDOFF: makeLimiter(),
     RATE_LIMITER_AVATAR: makeLimiter(),
     ...overrides,
   };
@@ -68,7 +71,6 @@ const GATED_GETS = [
   "/api/projects/p-1",
   "/api/audit",
   "/api/audit/actions",
-  "/api/oauth-clients",
 ];
 
 describe("admin gate route matrix", () => {
@@ -100,10 +102,10 @@ describe("gated mutations are behind the same gate", () => {
     ["DELETE", "/api/projects/p-1"],
     ["PATCH", "/api/projects/p-1/features"],
     ["POST", "/api/projects/p-1/reindex"],
-    ["PATCH", "/api/users/u-1"],
+    ["POST", "/api/users/u-1/deletion"],
     ["POST", "/api/users/u-1/grant-ink"],
     ["POST", "/api/users/u-1/gift-month"],
-    ["POST", "/api/oauth-clients/delete"],
+    ["POST", "/api/users/u-1/resync-name"],
   ];
 
   it.each(MUTATIONS)("%s %s -> 401 without a session", async (method, path) => {
@@ -142,42 +144,105 @@ describe("/api/verify", () => {
   });
 });
 
-describe("handoff exchange proxy", () => {
-  it("forwards X-Client-IP and User-Agent across the service-binding hop (AB-M1)", async () => {
-    const env = makeEnv();
-    await request(env, "/api/auth/handoff/exchange", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "CF-Connecting-IP": "203.0.113.9",
-        "User-Agent": "TestBrowser/1.0",
-      },
-      body: JSON.stringify({ code: "c", callbackUrl: "https://admin.example/auth/callback" }),
+describe("sign-in routes", () => {
+  afterEach(() => setOidcFetchForTests(undefined));
+
+  it("GET /api/auth/login 503s when OIDC isn't configured", async () => {
+    const res = await request(makeEnv(), "/api/auth/login");
+    expect(res.status).toBe(503);
+    expect(requireAdminSession).not.toHaveBeenCalled();
+  });
+
+  it("GET /api/auth/login redirects to the issuer with this panel's client and callback", async () => {
+    const idp = await createFakeIdp({
+      clients: { "annex-admin": { redirectUris: ["https://admin.test/api/auth/callback"] } },
     });
-    const authFetch = (env.AUTH as { fetch: ReturnType<typeof vi.fn> }).fetch;
-    expect(authFetch).toHaveBeenCalledTimes(1);
-    const init = authFetch.mock.calls[0][1] as RequestInit;
-    const headers = new Headers(init.headers);
-    expect(headers.get("X-Client-IP")).toBe("203.0.113.9");
-    expect(headers.get("User-Agent")).toBe("TestBrowser/1.0");
+    setOidcFetchForTests(idp.fetch);
+    clearOidcCaches();
+    const res = await request(
+      makeEnv({ OIDC_ISSUER: idp.issuer, OIDC_CLIENT_ID: "annex-admin", APP_ORIGIN: "https://admin.test" }),
+      "/api/auth/login",
+    );
+    expect(res.status).toBe(302);
+    const loc = new URL(res.headers.get("Location")!);
+    expect(`${loc.origin}${loc.pathname}`).toBe(`${idp.issuer}/oauth/authorize`);
+    expect(loc.searchParams.get("client_id")).toBe("annex-admin");
+    expect(loc.searchParams.get("redirect_uri")).toBe("https://admin.test/api/auth/callback");
+    expect(loc.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
+  it.each([
+    ["GET", "/api/auth/login"],
+    ["GET", "/api/auth/callback"],
+    ["POST", "/api/auth/exchange"],
+    ["POST", "/api/auth/logout"],
+  ])("%s %s is IP rate limited", async (method, path) => {
+    const res = await request(makeEnv({ RATE_LIMITER_ADMIN: makeLimiter(false) }), path, { method });
+    expect(res.status).toBe(429);
+  });
+
+  it("POST /api/auth/exchange 400s an unknown code", async () => {
+    const { db } = createSqliteD1();
+    const res = await request(makeEnv({ DB: db }), "/api/auth/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "x".repeat(32) }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 
-describe("logout proxy (AF-S3)", () => {
-  it("forwards the bearer token to the auth worker's /sessions/logout", async () => {
-    const env = makeEnv();
-    const res = await request(env, "/api/auth/logout", {
+describe("logout (AF-S3)", () => {
+  it("revokes the caller's admin session without the admin gate and returns a logoutUrl", async () => {
+    const { db, sqlite } = createSqliteD1();
+    // Not an admin any more: logout must still work (and never consults the gate).
+    const token = await seedSession(sqlite, { userId: "u-1", kind: "admin", isAdmin: false });
+    const res = await request(makeEnv({ DB: db, JWT_SECRET: "test-secret" }), "/api/auth/logout", {
       method: "POST",
-      headers: { Authorization: "Bearer tok" },
+      headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const authFetch = (env.AUTH as { fetch: ReturnType<typeof vi.fn> }).fetch;
-    expect(authFetch).toHaveBeenCalledWith(
-      "https://auth/sessions/logout",
-      expect.objectContaining({ method: "POST" }),
-    );
-    const init = authFetch.mock.calls[0][1] as RequestInit;
-    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer tok");
+    const body = (await res.json()) as { ok: boolean; data: { logoutUrl: string } };
+    expect(body.ok).toBe(true);
+    expect(typeof body.data.logoutUrl).toBe("string");
+    expect(requireAdminSession).not.toHaveBeenCalled();
+    const row = sqlite.prepare("SELECT revoked_at FROM sessions WHERE id = 's-u-1'").get() as { revoked_at: number | null };
+    expect(row.revoked_at).not.toBeNull();
+  });
+
+  it("does not revoke a docs-app session presented to the admin logout", async () => {
+    const { db, sqlite } = createSqliteD1();
+    const token = await seedSession(sqlite, { userId: "u-1", kind: "app" });
+    const res = await request(makeEnv({ DB: db, JWT_SECRET: "test-secret" }), "/api/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const row = sqlite.prepare("SELECT revoked_at FROM sessions WHERE id = 's-u-1'").get() as { revoked_at: number | null };
+    expect(row.revoked_at).toBeNull();
+  });
+});
+
+describe("dev quick-login", () => {
+  const post = (env: ReturnType<typeof makeEnv>) => request(env, "/api/dev/quick-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "e2e-admin@example.com" }),
+  });
+
+  it("404s unless DEV_QUICK_LOGIN is on AND the panel runs on localhost", async () => {
+    const { db } = createSqliteD1();
+    expect((await post(makeEnv({ DB: db, APP_ORIGIN: "http://localhost:5174" }))).status).toBe(404);
+    expect((await post(makeEnv({ DB: db, DEV_QUICK_LOGIN: "true", APP_ORIGIN: "https://admin.cubityfir.st" }))).status).toBe(404);
+  });
+
+  it("mints an admin session for an admin dev user locally", async () => {
+    const { db, sqlite } = createSqliteD1();
+    const res = await post(makeEnv({ DB: db, DEV_QUICK_LOGIN: "true", APP_ORIGIN: "http://localhost:5174" }));
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { userId: string } };
+    expect(sqlite.prepare("SELECT is_admin FROM users WHERE id = ?").get(data.userId)).toEqual({ is_admin: 1 });
+    expect(sqlite.prepare("SELECT kind FROM sessions WHERE user_id = ?").get(data.userId)).toEqual({ kind: "admin" });
   });
 });
 

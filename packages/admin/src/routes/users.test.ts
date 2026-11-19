@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
-import { fileURLToPath } from "node:url";
 import { createSqliteD1 } from "../../../api/src/test/sqliteD1";
-
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../auth/migrations", import.meta.url));
+import type { IdentityUser } from "../../../api/src/account/identity";
 
 vi.mock("../audit", () => ({ writeAdminAudit: vi.fn() }));
 
@@ -34,6 +32,13 @@ const EMPTY_BILLING: BillingRow = {
   granted_plan_started_at: null,
   granted_plan_reason: null,
 };
+
+function identityUser(over: Partial<IdentityUser> = {}): IdentityUser {
+  return {
+    id: "u-1", email: "u@x.com", name: "U", emailVerified: true, isAdmin: false,
+    status: "active", suspendedUntil: null, createdAt: "2026-01-01 00:00:00", ...over,
+  };
+}
 
 describe("getModerationAction", () => {
   it("maps 0 to re_enabled", () => {
@@ -74,15 +79,18 @@ describe("buildUserStatusClause", () => {
     expect(buildUserStatusClause("bogus", NOW)).toEqual({ sql: "", binds: [] });
   });
 
-  it("partitions users by moderation state when run against the real schema", () => {
+  it("partitions users by mirrored standing when run against the real schema", () => {
     // Evaluate each predicate in real SQLite: whether an elapsed suspension
     // counts as active (and not suspended) only shows up when the SQL runs.
-    const { sqlite } = createSqliteD1(AUTH_MIGRATIONS);
-    const add = sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at, moderation) VALUES (?, ?, 'U', 'x', datetime('now'), ?)");
-    add.run("active", "a@x.com", 0);
-    add.run("disabled", "d@x.com", -1);
-    add.run("suspended", "s@x.com", NOW + 3600);
-    add.run("suspension-elapsed", "e@x.com", NOW - 3600);
+    const { sqlite } = createSqliteD1();
+    const add = sqlite.prepare(
+      `INSERT INTO users (id, email, name, is_admin, status, suspended_until, created_at, first_seen_at, synced_at)
+       VALUES (?, ?, 'U', 0, ?, ?, datetime('now'), 0, 0)`,
+    );
+    add.run("active", "a@x.com", "active", null);
+    add.run("disabled", "d@x.com", "disabled", null);
+    add.run("suspended", "s@x.com", "suspended", NOW + 3600);
+    add.run("suspension-elapsed", "e@x.com", "suspended", NOW - 3600);
     const matching = (status: string) => {
       const { sql, binds } = buildUserStatusClause(status, NOW);
       return sqlite.prepare(`SELECT id FROM users u WHERE ${sql} ORDER BY id`).all(...binds).map(r => r.id);
@@ -195,7 +203,6 @@ function makeUsersApp(env: Record<string, unknown>) {
 
 function makeEnv() {
   return {
-    AUTH_DB: makeDb(),
     DB: makeDb(),
     ASSETS: { delete: vi.fn(async () => undefined), get: vi.fn(async () => null) },
     STRIPE_SECRET_KEY: "sk_test_x",
@@ -211,53 +218,41 @@ afterEach(() => {
 });
 
 describe("audit emission - every mutation writes exactly one row, none on 404 (AB-M4 doctrine)", () => {
-  // [label, seed existing user into AUTH_DB.firstQueue?, request]
+  // [label, seed existing user into DB.firstQueue, request]
   const MUTATIONS: Array<[string, (env: ReturnType<typeof makeEnv>) => void, string, RequestInit]> = [
     [
-      "PATCH /:id (moderation)",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
-      "/u-1",
-      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ moderation: -1, reason: "spam" }) },
-    ],
-    [
       "PATCH /:id/badges",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      env => env.DB.firstQueue.push({ "1": 1 }),
       "/u-1/badges",
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ badges: 1 }) },
     ],
     [
       "PATCH /:id/handle",
-      env => env.AUTH_DB.firstQueue.push({ id: "u-1", handle: null, handle_locked: 0 }),
+      env => env.DB.firstQueue.push({ id: "u-1", handle: null, handle_locked: 0 }),
       "/u-1/handle",
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: null, locked: true }) },
     ],
     [
-      "POST /:id/force-password-change",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
-      "/u-1/force-password-change",
-      { method: "POST" },
-    ],
-    [
       "DELETE /:id/avatar",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      env => env.DB.firstQueue.push({ "1": 1 }),
       "/u-1/avatar",
       { method: "DELETE" },
     ],
     [
       "POST /:id/grant-ink",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      env => env.DB.firstQueue.push({ "1": 1 }),
       "/u-1/grant-ink",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "vip" }) },
     ],
     [
       "DELETE /:id/grant-ink",
-      env => env.AUTH_DB.firstQueue.push({ "1": 1 }),
+      env => env.DB.firstQueue.push({ "1": 1 }),
       "/u-1/grant-ink",
       { method: "DELETE" },
     ],
     [
       "POST /:id/resync-name",
-      env => env.AUTH_DB.firstQueue.push({ name: "Real Name" }),
+      env => env.DB.firstQueue.push({ name: "Real Name" }),
       "/u-1/resync-name",
       { method: "POST" },
     ],
@@ -285,7 +280,7 @@ describe("audit emission - every mutation writes exactly one row, none on 404 (A
 describe("POST /:id/resync-name", () => {
   it("rewrites both membership tables from the canonical users.name", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ name: "Real Name" });
+    env.DB.firstQueue.push({ name: "Real Name" });
     const request = makeUsersApp(env);
     const res = await request("/u-1/resync-name", { method: "POST" });
     expect(res.status).toBe(200);
@@ -298,12 +293,30 @@ describe("POST /:id/resync-name", () => {
     expect(batch[1].sql).toContain("UPDATE organization_members SET name = ?");
     expect(batch[1].binds).toEqual(["Real Name", "u-1", "Real Name"]);
   });
+
+  it("refreshes the mirror from the identity service first, then copies that name", async () => {
+    const { db, sqlite } = createSqliteD1();
+    sqlite.prepare(
+      `INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at)
+       VALUES ('u-1', 'old@x.com', 'Old Name', datetime('now'), 0, 0)`,
+    ).run();
+    sqlite.prepare("INSERT INTO projects (id, name, owner_id, created_at) VALUES ('p-1', 'S', 'u-1', datetime('now'))").run();
+    sqlite.prepare("INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES ('m-1', 'p-1', 'u-1', 'old@x.com', 'Old Name', 'owner', 'u-1', datetime('now'))").run();
+    const getUser = vi.fn(async () => identityUser({ id: "u-1", email: "new@x.com", name: "New Name" }));
+    const res = await makeUsersApp({ DB: db, IDENTITY: { getUser } })("/u-1/resync-name", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(getUser).toHaveBeenCalledWith("u-1");
+    expect(sqlite.prepare("SELECT email, name FROM users WHERE id = 'u-1'").get()).toEqual({ email: "new@x.com", name: "New Name" });
+    expect(sqlite.prepare("SELECT name FROM project_members WHERE id = 'm-1'").get()).toEqual({ name: "New Name" });
+    // The row the mirror refresh fixed is counted, not reported as 0.
+    expect(await res.json()).toEqual({ ok: true, data: { project_members: 1, organization_members: 0 } });
+  });
 });
 
 describe("PATCH /:id/badges - int32 coercion bound", () => {
   it("rejects 2^32 + allowed (which passes a mask-only check via ToInt32)", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ "1": 1 });
+    env.DB.firstQueue.push({ "1": 1 });
     const request = makeUsersApp(env);
     const res = await request("/u-1/badges", {
       method: "PATCH",
@@ -318,7 +331,7 @@ describe("PATCH /:id/badges - int32 coercion bound", () => {
 describe("POST /:id/gift-month - Stripe idempotency (AB-M3)", () => {
   it("sends an Idempotency-Key scoped to (admin, user, billing period)", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
+    env.DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({
         cancel_at_period_end: false,
@@ -340,7 +353,7 @@ describe("POST /:id/gift-month - Stripe idempotency (AB-M3)", () => {
 
   it("does not audit when the Stripe credit fails", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
+    env.DB.firstQueue.push({ stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({
         cancel_at_period_end: false,
@@ -360,37 +373,38 @@ describe("POST /:id/gift-month - Stripe idempotency (AB-M3)", () => {
 describe("GET /search - LIKE escaping", () => {
   it("escapes wildcards in the email search and pairs with ESCAPE", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([]);
+    env.DB.allQueue.push([]);
     const request = makeUsersApp(env);
     const res = await request("/search?q=a_b%25");
     expect(res.status).toBe(200);
-    const call = env.AUTH_DB.calls.find(c => c.sql.includes("LIKE"));
+    const call = env.DB.calls.find(c => c.sql.includes("LIKE"));
     expect(call?.sql).toContain("ESCAPE");
     expect(call?.binds[0]).toBe("%a\\_b\\%%");
   });
 
   it("selects email_verified so the dashboard can render the indicator", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([]);
+    env.DB.allQueue.push([]);
     const request = makeUsersApp(env);
     const res = await request("/search?q=");
     expect(res.status).toBe(200);
-    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM users"));
+    const call = env.DB.calls.find(c => c.sql.includes("FROM users"));
     expect(call?.sql).toContain("u.email_verified");
   });
 });
 
-describe("PATCH /:id - self-protection", () => {
-  it("refuses to disable the caller's own account", async () => {
+describe("removed moderation endpoints", () => {
+  // Moderation and password resets happen on the identity service now.
+  it.each([
+    ["PATCH", "/u-1", JSON.stringify({ moderation: -1, reason: "spam" })],
+    ["POST", "/u-1/force-password-change", undefined],
+  ])("%s %s is gone (404) and writes nothing", async (method, path, body) => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ "1": 1 });
-    const res = await makeUsersApp(env)("/admin-1", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ moderation: -1, reason: "oops" }),
-    });
-    expect(res.status).toBe(400);
-    expect(env.AUTH_DB.batch).not.toHaveBeenCalled();
+    env.DB.firstQueue.push({ "1": 1 });
+    const res = await makeUsersApp(env)(path, { method, headers: { "Content-Type": "application/json" }, body });
+    expect(res.status).toBe(404);
+    expect(env.DB.calls).toHaveLength(0);
+    expect(env.DB.batch).not.toHaveBeenCalled();
     expect(writeAdminAudit).not.toHaveBeenCalled();
   });
 });
@@ -406,7 +420,7 @@ describe("POST /delete-preview", () => {
 
   it("groups owned sites/orgs per user and flags self + admins as blocked", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([
+    env.DB.allQueue.push([
       { id: "u-1", email: "a@x.com", name: "A", is_admin: 0, stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" },
       { id: "u-2", email: "b@x.com", name: "B", is_admin: 1, stripe_customer_id: null, stripe_subscription_id: null },
       { id: "admin-1", email: "admin@example.com", name: "Me", is_admin: 1, stripe_customer_id: null, stripe_subscription_id: null },
@@ -451,10 +465,17 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
     });
   }
   const scheduled = (env: ReturnType<typeof makeEnv>) =>
-    env.AUTH_DB.batches.some(b => b.some(c => c.sql.includes("INSERT INTO user_deletions")));
+    [...env.DB.calls, ...env.DB.batches.flat()].some(c => c.sql.includes("INSERT INTO user_deletions"));
   const destructive = (env: ReturnType<typeof makeEnv>) =>
-    [...env.AUTH_DB.calls, ...env.DB.calls, ...env.AUTH_DB.batches.flat(), ...env.DB.batches.flat()]
+    [...env.DB.calls, ...env.DB.batches.flat()]
       .some(c => /DELETE FROM (users|projects|organizations|project_members)/.test(c.sql));
+
+  it("refuses (503, nothing written) when the live admin role can't be checked", async () => {
+    const env = { ...makeEnv(), IDENTITY: { getUser: vi.fn(async () => { throw new Error("identity down"); }) } };
+    const res = await schedule(env as unknown as ReturnType<typeof makeEnv>, "u-1");
+    expect(res.status).toBe(503);
+    expect(scheduled(env as unknown as ReturnType<typeof makeEnv>)).toBe(false);
+  });
 
   it("refuses the caller's own account", async () => {
     const env = makeEnv();
@@ -466,10 +487,10 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
     let env = makeEnv();
     expect((await schedule(env, "ghost")).status).toBe(404);
     env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 1, moderation: 0, scheduled: 0 });
+    env.DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 1, scheduled: 0 });
     expect((await schedule(env, "u-1")).status).toBe(409);
     env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, moderation: 0, scheduled: 1 });
+    env.DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, scheduled: 1 });
     expect((await schedule(env, "u-1")).status).toBe(409);
     expect(scheduled(env)).toBe(false);
     expect(writeAdminAudit).not.toHaveBeenCalled();
@@ -477,7 +498,7 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
 
   it("refuses when owned sites weren't confirmed", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, moderation: 0, scheduled: 0 });
+    env.DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, scheduled: 0 });
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], []);
     const res = await schedule(env, "u-1");
     expect(res.status).toBe(409);
@@ -486,27 +507,24 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
 
   it("refuses a confirmed set that doesn't match (extra or foreign site id)", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, moderation: 0, scheduled: 0 });
+    env.DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, scheduled: 0 });
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], []);
     const res = await schedule(env, "u-1", { confirm_site_ids: ["p-1", "someone-elses-site"] });
     expect(res.status).toBe(409);
     expect(scheduled(env)).toBe(false);
   });
 
-  it("schedules: records confirmed ids + previous moderation, disables now, deletes nothing", async () => {
+  it("schedules: records the confirmed ids, touches no moderation, deletes nothing", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, moderation: 0, scheduled: 0 });
+    env.DB.firstQueue.push({ id: "u-1", email: "a@x.com", is_admin: 0, scheduled: 0 });
     env.DB.allQueue.push([{ id: "p-1", name: "Site" }], [{ id: "o-1", name: "Org" }]);
     const before = Math.floor(Date.now() / 1000);
     const res = await schedule(env, "u-1", { confirm_site_ids: ["p-1"], confirm_org_ids: ["o-1"] });
     expect(res.status).toBe(200);
 
-    const batch = env.AUTH_DB.batches[0];
-    const insert = batch.find(c => c.sql.includes("INSERT INTO user_deletions"))!;
-    const [scheduleId, requestedBy, requestedByEmail, executeAfter, sites, orgs, userId] = insert.binds;
+    const insert = env.DB.calls.find(c => c.sql.includes("INSERT INTO user_deletions"))!;
+    const [userId, scheduleId, requestedBy, requestedByEmail, executeAfter, sites, orgs] = insert.binds;
     expect([userId, requestedBy, requestedByEmail]).toEqual(["u-1", "admin-1", "admin@example.com"]);
-    // previous_moderation comes from users inside the transaction.
-    expect(insert.sql).toContain("u.moderation FROM users u WHERE u.id = ?");
     // A fresh id per schedule - the cron's claim is tied to it.
     expect(scheduleId).toMatch(/^[0-9a-f-]{36}$/);
     // Seven days out.
@@ -514,8 +532,11 @@ describe("POST /:id/deletion - schedule (never deletes)", () => {
     expect(executeAfter as number).toBeLessThan(before + 7 * 86400 + 60);
     expect(JSON.parse(sites as string)).toEqual(["p-1"]);
     expect(JSON.parse(orgs as string)).toEqual(["o-1"]);
-    expect(batch.some(c => c.sql.includes("UPDATE users SET moderation = -1"))).toBe(true);
-    expect(batch.some(c => c.sql.includes("INSERT INTO user_moderation_events"))).toBe(true);
+    expect(((await res.json()) as { data: unknown }).data).toEqual({ execute_after: executeAfter });
+    // The user_deletions row is the block; standing lives on the identity service.
+    const allSql = [...env.DB.calls, ...env.DB.batches.flat()].map(c => c.sql);
+    expect(allSql.some(q => /moderation/.test(q))).toBe(false);
+    expect(allSql.some(q => q.includes("UPDATE users"))).toBe(false);
 
     expect(destructive(env)).toBe(false);
     expect(writeAdminAudit).toHaveBeenCalledTimes(1);
@@ -534,69 +555,56 @@ describe("DELETE /:id/deletion - cancel", () => {
   });
 
   const pending = (overrides: Record<string, unknown> = {}) =>
-    ({ id: "sched-1", previous_moderation: 0, started_at: null, lease_until: null, ...overrides });
+    ({ id: "sched-1", started_at: null, lease_until: null, ...overrides });
   const cancel = (env: ReturnType<typeof makeEnv>) => makeUsersApp(env)("/u-1/deletion", { method: "DELETE" });
+  const removal = (env: ReturnType<typeof makeEnv>) => env.DB.calls.find(c => c.sql.includes("DELETE FROM user_deletions"));
 
-  it("removes THIS schedule (only if still cancellable) and restores the previous moderation", async () => {
+  it("removes THIS schedule, only if still cancellable, and returns ok", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(pending());
+    env.DB.firstQueue.push(pending());
     const res = await cancel(env);
     expect(res.status).toBe(200);
-    const batch = env.AUTH_DB.batches[0];
-    // Restore + event first, each guarded on THIS schedule still being
-    // cancellable; the schedule row is deleted last.
-    expect(batch[0].sql).toContain("UPDATE users SET moderation = ?");
-    expect(batch[0].sql).toContain("AND id = ? AND started_at IS NULL");
-    expect(batch[0].binds.slice(0, 4)).toEqual([0, "u-1", "u-1", "sched-1"]);
-    expect(batch[1].sql).toContain("AND id = ? AND started_at IS NULL");
-    expect(batch[1].binds).toContain("re_enabled");
-    expect(batch[2].sql).toContain("DELETE FROM user_deletions");
-    expect(batch[2].binds.slice(0, 2)).toEqual(["u-1", "sched-1"]);
-    expect(writeAdminAudit).toHaveBeenCalledWith(
-      expect.anything(), session, "user.delete.cancel", "user", "u-1", { restored_moderation: 0 },
-    );
+    expect(await res.json()).toEqual({ ok: true });
+    const del = removal(env)!;
+    expect(del.sql).toContain("AND id = ? AND started_at IS NULL");
+    expect(del.binds.slice(0, 2)).toEqual(["u-1", "sched-1"]);
+    expect(env.DB.calls.some(c => /moderation|UPDATE users/.test(c.sql))).toBe(false);
+    expect(writeAdminAudit).toHaveBeenCalledWith(expect.anything(), session, "user.delete.cancel", "user", "u-1");
+  });
+
+  it("refuses once execution has started (incl. a completed deletion)", async () => {
+    const env = makeEnv();
+    env.DB.firstQueue.push(pending({ started_at: 123 }));
+    expect((await cancel(env)).status).toBe(409);
+    expect(removal(env)).toBeUndefined();
+    expect(writeAdminAudit).not.toHaveBeenCalled();
   });
 
   it("refuses while a cron run holds the lease", async () => {
     const env = makeEnv();
-    env.AUTH_DB.firstQueue.push(pending({ lease_until: Math.floor(Date.now() / 1000) + 600 }));
+    env.DB.firstQueue.push(pending({ lease_until: Math.floor(Date.now() / 1000) + 600 }));
     expect((await cancel(env)).status).toBe(409);
-    expect(env.AUTH_DB.batch).not.toHaveBeenCalled();
-  });
-});
-
-describe("PATCH /:id - pending deletion owns moderation", () => {
-
-  it.each([0, -1, Math.floor(Date.now() / 1000) + 3600])("refuses moderation=%s while a deletion is scheduled", async moderation => {
-    const env = makeEnv();
-    env.AUTH_DB.firstQueue.push({ id: "u-1", scheduled: 1 });
-    const res = await makeUsersApp(env)("/u-1", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ moderation, reason: "x" }),
-    });
-    expect(res.status).toBe(409);
-    expect(env.AUTH_DB.batch).not.toHaveBeenCalled();
+    expect(removal(env)).toBeUndefined();
   });
 });
 
 describe("GET /search - pending deletion", () => {
   it("drives the pending_deletion filter from user_deletions", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([]);
+    env.DB.allQueue.push([]);
     const res = await makeUsersApp(env)("/search?q=&status=pending_deletion");
     expect(res.status).toBe(200);
-    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM user_deletions d CROSS JOIN users u"));
+    const call = env.DB.calls.find(c => c.sql.includes("FROM user_deletions d CROSS JOIN users u"));
     expect(call?.sql).toContain("d.user_id IS NOT NULL");
     expect(call?.sql).toContain("deletion_execute_after");
   });
 
   it("left-joins user_deletions for every other status", async () => {
     const env = makeEnv();
-    env.AUTH_DB.allQueue.push([]);
+    env.DB.allQueue.push([]);
     const res = await makeUsersApp(env)("/search?q=&status=disabled");
     expect(res.status).toBe(200);
-    const call = env.AUTH_DB.calls.find(c => c.sql.includes("FROM users u LEFT JOIN user_deletions d"));
+    const call = env.DB.calls.find(c => c.sql.includes("FROM users u LEFT JOIN user_deletions d"));
     expect(call?.sql).toContain("deletion_execute_after");
   });
 });
@@ -614,28 +622,31 @@ describe("exactUserMatch", () => {
   });
 });
 
-// Real SQLite (every auth migration applied) for the search + details reads:
+// Real SQLite (every main migration applied) for the search + details reads:
 // result sets, paging, the exact-match fallback, and the query plans that are
 // the point of the exact/partial-index/pending-deletion paths.
 describe("user search + details against the real schema", () => {
   const NOW = Math.floor(Date.now() / 1000);
   const U1 = "11111111-1111-4111-8111-111111111111";
 
-  function setup() {
-    const auth = createSqliteD1(AUTH_MIGRATIONS);
-    const env = { ...makeEnv(), AUTH_DB: auth.db };
-    const addUser = (id: string, email: string, createdAt: string, moderation = 0) =>
-      auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at, moderation) VALUES (?, ?, ?, 'x', ?, ?)")
-        .run(id, email, id, createdAt, moderation);
+  type Standing = "active" | "disabled" | "suspended";
+  function setup(extraEnv: Record<string, unknown> = {}) {
+    const main = createSqliteD1();
+    const env = { ...makeEnv(), DB: main.db, ...extraEnv };
+    const addUser = (id: string, email: string, createdAt: string, status: Standing = "active", suspendedUntil: number | null = null) =>
+      main.sqlite.prepare(
+        `INSERT INTO users (id, email, name, is_admin, status, suspended_until, created_at, first_seen_at, synced_at)
+         VALUES (?, ?, ?, 0, ?, ?, ?, 0, 0)`,
+      ).run(id, email, id, status, suspendedUntil, createdAt);
     const addEvent = (id: string, userId: string, action: string, reason: string | null, createdAt: string) =>
-      auth.sqlite.prepare("INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, created_at) VALUES (?, ?, ?, -1, ?, ?)")
+      main.sqlite.prepare("INSERT INTO user_moderation_events (id, user_id, action, moderation_value, reason, created_at) VALUES (?, ?, ?, -1, ?, ?)")
         .run(id, userId, action, reason, createdAt);
     addUser(U1, "alice@example.com", "2026-01-01 00:00:00");
-    addUser("u-2", "bob@example.com", "2026-01-02 00:00:00", -1);
-    addUser("u-3", "xbob@example.com", "2026-01-02 00:00:00", NOW + 3600);
-    addUser("u-4", "carol@example.com", "2026-01-03 00:00:00", NOW - 3600);
-    addUser("u-5", "dave@example.com", "2026-01-04 00:00:00", -1);
-    auth.sqlite.prepare("INSERT INTO user_deletions (user_id, id, requested_by, requested_by_email, execute_after) VALUES ('u-5', 'del-1', 'admin-1', 'admin@example.com', ?)")
+    addUser("u-2", "bob@example.com", "2026-01-02 00:00:00", "disabled");
+    addUser("u-3", "xbob@example.com", "2026-01-02 00:00:00", "suspended", NOW + 3600);
+    addUser("u-4", "carol@example.com", "2026-01-03 00:00:00", "suspended", NOW - 3600);
+    addUser("u-5", "dave@example.com", "2026-01-04 00:00:00", "disabled");
+    main.sqlite.prepare("INSERT INTO user_deletions (user_id, id, requested_by, requested_by_email, execute_after) VALUES ('u-5', 'del-1', 'admin-1', 'admin@example.com', ?)")
       .run(NOW + 86400);
     // Two events on one created_at: the later-inserted (higher rowid) wins.
     addEvent("e-1", "u-2", "suspended", "first", "2026-02-01 00:00:00");
@@ -643,7 +654,7 @@ describe("user search + details against the real schema", () => {
     addEvent("e-3", "u-2", "re_enabled", null, "2026-01-15 00:00:00");
     addEvent("e-4", "u-5", "re_enabled", null, "2026-02-01 00:00:00");
     addEvent("e-5", "u-5", "disabled", null, "2026-02-01 00:00:00");
-    return { auth, env, request: makeUsersApp(env) };
+    return { main, env, request: makeUsersApp(env) };
   }
 
   async function search(request: ReturnType<typeof makeUsersApp>, query: string) {
@@ -665,6 +676,15 @@ describe("user search + details against the real schema", () => {
     expect(pending.users[0]).toMatchObject({ deletion_requested_by_email: "admin@example.com", deletion_execute_after: NOW + 86400 });
   });
 
+  it("derives the legacy moderation number from the mirrored standing", async () => {
+    const { request } = setup();
+    const byId = Object.fromEntries((await search(request, "q=")).users.map(u => [u.id, u]));
+    expect(byId[U1]).toMatchObject({ moderation: 0, force_password_change: 0 });
+    expect(byId["u-2"]).toMatchObject({ moderation: -1, force_password_change: 0 });
+    expect(byId["u-3"]).toMatchObject({ moderation: NOW + 3600 });
+    expect(byId["u-4"]).toMatchObject({ moderation: NOW - 3600 });
+  });
+
   it("unpacks the latest moderation event (created_at, then rowid, newest wins)", async () => {
     const { request } = setup();
     const { users } = await search(request, "q=");
@@ -684,12 +704,15 @@ describe("user search + details against the real schema", () => {
   });
 
   it("matches a full email or UUID exactly, and falls back to substring on a miss", async () => {
-    const { request } = setup();
+    const { main, request } = setup();
     // Exact: the substring search would also have returned xbob@example.com.
     expect(ids(await search(request, "q=bob%40example.com"))).toEqual(["u-2"]);
     expect(ids(await search(request, `q=${U1}`))).toEqual([U1]);
     // Differently-cased input still hits the normalized address.
     expect(ids(await search(request, "q=BOB%40Example.com"))).toEqual(["u-2"]);
+    // ... and so does a mirror row whose stored address isn't lowercased.
+    main.sqlite.prepare("UPDATE users SET email = 'Alice@Example.com' WHERE id = ?").run(U1);
+    expect(ids(await search(request, "q=alice%40example.com"))).toEqual([U1]);
     // A full-looking address that isn't one falls back to the substring search.
     expect(ids(await search(request, "q=bob%40example.co"))).toEqual(["u-3", "u-2"]);
     // An exact hit excluded by the status filter falls back too.
@@ -699,10 +722,12 @@ describe("user search + details against the real schema", () => {
   });
 
   it("pages with the keyset cursor without skips or repeats across tied timestamps", async () => {
-    const { auth, request } = setup();
+    const { main, request } = setup();
     for (let i = 0; i < 30; i++) {
-      auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, 'n', 'x', '2026-03-01 00:00:00')")
-        .run(`t-${String(i).padStart(2, "0")}`, `t${i}@example.com`);
+      main.sqlite.prepare(
+        `INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at)
+         VALUES (?, ?, 'n', '2026-03-01 00:00:00', 0, 0)`,
+      ).run(`t-${String(i).padStart(2, "0")}`, `t${i}@example.com`);
     }
     const seen: unknown[] = [];
     let cursor: string | null = null;
@@ -717,68 +742,99 @@ describe("user search + details against the real schema", () => {
     expect(seen.slice(-5)).toEqual(["u-5", "u-4", "u-3", "u-2", U1]);
   });
 
-  function plan(auth: ReturnType<typeof createSqliteD1>, opts: Parameters<typeof buildUserSearchQuery>[0]): string {
+  function plan(main: ReturnType<typeof createSqliteD1>, opts: Parameters<typeof buildUserSearchQuery>[0]): string {
     const { sql, binds } = buildUserSearchQuery(opts);
-    return auth.sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(binds as never[]), 26).map(r => String(r.detail)).join("\n");
+    return main.sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(binds as never[]), 26).map(r => String(r.detail)).join("\n");
   }
 
-  it("plans exact lookups as unique-index seeks and pending deletion from user_deletions", () => {
-    const { auth } = setup();
+  it("plans exact lookups as index seeks and pending deletion from user_deletions", () => {
+    const { main } = setup();
     const base = { status: null, cursor: null, nowSeconds: NOW };
-    expect(plan(auth, { ...base, q: U1, match: "id" })).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_1 \(id=\?\)/);
-    expect(plan(auth, { ...base, q: "bob@example.com", match: "email" })).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_2 \(email=\?\)/);
-    const pending = plan(auth, { ...base, q: "", match: "substring", status: "pending_deletion" });
+    expect(plan(main, { ...base, q: U1, match: "id" })).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_1 \(id=\?\)/);
+    expect(plan(main, { ...base, q: "bob@example.com", match: "email" })).toMatch(/SEARCH u USING INDEX idx_users_email_lower \(<expr>=\?\)/);
+    const pending = plan(main, { ...base, q: "", match: "substring", status: "pending_deletion" });
     expect(pending.split("\n")[0]).toMatch(/^(SCAN|SEARCH) d\b/);
     expect(pending).toMatch(/SEARCH u USING INDEX sqlite_autoindex_users_1 \(id=\?\)/);
   });
 
-  it("uses the partial moderated-users index for disabled/suspended when it exists (auth 0035)", () => {
-    const { auth } = setup();
-    auth.sqlite.exec("CREATE INDEX IF NOT EXISTS users_moderated_created_at ON users(created_at DESC, id DESC) WHERE moderation <> 0");
+  it("uses the partial not-active index for disabled/suspended (api 0065)", () => {
+    const { main } = setup();
     const base = { q: "", match: "substring" as const, cursor: { ts: "2026-01-03 00:00:00", id: "u-4" }, nowSeconds: NOW };
-    expect(plan(auth, { ...base, status: "disabled" })).toContain("USING INDEX users_moderated_created_at");
-    expect(plan(auth, { ...base, status: "suspended" })).toContain("USING INDEX users_moderated_created_at");
+    expect(plan(main, { ...base, status: "disabled" })).toContain("USING INDEX idx_users_not_active");
+    expect(plan(main, { ...base, status: "suspended" })).toContain("USING INDEX idx_users_not_active");
   });
 
-  it("GET /:id reads profile, TOTP, preferences and billing in one users query", async () => {
-    const { auth, env, request } = setup();
-    auth.sqlite.prepare("UPDATE users SET totp_secret = 'S', email_verified = 1 WHERE id = 'u-2'").run();
-    auth.sqlite.prepare("INSERT INTO user_preferences (user_id, badges) VALUES ('u-2', 3)").run();
-    auth.sqlite.prepare("INSERT INTO user_billing (user_id, stripe_customer_id, granted_plan, granted_plan_reason, granted_plan_started_at) VALUES ('u-2', 'cus_1', 'ink', 'comp', ?)")
+  it("GET /:id reads profile, preferences and billing in one users query", async () => {
+    const { main, env, request } = setup();
+    main.sqlite.prepare("UPDATE users SET email_verified = 1 WHERE id = 'u-2'").run();
+    main.sqlite.prepare("INSERT INTO user_preferences (user_id, badges) VALUES ('u-2', 3)").run();
+    main.sqlite.prepare("INSERT INTO user_billing (user_id, stripe_customer_id, granted_plan, granted_plan_reason, granted_plan_started_at) VALUES ('u-2', 'cus_1', 'ink', 'comp', ?)")
       .run(Date.now() - 1000);
-    const prepare = vi.spyOn(env.AUTH_DB, "prepare");
+    const prepare = vi.spyOn(env.DB, "prepare");
     const res = await request("/u-2");
     expect(res.status).toBe(200);
     const { data } = await res.json() as { data: Record<string, any> };
     expect(prepare.mock.calls.filter(([sql]) => /FROM users\b/.test(sql))).toHaveLength(1);
-    expect(data.profile).toMatchObject({ id: "u-2", account_status: "disabled", email_verified: true, badges: 3 });
+    expect(data.profile).toMatchObject({ id: "u-2", account_status: "disabled", email_verified: true, badges: 3, force_password_change: false });
     expect(data.moderation.current_reason).toBe("spam");
     expect(data.moderation.history.map((e: { action: string }) => e.action)).toEqual(["disabled", "suspended", "re_enabled"]);
-    expect(data.security.totp_enabled).toBe(true);
+    expect(data).not.toHaveProperty("security");
+    // No IDENTITY binding: the mirror's standing, flagged as not live.
+    expect(data.identity).toEqual({ manage_url: "https://auth.cubityfir.st/admin/users/u-2", live: false, is_admin: false });
     expect(data.billing).toMatchObject({ resolved_plan: "ink", via: "granted", stripe: { customer_id: "cus_1" } });
 
     const plain = await (await request(`/${U1}`)).json() as { data: Record<string, any> };
-    expect(plain.data.security.totp_enabled).toBe(false);
     expect(plain.data.moderation.current_reason).toBeNull();
     expect(plain.data.billing).toMatchObject({ resolved_plan: "free", granted: null });
 
+    const suspended = await (await request("/u-3")).json() as { data: Record<string, any> };
+    expect(suspended.data.profile).toMatchObject({ account_status: "suspended", account_suspended_until: NOW + 3600 });
+
     expect((await request("/nope")).status).toBe(404);
+  });
+
+  it("GET /:id refreshes the mirror from the identity service and reports live standing", async () => {
+    const getUser = vi.fn(async () => identityUser({ id: U1, email: "alice@example.com", name: "Alice", status: "disabled", isAdmin: true }));
+    const { main, request } = setup({ IDENTITY: { getUser }, OIDC_ISSUER: "https://id.test/" });
+    const { data } = await (await request(`/${U1}`)).json() as { data: Record<string, any> };
+    expect(getUser).toHaveBeenCalledWith(U1);
+    expect(data.identity).toEqual({ manage_url: `https://id.test/admin/users/${U1}`, live: true, is_admin: true });
+    expect(data.profile).toMatchObject({ account_status: "disabled", display_name: "Alice" });
+    expect(main.sqlite.prepare("SELECT status, is_admin, name FROM users WHERE id = ?").get(U1))
+      .toEqual({ status: "disabled", is_admin: 1, name: "Alice" });
+  });
+
+  it("GET /:id falls back to the mirror's standing (live=false) when the identity service throws", async () => {
+    const getUser = vi.fn(async () => { throw new Error("identity down"); });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { request } = setup({ IDENTITY: { getUser } });
+    const res = await request("/u-3");
+    expect(res.status).toBe(200);
+    const { data } = await res.json() as { data: Record<string, any> };
+    expect(getUser).toHaveBeenCalledWith("u-3");
+    expect(data.identity).toMatchObject({ live: false, is_admin: false });
+    expect(data.profile).toMatchObject({ account_status: "suspended", account_suspended_until: NOW + 3600 });
+    expect(data.moderation.current_moderation_value).toBe(NOW + 3600);
+    error.mockRestore();
   });
 });
 
 describe("PATCH /:id/handle + handle search (real SQLite)", () => {
   function setup() {
-    const auth = createSqliteD1(AUTH_MIGRATIONS);
-    const add = auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, 'x', datetime('now'))");
+    const main = createSqliteD1();
+    const add = main.sqlite.prepare(
+      `INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at)
+       VALUES (?, ?, ?, datetime('now'), 0, 0)`,
+    );
     add.run("u-1", "one@x.com", "One");
     add.run("u-2", "two@x.com", "Two");
-    const request = makeUsersApp({ AUTH_DB: auth.db, DB: makeDb() });
+    const request = makeUsersApp({ DB: main.db });
     const patch = (id: string, body: unknown) =>
       request(`/${id}/handle`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const prefs = (id: string) =>
-      auth.sqlite.prepare("SELECT handle, handle_locked, bio FROM user_preferences WHERE user_id = ?").get(id) as
+      main.sqlite.prepare("SELECT handle, handle_locked, bio FROM user_preferences WHERE user_id = ?").get(id) as
         { handle: string | null; handle_locked: number; bio: string | null } | undefined;
-    return { auth, request, patch, prefs };
+    return { main, request, patch, prefs };
   }
 
   it("sets a normalized handle, allowing reserved names for admins", async () => {
@@ -813,7 +869,7 @@ describe("PATCH /:id/handle + handle search (real SQLite)", () => {
 
   it("clear + lock in one call; lock alone leaves the handle untouched", async () => {
     const t = setup();
-    t.auth.sqlite.prepare("INSERT INTO user_preferences (user_id, handle, bio) VALUES ('u-1', 'rude', 'keep me')").run();
+    t.main.sqlite.prepare("INSERT INTO user_preferences (user_id, handle, bio) VALUES ('u-1', 'rude', 'keep me')").run();
 
     // Toggling only the lock must not rewrite the handle.
     expect((await t.patch("u-1", { locked: true })).status).toBe(200);

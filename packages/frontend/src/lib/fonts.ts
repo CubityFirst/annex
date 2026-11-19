@@ -1,6 +1,6 @@
 // Font-stack catalogue used by both the wysiwyg editor (via CSS variables
 // on :root) and the user-settings preview. Keep these stacks in sync with
-// the auth FONT_CHOICES list (packages/auth/src/fonts.ts) - a row added
+// the API FONT_CHOICES list (packages/api/src/account/fonts.ts) - a row added
 // there needs a stack entry here.
 //
 // OpenDyslexic woff2 files are self-hosted under /public/fonts/ with an

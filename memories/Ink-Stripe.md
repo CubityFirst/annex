@@ -44,7 +44,7 @@ Plus `webhook_events (event_id PRIMARY KEY, type, processed_at)` for idempotency
 
 ## Plan resolution
 
-**Always go through `resolvePersonalPlan` in `packages/auth/src/plan.ts`.** Never read the columns directly to determine plan state. The resolver is a pure function with this precedence:
+**Always go through `resolvePersonalPlan` in `packages/api/src/account/plan.ts`.** Never read the columns directly to determine plan state. The resolver is a pure function with this precedence:
 
 1. `granted_plan` set AND (`granted_plan_expires_at` is NULL OR in the future) → `via: 'granted'`, `status: 'granted'`
 2. `personal_plan` set AND `personal_plan_status` ∈ `{active, trialing, past_due}` → `via: 'paid'`
@@ -56,13 +56,13 @@ The resolver's input row mixes columns from BOTH satellite tables (`personal_pla
 
 ## Cross-package consideration
 
-The API worker reads `users`, `user_billing`, and `user_preferences` directly via the `AUTH_DB` binding (read-only by convention) for `loadCurrentSession`, member-list plan info, and `/users/:id` profile responses. The admin worker also reads them for the user details panel.
+`users` (the identity mirror), `user_billing` and `user_preferences` live in cubedocs-main (api migration 0065; copied from the retired cubedocs-auth). The API worker reads them for `loadCurrentSession`, member-list plan info and `/users/:id`; the admin worker reads/writes them for the user details panel and grants.
 
-**A schema change to any column the resolver touches requires redeploying auth + api + admin** in that order, AND every reader must continue to use LEFT JOIN so older code transitioning to a missing-satellite world still behaves. The migrations live in `packages/auth/migrations/` only.
+**A schema change to any column the resolver touches requires redeploying api + admin** (api first), AND every reader must continue to use LEFT JOIN so a user without a satellite row still behaves. Migrations live in `packages/api/migrations/`.
 
 ## Stripe webhook flow
 
-`packages/auth/src/routes/stripe-webhook.ts`. Public endpoint, signature-verified. Reached via `https://docs.cubityfir.st/stripe/webhook` - the frontend worker proxies `/stripe/webhook` to auth via service binding (see `packages/frontend/worker/index.ts`). Stripe doesn't see the auth worker directly because it has no public hostname.
+`packages/api/src/routes/stripeWebhook.ts`. Public endpoint, signature-verified. Reached via `https://docs.cubityfir.st/stripe/webhook` - the frontend worker forwards `/stripe/webhook` verbatim to the api worker via service binding (see `packages/frontend/worker/index.ts`), so the URL registered in the Stripe Dashboard didn't change when billing moved off the retired auth worker. An event for a user Annex no longer has (FK failure on `user_billing`) is acknowledged, not retried.
 
 Handler contract (load-bearing):
 
@@ -87,21 +87,21 @@ Admin worker calls Stripe REST directly with its own `STRIPE_SECRET_KEY` (set pe
 
 `.dev.vars` files (gitignored) hold local secrets:
 
-- `packages/auth/.dev.vars` needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_INK_PRICE_ID`, `APP_ORIGIN=http://localhost:5173`
+- `packages/api/.dev.vars` needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_INK_PRICE_ID`, `APP_ORIGIN=http://localhost:5173`
 - `packages/admin/.dev.vars` needs `STRIPE_SECRET_KEY` only
 
-Forward Stripe webhook events to the local auth worker:
+Forward Stripe webhook events to the local api worker:
 
 ```
-stripe listen --forward-to http://localhost:8788/stripe/webhook
+stripe listen --forward-to http://localhost:8787/stripe/webhook
 ```
 
-The CLI prints a `whsec_...` at startup - that's what goes in `STRIPE_WEBHOOK_SECRET` for local dev. (Live mode uses a different `whsec_` from the registered webhook in Stripe Dashboard.) Restart the auth worker after editing `.dev.vars` - wrangler only reads it on startup.
+The CLI prints a `whsec_...` at startup - that's what goes in `STRIPE_WEBHOOK_SECRET` for local dev. (Live mode uses a different `whsec_` from the registered webhook in Stripe Dashboard.) Restart the api worker after editing `.dev.vars` - wrangler only reads it on startup.
 
 ## Production setup
 
-- `STRIPE_INK_PRICE_ID` is a `bindings.text` var in `packages/auth/cloudflare.config.ts` (live price id - committed). `.dev.vars` overrides locally to the test-mode price id.
-- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set via `wrangler secret put` on the auth worker. `STRIPE_SECRET_KEY` also on admin worker.
+- `STRIPE_INK_PRICE_ID` is a `bindings.text` var in `packages/api/cloudflare.config.ts` (live price id - committed). `.dev.vars` overrides locally to the test-mode price id.
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set via `npx wrangler secret put` on annex-api (they used to be on annex-auth - move them at cutover). `STRIPE_SECRET_KEY` also on annex-admin.
 - Webhook endpoint URL in Stripe Dashboard: `https://docs.cubityfir.st/stripe/webhook`. Subscribed events: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`.
 - Customer Portal must be configured separately in **live** mode (Settings → Billing → Customer portal). Test mode and live mode have different portal configs.
 

@@ -3,14 +3,21 @@ import type { AdminSession } from "../auth";
 import { deleteProjectCascade } from "./projectDelete";
 import type { Env } from "../index";
 
-// Delayed account deletion (auth migration 0034_add_user_deletions.sql).
+// Delayed deletion of a user's ANNEX data (api migration 0065, user_deletions).
 //
-// The Users page never deletes an account outright: it SCHEDULES the delete
-// (routes/users.ts POST /:id/deletion), which disables the account at once,
+// Accounts themselves live on the identity service (auth.cubityfir.st); this
+// panel never deletes one. The Users page SCHEDULES the deletion of the
+// person's Annex data (routes/users.ts POST /:id/deletion), which blocks them
+// from Annex at once (any user_deletions row does - see api account/session.ts),
 // and the admin worker's hourly cron (index.ts scheduled -> runDueUserDeletions)
 // performs it once the grace window has passed. Any admin can cancel in the
 // meantime. The window is the recovery path for a mis-click or a compromised
 // admin session.
+//
+// When it completes, the schedule row stays (completed_at set) so the person
+// stays locked out of Annex; the operator deletes the identity account at
+// auth.cubityfir.st/admin/users, after which the deletion sync (api
+// lib/identityDeletions.ts) removes the users mirror row and this row with it.
 //
 // Concurrency: the cron CLAIMS a schedule by (user_id, id) with a short lease
 // before executing, and cancel refuses while a lease is live or once
@@ -164,15 +171,16 @@ export interface DeletionSchedule {
   confirm: { siteIds: string[]; orgIds: string[] };
 }
 
-// Permanently deletes one account for a schedule the caller has CLAIMED.
-// Order is chosen so a failure part-way leaves the user row (and its schedule)
-// in place and the next run can carry on where this one stopped:
+// Permanently deletes one person's Annex data for a schedule the caller has
+// CLAIMED. Order is chosen so a failure part-way leaves the schedule in place
+// and the next run can carry on where this one stopped:
 //   ownership check -> mark started (point of no return) -> Stripe customer
-//   (cancels subs; "already deleted" is fine) -> re-freeze + re-check ->
+//   (cancels subs; "already deleted" is fine) -> re-check ownership ->
 //   owned sites -> owned orgs (attached sites detach, not deleted) ->
-//   memberships + API keys -> avatar -> users row + its audit row in ONE
-//   auth batch (the delete cascades sessions, passkeys, TOTP, billing,
-//   preferences, moderation history and the schedule).
+//   memberships + API keys -> avatar -> billing, preferences, sessions and
+//   the completion mark + its audit row in ONE batch.
+// The users mirror row is kept (it anchors the block); the identity account
+// is deleted separately on auth.cubityfir.st.
 //
 // `actor` is the admin who scheduled it; audit rows carry `auditExtra` so the
 // trail shows it ran from the scheduler.
@@ -183,7 +191,7 @@ export async function executeUserDeletion(
   auditExtra: Record<string, unknown> = {},
 ): Promise<ExecuteResult> {
   const { userId, scheduleId, confirm } = schedule;
-  const user = await env.AUTH_DB.prepare(
+  const user = await env.DB.prepare(
     `SELECT u.id, u.email, u.is_admin, b.stripe_customer_id
      FROM users u LEFT JOIN user_billing b ON b.user_id = u.id
      WHERE u.id = ?`,
@@ -192,6 +200,19 @@ export async function executeUserDeletion(
   // Re-checked here, not just at scheduling: the account may have been made
   // an admin during the grace window.
   if (user.is_admin) return { ok: false, error: "Admin accounts can't be deleted from the admin panel" };
+  // The mirror's admin flag can be stale: the schedule blocks the person, so
+  // no sign-in or session check refreshes it during the grace window. Ask the
+  // identity service before anything irreversible, and retry later if it
+  // can't be reached.
+  if (env.IDENTITY) {
+    let live;
+    try {
+      live = await env.IDENTITY.getUser(userId);
+    } catch {
+      return { ok: false, error: "Couldn't verify the account with auth.cubityfir.st; it will be retried" };
+    }
+    if (live?.isAdmin) return { ok: false, error: "Admin accounts can't be deleted from the admin panel" };
+  }
 
   const before = await checkExecutionOwnership(env, userId, user.email, confirm);
   if (before.error) return { ok: false, error: before.error };
@@ -224,11 +245,17 @@ export async function executeUserDeletion(
   // Point of no return: from here the deletion can only be finished, not
   // cancelled. Tied to this schedule id, so it no-ops if the schedule was
   // replaced (the claim normally prevents that already).
-  const started = await env.AUTH_DB.prepare(
-    "UPDATE user_deletions SET started_at = COALESCE(started_at, ?) WHERE user_id = ? AND id = ?",
-  ).bind(Math.floor(Date.now() / 1000), userId, scheduleId).run();
+  // Also tied to the Stripe customer the preflight saw: a webhook linking a
+  // new customer before this point would otherwise be deleted from billing
+  // without its customer being cancelled. (After it, the webhook's own
+  // started_at guard routes late events to customer deletion.)
+  const started = await env.DB.prepare(
+    `UPDATE user_deletions SET started_at = COALESCE(started_at, ?)
+     WHERE user_id = ? AND id = ?
+       AND (SELECT stripe_customer_id FROM user_billing WHERE user_id = ?) IS ?`,
+  ).bind(Math.floor(Date.now() / 1000), userId, scheduleId, userId, user.stripe_customer_id).run();
   if ((started.meta?.changes ?? 0) !== 1) {
-    return { ok: false, error: "The schedule was cancelled or replaced; nothing was deleted" };
+    return { ok: false, error: "The schedule was cancelled or replaced, or billing changed during the run; nothing was deleted (retried later)" };
   }
 
   // Stripe first, and fatal on failure: a deleted account with a live
@@ -262,14 +289,12 @@ export async function executeUserDeletion(
     stripeCustomerDeleted = res.ok;
   }
 
-  // Re-freeze before the deletes: a disabled account is refused on every
-  // authenticated request, so it can't create a site/org mid-delete that
-  // would be left owned by a vanished user. (Scheduling disabled it and
-  // PATCH refuses changes while scheduled; this is belt and braces.)
-  await env.AUTH_DB.prepare("UPDATE users SET moderation = -1 WHERE id = ?").bind(userId).run();
+  // Re-check before the deletes. The schedule row blocks every
+  // authenticated Annex request (sessions and API keys), so the person can't
+  // create a site/org mid-delete; this is belt and braces.
   const after = await checkExecutionOwnership(env, userId, user.email, confirm);
   if (after.error) {
-    return { ok: false, error: `${after.error} (changed during deletion; the account stays disabled)` };
+    return { ok: false, error: `${after.error} (changed during deletion; the account stays blocked)` };
   }
 
   const deletedSites: Array<{ id: string; name: string; docs: number; files: number }> = [];
@@ -289,8 +314,8 @@ export async function executeUserDeletion(
     await env.DB.prepare(`DELETE FROM organizations WHERE owner_id = ? AND id IN (${placeholders(chunk.length)})`)
       .bind(userId, ...chunk).run();
   }
-  // API-DB rows keyed by the user with no FK to cascade from (users live in
-  // the auth DB). Plain deletes, so a retried run just re-applies them.
+  // Rows keyed by the user with no FK to the users mirror. Plain deletes, so a
+  // retried run just re-applies them.
   await env.DB.batch([
     env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(userId),
@@ -301,21 +326,24 @@ export async function executeUserDeletion(
 
   await env.ASSETS.delete([`avatars/${userId}-dark`, `avatars/${userId}-light`, `avatars/${userId}`]);
 
-  // The account row and its audit record commit together: if either fails,
-  // neither lands, the schedule survives (it cascades with the user), and
-  // the next run retries. email_verification_tokens has no FK to users, so
-  // it goes explicitly - its rows carry pending change-email addresses.
-  await env.AUTH_DB.batch([
+  // The remaining Annex data, the completion mark and its audit record commit
+  // together: if any fails, none lands and the next run retries.
+  await env.DB.batch([
     adminAuditStatement(env, actor, "user.delete", "user", userId, {
       email: user.email,
       sites: deletedSites,
       orgs: after.orgs,
       already_deleted: after.alreadyGone,
       stripe_customer_deleted: stripeCustomerDeleted,
+      scope: "annex_data",
       ...auditExtra,
     }),
-    env.AUTH_DB.prepare("DELETE FROM email_verification_tokens WHERE user_id = ?").bind(userId),
-    env.AUTH_DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_billing WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_preferences WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
+    env.DB.prepare(
+      "UPDATE user_deletions SET completed_at = ?, lease_until = NULL, last_error = NULL WHERE user_id = ? AND id = ?",
+    ).bind(Math.floor(Date.now() / 1000), userId, scheduleId),
   ]);
 
   return { ok: true, sites_deleted: deletedSites.length, orgs_deleted: after.orgs.length };
@@ -344,16 +372,16 @@ export async function runDueUserDeletions(
   // A lease that expired without being released means the run holding it was
   // killed (time/CPU limit, deploy) before recording an outcome. Say so on
   // the row, so the Users page doesn't show a stale or empty error.
-  await env.AUTH_DB.prepare(
+  await env.DB.prepare(
     `UPDATE user_deletions
      SET lease_until = NULL, last_error = 'The previous attempt was cut off before finishing; it will be retried'
-     WHERE lease_until IS NOT NULL AND lease_until < ?`,
+     WHERE lease_until IS NOT NULL AND lease_until < ? AND completed_at IS NULL`,
   ).bind(nowSeconds).run();
 
-  const due = await env.AUTH_DB.prepare(
+  const due = await env.DB.prepare(
     `SELECT user_id, id, requested_by, requested_by_email, requested_at, confirm_site_ids, confirm_org_ids
      FROM user_deletions
-     WHERE execute_after <= ? AND (lease_until IS NULL OR lease_until < ?)
+     WHERE execute_after <= ? AND completed_at IS NULL AND (lease_until IS NULL OR lease_until < ?)
      ORDER BY (last_attempt_at IS NOT NULL), last_attempt_at ASC, execute_after ASC
      LIMIT ?`,
   ).bind(nowSeconds, nowSeconds, DUE_DELETIONS_PER_RUN).all<UserDeletionRow>();
@@ -366,9 +394,9 @@ export async function runDueUserDeletions(
     // stamped here, not after the outcome: a run that gets killed mid-way
     // must still rotate this row behind the others, or one oversized
     // deletion would starve the queue.
-    const claim = await env.AUTH_DB.prepare(
+    const claim = await env.DB.prepare(
       `UPDATE user_deletions SET lease_until = ?, last_attempt_at = datetime('now')
-       WHERE user_id = ? AND id = ? AND execute_after <= ? AND (lease_until IS NULL OR lease_until < ?)`,
+       WHERE user_id = ? AND id = ? AND execute_after <= ? AND completed_at IS NULL AND (lease_until IS NULL OR lease_until < ?)`,
     ).bind(nowSeconds + USER_DELETION_LEASE_SECONDS, row.user_id, row.id, nowSeconds, nowSeconds).run();
     if ((claim.meta?.changes ?? 0) !== 1) continue;
 
@@ -394,7 +422,7 @@ export async function runDueUserDeletions(
     } else {
       failed++;
       console.error(`[user-deletion] ${row.user_id} failed:`, result.error);
-      await env.AUTH_DB.prepare(
+      await env.DB.prepare(
         "UPDATE user_deletions SET last_error = ?, last_attempt_at = datetime('now'), lease_until = NULL WHERE user_id = ? AND id = ?",
       ).bind(result.error.slice(0, 500), row.user_id, row.id).run();
     }

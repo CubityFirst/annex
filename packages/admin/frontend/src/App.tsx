@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Flag, KeyRound, ScrollText, Users, Boxes } from "lucide-react";
+import { Flag, KeyRound, ScrollText, Users, Boxes, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ADMIN_AUTH_INVALIDATED_EVENT, clearToken, getToken } from "@/lib/auth";
-import { buildDocsAdminLoginUrl } from "@/lib/handoff";
 import { type AdminAuthSession, TransientVerifyError, logoutAdminSession, verifyAdminSession } from "@/lib/api";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { LoginPage } from "./pages/LoginPage";
+import { postSignInPath } from "@/lib/signIn";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { AuditPage } from "./pages/AuditPage";
-import { OAuthClientsPage } from "./pages/OAuthClientsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 
 function AdminLayout({
@@ -71,15 +70,14 @@ function AdminLayout({
               Audit
             </Link>
           </Button>
-          <Button
-            variant={location.pathname === "/oauth-clients" ? "secondary" : "ghost"}
-            size="sm"
-            asChild
-          >
-            <Link to="/oauth-clients">
+          {/* Accounts (moderation, admin role, sign-in methods) and OAuth
+              clients are managed on the identity service now. */}
+          <Button variant="ghost" size="sm" asChild>
+            <a href="https://auth.cubityfir.st/admin" target="_blank" rel="noreferrer">
               <KeyRound className="h-4 w-4" />
-              OAuth
-            </Link>
+              Accounts &amp; OAuth
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </a>
           </Button>
         </nav>
 
@@ -99,7 +97,6 @@ function AdminLayout({
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/audit" element={<AuditPage />} />
-          <Route path="/oauth-clients" element={<OAuthClientsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -114,7 +111,7 @@ export function App() {
   const [checking, setChecking] = useState(true);
   // Set when the session couldn't be VERIFIED (network down, API 5xx) as
   // opposed to being invalid - the token is kept and the operator gets a
-  // retry instead of being bounced through a full re-handoff.
+  // retry instead of being bounced through a full re-sign-in.
   const [verifyBlocked, setVerifyBlocked] = useState<string | null>(null);
   // Latest session for the stable refreshSession callback (its deps are
   // empty so the closed-over `session` would always be the initial null).
@@ -183,7 +180,7 @@ export function App() {
       setSession(null);
       setChecking(false);
 
-      if (location.pathname === "/login" || location.pathname === "/auth/callback") {
+      if (location.pathname === "/login" || location.pathname === "/auth/complete") {
         return;
       }
 
@@ -203,14 +200,17 @@ export function App() {
     // Revoke the session server-side FIRST (while the token still works):
     // clearing local state alone would leave any copy of the token valid
     // until its TTL. Best-effort - local sign-out proceeds regardless.
+    let logoutUrl: string | null = null;
     try {
-      await logoutAdminSession();
+      logoutUrl = await logoutAdminSession();
     } catch {
       /* offline / already-revoked - still sign out locally */
     }
     clearToken();
     setSession(null);
-    window.location.assign(buildDocsAdminLoginUrl("/", { logout: true }));
+    // Continue to the identity service's end-session URL so the sign-out
+    // covers auth.cubityfir.st too; it comes back to the panel.
+    window.location.assign(logoutUrl ?? "/login");
   }
 
   if (checking) {
@@ -239,7 +239,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<AuthCallbackPage onAuthenticated={refreshSession} />} />
+        <Route path="/auth/complete" element={<AuthCallbackPage onAuthenticated={refreshSession} />} />
         <Route
           path="*"
           element={
@@ -254,7 +254,10 @@ export function App() {
     );
   }
 
-  if (location.pathname === "/login" || location.pathname === "/auth/callback") {
+  if (location.pathname === "/auth/complete") {
+    return <Navigate to={postSignInPath()} replace />;
+  }
+  if (location.pathname === "/login") {
     return <Navigate to="/" replace />;
   }
 
