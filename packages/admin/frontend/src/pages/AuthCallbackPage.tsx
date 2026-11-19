@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminSignInError, exchangeAdminCode } from "@/lib/api";
 import { setToken } from "@/lib/auth";
-import { adminSignInUrl, normalizeAdminNextPath, signInErrorMessage } from "@/lib/signIn";
+import { adminSignInUrl, normalizeAdminNextPath, rememberPostSignIn, signInErrorMessage } from "@/lib/signIn";
 
 interface AuthCallbackPageProps {
   onAuthenticated: () => Promise<void> | void;
@@ -13,8 +13,10 @@ interface AuthCallbackPageProps {
 
 // /auth/complete - where the admin worker's /api/auth/callback sends the
 // browser. The outcome is in the URL fragment (never sent to servers):
-//   #code=<single-use>&return_to=/path  -> redeem for the admin session JWT
-//   #error=<code>                       -> explain and offer a retry
+//   #status=ok&attempt=<id>&return_to=/path
+//                               -> redeem this attempt's single-use HttpOnly
+//                                  handoff cookie for the admin session JWT
+//   #error=<code>               -> explain and offer a retry
 // Read once at module level of the effect, before the address bar is cleaned.
 function readFragment(): URLSearchParams {
   return new URLSearchParams(window.location.hash.slice(1));
@@ -24,7 +26,10 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [nextPath] = useState(() => normalizeAdminNextPath(readFragment().get("return_to")));
-  const [code] = useState(() => readFragment().get("code"));
+  const [ok] = useState(() => readFragment().get("status") === "ok");
+  // The sign-in attempt to redeem; also keys one exchange per attempt
+  // (StrictMode re-runs the effect; see exchangeAdminCode).
+  const [attempt] = useState(() => readFragment().get("attempt") ?? "");
   const [errorCode] = useState(() => readFragment().get("error"));
 
   useEffect(() => {
@@ -32,7 +37,7 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
     // before (and regardless of) the exchange.
     window.history.replaceState(null, "", window.location.pathname);
 
-    if (!code) {
+    if (!ok) {
       setError(signInErrorMessage(errorCode));
       return;
     }
@@ -40,8 +45,11 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
     let cancelled = false;
     (async () => {
       try {
-        const { token } = await exchangeAdminCode(code);
+        const { token } = await exchangeAdminCode(attempt);
         setToken(token);
+        // App shows its verification screen (unmounting this page) and then
+        // redirects /auth/complete to this destination.
+        rememberPostSignIn(nextPath);
         await onAuthenticated();
         if (!cancelled) navigate(nextPath, { replace: true });
       } catch (err) {
@@ -52,7 +60,7 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, errorCode, navigate, nextPath, onAuthenticated]);
+  }, [ok, attempt, errorCode, navigate, nextPath, onAuthenticated]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground">

@@ -10,12 +10,12 @@ import { d1Local } from "./d1Local";
 // so it writes the local D1 directly (scripts/d1-local.mjs, via the running
 // api dev server). It also runs on Playwright failure exits.
 //
-// FK cascades handle most of the auth-DB tail (sessions, webauthn, backup
-// codes, moderation events). email_verification_tokens has no cascade, so we
-// delete it explicitly first. On the API DB, deleting projects cascades
-// everything below (docs, folders, files, members, invite links).
+// Accounts live on auth.cubityfir.st; Annex keeps a users mirror in
+// cubedocs-main, where deleting a mirror row cascades its sessions, billing
+// and preferences. Deleting projects cascades everything below them (docs,
+// folders, files, members, invite links).
 export default async function globalTeardown() {
-  const run = (db: "main" | "auth", sql: string) => {
+  const run = (db: "main", sql: string) => {
     try {
       d1Local(db, sql);
     } catch (err) {
@@ -25,12 +25,8 @@ export default async function globalTeardown() {
     }
   };
 
-  // Auth DB: orphan tokens first, then users (cascades the rest).
-  run(
-    "auth",
-    "DELETE FROM email_verification_tokens WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'e2e-%@example.com');",
-  );
-  run("auth", "DELETE FROM users WHERE email LIKE 'e2e-%@example.com';");
+  // Users mirror (e2e users are dev quick-login users or e2e-* addresses).
+  run("main", "DELETE FROM users WHERE email LIKE 'e2e-%@example.com';");
 
   // API DB: delete e2e-suite projects by name prefix (cascades everything).
   // Patterns track the names used in app.spec.ts, invites.spec.ts, and

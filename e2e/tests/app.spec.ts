@@ -4,8 +4,8 @@
  * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
- * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
- * packages/auth/.dev.vars (Cloudflare's always-pass test secret).
+ * Signs in with e2e/signIn.ts (devSignIn): needs DEV_QUICK_LOGIN=true and
+ * APP_ORIGIN=http://localhost:5173 in packages/api/.dev.vars.
  *
  * The suite registers a fresh account, exercises the UI, then deletes both the
  * project and the account so it leaves no data behind.
@@ -15,17 +15,17 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 // ── Unique-per-run values ────────────────────────────────────────────────────
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-${RUN_ID}@example.com`;
-const PASSWORD = "E2eTest-P@ssw0rd!";
 const NAME = "E2E Test User";
 const PROJECT_NAME = `E2E Project ${RUN_ID}`;
 const PROJECT_DESCRIPTION = "Created by the Playwright E2E suite";
 
-// Unique fake IP so each run gets its own rate-limit bucket in the auth worker.
+// Unique fake IP so each run gets its own rate-limit bucket in the api worker.
 const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`;
 
 // ── Shared state ─────────────────────────────────────────────────────────────
@@ -36,28 +36,6 @@ let page: Page;
 let projectSettingsUrl = "";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    // reset() must replay the callback like real Turnstile does - the login
-    // form clears its token after a failed submit and stays disabled until a
-    // fresh one arrives.
-    let verify: ((t: string) => void) | null = null;
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_container: unknown, options: { callback: (t: string) => void }) {
-          verify = options.callback;
-          setTimeout(() => verify?.("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() { setTimeout(() => verify?.("e2e-bypass-token"), 50); },
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
-}
 
 async function injectFakeIp(ctx: BrowserContext) {
   await ctx.route("**/api/**", async (route) => {
@@ -73,7 +51,6 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
-  await mockTurnstile(context);
   await injectFakeIp(context);
   page = await context.newPage();
 });
@@ -102,18 +79,7 @@ test.afterAll(async () => {
 // ── Registration ─────────────────────────────────────────────────────────────
 
 test("registers a new account", async () => {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(NAME);
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: EMAIL, name: NAME });
 });
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

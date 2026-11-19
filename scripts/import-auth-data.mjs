@@ -26,7 +26,7 @@ import { buildImportStatements } from "./lib/auth-import.mjs";
 const args = process.argv.slice(2);
 const outIdx = args.indexOf("--out");
 const outFile = outIdx >= 0 ? args[outIdx + 1] : "migration-data/annex-import.sql";
-const input = args.find((a, i) => !a.startsWith("--") && i !== outIdx + 1);
+const input = args.find((a, i) => !a.startsWith("--") && (outIdx < 0 || i !== outIdx + 1));
 if (!input) {
   console.error("Usage: node scripts/import-auth-data.mjs <cubedocs-auth .sql export | .sqlite file> [--out <file>]");
   process.exit(1);

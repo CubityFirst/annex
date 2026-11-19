@@ -223,6 +223,29 @@ describe("logout (AF-S3)", () => {
   });
 });
 
+describe("dev quick-login", () => {
+  const post = (env: ReturnType<typeof makeEnv>) => request(env, "/api/dev/quick-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "e2e-admin@example.com" }),
+  });
+
+  it("404s unless DEV_QUICK_LOGIN is on AND the panel runs on localhost", async () => {
+    const { db } = createSqliteD1();
+    expect((await post(makeEnv({ DB: db, APP_ORIGIN: "http://localhost:5174" }))).status).toBe(404);
+    expect((await post(makeEnv({ DB: db, DEV_QUICK_LOGIN: "true", APP_ORIGIN: "https://admin.cubityfir.st" }))).status).toBe(404);
+  });
+
+  it("mints an admin session for an admin dev user locally", async () => {
+    const { db, sqlite } = createSqliteD1();
+    const res = await post(makeEnv({ DB: db, DEV_QUICK_LOGIN: "true", APP_ORIGIN: "http://localhost:5174" }));
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { userId: string } };
+    expect(sqlite.prepare("SELECT is_admin FROM users WHERE id = ?").get(data.userId)).toEqual({ is_admin: 1 });
+    expect(sqlite.prepare("SELECT kind FROM sessions WHERE user_id = ?").get(data.userId)).toEqual({ kind: "admin" });
+  });
+});
+
 describe("invalid cursors 400 at the HTTP layer", () => {
   it.each([
     "/api/users/search?q=&cursor=garbage",

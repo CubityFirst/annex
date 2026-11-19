@@ -12,7 +12,7 @@ function initials(name: string): string {
 
 export type PersonalPlan = "free" | "ink";
 
-// Allowed values mirror INK_RING_STYLES in packages/auth/src/plan.ts.
+// Allowed values mirror INK_RING_STYLES in packages/api/src/account/plan.ts.
 // Anything unrecognised falls back to the default shimmer style.
 // 'none' opts out of the ring entirely - the avatar renders bare.
 const KNOWN_INK_STYLES = new Set(["shimmer", "aurora", "ember", "mono", "none"]);

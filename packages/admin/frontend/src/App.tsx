@@ -6,6 +6,7 @@ import { ADMIN_AUTH_INVALIDATED_EVENT, clearToken, getToken } from "@/lib/auth";
 import { type AdminAuthSession, TransientVerifyError, logoutAdminSession, verifyAdminSession } from "@/lib/api";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { LoginPage } from "./pages/LoginPage";
+import { postSignInPath } from "@/lib/signIn";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { AuditPage } from "./pages/AuditPage";
@@ -253,7 +254,10 @@ export function App() {
     );
   }
 
-  if (location.pathname === "/login" || location.pathname === "/auth/complete") {
+  if (location.pathname === "/auth/complete") {
+    return <Navigate to={postSignInPath()} replace />;
+  }
+  if (location.pathname === "/login") {
     return <Navigate to="/" replace />;
   }
 

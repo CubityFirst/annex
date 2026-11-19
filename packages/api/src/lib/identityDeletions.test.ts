@@ -85,6 +85,10 @@ describe("syncIdentityDeletions", () => {
     // Membership elsewhere gone; owner rows on owned site/org kept.
     expect(count("SELECT COUNT(*) AS n FROM project_members WHERE id = 'm3'")).toBe(0);
     expect(count("SELECT COUNT(*) AS n FROM project_members WHERE id IN ('m1', 'm2')")).toBe(2);
+    // ...but the deleted owner's name/email are scrubbed from them.
+    expect(db.sqlite.prepare("SELECT name, email FROM project_members WHERE id = 'm1'").get()).toEqual({ name: "Deleted account", email: "" });
+    expect(db.sqlite.prepare("SELECT name, email FROM organization_members WHERE id = 'om1'").get()).toEqual({ name: "Deleted account", email: "" });
+    expect(db.sqlite.prepare("SELECT name FROM project_members WHERE id = 'm2'").get()).toEqual({ name: "O" });
     expect(count("SELECT COUNT(*) AS n FROM organization_members WHERE id = 'om1'")).toBe(1);
     expect(count("SELECT COUNT(*) AS n FROM projects WHERE id = 's1'")).toBe(1);
     expect(count("SELECT COUNT(*) AS n FROM organizations WHERE id = 'o1'")).toBe(1);
@@ -150,6 +154,20 @@ describe("recordIdentityDeletions cursor", () => {
     for (let i = 1; i <= 150; i++) deletions.push({ userId: `u${i}`, deletedAt: i * 10, deletedBy: "self" });
     expect(await recordIdentityDeletions(env())).toBe(150);
     expect(listDeletedUsers).toHaveBeenCalledTimes(2);
-    expect(listDeletedUsers).toHaveBeenNthCalledWith(2, 1000, 100);
+    expect(listDeletedUsers).toHaveBeenNthCalledWith(2, 999, 100);
+  });
+
+  it("re-reads a page that can't advance (all one millisecond) at the RPC cap instead of stalling", async () => {
+    for (let i = 1; i <= 120; i++) deletions.push({ userId: `same${i}`, deletedAt: 700, deletedBy: "admin:bulk" });
+    deletions.push({ userId: "later", deletedAt: 800, deletedBy: "self" });
+    expect(await recordIdentityDeletions(env())).toBe(121);
+    expect(listDeletedUsers).toHaveBeenCalledWith(699, 500);
+  });
+
+  it("doesn't skip deletions sharing a millisecond across a page boundary", async () => {
+    for (let i = 1; i <= 99; i++) deletions.push({ userId: `a${i}`, deletedAt: i, deletedBy: "self" });
+    for (const id of ["tie1", "tie2", "tie3"]) deletions.push({ userId: id, deletedAt: 500, deletedBy: "self" });
+    expect(await recordIdentityDeletions(env())).toBe(102);
+    expect(count("SELECT COUNT(*) AS n FROM identity_deletions WHERE user_id LIKE 'tie%'")).toBe(3);
   });
 });

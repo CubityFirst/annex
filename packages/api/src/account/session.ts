@@ -9,7 +9,7 @@
 
 import { verifyJwt, signJwt, sha256b64url, randomToken } from "./jwt";
 import { resolvePersonalPlan } from "./plan";
-import { accountStanding, type IdentityEnv, type MirrorUser } from "./identity";
+import { accountStanding, IDENTITY_DELETED_SQL, type IdentityEnv, type MirrorUser } from "./identity";
 
 export type SessionKind = "app" | "admin";
 
@@ -97,6 +97,7 @@ export async function loadCurrentSession(
   const [userResult, sessionResult] = await db.batch([
     db.prepare(
       `SELECT u.id, u.email, u.name, u.email_verified, u.is_admin, u.status, u.suspended_until, u.created_at,
+              ${IDENTITY_DELETED_SQL},
               d.id AS pending_deletion,
               p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
               p.reading_font, p.editing_font, p.ui_font,

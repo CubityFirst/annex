@@ -13,10 +13,10 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-pub-${RUN_ID}@example.com`;
-const PASSWORD = "E2eTest-P@ssw0rd!";
 const NAME = "E2E Publish User";
 const PROJECT_NAME = `E2E Project Publish ${RUN_ID}`;
 const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7) % 256}.${(RUN_ID + 9) % 256}`;
@@ -29,21 +29,6 @@ let projectId = "";
 let docId = "";
 let projectSettingsUrl = "";
 
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_c: unknown, opts: { callback: (t: string) => void }) {
-          setTimeout(() => opts.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {}, remove() {},
-      },
-      writable: true, configurable: true,
-    });
-  });
-}
-
 async function injectFakeIp(ctx: BrowserContext, ip: string) {
   await ctx.route("**/api/**", async (route) => {
     await route.continue({ headers: { ...route.request().headers(), "CF-Connecting-IP": ip } });
@@ -54,7 +39,6 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
-  await mockTurnstile(context);
   await injectFakeIp(context, FAKE_IP);
   page = await context.newPage();
 });
@@ -80,18 +64,7 @@ test.afterAll(async () => {
 });
 
 test("creates a project + doc and publishes the site", async () => {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(NAME);
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: EMAIL, name: NAME });
 
   await page.goto("/dashboard");
   await page.getByText("New site").click();

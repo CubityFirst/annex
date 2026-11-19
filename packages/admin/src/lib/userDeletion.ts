@@ -200,6 +200,19 @@ export async function executeUserDeletion(
   // Re-checked here, not just at scheduling: the account may have been made
   // an admin during the grace window.
   if (user.is_admin) return { ok: false, error: "Admin accounts can't be deleted from the admin panel" };
+  // The mirror's admin flag can be stale: the schedule blocks the person, so
+  // no sign-in or session check refreshes it during the grace window. Ask the
+  // identity service before anything irreversible, and retry later if it
+  // can't be reached.
+  if (env.IDENTITY) {
+    let live;
+    try {
+      live = await env.IDENTITY.getUser(userId);
+    } catch {
+      return { ok: false, error: "Couldn't verify the account with auth.cubityfir.st; it will be retried" };
+    }
+    if (live?.isAdmin) return { ok: false, error: "Admin accounts can't be deleted from the admin panel" };
+  }
 
   const before = await checkExecutionOwnership(env, userId, user.email, confirm);
   if (before.error) return { ok: false, error: before.error };
@@ -232,11 +245,17 @@ export async function executeUserDeletion(
   // Point of no return: from here the deletion can only be finished, not
   // cancelled. Tied to this schedule id, so it no-ops if the schedule was
   // replaced (the claim normally prevents that already).
+  // Also tied to the Stripe customer the preflight saw: a webhook linking a
+  // new customer before this point would otherwise be deleted from billing
+  // without its customer being cancelled. (After it, the webhook's own
+  // started_at guard routes late events to customer deletion.)
   const started = await env.DB.prepare(
-    "UPDATE user_deletions SET started_at = COALESCE(started_at, ?) WHERE user_id = ? AND id = ?",
-  ).bind(Math.floor(Date.now() / 1000), userId, scheduleId).run();
+    `UPDATE user_deletions SET started_at = COALESCE(started_at, ?)
+     WHERE user_id = ? AND id = ?
+       AND (SELECT stripe_customer_id FROM user_billing WHERE user_id = ?) IS ?`,
+  ).bind(Math.floor(Date.now() / 1000), userId, scheduleId, userId, user.stripe_customer_id).run();
   if ((started.meta?.changes ?? 0) !== 1) {
-    return { ok: false, error: "The schedule was cancelled or replaced; nothing was deleted" };
+    return { ok: false, error: "The schedule was cancelled or replaced, or billing changed during the run; nothing was deleted (retried later)" };
   }
 
   // Stripe first, and fatal on failure: a deleted account with a live

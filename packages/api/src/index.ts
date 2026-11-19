@@ -27,10 +27,7 @@ import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from 
 import { resolveAccess } from "./lib/access";
 import type { IdentityService } from "./account/identity";
 import { sweepSessions } from "./account/session";
-import { syncIdentityDeletions } from "./lib/identityDeletions";
-
-// Must match the hourly trigger in cloudflare.config.ts.
-export const DELETION_SYNC_CRON = "23 * * * *";
+import { DELETION_SYNC_CRON, syncIdentityDeletions } from "./lib/identityDeletions";
 import { handleAuthCallback, handleAuthExchange, handleAuthLogin, handleAuthLogout, handleDevQuickLogin } from "./routes/auth";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripeWebhook";
@@ -60,7 +57,7 @@ export interface Env {
   IDENTITY_OIDC?: Fetcher;
   // OIDC client settings (see routes/auth.ts). OIDC_CLIENT_SECRET is a secret;
   // the rest are vars. Redirect URIs default to APP_ORIGIN/api/auth/callback
-  // and APP_ORIGIN/.
+  // and APP_ORIGIN (no trailing slash).
   OIDC_ISSUER?: string;
   OIDC_CLIENT_ID?: string;
   OIDC_CLIENT_SECRET?: string;

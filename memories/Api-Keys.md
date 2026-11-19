@@ -22,10 +22,9 @@ index = lookup index), `key_prefix` (display only), `scope` (`read|readwrite`
 CHECK), `can_invite` (0/1), `created_at`, `last_used_at`, `expires_at`,
 `revoked_at`.
 
-**Why the API DB, not auth DB:** keys are project-scoped (real FK + cascade), and
-management is a plain API-worker write - keeping them out of the read-only
-`AUTH_DB` avoids a new auth-worker write path and the 3-package redeploy coupling
-that auth-table schema changes carry. The owner is just a stored user id.
+**Why the API DB:** keys are project-scoped (real FK + cascade), and management is
+a plain API-worker write. The owner is just a stored user id (= the users
+mirror id / OIDC `sub`).
 
 ## Security model - the load-bearing invariants
 
@@ -40,8 +39,9 @@ that auth-table schema changes carry. The owner is just a stored user id.
    **live** `project_members` role (accepted only). A `readwrite` key still needs
    the owner to be editor+; a `can_invite` key still needs admin+. Removing the
    owner from the site **instantly neuters all their keys**. `authenticateApiKey`
-   also reads the owner's `users` row via `AUTH_DB`: a deleted, disabled,
-   suspended, or force-password-change account's keys 401, same as its JWTs.
+   also checks the owner's users-mirror row and live standing (identity
+   service, cached ~60s): a deleted, disabled or suspended account - or one
+   blocked by a pending admin deletion - gets 401, same as its sessions.
 3. **Token discrimination.** Keys are prefixed `annx_`; JWTs are 3 dot-separated
    segments and never carry the prefix. `isApiKeyToken()` separates them.
 4. **Hashing.** Store only `SHA-256(secret)` (fast hash is correct for

@@ -387,6 +387,21 @@ describe("delayed deletion (real SQLite)", () => {
     expect((await t.cancelDeletion("u-1")).status).toBe(200);
   });
 
+  it("a Stripe customer linked after the preflight read blocks the point of no return (retried, nothing deleted)", async () => {
+    const t = setup();
+    t.addUser("u-1");
+    at(T0);
+    await t.scheduleDeletion("u-1");
+    // A checkout webhook links a customer right after the run read billing.
+    interleave(t, "LEFT JOIN user_billing b ON b.user_id = u.id", () => {
+      t.sqlite.prepare("INSERT INTO user_billing (user_id, stripe_customer_id) VALUES ('u-1', 'cus_late')").run();
+    });
+    expect(await t.runAt(T0 + 7 * DAY + 60)).toEqual({ deleted: 0, failed: 1 });
+    expect(t.schedule("u-1")!.started_at).toBeNull();
+    expect(String(t.schedule("u-1")!.last_error)).toContain("billing changed");
+    expect(t.count("SELECT COUNT(*) AS n FROM user_billing WHERE stripe_customer_id = 'cus_late'")).toBe(1);
+  });
+
   it("two admins scheduling the same account at once: the loser gets a clean 409", async () => {
     const t = setup();
     t.addUser("u-1");

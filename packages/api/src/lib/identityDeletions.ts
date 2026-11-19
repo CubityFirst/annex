@@ -10,7 +10,8 @@
 //   - memberships, API keys, doc shares, favourites and avatars go, and the
 //     users mirror row is deleted (cascading sessions, billing, preferences,
 //     moderation history and any admin-scheduled deletion);
-//   - sites and organizations they OWNED are kept, with their owner rows, and
+//   - sites and organizations they OWNED are kept, with their owner rows
+//     (name/email snapshots scrubbed to "Deleted account"), and
 //     recorded on the identity_deletions row for an operator to delete or
 //     reassign from the admin panel. Owned sites usually have other members,
 //     and the identity service gave the person no warning about them.
@@ -28,30 +29,50 @@ export interface DeletionSyncEnv {
   STRIPE_SECRET_KEY?: string;
 }
 
+// Must match the hourly trigger in cloudflare.config.ts. Lives here, not in
+// src/index.ts: every named export of the worker's main module is loaded as
+// an entrypoint, and a non-handler export stops the worker from starting.
+export const DELETION_SYNC_CRON = "23 * * * *";
+
 const PAGE_SIZE = 100;
+// IdentityService.listDeletedUsers' maximum page size.
+const MAX_PAGE_SIZE = 500;
 const MAX_PAGES_PER_RUN = 10;
 const PROCESS_PER_RUN = 20;
 
 // Pulls new deletions from the identity service into identity_deletions.
-// The first request re-reads the newest recorded millisecond (`deleted_at >
-// cursor - 1`) so deletions sharing it that a previous page cut off aren't
-// skipped; INSERT OR IGNORE dedupes. Later pages are strictly after.
+// Every request re-reads the newest millisecond seen so far (`deleted_at >
+// cursor - 1`), so deletions sharing it that a full page cut off aren't
+// skipped; INSERT OR IGNORE dedupes the overlap.
 export async function recordIdentityDeletions(env: DeletionSyncEnv): Promise<number> {
   if (!env.IDENTITY) return 0;
   const row = await env.DB.prepare("SELECT MAX(deleted_at) AS cursor FROM identity_deletions")
     .first<{ cursor: number | null }>();
   let since = row?.cursor != null ? row.cursor - 1 : 0;
   let recorded = 0;
+  let limit = PAGE_SIZE;
   for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
-    const deleted = await env.IDENTITY.listDeletedUsers(since, PAGE_SIZE);
+    const deleted = await env.IDENTITY.listDeletedUsers(since, limit);
     if (deleted.length === 0) break;
     const results = await env.DB.batch(deleted.map(d =>
       env.DB.prepare("INSERT OR IGNORE INTO identity_deletions (user_id, deleted_at, deleted_by) VALUES (?, ?, ?)")
         .bind(d.userId, d.deletedAt, d.deletedBy ?? "unknown"),
     ));
     recorded += results.reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
-    if (deleted.length < PAGE_SIZE) break;
-    since = deleted[deleted.length - 1].deletedAt;
+    if (deleted.length < limit) break;
+    const next = deleted[deleted.length - 1].deletedAt - 1;
+    if (next <= since) {
+      // A whole page within one millisecond can't advance the cursor: read
+      // it again at the RPC's maximum page size.
+      if (limit < MAX_PAGE_SIZE) {
+        limit = MAX_PAGE_SIZE;
+        continue;
+      }
+      console.error(`[deletion-sync] more than ${MAX_PAGE_SIZE} deletions share deleted_at ${since + 1}; reconcile by hand`);
+      break;
+    }
+    since = next;
+    limit = PAGE_SIZE;
   }
   return recorded;
 }
@@ -94,6 +115,9 @@ export async function processIdentityDeletion(env: DeletionSyncEnv, userId: stri
     env.DB.prepare("DELETE FROM api_keys WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM doc_shares WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM user_favourite_projects WHERE user_id = ?").bind(userId),
+    // The kept owner rows mustn't go on showing the person's name and email.
+    env.DB.prepare("UPDATE project_members SET name = 'Deleted account', email = '' WHERE user_id = ?").bind(userId),
+    env.DB.prepare("UPDATE organization_members SET name = 'Deleted account', email = '' WHERE user_id = ?").bind(userId),
   ]);
   await deleteAllAvatarVariants(env.ASSETS, userId);
 

@@ -1,6 +1,7 @@
 // The admin panel signs in through auth.cubityfir.st as its own OIDC client:
 // /api/auth/login (admin worker) -> identity service -> /api/auth/callback ->
-// /auth/complete#code=... (AuthCallbackPage) -> POST /api/auth/exchange.
+// /auth/complete#status=ok (AuthCallbackPage) -> POST /api/auth/exchange
+// (redeems the HttpOnly handoff cookie the callback set).
 
 export function normalizeAdminNextPath(nextPath: string | null | undefined): string {
   if (!nextPath || !nextPath.startsWith("/")) {
@@ -22,6 +23,27 @@ export function adminSignInUrl(nextPath: string, opts: { prompt?: "login" } = {}
   if (opts.prompt) params.set("prompt", opts.prompt);
   const qs = params.toString();
   return `/api/auth/login${qs ? `?${qs}` : ""}`;
+}
+
+// Where to land after a completed sign-in. The completion page records it;
+// App reads it once the session is verified (the page itself is unmounted by
+// App's verification screen, so it can't navigate there itself).
+const POST_SIGN_IN_KEY = "admin_post_sign_in";
+
+export function rememberPostSignIn(nextPath: string): void {
+  try {
+    window.sessionStorage.setItem(POST_SIGN_IN_KEY, normalizeAdminNextPath(nextPath));
+  } catch {
+    /* storage unavailable - fall back to "/" */
+  }
+}
+
+export function postSignInPath(): string {
+  try {
+    return normalizeAdminNextPath(window.sessionStorage.getItem(POST_SIGN_IN_KEY));
+  } catch {
+    return "/";
+  }
 }
 
 export function signInErrorMessage(code: string | null): string {

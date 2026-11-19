@@ -25,10 +25,15 @@ export interface IdentityService {
   listDeletedUsers(sinceMs: number, limit?: number): Promise<Array<{ userId: string; deletedAt: number; deletedBy: string }>>;
 }
 
+import { syncStripeCustomerEmail, type StripeEnv } from "./stripe-client";
+
 // What every consumer of this module needs from its worker's Env.
 export interface IdentityEnv {
   DB: D1Database;
   IDENTITY?: IdentityService;
+  // Keeps a linked Stripe customer's receipt address in step when the
+  // identity email changes (see refreshMirror).
+  STRIPE_SECRET_KEY?: string;
   // Local-dev quick login: dev-* users exist only in the mirror (see
   // routes/auth.ts handleDevQuickLogin), so standing checks skip the RPC.
   DEV_QUICK_LOGIN?: string;
@@ -44,7 +49,14 @@ export interface MirrorUser {
   status: string;
   suspended_until: number | null;
   created_at: string;
+  // Set by callers that join identity_deletions: the identity service has
+  // reported this account deleted (cleanup may still be pending).
+  identity_deleted?: number | null;
 }
+
+// SQL fragment for readers of the users mirror (alias `u`): whether the
+// deletion sync has recorded the account as deleted.
+export const IDENTITY_DELETED_SQL = "EXISTS (SELECT 1 FROM identity_deletions x WHERE x.user_id = u.id) AS identity_deleted";
 
 export type Standing =
   | { ok: true; isAdmin: boolean }
@@ -105,6 +117,7 @@ export function standingFromIdentity(user: IdentityUser | null, nowMs: number): 
 }
 
 export function standingFromMirror(row: Pick<MirrorUser, "status" | "suspended_until" | "is_admin">, nowMs: number): Standing {
+  if (row.status === "deleted") return { ok: false, reason: "deleted" };
   if (row.status === "disabled") return { ok: false, reason: "disabled" };
   if (row.status === "suspended" && row.suspended_until && Math.floor(nowMs / 1000) < row.suspended_until) {
     return { ok: false, reason: "suspended", until: row.suspended_until };
@@ -123,6 +136,9 @@ export async function accountStanding(
   nowMs: number = Date.now(),
   ctx?: { waitUntil(p: Promise<unknown>): void },
 ): Promise<Standing> {
+  // A deletion Annex already knows about wins over any cached or fallback
+  // answer (cleanup by the deletion sync may not have run yet).
+  if (mirror.identity_deleted || mirror.status === "deleted") return { ok: false, reason: "deleted" };
   if (isLocalDevUser(env, mirror.id)) return standingFromMirror(mirror, nowMs);
 
   const hit = cache.get(mirror.id);
@@ -138,10 +154,16 @@ export async function accountStanding(
     return standingFromMirror(mirror, nowMs);
   }
   remember(mirror.id, user, nowMs);
-  if (user && mirrorDiffers(mirror, user)) {
-    const write = refreshMirror(env.DB, user, nowMs).catch(err =>
-      console.error("[identity] mirror refresh failed", { userId: user.id, err: String(err) }),
-    );
+  if (!user) {
+    // Authoritative "no such account": persist it, so an identity outage
+    // later can't fall back to a mirror row that still says active.
+    const write = env.DB.prepare("UPDATE users SET status = 'deleted', synced_at = ? WHERE id = ?").bind(nowMs, mirror.id).run()
+      .catch(err => console.error("[identity] marking deleted user failed", { userId: mirror.id, err: String(err) }));
+    if (ctx) ctx.waitUntil(write);
+    else await write;
+  } else if (mirrorDiffers(mirror, user)) {
+    const write = refreshMirror(env, user, nowMs)
+      .catch(err => console.error("[identity] mirror refresh failed", { userId: user.id, err: String(err) }));
     if (ctx) ctx.waitUntil(write);
     else await write;
   }
@@ -166,7 +188,8 @@ export function mirrorUpsertStatements(db: D1Database, user: IdentityUser, nowMs
   return [
     db.prepare(
       `INSERT INTO users (id, email, name, email_verified, is_admin, status, suspended_until, created_at, first_seen_at, last_login_at, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+       WHERE NOT EXISTS (SELECT 1 FROM identity_deletions x WHERE x.user_id = ?1)
        ON CONFLICT(id) DO UPDATE SET
          email = excluded.email,
          name = excluded.name,
@@ -176,7 +199,10 @@ export function mirrorUpsertStatements(db: D1Database, user: IdentityUser, nowMs
          suspended_until = excluded.suspended_until,
          created_at = excluded.created_at,
          last_login_at = COALESCE(excluded.last_login_at, users.last_login_at),
-         synced_at = excluded.synced_at`,
+         synced_at = excluded.synced_at
+       -- A deletion (recorded by the sync, or a null getUser) is final: an
+       -- in-flight refresh that read the account earlier must not revive it.
+       WHERE users.status <> 'deleted' AND NOT EXISTS (SELECT 1 FROM identity_deletions x WHERE x.user_id = excluded.id)`,
     ).bind(
       user.id,
       user.email,
@@ -190,21 +216,34 @@ export function mirrorUpsertStatements(db: D1Database, user: IdentityUser, nowMs
       opts.login ? nowMs : null,
       nowMs,
     ),
-    db.prepare("UPDATE project_members SET name = ?, email = ? WHERE user_id = ? AND (name <> ? OR email <> ?)")
-      .bind(user.name, user.email, user.id, user.name, user.email),
-    db.prepare("UPDATE organization_members SET name = ?, email = ? WHERE user_id = ? AND (name <> ? OR email <> ?)")
-      .bind(user.name, user.email, user.id, user.name, user.email),
+    db.prepare(`UPDATE project_members SET name = ?, email = ? WHERE user_id = ? AND (name <> ? OR email <> ?) AND NOT EXISTS (SELECT 1 FROM identity_deletions x WHERE x.user_id = ?)`)
+      .bind(user.name, user.email, user.id, user.name, user.email, user.id),
+    db.prepare(`UPDATE organization_members SET name = ?, email = ? WHERE user_id = ? AND (name <> ? OR email <> ?) AND NOT EXISTS (SELECT 1 FROM identity_deletions x WHERE x.user_id = ?)`)
+      .bind(user.name, user.email, user.id, user.name, user.email, user.id),
   ];
 }
 
 // Returns how many member-row snapshots were out of date (and fixed).
+//
+// Every mirror write goes through here, so this is also where a changed
+// email reaches the linked Stripe customer's receipt address: whichever
+// refresh (sign-in, standing check, invite lookup, admin) first writes the
+// new address is the one that sees the change. The leading SELECT runs in the
+// same batch, so it reads the address the upsert replaces.
 export async function refreshMirror(
-  db: D1Database,
+  env: StripeEnv,
   user: IdentityUser,
   nowMs: number,
   opts: { login?: boolean } = {},
 ): Promise<{ project_members: number; organization_members: number }> {
-  const [, projects, orgs] = await db.batch(mirrorUpsertStatements(db, user, nowMs, opts));
+  const [before, upsert, projects, orgs] = await env.DB.batch([
+    env.DB.prepare("SELECT email FROM users WHERE id = ?").bind(user.id),
+    ...mirrorUpsertStatements(env.DB, user, nowMs, opts),
+  ]);
+  const previous = (before?.results?.[0] as { email?: string } | undefined)?.email;
+  if (previous && previous !== user.email && (upsert?.meta?.changes ?? 0) > 0) {
+    await syncStripeCustomerEmail(env, user.id, user.email);
+  }
   return { project_members: projects?.meta?.changes ?? 0, organization_members: orgs?.meta?.changes ?? 0 };
 }
 
@@ -222,15 +261,18 @@ export async function findUserByEmail(env: IdentityEnv, email: string, nowMs: nu
     try {
       user = await env.IDENTITY.findUserByEmail(normalized);
     } catch (err) {
+      // The mirror can hold a stale address (it isn't unique), so outside
+      // local dev an outage must not resolve an invite to the wrong person.
+      if (!isLocalDeploy(env)) throw err;
       reached = false;
-      console.error("[identity] findUserByEmail failed; using mirror", { err: String(err) });
+      console.error("[identity] findUserByEmail failed; using mirror (local dev)", { err: String(err) });
     }
     if (reached) {
       if (!user) return null;
       // Never resurrect an account Annex has already processed as deleted.
       const gone = await env.DB.prepare("SELECT 1 AS x FROM identity_deletions WHERE user_id = ?").bind(user.id).first();
       if (gone) return null;
-      await refreshMirror(env.DB, user, nowMs);
+      await refreshMirror(env, user, nowMs);
       return { id: user.id, email: user.email, name: user.name };
     }
   }
