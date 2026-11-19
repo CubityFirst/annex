@@ -114,7 +114,7 @@ auditRouter.get("/", async (c) => {
 
   // One extra row tells us whether an older page exists without a count.
   const { sql, binds } = buildAuditListQuery(cursor, { actions, q });
-  const stmt = c.env.AUTH_DB.prepare(sql).bind(...binds, PAGE_SIZE + 1);
+  const stmt = c.env.DB.prepare(sql).bind(...binds, PAGE_SIZE + 1);
 
   const rows = (await stmt.all<AuditRow>()).results;
   const hasMore = rows.length > PAGE_SIZE;
@@ -133,7 +133,7 @@ auditRouter.get("/", async (c) => {
 // appear without code changes.
 auditRouter.get("/actions", async (c) => {
   const rows = (
-    await c.env.AUTH_DB.prepare(AUDIT_ACTIONS_SQL).all<{ action: string }>()
+    await c.env.DB.prepare(AUDIT_ACTIONS_SQL).all<{ action: string }>()
   ).results;
   return c.json({ ok: true, data: { actions: rows.map((r) => r.action) } });
 });

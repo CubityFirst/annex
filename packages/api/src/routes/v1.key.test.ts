@@ -1,27 +1,22 @@
 // GET /v1/key (introspection) and DELETE /v1/key (self-revocation), run
-// against real SQLite with every API + auth migration applied, so the actual
+// against real SQLite with every main-DB migration applied, so the actual
 // hash lookup, JOINs and the live-membership floor are exercised end to end.
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { fileURLToPath } from "node:url";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { handlePublicApi } from "./v1";
 import { hashApiKey } from "../lib/apiKeys";
 import type { Env } from "../index";
 
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../auth/migrations", import.meta.url));
-
 const SECRET = "annx_selfRevokeTestSecret_0123456789abcdefghijk";
 const OTHER_SECRET = "annx_otherKeyStaysAlive_0123456789abcdefghijklm";
 
 let api: SqliteD1;
-let auth: SqliteD1;
 let flagEnabled: boolean;
 
 function makeEnv(): Env {
   return {
     DB: api.db,
-    AUTH_DB: auth.db,
     FLAGS: { getBooleanValue: async () => flagEnabled },
   } as unknown as Env;
 }
@@ -48,8 +43,7 @@ function revokedAt(id: string): string | null {
 beforeEach(async () => {
   flagEnabled = true;
   api = createSqliteD1();
-  auth = createSqliteD1(AUTH_MIGRATIONS);
-  auth.sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u1', 'u1@example.com', 'User One', 'x', datetime('now'))").run();
+  api.sqlite.prepare("INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at) VALUES (?, ?, ?, datetime('now'), 0, 0)").run("u1", "u1@example.com", "User One");
   api.sqlite.prepare("INSERT INTO projects (id, name, vanity_slug, owner_id, created_at) VALUES ('p1', 'Handbook', 'handbook', 'u1', datetime('now'))").run();
   api.sqlite.prepare(
     "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES ('m1', 'p1', 'u1', 'u1@example.com', 'User One', 'editor', 'u1', datetime('now'), 1)",
@@ -131,7 +125,7 @@ describe("DELETE /v1/key (self-revocation)", () => {
 
   it("still works when the owner was removed from the site or suspended", async () => {
     api.sqlite.prepare("DELETE FROM project_members WHERE id = 'm1'").run();
-    auth.sqlite.prepare("UPDATE users SET moderation = -1 WHERE id = 'u1'").run();
+    api.sqlite.prepare("UPDATE users SET status = 'disabled' WHERE id = 'u1'").run();
     expect((await call("DELETE", "/v1/key", SECRET)).status).toBe(200);
     expect(revokedAt("k1")).not.toBeNull();
   });

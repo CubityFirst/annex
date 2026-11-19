@@ -125,18 +125,8 @@ export async function handleProjects(
       organizationId = body.organizationId;
     }
 
-    // Look up owner's name from auth worker
-    const authHeader = request.headers.get("Authorization");
-    const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-      body: JSON.stringify({ userId: user.userId }),
-    });
-    let ownerName = user.email;
-    if (lookupRes.ok) {
-      const data = await lookupRes.json<{ ok: boolean; data?: { name: string } }>();
-      if (data.ok && data.data) ownerName = data.data.name;
-    }
+    // Owner's display name from the users mirror (carried on the session).
+    const ownerName = user.name || user.email;
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();

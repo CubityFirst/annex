@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleMembers } from "./members";
 
 vi.mock("../lib/access", () => ({ resolveRole: vi.fn() }));
+// Invite-by-email lookups go to the identity service (account/identity.ts);
+// the tests drive its result directly.
+vi.mock("../account/identity", () => ({ findUserByEmail: vi.fn() }));
+
+import { findUserByEmail } from "../account/identity";
 
 import { resolveRole } from "../lib/access";
 
@@ -18,17 +23,18 @@ function makeEnv(opts?: { lookupStatus?: number; lookupUser?: { userId: string; 
   const bind = vi.fn((...args: unknown[]) => { bindCalls.push(args); return { first, all, run }; });
   const prepare = vi.fn((_sql: string) => ({ bind }));
   const batch = vi.fn((_stmts: unknown[]) => Promise.resolve([]));
-  const authAll = vi.fn(() => Promise.resolve({ results: [] }));
-  const authFetch = vi.fn(async () => {
+  // Stands in for the identity-service lookup (named for the old auth-worker
+  // fetch it replaced so the assertions below read the same).
+  const authFetch = vi.mocked(findUserByEmail);
+  authFetch.mockImplementation(async () => {
     const status = opts?.lookupStatus ?? 200;
-    if (status !== 200) return new Response("", { status });
-    return Response.json({ ok: true, data: opts?.lookupUser ?? { userId: "invitee-1", email: "b@example.com", name: "Bob" } }, { status: 200 });
+    if (status !== 200) return null;
+    const u = opts?.lookupUser ?? { userId: "invitee-1", email: "b@example.com", name: "Bob" };
+    return { id: u.userId, email: u.email, name: u.name };
   });
   return {
     env: {
       DB: { prepare, batch },
-      AUTH_DB: { prepare: vi.fn(() => ({ bind: vi.fn(() => ({ all: authAll })) })) },
-      AUTH: { fetch: authFetch },
       RATE_LIMITER_INVITE_LOOKUP: { limit: vi.fn(async () => ({ success: opts?.rateOk ?? true })) },
     } as unknown as Parameters<typeof handleMembers>[1],
     run,

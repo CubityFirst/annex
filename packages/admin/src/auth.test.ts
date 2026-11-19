@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../auth/src/session", () => ({
+vi.mock("../../api/src/account/session", () => ({
   loadCurrentSession: vi.fn(),
   sessionResultToResponse: vi.fn((result: { kind: string }) =>
     Response.json({ ok: false, error: `account_${result.kind}` }, { status: 403 }),
@@ -8,10 +8,10 @@ vi.mock("../../auth/src/session", () => ({
 }));
 
 import { verifySession, requireAdminSession } from "./auth";
-import { loadCurrentSession } from "../../auth/src/session";
+import { loadCurrentSession, type LoadedSession } from "../../api/src/account/session";
 import type { Env } from "./index";
 
-const env = { AUTH_DB: {}, JWT_SECRET: "secret" } as unknown as Env;
+const env = { DB: {}, JWT_SECRET: "secret" } as unknown as Env;
 
 function req(token?: string) {
   return new Request("http://admin/api/verify", {
@@ -21,7 +21,8 @@ function req(token?: string) {
 
 const OK_SESSION = {
   kind: "ok" as const,
-  session: { userId: "u-1", email: "a@x.com", expiresAt: 123, isAdmin: true, sid: "s-1" },
+  // Only the fields verifySession maps; the rest of LoadedSession is irrelevant here.
+  session: { userId: "u-1", email: "a@x.com", expiresAt: 123, isAdmin: true, sid: "s-1" } as LoadedSession,
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -50,6 +51,12 @@ describe("verifySession result mapping", () => {
     expect((result as Response).status).toBe(403);
   });
 
+  it("loads an 'admin'-kind session, so a docs-app token is refused", async () => {
+    vi.mocked(loadCurrentSession).mockResolvedValue(OK_SESSION);
+    await verifySession(req("tok"), env);
+    expect(vi.mocked(loadCurrentSession).mock.calls[0].slice(0, 3)).toEqual(["tok", env, "admin"]);
+  });
+
   it("threads the execution context through to loadCurrentSession (AB-M7)", async () => {
     vi.mocked(loadCurrentSession).mockResolvedValue(OK_SESSION);
     const ctx = { waitUntil: vi.fn() } as unknown as ExecutionContext;
@@ -64,7 +71,7 @@ describe("requireAdminSession", () => {
     expect((result as Response).status).toBe(401);
   });
 
-  it("403s a valid non-admin session (isAdmin re-derived from the DB, not the JWT)", async () => {
+  it("403s a valid non-admin session (isAdmin re-derived from the identity standing, not the JWT)", async () => {
     vi.mocked(loadCurrentSession).mockResolvedValue({
       kind: "ok",
       session: { ...OK_SESSION.session, isAdmin: false },

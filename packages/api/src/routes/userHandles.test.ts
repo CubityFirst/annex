@@ -1,16 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { fileURLToPath } from "node:url";
 import { createSqliteD1 } from "../test/sqliteD1";
 import { handleUserByHandle } from "./userHandles";
 import type { Env } from "../index";
 
-// AUTH_DB stand-in: real SQLite with every auth migration applied (incl. the
-// 0035 handle column + partial unique index).
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../auth/migrations", import.meta.url));
+// Real SQLite with every main-DB migration applied (users mirror +
+// user_preferences with the handle partial unique index).
 
 function makeEnv() {
-  const { db, sqlite } = createSqliteD1(AUTH_MIGRATIONS);
-  const user = sqlite.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, 'x', datetime('now'))");
+  const { db, sqlite } = createSqliteD1();
+  const user = sqlite.prepare("INSERT INTO users (id, email, name, created_at, first_seen_at, synced_at) VALUES (?, ?, ?, datetime('now'), 0, 0)");
   user.run("user-1", "a@example.com", "Cubity");
   user.run("user-2", "b@example.com", "No Handle");
   user.run("user-3", "c@example.com", "Official");
@@ -18,7 +16,7 @@ function makeEnv() {
   sqlite.prepare("INSERT INTO user_preferences (user_id, bio) VALUES ('user-2', 'hi')").run();
   // Reserved name, assignable only by an admin (packages/admin PATCH /:id/handle).
   sqlite.prepare("INSERT INTO user_preferences (user_id, handle) VALUES ('user-3', 'support')").run();
-  return { AUTH_DB: db } as unknown as Env;
+  return { DB: db } as unknown as Env;
 }
 
 async function resolve(env: Env, raw: string) {

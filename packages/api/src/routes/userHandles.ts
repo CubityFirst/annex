@@ -1,12 +1,12 @@
 import { errorResponse, Errors } from "../lib";
-import { normalizeHandle, handleProblem } from "../../../auth/src/handle";
+import { normalizeHandle, handleProblem } from "../account/handle";
 import type { Env } from "../index";
 
 // GET /users/by-handle/:handle - resolve an opt-in profile handle (the
 // `/@<handle>` link) to a user id. Authenticated by the caller (same audience
 // as GET /users/:userId, which the frontend then loads for the profile body).
 //
-// Reads AUTH_DB directly (read-only). A handle only exists while its owner has
+// Reads the users mirror + user_preferences. A handle only exists while its owner has
 // the profile link switched on, so "not found" covers both "never claimed"
 // and "turned off". The case-insensitive match comes from storing the handle
 // pre-normalized; we normalize the lookup the same way.
@@ -23,7 +23,7 @@ export async function handleUserByHandle(env: Env, rawHandle: string): Promise<R
   const problem = handleProblem(handle);
   if (problem === "length" || problem === "characters") return errorResponse(Errors.NOT_FOUND);
 
-  const row = await env.AUTH_DB.prepare(
+  const row = await env.DB.prepare(
     `SELECT u.id, u.name, p.handle
      FROM user_preferences p
      JOIN users u ON u.id = p.user_id

@@ -1,4 +1,4 @@
-// Client-side mirror of packages/auth/src/handle.ts - the rules for the opt-in
+// Client-side mirror of packages/api/src/account/handle.ts - the rules for the opt-in
 // `/@<handle>` profile link. Used for instant validation hints in settings and
 // for spotting `/@…` paths in the router; the auth worker is authoritative.
 // handle.test.ts asserts the two stay in agreement.

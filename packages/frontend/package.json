@@ -32,7 +32,6 @@
     "@radix-ui/react-separator": "^1.1.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.0",
-    "@simplewebauthn/browser": "^9.0.0",
     "@tailwindcss/typography": "^0.5.19",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
@@ -51,7 +50,6 @@
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",
-    "react-qr-code": "^2.0.15",
     "react-resizable-panels": "^4",
     "react-router-dom": "^6.26.0",
     "remark-breaks": "^4.0.0",
@@ -64,8 +62,7 @@
     "world-atlas": "^2.0.2",
     "y-codemirror.next": "^0.3.5",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.0",
-    "zxcvbn": "^4.4.2"
+    "yjs": "^13.6.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
@@ -80,7 +77,6 @@
     "@types/react-dom": "^19.0.0",
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-specification": "^1.0.5",
-    "@types/zxcvbn": "^4.4.5",
     "@vitejs/plugin-react": "^4.3.0",
     "cf": "1.0.0-beta.26",
     "jsdom": "^25.0.0",

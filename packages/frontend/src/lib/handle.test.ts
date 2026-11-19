@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeHandle, handleProblem, profilePath } from "./handle";
-import * as server from "../../../auth/src/handle";
+import * as server from "../../../api/src/account/handle";
 
 // The client copy only drives hints, but a drift would show "looks good" for a
 // name the server then rejects (or vice versa), so pin them together.

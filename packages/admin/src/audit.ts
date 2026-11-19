@@ -20,7 +20,7 @@ export async function writeAdminAudit(
 }
 
 // The same insert as an unexecuted statement, for callers that must commit
-// the audit row in one AUTH_DB batch with the mutation it records (so neither
+// the audit row in one DB batch with the mutation it records (so neither
 // can land without the other).
 export function adminAuditStatement(
   env: Env,
@@ -30,7 +30,7 @@ export function adminAuditStatement(
   targetId: string | null,
   detail?: Record<string, unknown>,
 ): D1PreparedStatement {
-  return env.AUTH_DB.prepare(
+  return env.DB.prepare(
     `INSERT INTO admin_audit_log
        (id, actor_user_id, actor_email, action, target_type, target_id, detail)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,

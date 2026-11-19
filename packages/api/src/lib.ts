@@ -1,6 +1,9 @@
 export interface Session {
   userId: string;
   email: string;
+  // Display name from the users mirror (owned by the identity service).
+  // Optional so hand-built test sessions don't need it.
+  name?: string;
   expiresAt: number;
   personalPlan?: "free" | "ink";
   personalPlanSince?: number | null;
@@ -403,4 +406,10 @@ export async function serveR2Object(
     status: 200,
     headers: { ...baseHeaders, "Content-Length": String(size) },
   });
+}
+
+// True only for a SQLite/D1 UNIQUE-constraint violation (e.g. two users
+// racing to claim the same profile handle).
+export function isUniqueConstraintError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("UNIQUE constraint failed");
 }

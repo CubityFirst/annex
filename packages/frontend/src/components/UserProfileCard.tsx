@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { signOut } from "@/lib/signIn";
 import { ROLE_BADGE_CLASSES } from "@/lib/roleStyles";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -341,7 +342,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
             </button>
             <button
               type="button"
-              onClick={() => { setOpen(false); navigate("/settings#sessions"); }}
+              onClick={() => { setOpen(false); navigate("/settings#security"); }}
               className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
             >
               <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -352,17 +353,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               type="button"
               onClick={async () => {
                 setOpen(false);
-                const t = getToken();
-                if (t) {
-                  try {
-                    await fetch("/api/me/sessions/logout", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
-                    });
-                  } catch { /* ignore */ }
-                }
-                clearToken();
-                navigate("/login");
+                await signOut();
               }}
               className="group mt-1 flex w-full items-center gap-3 rounded-md border-t border-border px-3 py-2.5 pt-3 text-left text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             >

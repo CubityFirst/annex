@@ -7,6 +7,7 @@ import type { Env } from "../index";
 import { ROLE_RANK } from "../lib";
 import { resolveAccess } from "../lib/access";
 import { latestDocRevisionContent, snapshotDocRevision } from "../lib/docOps";
+import { accountStanding, IDENTITY_DELETED_SQL, standingFromMirror, type MirrorUser } from "../account/identity";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -338,24 +339,30 @@ export class DocCollabRoom implements DurableObject {
     if (uids.size === 0) return revoked;
 
     // The socket was authenticated once, at upgrade. Re-check the session row
-    // and account state too, so "revoke other sessions", a password change,
-    // session expiry, or an admin disable/suspend closes it - membership alone
-    // wouldn't. Same fail-open rule on a lookup error.
+    // and account standing too, so a sign-out, session expiry, a pending admin
+    // deletion, or a disable/suspend on the identity service closes it -
+    // membership alone wouldn't. Same fail-open rule on a lookup error.
     const sessionOkById = new Map<string, boolean>();
-    const authDb = this.env.AUTH_DB;
-    if (authDb) {
-      await Promise.all([...sids].map(async (sid) => {
-        try {
-          const row = await authDb.prepare(
-            `SELECT s.expires_at, s.revoked_at, u.moderation, u.force_password_change
-             FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`,
-          ).bind(sid).first<{ expires_at: number; revoked_at: number | null; moderation: number; force_password_change: number }>();
-          sessionOkById.set(sid, sessionStillValid(row, now));
-        } catch {
-          sessionOkById.set(sid, true);
-        }
-      }));
-    }
+    await Promise.all([...sids].map(async (sid) => {
+      try {
+        const row = await this.env.DB.prepare(
+          `SELECT s.expires_at, s.revoked_at, s.kind, (d.user_id IS NOT NULL) AS blocked,
+                  u.id, u.email, u.name, u.email_verified, u.is_admin, u.status, u.suspended_until, u.created_at,
+                  ${IDENTITY_DELETED_SQL}
+           FROM sessions s
+           JOIN users u ON u.id = s.user_id
+           LEFT JOIN user_deletions d ON d.user_id = u.id
+           WHERE s.id = ?`,
+        ).bind(sid).first<SessionCheckRow>();
+        let ok = sessionStillValid(row, now);
+        // Live standing from the identity service (cached ~60s per isolate,
+        // falls back to the mirror when the service can't be reached).
+        if (ok && row) ok = (await accountStanding(this.env, row, now)).ok;
+        sessionOkById.set(sid, ok);
+      } catch {
+        sessionOkById.set(sid, true);
+      }
+    }));
     const allowedById = new Map<string, boolean>();
     await Promise.all([...uids].map(async (uid) => {
       try {
@@ -666,17 +673,24 @@ function safeDecode(v: string): string {
   try { return decodeURIComponent(v); } catch { return v; }
 }
 
-// Mirrors loadCurrentSession's session/account gates (revoked, expired,
-// force-password-change, disabled, suspended). A missing row = invalid.
+export interface SessionCheckRow extends MirrorUser {
+  expires_at: number;
+  revoked_at: number | null;
+  kind: string;
+  blocked: number;
+}
+
+// Mirrors loadCurrentSession's session gates (revoked, expired, wrong kind,
+// blocked by a pending admin deletion) plus the mirror's last known standing.
+// A missing row = invalid.
 export function sessionStillValid(
-  row: { expires_at: number; revoked_at: number | null; moderation: number; force_password_change: number } | null,
+  row: Pick<SessionCheckRow, "expires_at" | "revoked_at" | "kind" | "blocked" | "status" | "suspended_until" | "is_admin"> | null,
   now: number,
 ): boolean {
   if (!row) return false;
   if (row.revoked_at !== null) return false;
   if (row.expires_at <= now) return false;
-  if (row.force_password_change) return false;
-  if (row.moderation === -1) return false;
-  if (row.moderation > 0 && Math.floor(now / 1000) < row.moderation) return false;
-  return true;
+  if (row.kind !== "app") return false;
+  if (row.blocked) return false;
+  return standingFromMirror(row, now).ok;
 }

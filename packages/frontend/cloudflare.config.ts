@@ -36,13 +36,10 @@ export default defineConfig({
 			API: bindings.worker({
 				worker: "annex-api",
 			}),
-			// Service binding to the auth worker - used only for Stripe webhook
-			// forwarding (/stripe/webhook). The auth worker is otherwise reached
-			// via the api worker's own AUTH binding for authenticated calls.
-			AUTH: bindings.worker({
-				worker: "annex-auth",
-			}),
 			ASSETS: bindings.assets(),
+			// Identity service public origin: /oauth/authorize redirects here (the
+			// authorization endpoint moved off this app origin).
+			IDENTITY_ORIGIN: bindings.text("https://auth.cubityfir.st"),
 		},
 	},
 });

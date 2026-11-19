@@ -7,7 +7,7 @@ This is a pnpm + Turbo monorepo (`packageManager: pnpm@10`, Node 20+ recommended
 ```sh
 pnpm install
 pnpm migrations:local   # apply D1 migrations to the shared local dev state
-pnpm dev                # frontend :5173, api :8787, auth :8788, admin :8789
+pnpm dev                # frontend :5173, api :8787, admin :8789 (+ admin SPA :5174)
 ```
 
 The dev servers share one local state at the monorepo root (`.wrangler/state`). Worker config lives only in each package's `cloudflare.config.ts` (+ `wrangler.config.ts` for build settings) - there is no `wrangler.toml`. Local migrations (`pnpm migrate`) pass `--persist-to ../../.wrangler/state` from the package directory; for ad-hoc local SQL use `node scripts/d1-local.mjs <main|auth> "<sql>"` while `pnpm dev` is running. All wrangler invocations go through `npx wrangler`.
@@ -16,7 +16,6 @@ The dev servers share one local state at the monorepo root (`.wrangler/state`). 
 
 - `packages/frontend` - React 19 SPA (Vite, Tailwind CSS 4, shadcn/ui)
 - `packages/api` - Core Cloudflare Worker (projects, docs, files)
-- `packages/auth` - Auth Cloudflare Worker (login, register, TOTP, WebAuthn, OIDC)
 - `packages/admin` - Admin Cloudflare Worker + admin frontend
 - `e2e` - Playwright end-to-end tests
 
@@ -63,5 +62,5 @@ When you add behavior in an area that already has a test suite, extend that suit
 ## Pull requests
 
 - Keep PRs focused on one change; separate refactors from behavior changes.
-- Schema changes: migrations live only in `packages/api/migrations/` and `packages/auth/migrations/`. A change to auth-DB columns read by `loadCurrentSession` requires redeploying auth + api + admin, in that order - call this out in the PR description.
+- Schema changes: migrations live only in `packages/api/migrations/` (cubedocs-main, shared by the api and admin workers). A change to columns read by `loadCurrentSession` (users mirror, sessions, user_billing, user_preferences, user_deletions) needs both workers redeployed (api first) - call this out in the PR description. Accounts themselves live on auth.cubityfir.st.
 - If you add or remove a runtime dependency in `packages/frontend`, update `src/lib/acknowledgements.ts` to match.

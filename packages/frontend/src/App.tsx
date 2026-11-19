@@ -3,12 +3,10 @@ import { Routes, Route, Navigate, useLocation, useParams, type Location } from "
 import { applyThemeToRoot, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/theme";
 import { DocsLayout } from "./layouts/DocsLayout";
 import { LandingPage } from "./pages/LandingPage";
-import { LoginPage } from "./pages/LoginPage";
-import { OAuthAuthorizePage } from "./pages/OAuthAuthorizePage";
-import { RegisterPage } from "./pages/RegisterPage";
-import { CheckEmailPage } from "./pages/CheckEmailPage";
+import { SignInPage } from "./pages/SignInPage";
+import { AuthCompletePage, OAuthAuthorizeRedirect } from "./pages/AuthCompletePage";
 import { DemoPage } from "./pages/DemoPage";
-import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { IDENTITY_ORIGIN } from "./lib/signIn";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { DocPage } from "./pages/DocPage";
@@ -69,12 +67,13 @@ export function App() {
     <ErrorBoundary resetKey={location.pathname}>
       <Routes location={backgroundLocation ?? location}>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/check-email" element={<CheckEmailPage />} />
+        {/* Accounts live on auth.cubityfir.st: /login and /register hand off
+            to it, and /auth/complete finishes the round trip. */}
+        <Route path="/login" element={<SignInPage />} />
+        <Route path="/register" element={<SignInPage mode="register" />} />
+        <Route path="/auth/complete" element={<AuthCompletePage />} />
+        <Route path="/oauth/authorize" element={<OAuthAuthorizeRedirect origin={IDENTITY_ORIGIN} />} />
         <Route path="/demo" element={<DemoPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route element={<DocsLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />

@@ -405,26 +405,25 @@ describe("demo server graph", () => {
 });
 
 describe("demo server user prefs", () => {
-  it("persists name, timezone, bio and fonts through /me and reflects them in reads", async () => {
-    const renamed = await patch("/me", { name: "Demo Renamed" });
-    expect(renamed.data.name).toBe("Demo Renamed");
+  it("persists timezone, bio and fonts through /me and reflects them in reads", async () => {
     await patch("/me", { timezone: "Europe/London" });
     await patch("/me/bio", { bio: "Hello from the demo" });
     await patch("/me/reading-font", { readingFont: "serif", uiFont: null });
 
     const me = await api("/me");
-    expect(me.data.name).toBe("Demo Renamed");
     expect(me.data.timezone).toBe("Europe/London");
     expect(me.data.bio).toBe("Hello from the demo");
     expect(me.data.readingFont).toBe("serif");
-    expect(me.data.emailVerified).toBe(true);
 
-    // The one demo member row follows the rename.
-    const members = await api("/projects/demo-site/members");
-    expect(members.data[0].name).toBe("Demo Renamed");
-    await patch("/me", { name: "Demo User", timezone: null });
+    await patch("/me", { timezone: null });
     await patch("/me/bio", { bio: null });
     await patch("/me/reading-font", { readingFont: null });
+  });
+
+  it("refuses a name change like the real API (names live on the identity service)", async () => {
+    const before = (await api("/me")).data.name;
+    expect((await patch("/me", { name: "Demo Renamed" })).error).toBe("name_managed_by_identity");
+    expect((await api("/me")).data.name).toBe(before);
   });
 
   it("supports the opt-in /@handle profile link", async () => {
@@ -444,21 +443,9 @@ describe("demo server user prefs", () => {
     expect((await api("/users/by-handle/demo-person")).status).toBe(404);
   });
 
-  it("lists this browser as the one current session and refuses revoking", async () => {
-    const res = await api("/me/sessions");
-    expect(res.ok).toBe(true);
-    expect(res.data.sessions).toHaveLength(1);
-    const [session] = res.data.sessions;
-    expect(session.current).toBe(true);
-    expect(typeof session.clientLabel).toBe("string");
-    expect(session.createdAt).toBeLessThanOrEqual(Date.now());
-    expect((await post("/me/sessions/revoke-others")).error).toBe("Session management is disabled in the demo.");
-  });
-
-  it("refuses avatar changes and account deletion with readable messages", async () => {
+  it("refuses avatar changes with a readable message", async () => {
     expect((await post("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");
     expect((await del("/avatar?variant=default")).error).toBe("Avatar changes are disabled in the demo.");
-    expect((await del("/me")).error).toBe("Account deletion is disabled in the demo.");
   });
 });
 

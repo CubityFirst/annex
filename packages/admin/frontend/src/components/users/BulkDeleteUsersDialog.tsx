@@ -134,11 +134,13 @@ export function BulkDeleteUsersDialog({ open, onOpenChange, userIds, onScheduled
     <Dialog open={open} onOpenChange={next => { if (!running) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Schedule deletion of {title}?</DialogTitle>
+          <DialogTitle>Schedule deletion of Annex data for {title}?</DialogTitle>
           <DialogDescription>
-            Accounts are disabled immediately and permanently deleted in {DELETION_GRACE_DAYS} days. Until then any
-            admin can cancel from the Users page. When the deletion runs, each account's sessions, passkeys, billing
-            and memberships are removed, and any Stripe customer is deleted (which cancels their subscription).
+            They&apos;re blocked from Annex immediately and their Annex data is permanently deleted in{" "}
+            {DELETION_GRACE_DAYS} days. Until then any admin can cancel from the Users page. When the deletion runs,
+            each person&apos;s Annex sessions, billing, preferences and memberships are removed, and any Stripe customer
+            is deleted (which cancels their subscription). The cubityfir.st account itself is not deleted: do that on
+            auth.cubityfir.st afterwards.
           </DialogDescription>
         </DialogHeader>
 
@@ -226,8 +228,8 @@ export function BulkDeleteUsersDialog({ open, onOpenChange, userIds, onScheduled
 
             <div className="rounded-md bg-muted/40 p-3 text-sm">
               <p>
-                <span className="font-medium">{plural(plan.deletable.length, "account")}</span> will be disabled now
-                and deleted in {DELETION_GRACE_DAYS} days{plan.skipped.length > 0 && <>; {plan.skipped.length} skipped</>}.
+                <span className="font-medium">{plural(plan.deletable.length, "account")}</span> will be blocked now
+                and their Annex data deleted in {DELETION_GRACE_DAYS} days{plan.skipped.length > 0 && <>; {plan.skipped.length} skipped</>}.
               </p>
               {plan.sites.length > 0 && (
                 <p className="mt-1 flex items-start gap-1.5 text-destructive">

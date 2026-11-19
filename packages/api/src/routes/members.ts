@@ -1,8 +1,9 @@
+import { findUserByEmail } from "../account/identity";
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Member } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 import type { Session } from "../lib";
-import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
+import { resolvePersonalPlan, type PersonalPlan } from "../account/plan";
 
 const VALID_ROLES: Role[] = ["limited", "viewer", "editor", "admin", "owner"];
 
@@ -30,7 +31,7 @@ interface MemberPlanInfo {
   style: string | null;
 }
 
-// One D1 read against AUTH_DB returns the plan columns for every user
+// One D1 read returns the plan columns for every user
 // id in the list. Empty list short-circuits - D1 doesn't accept zero
 // placeholders in IN(). Map keys are user ids; values include the
 // resolved plan plus the chosen ring style so the members list can
@@ -40,7 +41,7 @@ export async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<
   if (userIds.length === 0) return plans;
 
   const placeholders = userIds.map(() => "?").join(",");
-  const rows = await env.AUTH_DB.prepare(
+  const rows = await env.DB.prepare(
     `SELECT u.id, p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
             b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
             b.personal_plan_cancel_at,
@@ -132,24 +133,13 @@ export async function handleMembers(
     const { success } = await env.RATE_LIMITER_INVITE_LOOKUP.limit({ key: user.userId });
     if (!success) return errorResponse(Errors.RATE_LIMITED);
 
-    // Look up the user by email from auth worker
-    const lookupRes = await env.AUTH.fetch("https://auth/lookup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: body.email }),
-    });
-
-    if (!lookupRes.ok) {
-      if (lookupRes.status === 404) {
-        return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
-      }
-      return errorResponse(Errors.INTERNAL);
+    // Look the person up on the identity service (they may never have used
+    // Annex yet); findUserByEmail mirrors them so the member row has a user.
+    const invitee = await findUserByEmail(env, String(body.email));
+    if (!invitee) {
+      return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
     }
-
-    const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; email: string; name: string } }>();
-    if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
-
-    const { userId: inviteeId, email: inviteeEmail, name: inviteeName } = lookupData.data;
+    const { id: inviteeId, email: inviteeEmail, name: inviteeName } = invitee;
 
     // Check if already a member (covers the owner case too)
     const existing = await env.DB.prepare("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")

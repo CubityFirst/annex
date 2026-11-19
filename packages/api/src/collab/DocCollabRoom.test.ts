@@ -44,14 +44,23 @@ function fakeWs(userId: string, sid?: string): FakeWs {
   return ws;
 }
 
-function makeRoom(sockets: FakeWs[], db: D1Database, authDb?: D1Database): { revalidateAccess(): Promise<Set<string>> } {
+// Session rows live in the same DB as roles now; route the session re-check
+// query to `sessionsDb` and everything else to the roles stub.
+function withSessions(db: D1Database, sessionsDb?: D1Database): D1Database {
+  if (!sessionsDb) return db;
+  return {
+    prepare: (sql: string) => (/FROM sessions/.test(sql) ? sessionsDb.prepare(sql) : db.prepare(sql)),
+  } as unknown as D1Database;
+}
+
+function makeRoom(sockets: FakeWs[], db: D1Database, sessionsDb?: D1Database): { revalidateAccess(): Promise<Set<string>> } {
   const ctx = {
     getWebSockets: () => sockets,
     storage: { get: async (k: string) => (k === "docKey" ? "proj-1/doc-1" : undefined) },
   };
   const room = new DocCollabRoom(
     ctx as unknown as ConstructorParameters<typeof DocCollabRoom>[0],
-    { DB: db, AUTH_DB: authDb } as unknown as ConstructorParameters<typeof DocCollabRoom>[1],
+    { DB: withSessions(db, sessionsDb) } as unknown as ConstructorParameters<typeof DocCollabRoom>[1],
   );
   return room as unknown as { revalidateAccess(): Promise<Set<string>> };
 }
@@ -126,7 +135,7 @@ describe("DocCollabRoom.revalidateAccess (closes sockets that lost editor+)", ()
   });
 });
 
-// AUTH_DB stub for the session re-check: sessions[sid] is the joined row, or
+// Session re-check stub: sessions[sid] is the joined session + users row, or
 // undefined (no row) / "throw".
 function authDbFor(sessions: Record<string, Parameters<typeof sessionStillValid>[0] | "throw">) {
   return {
@@ -142,7 +151,11 @@ function authDbFor(sessions: Record<string, Parameters<typeof sessionStillValid>
   } as unknown as D1Database;
 }
 
-const live = { expires_at: Date.now() + 60_000, revoked_at: null, moderation: 0, force_password_change: 0 };
+const live = {
+  expires_at: Date.now() + 60_000, revoked_at: null, kind: "app", blocked: 0,
+  id: "u", email: "u@example.com", name: "U", email_verified: 1, is_admin: 0,
+  status: "active", suspended_until: null, created_at: "2025-01-01",
+};
 
 describe("DocCollabRoom.revalidateAccess (session + account re-check)", () => {
   it("closes only the socket whose session was revoked; the user's other session stays", async () => {
@@ -169,7 +182,7 @@ describe("DocCollabRoom.revalidateAccess (session + account re-check)", () => {
       a: { project: "editor", org: null }, b: { project: "editor", org: null }, c: { project: "editor", org: null },
     });
     const room = makeRoom([suspended, expired, missing], db, authDbFor({
-      s1: { ...live, moderation: Math.floor(Date.now() / 1000) + 3600 },
+      s1: { ...live, status: "suspended", suspended_until: Math.floor(Date.now() / 1000) + 3600 },
       s2: { ...live, expires_at: Date.now() - 1 },
     }));
 
@@ -179,7 +192,7 @@ describe("DocCollabRoom.revalidateAccess (session + account re-check)", () => {
     expect(missing.closedWith?.code).toBe(1008);
   });
 
-  it("fails open on an AUTH_DB error and skips sockets without a sid", async () => {
+  it("fails open on a session lookup error and skips sockets without a sid", async () => {
     const errored = fakeWs("a", "s1");
     const legacy = fakeWs("b");
     const { db } = dbForRoles({ a: { project: "editor", org: null }, b: { project: "editor", org: null } });
@@ -197,9 +210,10 @@ describe("sessionStillValid", () => {
   it("mirrors loadCurrentSession's gates", () => {
     expect(sessionStillValid(live, now)).toBe(true);
     expect(sessionStillValid(null, now)).toBe(false);
-    expect(sessionStillValid({ ...live, force_password_change: 1 }, now)).toBe(false);
-    expect(sessionStillValid({ ...live, moderation: -1 }, now)).toBe(false);
+    expect(sessionStillValid({ ...live, status: "disabled" }, now)).toBe(false);
+    expect(sessionStillValid({ ...live, blocked: 1 }, now)).toBe(false);
+    expect(sessionStillValid({ ...live, kind: "admin" }, now)).toBe(false);
     // An elapsed suspension no longer blocks.
-    expect(sessionStillValid({ ...live, moderation: Math.floor(now / 1000) - 10 }, now)).toBe(true);
+    expect(sessionStillValid({ ...live, status: "suspended", suspended_until: Math.floor(now / 1000) - 10 }, now)).toBe(true);
   });
 });

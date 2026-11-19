@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { fileURLToPath } from "node:url";
 import { buildAuditListQuery, AUDIT_ACTIONS_SQL } from "./audit";
 import { createSqliteD1 } from "../../../api/src/test/sqliteD1";
-
-const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../auth/migrations", import.meta.url));
 
 const CURSOR = { ts: "2026-05-17 12:34:56", id: "a1b2-c3d4" };
 
@@ -80,7 +77,7 @@ describe("buildAuditListQuery", () => {
 // the distinct actions, sorted.
 describe("audit queries against the real schema", () => {
   function seed() {
-    const { sqlite } = createSqliteD1(AUTH_MIGRATIONS);
+    const { sqlite } = createSqliteD1();
     const ins = sqlite.prepare(
       "INSERT INTO admin_audit_log (id, actor_user_id, actor_email, action, target_type, created_at) VALUES (?, 'a', 'a@x.com', ?, 'user', ?)",
     );
@@ -129,7 +126,7 @@ describe("audit queries against the real schema", () => {
   });
 
   it("lists no actions for an empty log", () => {
-    const { sqlite } = createSqliteD1(AUTH_MIGRATIONS);
+    const { sqlite } = createSqliteD1();
     expect(sqlite.prepare(AUDIT_ACTIONS_SQL).all()).toEqual([]);
   });
 });

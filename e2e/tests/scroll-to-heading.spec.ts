@@ -4,8 +4,8 @@
  * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
- * Also set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
- * packages/auth/.dev.vars (Cloudflare's always-pass test secret).
+ * Signs in with e2e/signIn.ts (devSignIn): needs DEV_QUICK_LOGIN=true and
+ * APP_ORIGIN=http://localhost:5173 in packages/api/.dev.vars.
  *
  * Covers two flows on the published-doc page:
  *   1. Loading /s/<slug>/<docId>#<heading-slug> scrolls the article viewport
@@ -22,10 +22,10 @@
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-scroll-${RUN_ID}@example.com`;
-const PASSWORD = "E2eTest-P@ssw0rd!";
 const NAME = "E2E Scroll User";
 const PROJECT_NAME = `E2E Scroll ${RUN_ID}`;
 
@@ -46,23 +46,6 @@ let appDocUrl = "";
 // ScrollArea viewport; the app view scrolls DocsLayout's overflow div.
 const PUBLIC_SCROLLER = ".public-doc-scroller [data-radix-scroll-area-viewport]";
 const APP_SCROLLER = ".app-main-scroller";
-
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_container: unknown, options: { callback: (t: string) => void }) {
-          setTimeout(() => options.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {},
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
-}
 
 async function injectFakeIp(ctx: BrowserContext) {
   await ctx.route("**/api/**", async (route) => {
@@ -115,7 +98,6 @@ test.beforeAll(async ({ browser }) => {
   // Outline rail only renders at the xl breakpoint (1280px+). 1440 gives it
   // plenty of room and matches a common laptop width.
   context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await mockTurnstile(context);
   await injectFakeIp(context);
   page = await context.newPage();
 });
@@ -141,18 +123,7 @@ test.afterAll(async () => {
 
 test("sets up a published doc with multiple headings", async () => {
   // Register
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(NAME);
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: EMAIL, name: NAME });
 
   // Create project
   await page.goto("/dashboard");

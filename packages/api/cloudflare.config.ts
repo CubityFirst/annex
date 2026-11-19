@@ -21,6 +21,12 @@ export default defineConfig({
 			triggers.scheduled({
 				schedule: "0 4 * * *",
 			}),
+			// Hourly deletion sync: accounts deleted on auth.cubityfir.st have their
+			// Annex data removed (owned sites/orgs are kept for an operator). The
+			// schedule string must match DELETION_SYNC_CRON in src/lib/identityDeletions.ts.
+			triggers.scheduled({
+				schedule: "23 * * * *",
+			}),
 		],
 		// Replaces the Wrangler `[[migrations]]` history (tag "v1",
 		// new_classes = ["DocCollabRoom"]). DocCollabRoom was created with
@@ -50,20 +56,43 @@ export default defineConfig({
 			// route.
 			R2_BUCKET_NAME: bindings.text("cubedocs-assets"),
 			R2_ACCOUNT_ID: bindings.text("d843ae90cab33e54f4d284bc65d2fd6a"),
+			// Sign in with auth.cubityfir.st (src/routes/auth.ts). Annex is a
+			// first-party OIDC client with scopes `openid profile email roles`,
+			// redirect URI APP_ORIGIN/api/auth/callback and post-logout redirect
+			// URI APP_ORIGIN, no trailing slash - the provider matches byte for byte
+			// (override with OIDC_REDIRECT_URI /
+			// OIDC_POST_LOGOUT_REDIRECT_URI). OIDC_CLIENT_ID must be the id the
+			// client was registered with at auth.cubityfir.st/admin/clients;
+			// OIDC_CLIENT_SECRET is a secret. Local dev overrides all of these in
+			// .dev.vars (see .dev.vars.example).
+			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),
+			// Registered at auth.cubityfir.st/admin/clients (not a secret).
+			OIDC_CLIENT_ID: bindings.text("oidc_7369d6d5736d2bea35f1ab47"),
+			APP_ORIGIN: bindings.text("https://docs.cubityfir.st"),
+			// Stripe price id for the Annex Ink supporter tier ($5/mo recurring).
+			// Not a secret - safe to commit. (Billing moved here from annex-auth.)
+			STRIPE_INK_PRICE_ID: bindings.text("price_1TVJk5Rckd4Ls9nPHpnY4tAN"),
+			// Identity service RPC (cubityfirst-auth's IdentityService entrypoint):
+			// account standing, invite-by-email lookups and the deletion sync.
+			IDENTITY: bindings.worker({
+				worker: "cubityfirst-auth",
+				exportName: "IdentityService",
+			}),
+			// The identity worker's HTTP surface (default export) for server-side
+			// OIDC requests: discovery, JWKS and the token exchange. Required: a
+			// Worker's fetch() to auth.cubityfir.st from this same zone goes to the
+			// origin (a placeholder record), not to the identity worker. Only the
+			// browser redirects to /oauth/authorize and /oauth/logout use the
+			// public URL. Requests over a binding carry no CF-Connecting-IP, so all
+			// of Annex's token calls share one rate-limit bucket on the provider.
+			IDENTITY_OIDC: bindings.worker({
+				worker: "cubityfirst-auth",
+			}),
 			DB: bindings.d1({
 				name: "cubedocs-main",
 				id: "267490be-7141-4d00-ab23-152742f2f6ef",
 			}),
-			// Read-only access to the auth DB so this worker can verify sessions
-			// inline (one D1 batch read of users + sessions) instead of
-			// round-tripping through the auth worker's /verify route on every
-			// request. Migrations live with the auth worker - never apply
-			// migrations to cubedocs-auth from this package.
-			AUTH_DB: bindings.d1({
-				name: "cubedocs-auth",
-				id: "db327d85-b8c2-4fed-adaa-25e748778c86",
-			}),
-			// Cloudflare Flagship feature flags. Shared app with the auth worker.
+			// Cloudflare Flagship feature flags. Shared with the admin worker.
 			// Flags in use:
 			//   api              (default on)  - killswitch for the whole /v1 public API surface (v1.ts).
 			//   custom-theming   (default off) - per-user gate for custom themes (index.ts).
@@ -78,18 +107,13 @@ export default defineConfig({
 			ASSETS: bindings.r2({
 				name: "cubedocs-assets",
 			}),
-			// Service binding to auth worker (zero-latency internal calls).
-			AUTH: bindings.worker({
-				worker: "annex-auth",
-			}),
 			DOC_COLLAB: bindings.durableObject({
 				worker: "annex-api",
 				exportName: "DocCollabRoom",
 			}),
-			// Per-user limiter for the invite-by-email lookup. The auth worker's
-			// /lookup also has its own coarser IP-keyed limiter - this one caps any
-			// single account from scraping the email→user map even when multiple
-			// users share an IP (office NAT).
+			// Per-user limiter for the invite-by-email lookup (routed to the
+			// identity service's findUserByEmail RPC): caps any single account from
+			// scraping the email→user map even when users share an IP (office NAT).
 			RATE_LIMITER_INVITE_LOOKUP: bindings.rateLimit({
 				namespace: "2001",
 				simple: {
@@ -119,7 +143,13 @@ export default defineConfig({
 			}),
 			// Secrets (set via `npx wrangler secret put <NAME> --name annex-api`;
 			// existing secrets are kept across `cf deploy`):
-			//   JWT_SECRET            (same value as auth worker - used for local JWT verification)
+			//   JWT_SECRET            (signs Annex's own session JWTs; Annex-only)
+			//   OIDC_CLIENT_SECRET    (the docs client's secret from auth.cubityfir.st;
+			//                          prefixed sk_ - never commit or log it)
+			//   STRIPE_SECRET_KEY     (sk_test_... or sk_live_... - moved from annex-auth)
+			//   STRIPE_WEBHOOK_SECRET (whsec_... for the docs.cubityfir.st/stripe/webhook
+			//                          endpoint; the frontend worker forwards it here, so
+			//                          the URL in the Stripe dashboard is unchanged)
 			//   OPENAI_API_KEY        (OpenAI API key for AI summarisation feature)
 			//   CF_API_TOKEN          (Cloudflare token scoped to the zone with "SSL and
 			//                          Certificates: Edit" - used to create/poll custom hostnames)

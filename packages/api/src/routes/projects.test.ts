@@ -17,7 +17,7 @@ import { resolveRole } from "../lib/access";
 import { releaseCustomDomain } from "../lib/customDomains";
 import { ftsUpsertStatements } from "../lib/fts";
 
-const user = { userId: "user-1", email: "a@example.com" } as unknown as Parameters<typeof handleProjects>[2];
+const user = { userId: "user-1", email: "a@example.com", name: "Owner Name" } as unknown as Parameters<typeof handleProjects>[2];
 
 function makeEnv() {
   const firsts: unknown[] = [];
@@ -34,12 +34,10 @@ function makeEnv() {
   const assetsGet = vi.fn(async () => null as unknown);
   const assetsList = vi.fn(async () => ({ objects: [] as { key: string }[], truncated: false as const, delimitedPrefixes: [] as string[] }));
   const assetsDelete = vi.fn(async (_keys: string | string[]) => undefined);
-  const authFetch = vi.fn(async () => Response.json({ ok: true, data: { name: "Owner Name" } }, { status: 200 }));
   return {
     env: {
       DB: { prepare, batch },
       ASSETS: { get: assetsGet, put: vi.fn(), delete: assetsDelete, list: assetsList },
-      AUTH: { fetch: authFetch },
     } as unknown as Parameters<typeof handleProjects>[1],
     run,
     batch,
@@ -48,7 +46,6 @@ function makeEnv() {
     assetsGet,
     assetsList,
     assetsDelete,
-    authFetch,
     queueFirst: (v: unknown) => firsts.push(v),
     queueAll: (v: unknown) => alls.push(v),
     queueBatch: (v: unknown) => batches.push(v),
@@ -222,10 +219,7 @@ describe("handleProjects GET list / POST create", () => {
   describe("atomicity (real SQLite)", () => {
     function sqliteEnv() {
       const { db, sqlite } = createSqliteD1();
-      const env = {
-        DB: db,
-        AUTH: { fetch: vi.fn(async () => Response.json({ ok: true, data: { name: "Owner Name" } })) },
-      } as unknown as Parameters<typeof handleProjects>[1];
+      const env = { DB: db } as unknown as Parameters<typeof handleProjects>[1];
       return { env, sqlite };
     }
     const count = (sqlite: ReturnType<typeof createSqliteD1>["sqlite"], sql: string) =>
@@ -250,22 +244,20 @@ describe("handleProjects GET list / POST create", () => {
 
   // Member-insert bind order: (id, project_id, user_id, email, name, role, invited_by, created_at)
   it("snapshots the owner's display name (not email) into project_members", async () => {
-    const { env, authFetch, bindCalls } = makeEnv();
+    const { env, bindCalls } = makeEnv();
     const res = await call(env, "POST", "/projects", { name: "New Site" });
     expect(res.status).toBe(201);
-    // The lookup must carry the caller's userId - an empty body 400s on the
-    // auth worker and silently falls back to the email (the regression this
-    // test pins).
-    const lookupInit = (authFetch.mock.calls[0] as unknown[])[1] as RequestInit | undefined;
-    expect(JSON.parse(String(lookupInit?.body))).toEqual({ userId: "user-1" });
     const memberBind = bindCalls.find(args => args.includes("owner"));
     expect(memberBind?.[4]).toBe("Owner Name");
   });
 
-  it("falls back to the email when the owner-name lookup fails", async () => {
-    const { env, authFetch, bindCalls } = makeEnv();
-    authFetch.mockResolvedValueOnce(new Response("", { status: 500 }));
-    const res = await call(env, "POST", "/projects", { name: "New Site" });
+  it("falls back to the email when the session carries no name", async () => {
+    const { env, bindCalls } = makeEnv();
+    const url = new URL("http://localhost/projects");
+    const res = await handleProjects(
+      new Request(url.toString(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "New Site" }) }),
+      env, { ...user, name: undefined }, url,
+    );
     expect(res.status).toBe(201);
     const memberBind = bindCalls.find(args => args.includes("owner"));
     expect(memberBind?.[4]).toBe("a@example.com");

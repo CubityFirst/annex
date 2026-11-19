@@ -190,15 +190,10 @@ export async function handleInvitePublic(
       return okResponse({ projectId: link.project_id, role: existing.role }, 201);
     }
 
-    // Look up user info from auth worker
-    const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: session.userId }),
-    });
-    if (!lookupRes.ok) return errorResponse(Errors.INTERNAL);
-    const lookupData = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
-    if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
+    // The member row's name/email snapshot comes from the users mirror.
+    const me = await env.DB.prepare("SELECT name, email FROM users WHERE id = ?").bind(session.userId).first<{ name: string; email: string }>();
+    if (!me) return errorResponse(Errors.INTERNAL);
+    const lookupData = { data: me };
 
     if (!(await claimLinkUse(env, token))) return linkExhausted();
     const memberId = crypto.randomUUID();

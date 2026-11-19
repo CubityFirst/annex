@@ -9,7 +9,7 @@ import { authenticate } from "../auth";
 
 const user = { userId: "caller-1", email: "a@example.com" } as unknown as Parameters<typeof handleInviteLinks>[2];
 
-function makeEnv(opts?: { lookupOk?: boolean }) {
+function makeEnv() {
   const firsts: unknown[] = [];
   const alls: unknown[] = [];
   const runs: unknown[] = [];
@@ -22,19 +22,13 @@ function makeEnv(opts?: { lookupOk?: boolean }) {
   const bind = vi.fn(() => ({ first, all, run }));
   const prepare = vi.fn((_sql: string) => ({ bind }));
   const batch = vi.fn(() => Promise.resolve([]));
-  const authFetch = vi.fn(async () => {
-    if (opts?.lookupOk === false) return new Response("", { status: 500 });
-    return Response.json({ ok: true, data: { name: "Bob", email: "bob@x.z" } }, { status: 200 });
-  });
   return {
     env: {
       DB: { prepare, batch },
-      AUTH: { fetch: authFetch },
     } as unknown as Parameters<typeof handleInviteLinks>[1],
     run,
     batch,
     prepare,
-    authFetch,
     queueFirst: (v: unknown) => firsts.push(v),
     queueRun: (v: unknown) => runs.push(v),
     queueAll: (v: unknown) => alls.push(v),
@@ -264,13 +258,14 @@ describe("handleInvitePublic POST accept", () => {
     expect(json.data.role).toBe("viewer");
   });
 
-  it("creates a new membership after a successful lookup", async () => {
-    const { env, queueFirst, prepare, authFetch } = makeEnv();
+  it("creates a new membership with the caller's name/email from the users mirror", async () => {
+    const { env, queueFirst, prepare } = makeEnv();
     queueFirst(validLink());
     queueFirst(null); // not yet a member
+    queueFirst({ name: "Bob", email: "bob@x.z" }); // users mirror row
     const res = await callPublic(env, "POST", "/invites/tok/accept");
     expect(res.status).toBe(201);
-    expect(authFetch).toHaveBeenCalled();
+    expect(prepare.mock.calls.some(c => c[0].includes("FROM users WHERE id = ?"))).toBe(true);
     expect(prepare.mock.calls.some(c => c[0].includes("INSERT INTO project_members"))).toBe(true);
     const json = (await res.json()) as { data: { role: string } };
     expect(json.data.role).toBe("editor");
@@ -280,6 +275,7 @@ describe("handleInvitePublic POST accept", () => {
     const { env, queueFirst, queueRun, prepare } = makeEnv();
     queueFirst(validLink());
     queueFirst(null);
+    queueFirst({ name: "Bob", email: "bob@x.z" });
     queueRun({ meta: { changes: 0 } }); // conditional use_count claim loses the race
     const res = await callPublic(env, "POST", "/invites/tok/accept");
     expect(res.status).toBe(410);
@@ -290,15 +286,17 @@ describe("handleInvitePublic POST accept", () => {
     const { env, queueFirst, queueRun, prepare } = makeEnv();
     queueFirst(validLink());
     queueFirst(null);
+    queueFirst({ name: "Bob", email: "bob@x.z" });
     queueRun({ meta: { changes: 1 } });                 // claim succeeds
     queueRun(new Error("UNIQUE constraint failed"));    // insert loses to the other tab
     await expect(callPublic(env, "POST", "/invites/tok/accept")).rejects.toThrow(/UNIQUE/);
     expect(prepare.mock.calls.some(c => c[0].includes("use_count = use_count - 1"))).toBe(true);
   });
 
-  it("500s when the auth-worker lookup fails", async () => {
-    const { env, queueFirst } = makeEnv({ lookupOk: false });
+  it("500s when the caller has no users-mirror row", async () => {
+    const { env, queueFirst } = makeEnv();
     queueFirst(validLink());
+    queueFirst(null);
     queueFirst(null);
     const res = await callPublic(env, "POST", "/invites/tok/accept");
     expect(res.status).toBe(500);

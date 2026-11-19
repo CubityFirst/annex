@@ -1,0 +1,29 @@
+# Copy to packages/api/.dev.vars (gitignored). Values here override the vars in
+# cloudflare.config.ts for `wrangler dev`.
+
+# Signs Annex's own session JWTs. Any random string locally.
+JWT_SECRET=change-me
+
+# The SPA's origin (Vite dev server). Also gates the dev quick login.
+APP_ORIGIN=http://localhost:5173
+
+# Sign in with a local identity worker (G:\scripts\auth). Annex's api owns
+# :8787, so run it on another port: `npx wrangler dev --port 8790`, with
+# ISSUER=http://localhost:8790 in its own .dev.vars. Register a client there
+# with redirect URI http://localhost:5173/api/auth/callback and post-logout
+# URI http://localhost:5173 (no trailing slash), scopes `openid profile email roles`, first-party.
+# The IDENTITY/IDENTITY_OIDC bindings reach it through wrangler's dev registry;
+# without it running, server-side OIDC falls back to OIDC_ISSUER directly and
+# account standing falls back to the users mirror.
+OIDC_ISSUER=http://localhost:8790
+OIDC_CLIENT_ID=annex-docs-local
+OIDC_CLIENT_SECRET=
+
+# Skip the identity service entirely: "Dev quick login" buttons on /login and
+# POST /api/dev/quick-login (the e2e helper). Localhost APP_ORIGIN only.
+DEV_QUICK_LOGIN=true
+
+# Annex Ink (test mode). See memories/Ink-Stripe.md.
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=whsec_...   (printed by `pnpm dev:stripe`)
+# STRIPE_INK_PRICE_ID=price_...
