@@ -28,7 +28,7 @@ Post-logout URIs are matched byte for byte: they're registered as the bare
 origin (no trailing slash), which is the default `APP_ORIGIN` sends.
 
 Vars: `OIDC_ISSUER`, `OIDC_CLIENT_ID` (docs: `oidc_7369d6d5736d2bea35f1ab47`;
-admin: `annex-admin` placeholder until registered), `APP_ORIGIN`; optional `OIDC_REDIRECT_URI`,
+admin: `oidc_07c81f4a5aa63dd2bd0b15cc`), `APP_ORIGIN`; optional `OIDC_REDIRECT_URI`,
 `OIDC_POST_LOGOUT_REDIRECT_URI`. Secret: `OIDC_CLIENT_SECRET`.
 
 ## Registering the clients (auth.cubityfir.st/admin/clients)
@@ -36,7 +36,7 @@ admin: `annex-admin` placeholder until registered), `APP_ORIGIN`; optional `OIDC
 | Client | Redirect URI | Post-logout URI | Scopes | First-party |
 | --- | --- | --- | --- | --- |
 | docs app (`oidc_7369d6d5736d2bea35f1ab47`) | `https://docs.cubityfir.st/api/auth/callback` | `https://docs.cubityfir.st` | `openid profile email roles` | yes |
-| admin panel | `https://admin.cubityfir.st/api/auth/callback` | `https://admin.cubityfir.st` | `openid profile email roles` | yes |
+| admin panel (`oidc_07c81f4a5aa63dd2bd0b15cc`) | `https://admin.cubityfir.st/api/auth/callback` | `https://admin.cubityfir.st` | `openid profile email roles` | yes |
 
 Local dev clients: `http://localhost:5173/api/auth/callback` (docs) and
 `http://localhost:5174/api/auth/callback` (admin), against a local identity

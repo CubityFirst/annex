@@ -49,7 +49,7 @@ export default defineConfig({
 			// it was registered with at auth.cubityfir.st/admin/clients;
 			// OIDC_CLIENT_SECRET is a secret.
 			OIDC_ISSUER: bindings.text("https://auth.cubityfir.st"),
-			OIDC_CLIENT_ID: bindings.text("annex-admin"),
+			OIDC_CLIENT_ID: bindings.text("oidc_07c81f4a5aa63dd2bd0b15cc"),
 			APP_ORIGIN: bindings.text("https://admin.cubityfir.st"),
 			// Identity service RPC (live standing + admin role, user lookups).
 			IDENTITY: bindings.worker({
