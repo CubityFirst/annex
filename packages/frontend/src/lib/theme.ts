@@ -12,7 +12,7 @@
 //
 // Setting the theme is admin-only - the settings UI is hidden and the write
 // route is 403-guarded unless the user is a global site admin. THEME_MODES
-// must stay in sync with packages/auth/src/theme.ts.
+// must stay in sync with packages/api/src/account/theme.ts.
 
 import { converter, formatCss, clampChroma } from "culori";
 
@@ -41,7 +41,7 @@ export function resolveThemeMode(value: string | null | undefined, fallback: The
 // (dark) brand look - the per-user theme is an in-app preference and must not
 // leak onto these. Everything else (the DocsLayout app, public docs, etc.)
 // uses the saved theme. Exact-match paths: none of these have sub-routes.
-const UNTHEMED_PATHS = new Set(["/", "/login", "/register"]);
+const UNTHEMED_PATHS = new Set(["/", "/login", "/register", "/auth/complete"]);
 
 export function pathUsesUserTheme(pathname: string): boolean {
   return !UNTHEMED_PATHS.has(pathname);

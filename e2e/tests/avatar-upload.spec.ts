@@ -10,17 +10,17 @@
  * Prerequisites - run from the monorepo root before starting tests:
  *   pnpm dev
  *
- * packages/auth/.dev.vars must contain:
- *   TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+ * packages/api/.dev.vars must contain DEV_QUICK_LOGIN=true and
+ * APP_ORIGIN=http://localhost:5173 (e2e/signIn.ts devSignIn).
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 // ── Unique-per-run values ────────────────────────────────────────────────────
 
 const RUN_ID = Date.now();
 const EMAIL = `e2e-avatar-${RUN_ID}@example.com`;
-const PASSWORD = "AvatarTest-P@ssw0rd!";
 const NAME = "Avatar Upload Test User";
 // Offset +3 from app.spec to keep this run's rate-limit bucket separate from
 // other suites that may execute in parallel.
@@ -69,23 +69,6 @@ let userId = "";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function mockTurnstile(ctx: BrowserContext) {
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_container: unknown, options: { callback: (t: string) => void }) {
-          setTimeout(() => options.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {},
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
-}
-
 async function injectFakeIp(ctx: BrowserContext) {
   await ctx.route("**/api/**", async (route) => {
     await route.continue({
@@ -100,7 +83,6 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
-  await mockTurnstile(context);
   await injectFakeIp(context);
   page = await context.newPage();
 });
@@ -113,18 +95,7 @@ test.afterAll(async () => {
 // ── Setup ────────────────────────────────────────────────────────────────────
 
 test("registers a fresh account", async () => {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(NAME);
-  await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Password").fill(PASSWORD);
-  // Retry the whole submit: the local wrangler chain can drop the register
-  // POST under full-suite load; the form keeps its Turnstile token, so
-  // re-clicking is safe.
-  await expect(async () => {
-    await expect(page.getByRole("button", { name: "Create account" })).toBeEnabled({ timeout: 5000 });
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 8000 });
-  }).toPass({ timeout: 30000 });
+  await devSignIn(page, { email: EMAIL, name: NAME });
 });
 
 // ── Upload + verify ──────────────────────────────────────────────────────────

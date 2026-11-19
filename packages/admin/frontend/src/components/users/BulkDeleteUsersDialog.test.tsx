@@ -71,7 +71,7 @@ describe("BulkDeleteUsersDialog", () => {
 
     // The site is flagged with its details before anything happens.
     expect(await screen.findByText("Big Site")).toBeInTheDocument();
-    expect(para(/^1 account will be disabled now and deleted in 7 days; 1 skipped.$/)).toBeInTheDocument();
+    expect(para(/^1 account will be blocked now and their Annex data deleted in 7 days; 1 skipped.$/)).toBeInTheDocument();
     expect(screen.queryByText(/will be permanently deleted with all docs/)).not.toBeInTheDocument();
 
     // Delete stays disabled until the confirm word is typed.

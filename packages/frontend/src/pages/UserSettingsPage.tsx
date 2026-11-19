@@ -1,11 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
-import { useNavigate, useOutletContext, Link } from "react-router-dom";
+import { useOutletContext, Link } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import zxcvbn from "zxcvbn";
-import QRCode from "react-qr-code";
-import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,19 +13,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { use2FA } from "@/hooks/use2FA";
-import { getToken, clearToken } from "@/lib/auth";
+import { getToken } from "@/lib/auth";
+import { IDENTITY_ACCOUNT_URL, IDENTITY_SECURITY_URL } from "@/lib/signIn";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls, SavedIndicator, useSavedFlash } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, Mail, RotateCcw, Check, Star } from "lucide-react";
+import { LockKeyhole, Trash2, Loader2, Copy, AlertCircle, Camera, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Sun, Moon, RotateCcw, Check, Star, ExternalLink } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -56,7 +51,7 @@ import {
 import { getAvatarVariant, type AvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
-// Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
+// Mirrors INK_RING_STYLES in packages/api/src/account/plan.ts. Order is the
 // display order in the picker. 'shimmer' is the default - selecting it
 // stores NULL on the row.
 const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "none"; label: string }[] = [
@@ -80,74 +75,6 @@ const USER_SETTINGS_GROUPS: SettingsGroupDef[] = [
   { id: "danger", label: "Danger zone" },
 ];
 
-const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
-const STRENGTH_COLORS = [
-  "bg-red-500",
-  "bg-orange-500",
-  "bg-yellow-500",
-  "bg-blue-500",
-  "bg-green-500",
-];
-
-interface WebAuthnCredential {
-  id: string;
-  name: string;
-  created_at: string;
-}
-
-type DeviceKind = "phone" | "tablet" | "laptop" | "desktop";
-
-interface ActiveSession {
-  id: string;
-  createdAt: number;
-  lastUsedAt: number;
-  expiresAt: number;
-  deviceKind: DeviceKind | null;
-  clientLabel: string | null;
-  ip: string | null;
-  current: boolean;
-}
-
-function DeviceIcon({ kind }: { kind: DeviceKind | null }) {
-  const Icon = kind === "phone" ? Smartphone : kind === "tablet" ? Tablet : kind === "laptop" ? Laptop : Monitor;
-  return (
-    <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-      <Icon className="size-5" aria-label={kind ?? "device"} />
-    </div>
-  );
-}
-
-function formatRelative(timestampMs: number): string {
-  const diffMs = Date.now() - timestampMs;
-  const minutes = Math.round(diffMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(timestampMs).toLocaleDateString();
-}
-
-// Labelled status chip for the security headings - colour plus words, so an
-// unconfigured method reads as "not set up" rather than as an error.
-function SecurityStatus({ ok, on, off, title }: { ok: boolean; on: string; off: string; title: string }) {
-  return (
-    <span
-      title={title}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-        ok
-          ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
-          : "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300",
-      )}
-    >
-      {ok ? <LockKeyhole className="size-3" aria-hidden="true" /> : <LockOpen className="size-3" aria-hidden="true" />}
-      {ok ? on : off}
-    </span>
-  );
-}
-
 // Header row of a security row card: title + status pill + description on the
 // left, the outline action(s) right-aligned (stacked below on narrow screens),
 // matching the Account/Danger zone row geometry.
@@ -167,37 +94,22 @@ function SecurityRowHeader({ title, status, description, action }: { title: stri
 }
 
 export function UserSettingsPage() {
-  const navigate = useNavigate();
   const { updateInkAppearance, readingFont, editingFont, uiFont, updateFontAppearance, currentUser, theme, customColor, customThemingEnabled, updateTheme } = useOutletContext<DocsLayoutContext>();
   const [fontPrefsBusy, setFontPrefsBusy] = useState(false);
   const [themePrefsBusy, setThemePrefsBusy] = useState(false);
   const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
-  const [currentName, setCurrentName] = useState("");
   const [email, setEmail] = useState("");
-  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
-  const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
-  const [resendingVerification, setResendingVerification] = useState(false);
-  // Seconds until the verification email can be re-sent again (0 = ready).
-  // Same 30s convention as CheckEmailPage's resend button.
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [saving, setSaving] = useState(false);
-
-  // Change email state. `pendingEmail` is a confirm-first change awaiting the
-  // link sent to the new address (only set while the verification flag is on).
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [changeEmailOpen, setChangeEmailOpen] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [emailCurrentPassword, setEmailCurrentPassword] = useState("");
-  const [emailSaving, setEmailSaving] = useState(false);
-  const [emailChangeResending, setEmailChangeResending] = useState(false);
-  const [emailChangeCancelling, setEmailChangeCancelling] = useState(false);
+  // The identity service's account pages (from GET /me; build-time defaults
+  // until it loads).
+  const [accountUrl, setAccountUrl] = useState(IDENTITY_ACCOUNT_URL);
+  const [securityUrl, setSecurityUrl] = useState(IDENTITY_SECURITY_URL);
+  const identityHost = new URL(accountUrl).host;
 
   const [timezone, setTimezone] = useState<string | null>(null);
   const [timezonePrivate, setTimezonePrivate] = useState(false);
   const [timezoneSaving, setTimezoneSaving] = useState(false);
   const [timezoneSaved, flashTimezoneSaved] = useSavedFlash();
-  const [nameSaved, flashNameSaved] = useSavedFlash();
   const [bioSaved, flashBioSaved] = useSavedFlash();
 
   const [avatarKey, setAvatarKey] = useState(0);
@@ -212,53 +124,6 @@ export function UserSettingsPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const changePhotoButtonRef = useRef<HTMLButtonElement>(null);
   const { toast } = useToast();
-
-  // TOTP state
-  const [totpEnabled, setTotpEnabled] = useState(false);
-  const [totpLoading, setTotpLoading] = useState(true);
-
-  // TOTP setup flow state
-  const [setupStep, setSetupStep] = useState<"idle" | "qr" | "verify">("idle");
-  const [pendingSecret, setPendingSecret] = useState<string | null>(null);
-  const [pendingUri, setPendingUri] = useState<string | null>(null);
-  const [setupCode, setSetupCode] = useState("");
-  const [setupLoading, setSetupLoading] = useState(false);
-  const [securityEnrollmentPassword, setSecurityEnrollmentPassword] = useState("");
-
-  // WebAuthn state
-  const [webauthnCredentials, setWebauthnCredentials] = useState<WebAuthnCredential[]>([]);
-  const [webauthnLoading, setWebauthnLoading] = useState(true);
-  const [addingKey, setAddingKey] = useState(false);
-  const [newKeyName, setNewKeyName] = useState("");
-  const [registerLoading, setRegisterLoading] = useState(false);
-  const [processingKeyId, setProcessingKeyId] = useState<string | null>(null);
-
-  // Backup codes state
-  const [backupCodesOpen, setBackupCodesOpen] = useState(false);
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [backupCodesLoading, setBackupCodesLoading] = useState(false);
-  const [confirmBackupCodesOpen, setConfirmBackupCodesOpen] = useState(false);
-
-  // Delete account state
-  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
-  const [deleteCurrentPassword, setDeleteCurrentPassword] = useState("");
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [ownedSitesOpen, setOwnedSitesOpen] = useState(false);
-  const [ownedSites, setOwnedSites] = useState<Array<{ id: string; name: string }>>([]);
-  const [ownedOrgs, setOwnedOrgs] = useState<Array<{ id: string; name: string }>>([]);
-
-  // Change password state
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordSaving, setPasswordSaving] = useState(false);
-
-  // Active sessions state
-  const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionRevokingId, setSessionRevokingId] = useState<string | null>(null);
-  const [revokingOthers, setRevokingOthers] = useState(false);
 
   // Annex Ink billing state. personalPlanStatus === "granted" means a comp
   // grant (no Stripe linkage); we hide the Manage button in that case.
@@ -309,24 +174,17 @@ export function UserSettingsPage() {
   const [favouriteNoteExpanded, setFavouriteNoteExpanded] = useState<Record<string, boolean>>({});
   const FAV_NOTE_MAX = 140;
 
-  const { runWithTwoFA, twoFADialog, busy: twoFABusy, active: twoFAActive } = use2FA({
-    totp: totpEnabled,
-    webauthn: webauthnCredentials.length > 0,
-  });
-
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; pendingEmail: string | null; userId: string; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; accountUrl?: string; securityUrl?: string; userId: string; timezone: string | null; bio: string | null; handle?: string | null; handleLocked?: boolean; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
       .then(json => {
         if (json.ok && json.data) {
-          setCurrentName(json.data.name);
           setName(json.data.name);
           setEmail(json.data.email);
-          setEmailVerified(json.data.emailVerified);
-          setEmailVerificationEnabled(json.data.emailVerificationEnabled);
-          setPendingEmail(json.data.pendingEmail ?? null);
+          if (json.data.accountUrl) setAccountUrl(json.data.accountUrl);
+          if (json.data.securityUrl) setSecurityUrl(json.data.securityUrl);
           setUserId(json.data.userId);
           setTimezone(json.data.timezone);
           setTimezonePrivate(json.data.timezone === null);
@@ -358,37 +216,6 @@ export function UserSettingsPage() {
       .catch(() => {})
       .finally(() => setFavouritesLoading(false));
 
-    fetch("/api/me/totp/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({}),
-    })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { enabled: boolean } }>)
-      .then(json => {
-        if (json.ok && json.data) setTotpEnabled(json.data.enabled);
-      })
-      .catch(() => {})
-      .finally(() => setTotpLoading(false));
-
-    fetch("/api/me/webauthn/credentials", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({}),
-    })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { credentials: WebAuthnCredential[] } }>)
-      .then(json => {
-        if (json.ok && json.data) setWebauthnCredentials(json.data.credentials);
-      })
-      .catch(() => {})
-      .finally(() => setWebauthnLoading(false));
-
-    fetch("/api/me/sessions", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { sessions: ActiveSession[] } }>)
-      .then(json => {
-        if (json.ok && json.data) setSessions(json.data.sessions);
-      })
-      .catch(() => {})
-      .finally(() => setSessionsLoading(false));
   }, []);
 
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -437,58 +264,6 @@ export function UserSettingsPage() {
     }
   }
 
-  // Tick the resend cooldown down once a second while it's running.
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendCooldown]);
-
-  async function handleResendVerification() {
-    if (!email || resendCooldown > 0) return;
-    setResendingVerification(true);
-    try {
-      const token = getToken();
-      await fetch("/api/verify-email/resend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email }),
-      });
-      toast({ title: "Verification email sent" });
-      setResendCooldown(30);
-    } catch {
-      toast({ title: "Could not send verification email", variant: "destructive" });
-    } finally {
-      setResendingVerification(false);
-    }
-  }
-
-  async function handleSaveName(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || name.trim() === currentName) return;
-    setSaving(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      const json = await res.json() as { ok: boolean; data?: { name: string } };
-      if (json.ok && json.data) {
-        setCurrentName(json.data.name);
-        setName(json.data.name);
-        flashNameSaved();
-      } else {
-        toast({ title: "Failed to update name", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function saveTimezone(newTimezone: string | null) {
     setTimezoneSaving(true);
     try {
@@ -511,492 +286,6 @@ export function UserSettingsPage() {
     }
   }
 
-  async function handleSetupStart() {
-    setSetupLoading(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/totp/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({}),
-      });
-      const json = await res.json() as { ok: boolean; data?: { secret: string; uri: string } };
-      if (json.ok && json.data) {
-        setPendingSecret(json.data.secret);
-        setPendingUri(json.data.uri);
-        setSetupStep("qr");
-      } else {
-        toast({ title: "Failed to start 2FA setup", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setSetupLoading(false);
-    }
-  }
-
-  async function handleSetupVerify(e: React.FormEvent) {
-    e.preventDefault();
-    if (!pendingSecret || !setupCode || (!twoFactorProtected && !securityEnrollmentPassword)) return;
-    await runWithTwoFA(async (verification) => {
-      setSetupLoading(true);
-      try {
-        const token = getToken();
-        const res = await fetch("/api/me/totp/enable", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            secret: pendingSecret,
-            code: setupCode,
-            totpCode: verification.totpCode,
-            challengeId: verification.challengeId,
-            webauthnResponse: verification.webauthnResponse,
-            backupCode: verification.backupCode,
-            currentPassword: securityEnrollmentPassword,
-          }),
-        });
-        const json = await res.json() as { ok: boolean; error?: string };
-        if (json.ok) {
-          setTotpEnabled(true);
-          setSetupStep("idle");
-          setPendingSecret(null);
-          setPendingUri(null);
-          setSetupCode("");
-          setSecurityEnrollmentPassword("");
-          toast({ title: "Two-factor authentication enabled" });
-          return undefined;
-        }
-        return json.error === "invalid_totp" ? "Invalid authenticator code." : "Invalid code. Please try again.";
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setSetupLoading(false);
-      }
-    });
-  }
-
-  async function handleGenerateBackupCodes() {
-    await runWithTwoFA(async (verification) => {
-      setBackupCodesLoading(true);
-      try {
-        const token = getToken();
-        const res = await fetch("/api/me/totp/backup-codes/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(verification),
-        });
-        const json = await res.json() as { ok: boolean; data?: { codes: string[] }; error?: string };
-        if (json.ok && json.data) {
-          setBackupCodes(json.data.codes);
-          setBackupCodesOpen(true);
-          return undefined;
-        }
-        return json.error === "invalid_totp" ? "Invalid authenticator code." : "Failed to generate backup codes.";
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setBackupCodesLoading(false);
-      }
-    });
-  }
-
-  async function handleDisableTOTP() {
-    await runWithTwoFA(async (verification) => {
-      const token = getToken();
-      const res = await fetch("/api/me/totp/disable", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(verification),
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) {
-        setTotpEnabled(false);
-        toast({ title: "Two-factor authentication disabled" });
-        return undefined;
-      }
-      return "Invalid code. Please try again.";
-    });
-  }
-
-  async function handleRegisterKey(e: React.FormEvent) {
-    e.preventDefault();
-    if (!twoFactorProtected && !securityEnrollmentPassword) return;
-    await runWithTwoFA(async (verification) => {
-      setRegisterLoading(true);
-      try {
-        const token = getToken();
-        const startRes = await fetch("/api/me/webauthn/register/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const startJson = await startRes.json() as {
-          ok: boolean;
-          data?: { options: Record<string, unknown>; challengeId: string };
-        };
-        if (!startJson.ok || !startJson.data) {
-          return "Failed to start security key registration.";
-        }
-
-        const { options, challengeId: registerChallengeId } = startJson.data;
-        let credential;
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          credential = await startRegistration(options as any);
-        } catch {
-          return "Security key registration was cancelled or failed.";
-        }
-
-        const finishRes = await fetch("/api/me/webauthn/register/finish", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            challengeId: registerChallengeId,
-            response: credential,
-            name: newKeyName.trim() || "Security Key",
-            totpCode: verification.totpCode,
-            challengeId2fa: verification.challengeId,
-            webauthnResponse: verification.webauthnResponse,
-            backupCode: verification.backupCode,
-            currentPassword: securityEnrollmentPassword,
-          }),
-        });
-        const finishJson = await finishRes.json() as { ok: boolean; error?: string };
-        if (finishJson.ok) {
-          // Reload credentials list
-          const listRes = await fetch("/api/me/webauthn/credentials", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({}),
-          });
-          const listJson = await listRes.json() as {
-            ok: boolean;
-            data?: { credentials: WebAuthnCredential[] };
-          };
-          if (listJson.ok && listJson.data) setWebauthnCredentials(listJson.data.credentials);
-          setAddingKey(false);
-          setNewKeyName("");
-          setSecurityEnrollmentPassword("");
-          toast({ title: "Security key added" });
-        } else {
-          return finishJson.error ?? "Failed to register security key.";
-        }
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setRegisterLoading(false);
-      }
-    });
-  }
-
-  async function handleDeleteKey(credentialId: string) {
-    setProcessingKeyId(credentialId);
-    await runWithTwoFA(async (verification) => {
-      const token = getToken();
-      const res = await fetch("/api/me/webauthn/credentials/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ credentialId, ...verification }),
-      });
-      const json = await res.json() as { ok: boolean; error?: string };
-      if (json.ok) {
-        setWebauthnCredentials(prev => prev.filter(c => c.id !== credentialId));
-        toast({ title: "Security key removed" });
-        return undefined;
-      }
-      if (json.error === "invalid_totp") return "Invalid code. Please try again.";
-      return "Failed to remove security key.";
-    });
-    setProcessingKeyId(null);
-  }
-
-  function resetPasswordDialog() {
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-  }
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!currentPassword || !newPassword || newPassword !== confirmPassword) return;
-    if (zxcvbn(newPassword).score < 3) return;
-    await runWithTwoFA(async (verification) => {
-      setPasswordSaving(true);
-      try {
-        const token = getToken();
-        const res = await fetch("/api/me/password", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            currentPassword,
-            newPassword,
-            totpCode: verification.totpCode,
-            challengeId: verification.challengeId,
-            webauthnResponse: verification.webauthnResponse,
-            backupCode: verification.backupCode,
-          }),
-        });
-        const json = await res.json() as { ok: boolean; error?: string };
-        if (json.ok) {
-          resetPasswordDialog();
-          setChangePasswordOpen(false);
-          toast({ title: "Password changed" });
-          return undefined;
-        }
-        if (json.error === "invalid_totp") return "Invalid authenticator code.";
-        if (json.error === "password_too_weak") {
-          toast({ title: "New password is too weak", variant: "destructive" });
-          return undefined;
-        }
-        toast({ title: "Current password is incorrect", variant: "destructive" });
-        return undefined;
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setPasswordSaving(false);
-      }
-    });
-  }
-
-  function resetEmailDialog() {
-    setNewEmail("");
-    setEmailCurrentPassword("");
-  }
-
-  async function handleChangeEmail(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newEmail.trim() || !emailCurrentPassword) return;
-    await runWithTwoFA(async (verification) => {
-      setEmailSaving(true);
-      try {
-        const token = getToken();
-        const res = await fetch("/api/me/email", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            newEmail: newEmail.trim(),
-            currentPassword: emailCurrentPassword,
-            totpCode: verification.totpCode,
-            challengeId: verification.challengeId,
-            webauthnResponse: verification.webauthnResponse,
-            backupCode: verification.backupCode,
-          }),
-        });
-        const json = await res.json() as { ok: boolean; error?: string; data?: { applied: boolean; email?: string; pendingEmail?: string } };
-        if (json.ok && json.data) {
-          resetEmailDialog();
-          setChangeEmailOpen(false);
-          if (json.data.applied && json.data.email) {
-            setEmail(json.data.email);
-            setEmailVerified(false);
-            toast({ title: "Email address updated" });
-          } else if (json.data.pendingEmail) {
-            setPendingEmail(json.data.pendingEmail);
-            toast({ title: `Confirmation link sent to ${json.data.pendingEmail}` });
-          }
-          return undefined;
-        }
-        if (json.error === "invalid_totp") return "Invalid authenticator code.";
-        // Stale client MFA state (enrolled in another tab): the string routes
-        // to a toast via runWithTwoFA since no 2FA dialog is open.
-        if (json.error === "mfa_required") return "Two-factor authentication is required – reload the page and try again.";
-        if (json.error === "send_failed") {
-          toast({ title: "Couldn't send the confirmation email – try again", variant: "destructive" });
-          return undefined;
-        }
-        if (res.status === 409) {
-          toast({ title: "That email address is already in use", variant: "destructive" });
-          return undefined;
-        }
-        if (json.error === "same_email") {
-          toast({ title: "That's already your email address", variant: "destructive" });
-          return undefined;
-        }
-        if (res.status === 429) {
-          toast({ title: "Too many attempts – try again in a minute", variant: "destructive" });
-          return undefined;
-        }
-        if (res.status === 401) {
-          toast({ title: "Current password is incorrect", variant: "destructive" });
-          return undefined;
-        }
-        toast({ title: "Failed to change email address", variant: "destructive" });
-        return undefined;
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setEmailSaving(false);
-      }
-    });
-  }
-
-  async function handleResendEmailChange() {
-    setEmailChangeResending(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/email/resend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean; error?: string };
-      if (json.ok) {
-        toast({ title: "Confirmation email re-sent" });
-      } else if (json.error === "no_pending_change") {
-        // The pending change expired server-side - clear the stale UI.
-        setPendingEmail(null);
-        toast({ title: "This email change has expired – request it again", variant: "destructive" });
-      } else if (json.error === "too_soon" || json.error === "rate_limited") {
-        toast({ title: "Give it a few minutes before resending", variant: "destructive" });
-      } else if (json.error === "send_failed") {
-        toast({ title: "Couldn't send the email – try again in a few minutes", variant: "destructive" });
-      } else {
-        toast({ title: "Could not re-send confirmation email", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setEmailChangeResending(false);
-    }
-  }
-
-  async function handleCancelEmailChange() {
-    setEmailChangeCancelling(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/email/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) {
-        setPendingEmail(null);
-        toast({ title: "Email change cancelled" });
-      } else {
-        toast({ title: "Could not cancel the email change", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setEmailChangeCancelling(false);
-    }
-  }
-
-  function handleCancelSetup() {
-    setSetupStep("idle");
-    setPendingSecret(null);
-    setPendingUri(null);
-    setSetupCode("");
-    setSecurityEnrollmentPassword("");
-  }
-
-  async function handleRevokeSession(id: string) {
-    setSessionRevokingId(id);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/sessions/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId: id }),
-      });
-      if (res.ok) {
-        setSessions(prev => prev.filter(s => s.id !== id));
-        toast({ title: "Session revoked" });
-      } else {
-        toast({ title: "Could not revoke session", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not revoke session", variant: "destructive" });
-    } finally {
-      setSessionRevokingId(null);
-    }
-  }
-
-  async function handleRevokeOthers() {
-    setRevokingOthers(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/sessions/revoke-others", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setSessions(prev => prev.filter(s => s.current));
-        toast({ title: "Other sessions revoked" });
-      } else {
-        toast({ title: "Could not revoke sessions", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not revoke sessions", variant: "destructive" });
-    } finally {
-      setRevokingOthers(false);
-    }
-  }
-
-  async function handleDeleteButtonClick() {
-    const token = getToken();
-    try {
-      const [projectsRes, orgsRes] = await Promise.all([
-        fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/organizations", { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-      const projectsJson = await projectsRes.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string }> };
-      const orgsJson = await orgsRes.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string; site_count: number; member_count: number }> };
-      const ownedSitesList = (projectsJson.data ?? []).filter(p => p.role === "owner").map(p => ({ id: p.id, name: p.name }));
-      const ownedOrgsList = (orgsJson.data ?? []).filter(o => o.role === "owner").map(o => ({ id: o.id, name: o.name }));
-      if (ownedSitesList.length > 0 || ownedOrgsList.length > 0) {
-        setOwnedSites(ownedSitesList);
-        setOwnedOrgs(ownedOrgsList);
-        setOwnedSitesOpen(true);
-        return;
-      }
-    } catch {
-      // fall through to confirmation if we can't check
-    }
-    setDeleteCurrentPassword("");
-    setDeleteAccountOpen(true);
-  }
-
-  async function handleDeleteAccount() {
-    const currentPassword = deleteCurrentPassword;
-    if (!currentPassword) return;
-
-    setDeleteAccountOpen(false);
-    await runWithTwoFA(async (verification) => {
-      setDeletingAccount(true);
-      try {
-        const token = getToken();
-        const res = await fetch("/api/me", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ ...verification, currentPassword }),
-        });
-        const json = await res.json() as { ok: boolean; error?: string };
-        if (json.ok) {
-          clearToken();
-          navigate("/login");
-          return undefined;
-        }
-        if (json.error === "invalid_totp") return "Invalid authenticator code.";
-        if (json.error === "invalid_backup_code") return "Invalid backup code.";
-        if (json.error === "Unauthorized") return "Current password is incorrect.";
-        if (json.error === "rate_limited") return "Too many attempts. Please wait a minute and try again.";
-        if (json.error === "owns_projects") return "Delete or transfer the sites you own before deleting your account.";
-        if (json.error === "owns_organizations") return "Delete the organizations you own before deleting your account.";
-        return "Failed to delete account. Please try again.";
-      } catch {
-        return "Could not connect to the server.";
-      } finally {
-        setDeletingAccount(false);
-        setDeleteCurrentPassword("");
-      }
-    });
-  }
-
-  const twoFactorProtected = totpEnabled || webauthnCredentials.length > 0;
-
-  // Posts to the auth-side billing endpoint (proxied by /api in dev) and
-  // navigates the browser to the Stripe-hosted url. We intentionally use
-  // window.location rather than fetch+redirect so the back button works.
   async function startCheckoutOrPortal(path: "/api/billing/checkout" | "/api/billing/portal") {
     if (billingBusy) return;
     setBillingBusy(true);
@@ -1392,8 +681,7 @@ export function UserSettingsPage() {
     { id: "favourites", label: "Favourite sites", group: "profile" },
     { id: "billing", label: "Billing", group: "plan" },
     { id: "appearance", label: "Appearance", group: "preferences" },
-    { id: "two-factor", label: "Two-factor & password", group: "security" },
-    { id: "sessions", label: "Active sessions", group: "security" },
+    { id: "security", label: "Sign-in & security", group: "security" },
     { id: "danger", label: "Danger zone", group: "danger", danger: true },
   ];
 
@@ -1550,141 +838,40 @@ export function UserSettingsPage() {
               </div>
             )}
 
-            {/* Email + Display name share one bordered card, in the same row
-                pattern as the toggle rows below: Email is a title with the
-                address as its description line and its controls (verification
-                status, Change) on the right; Display name is a labelled input. */}
-            <form onSubmit={handleSaveName} className="mt-6 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
-              <div className="flex flex-col gap-2 px-4 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <Label htmlFor="email">Email</Label>
-                    {/* The current email isn't editable in place - changing it
-                        goes through the "Change" button, a password-confirmed
-                        dialog. The borderless read-only input keeps the label
-                        association and the value the e2e specs read. */}
-                    <input
-                      id="email"
-                      value={email}
-                      readOnly
-                      className="min-h-0! w-full min-w-0 truncate bg-transparent p-0 text-[13px] leading-snug text-muted-foreground outline-none"
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {emailVerified === false && emailVerificationEnabled && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={handleResendVerification}
-                            disabled={resendingVerification || resendCooldown > 0}
-                            aria-label="Resend verification email"
-                            className="inline-flex size-9 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-                          >
-                            {resendingVerification
-                              ? <Loader2 className="size-4 animate-spin" />
-                              : resendCooldown > 0
-                                ? <span className="text-xs font-medium tabular-nums">{resendCooldown}</span>
-                                : <Mail className="size-4" />}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          {resendCooldown > 0 ? `Sent – resend in ${resendCooldown}s` : "Resend verification email"}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                    {emailVerified === true && emailVerificationEnabled && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button type="button" aria-label="Email verified" className="inline-flex size-9 shrink-0 items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <CheckCircle2 className="size-4 text-green-500" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                          Email verified
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                    {emailVerified === false && emailVerificationEnabled && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button type="button" aria-label="Email not verified" className="inline-flex size-9 shrink-0 items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <AlertCircle className="size-4 text-amber-500" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                          Email not verified
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setChangeEmailOpen(true)}
-                      aria-label="Change email address"
-                      className="ml-1 h-11 shrink-0 sm:h-8"
-                    >
-                      Change
-                    </Button>
-                  </div>
+            {/* Email + display name come from the identity service (read-only
+                here); "Manage" opens the account page on auth.cubityfir.st. The
+                read-only inputs keep the label association and the values the
+                e2e specs read. */}
+            <div className="mt-6 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <Label htmlFor="email">Email</Label>
+                  <input
+                    id="email"
+                    value={email}
+                    readOnly
+                    className="min-h-0! w-full min-w-0 truncate bg-transparent p-0 text-[13px] leading-snug text-muted-foreground outline-none"
+                  />
                 </div>
-                {pendingEmail && (
-                  <div className="text-xs text-muted-foreground">
-                    <p className="text-pretty">
-                      Confirmation sent to <strong className="text-foreground">{pendingEmail}</strong> – check that inbox to finish the change.
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="w-fit px-0 h-auto text-xs"
-                        onClick={handleResendEmailChange}
-                        disabled={emailChangeResending}
-                      >
-                        {emailChangeResending ? "Sending…" : "Resend"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="w-fit px-0 h-auto text-xs text-destructive"
-                        onClick={handleCancelEmailChange}
-                        disabled={emailChangeCancelling}
-                      >
-                        {emailChangeCancelling ? "Cancelling…" : "Cancel"}
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </div>
-
-              <div className="flex flex-col gap-1.5 px-4 py-3">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <Label htmlFor="display-name">Display name</Label>
-                  <SavedIndicator show={nameSaved} />
+                  <input
+                    id="display-name"
+                    value={name}
+                    readOnly
+                    className="min-h-0! w-full min-w-0 truncate bg-transparent p-0 text-[13px] leading-snug text-muted-foreground outline-none"
+                  />
                 </div>
-                <div className="flex items-center">
-                  <InlineSaveControls
-                    changed={name !== currentName}
-                    saving={saving}
-                    onReset={() => setName(currentName)}
-                    saveDisabled={!name.trim() || name.trim() === currentName}
-                    resetLabel="Reset display name"
-                    saveLabel="Save display name"
-                  >
-                    <Input
-                      id="display-name"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      className="flex-1"
-                      required
-                    />
-                  </InlineSaveControls>
-                </div>
+                <Button asChild variant="outline" size="sm" className="h-11 shrink-0 sm:h-8">
+                  <a href={accountUrl} aria-label={`Change email or display name at ${identityHost}`}>
+                    Manage
+                    <ExternalLink className="size-3.5" aria-hidden />
+                  </a>
+                </Button>
               </div>
-            </form>
+            </div>
 
             {/* Profile-card visibility rows: bordered row cards, matching the
                 site-settings row pattern. Each reveals its detail inline. */}
@@ -2447,220 +1634,37 @@ export function UserSettingsPage() {
 
           <Separator className="my-10" />
 
-          {/* Security section */}
-          <section id="two-factor">
-            <h2 className="text-base font-semibold">Two-factor &amp; password</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Protect sign-in with a second factor, and change your password.</p>
-
+          {/* Sign-in & security: owned by the identity service. */}
+          <section id="security">
+            <SettingsSectionHeader
+              title="Sign-in & security"
+              description={`Your password, two-factor, passkeys, email address and signed-in devices are managed at ${identityHost}.`}
+            />
             <div className="mt-5 flex flex-col gap-3">
-              {/* Authenticator app */}
               <div className="rounded-lg border border-border bg-card">
                 <SecurityRowHeader
-                  title="Authenticator app"
-                  status={!totpLoading && (
-                    <SecurityStatus ok={totpEnabled} on="Enabled" off="Not set up" title={totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"} />
-                  )}
-                  description="Use a TOTP authenticator app (Google Authenticator, Authy, 1Password, etc.) as a second factor."
-                  action={totpLoading ? (
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
-                  ) : totpEnabled ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => setConfirmBackupCodesOpen(true)} disabled={twoFABusy || backupCodesLoading}>
-                        {backupCodesLoading ? "Generating…" : "Generate backup codes"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={DESTRUCTIVE_OUTLINE_BUTTON}
-                        onClick={handleDisableTOTP}
-                        disabled={twoFABusy}
-                      >
-                        Disable authenticator app
-                      </Button>
-                    </>
-                  ) : setupStep === "idle" ? (
-                    <Button variant="outline" size="sm" onClick={handleSetupStart} disabled={setupLoading}>
-                      {setupLoading ? "Loading…" : "Set up authenticator app"}
-                    </Button>
-                  ) : null}
-                />
-                {!totpLoading && !totpEnabled && setupStep !== "idle" && (
-                  <div className="flex max-w-sm flex-col gap-5 border-t border-border px-4 py-4">
-                    <div>
-                      <p className="text-sm font-medium mb-2">
-                        Scan this QR code with your authenticator app
-                        <span className="block text-muted-foreground font-normal mt-0.5">
-                          (Google Authenticator, Authy, 1Password, etc.)
-                        </span>
-                      </p>
-                      {pendingUri && (
-                        <div className="inline-block rounded-lg border p-3 bg-white">
-                          <QRCode value={pendingUri} size={160} />
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Can&apos;t scan? Enter this key manually:</p>
-                      <code className="text-xs bg-muted rounded px-2 py-1 select-all break-all">
-                        {pendingSecret}
-                      </code>
-                    </div>
-
-                    <form onSubmit={handleSetupVerify} className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Label>Enter the 6-digit code from your app</Label>
-                        <InputOTP
-                          maxLength={6}
-                          value={setupCode}
-                          onChange={setSetupCode}
-                          autoComplete="one-time-code"
-                        >
-                          <InputOTPGroup>
-                            <InputOTPSlot index={0} />
-                            <InputOTPSlot index={1} />
-                            <InputOTPSlot index={2} />
-                            <InputOTPSlot index={3} />
-                            <InputOTPSlot index={4} />
-                            <InputOTPSlot index={5} />
-                          </InputOTPGroup>
-                        </InputOTP>
-                      </div>
-                      {!twoFactorProtected && (
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="totp-enrollment-password">Current password</Label>
-                          <Input
-                            id="totp-enrollment-password"
-                            type="password"
-                            value={securityEnrollmentPassword}
-                            onChange={e => setSecurityEnrollmentPassword(e.target.value)}
-                            autoComplete="current-password"
-                            required
-                          />
-                          <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
-                        </div>
-                      )}
-                      <div className="flex gap-2">
-                        <Button type="submit" disabled={setupLoading || setupCode.length !== 6 || (!twoFactorProtected && !securityEnrollmentPassword)}>
-                          {setupLoading ? "Verifying…" : "Enable 2FA"}
-                        </Button>
-                        <Button type="button" variant="outline" onClick={handleCancelSetup}>
-                          Cancel
-                        </Button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-              </div>
-
-              {/* Passkeys / security keys */}
-              <div className="rounded-lg border border-border bg-card">
-                <SecurityRowHeader
-                  title="Passkeys / security keys"
-                  status={!webauthnLoading && (
-                    <SecurityStatus ok={webauthnCredentials.length > 0} on="Enabled" off="Not set up" title={webauthnCredentials.length > 0 ? "Passkey or security key registered" : "No passkeys registered"} />
-                  )}
-                  description="Sign in with a passkey instead of your password, or use a hardware security key (YubiKey, etc.) as a second factor."
-                  action={webauthnLoading ? (
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
-                  ) : !addingKey ? (
-                    <Button type="button" variant="outline" size="sm" onClick={() => setAddingKey(true)}>
-                      Add security key
-                    </Button>
-                  ) : null}
-                />
-                {!webauthnLoading && (webauthnCredentials.length > 0 || addingKey) && (
-                  <div className="flex flex-col gap-3 border-t border-border px-4 py-4">
-                    {webauthnCredentials.length > 0 && (
-                      <ul className="flex flex-col gap-2 max-w-sm">
-                        {webauthnCredentials.map(cred => {
-                          const isProcessing = processingKeyId === cred.id;
-                          return (
-                            <li key={cred.id} className="rounded-md border border-border bg-background/40 py-1 pl-3 pr-1 text-sm">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Key className="size-3.5 shrink-0 text-muted-foreground" />
-                                  <span className="truncate font-medium">{cred.name}</span>
-                                  <span className="text-xs text-muted-foreground shrink-0">
-                                    {new Date(cred.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
-                                  </span>
-                                </div>
-                                {isProcessing ? (
-                                  <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
-                                ) : (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                    aria-label={`Remove ${cred.name}`}
-                                    title="Remove key"
-                                    onClick={() => handleDeleteKey(cred.id)}
-                                    disabled={processingKeyId !== null || twoFABusy}
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                    {addingKey && (
-                      <form onSubmit={handleRegisterKey} className="flex flex-col gap-3 max-w-sm">
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="key-name">Key name (optional)</Label>
-                          <Input
-                            id="key-name"
-                            value={newKeyName}
-                            onChange={e => setNewKeyName(e.target.value)}
-                            placeholder="Security Key"
-                            maxLength={64}
-                            autoFocus
-                          />
-                        </div>
-                        {!twoFactorProtected && (
-                          <div className="flex flex-col gap-1.5">
-                            <Label htmlFor="key-enrollment-password">Current password</Label>
-                            <Input
-                              id="key-enrollment-password"
-                              type="password"
-                              value={securityEnrollmentPassword}
-                              onChange={e => setSecurityEnrollmentPassword(e.target.value)}
-                              autoComplete="current-password"
-                              required
-                            />
-                            <p className="text-xs text-muted-foreground">Confirm your password before adding your first sign-in factor.</p>
-                          </div>
-                        )}
-                        <div className="flex gap-2">
-                          <Button type="submit" disabled={registerLoading || (!twoFactorProtected && !securityEnrollmentPassword)}>
-                            {registerLoading ? "Follow the browser prompt…" : "Register key"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => { setAddingKey(false); setNewKeyName(""); setSecurityEnrollmentPassword(""); }}
-                            disabled={registerLoading}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Change password */}
-              <div className="rounded-lg border border-border bg-card">
-                <SecurityRowHeader
-                  title="Change password"
-                  description="Update the password used to sign in to your account."
+                  title="Password, two-factor & passkeys"
+                  description="Change your password, set up an authenticator app or passkey, and see where you're signed in."
                   action={
-                    <Button variant="outline" size="sm" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(true); }}>
-                      Change password
+                    <Button asChild variant="outline" size="sm">
+                      <a href={securityUrl}>
+                        Manage
+                        <ExternalLink className="size-3.5" aria-hidden />
+                      </a>
+                    </Button>
+                  }
+                />
+              </div>
+              <div className="rounded-lg border border-border bg-card">
+                <SecurityRowHeader
+                  title="Email & display name"
+                  description="Your name and email are shared by every cubityfir.st service. Changes show up here the next time Annex syncs."
+                  action={
+                    <Button asChild variant="outline" size="sm">
+                      <a href={accountUrl}>
+                        Manage
+                        <ExternalLink className="size-3.5" aria-hidden />
+                      </a>
                     </Button>
                   }
                 />
@@ -2670,412 +1674,22 @@ export function UserSettingsPage() {
 
           <Separator className="my-10" />
 
-          {/* Active sessions */}
-          <section id="sessions">
-            <h2 className="text-base font-semibold">Active sessions</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Devices currently signed in to your account. Revoke any you don&apos;t recognise.
-            </p>
-
-            {sessionsLoading ? (
-              <div className="mt-4 flex justify-center py-6">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : sessions.length === 0 ? (
-              <div className="mt-4">
-                <SettingsEmptyRow icon={Monitor}>No other devices are signed in.</SettingsEmptyRow>
-              </div>
-            ) : (
-              <ul className="mt-4 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
-                {/* Current session first, so "this device" is always on top. */}
-                {[...sessions].sort((a, b) => Number(b.current) - Number(a.current)).map(s => (
-                  <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <DeviceIcon kind={s.deviceKind} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-medium">{s.clientLabel ?? "Unknown device"}</p>
-                          {s.current && (
-                            <span className="inline-flex h-6 items-center rounded-full bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-300">
-                              This device
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-[13px] text-muted-foreground">
-                          {s.ip ? `${s.ip} · Signed in` : "Signed in"} {formatRelative(s.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                    {!s.current && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={sessionRevokingId === s.id}
-                        onClick={() => handleRevokeSession(s.id)}
-                      >
-                        {sessionRevokingId === s.id ? "Revoking…" : "Revoke"}
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {sessions.some(s => !s.current) && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                disabled={revokingOthers}
-                onClick={handleRevokeOthers}
-              >
-                {revokingOthers ? "Revoking…" : "Revoke all other sessions"}
-              </Button>
-            )}
-          </section>
-
-          <Separator className="my-10" />
-
           {/* Danger zone */}
           <section id="danger" className="flex flex-col gap-4">
             <SettingsSectionHeader title="Danger zone" description="Irreversible actions for your account." />
             <DangerRow
               title="Delete your account"
-              description="Permanently delete your account and its data. Transfer or delete sites you own first."
+              description={`Accounts are deleted at ${identityHost}. Transfer or delete the sites and organizations you own first.`}
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={DESTRUCTIVE_OUTLINE_BUTTON}
-                  disabled={deletingAccount || twoFABusy}
-                  onClick={handleDeleteButtonClick}
-                >
-                  {deletingAccount ? "Deleting…" : "Delete account"}
+                <Button asChild variant="outline" size="sm" className={DESTRUCTIVE_OUTLINE_BUTTON}>
+                  <a href={accountUrl}>
+                    Delete account
+                    <ExternalLink className="size-3.5" aria-hidden />
+                  </a>
                 </Button>
               }
             />
           </section>
-
-          <AlertDialog open={ownedSitesOpen} onOpenChange={setOwnedSitesOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {ownedOrgs.length > 0
-                    ? "Transfer or delete your sites and organizations first"
-                    : "Transfer or delete your sites first"}
-                </AlertDialogTitle>
-                <AlertDialogDescription asChild>
-                  <div>
-                    <p>
-                      {ownedSites.length > 0 && ownedOrgs.length > 0
-                        ? "You own the following sites and organizations and cannot delete your account until you transfer ownership or delete them:"
-                        : ownedOrgs.length > 0
-                          ? `You own the following ${ownedOrgs.length === 1 ? "organization" : "organizations"} and cannot delete your account until you transfer ownership or delete ${ownedOrgs.length === 1 ? "it" : "them"}:`
-                          : `You own the following ${ownedSites.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete ${ownedSites.length === 1 ? "it" : "them"}:`}
-                    </p>
-                    <ul className="mt-2 list-disc pl-5 space-y-1">
-                      {ownedSites.map(site => (
-                        <li key={site.id}>
-                          <Link
-                            to={`/projects/${site.id}`}
-                            className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
-                            onClick={() => setOwnedSitesOpen(false)}
-                          >
-                            {site.name}
-                          </Link>
-                        </li>
-                      ))}
-                      {ownedOrgs.map(org => (
-                        <li key={org.id}>
-                          <Link
-                            to={`/orgs/${org.id}`}
-                            className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
-                            onClick={() => setOwnedSitesOpen(false)}
-                          >
-                            {org.name}
-                          </Link>
-                          {" "}(organization)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogAction onClick={() => setOwnedSitesOpen(false)}>OK</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <AlertDialog
-            open={deleteAccountOpen}
-            onOpenChange={open => {
-              setDeleteAccountOpen(open);
-              if (!open) setDeleteCurrentPassword("");
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete your account and all associated data. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-
-              {personalPlan === "ink" && personalPlanStatus !== "granted" && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
-                  <AlertCircle className="size-4 mt-0.5 shrink-0" />
-                  <span>
-                    You have an active Annex Ink subscription. It will be cancelled immediately when your account is deleted.{" "}
-                    <strong>You will not be refunded for the remainder of the current billing period.</strong>
-                  </span>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="delete-account-current-password">Current password</Label>
-                <Input
-                  id="delete-account-current-password"
-                  type="password"
-                  value={deleteCurrentPassword}
-                  onChange={event => setDeleteCurrentPassword(event.target.value)}
-                  autoComplete="current-password"
-                  disabled={deletingAccount}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Required to confirm this irreversible action.
-                </p>
-              </div>
-
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={handleDeleteAccount}
-                  disabled={!deleteCurrentPassword || deletingAccount}
-                >
-                  Yes, delete my account
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open && twoFAActive) return; if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
-              <DialogContent
-                hideClose
-                onInteractOutside={e => { if (twoFAActive) e.preventDefault(); }}
-                onFocusOutside={e => { if (twoFAActive) e.preventDefault(); }}
-              >
-                <DialogHeader>
-                  <DialogTitle>Change password</DialogTitle>
-                </DialogHeader>
-                <form id="change-password-form" onSubmit={handleChangePassword} className="flex flex-col gap-4 py-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="current-password">Current password</Label>
-                    <Input
-                      id="current-password"
-                      type="password"
-                      value={currentPassword}
-                      onChange={e => setCurrentPassword(e.target.value)}
-                      autoComplete="current-password"
-                      required
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="new-password">New password</Label>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
-                      autoComplete="new-password"
-                      aria-describedby="new-password-hint"
-                      required
-                    />
-                    {/* Same rule and copy as RegisterPage: the auth worker
-                        rejects anything below zxcvbn score 3 ("Strong"), and
-                        the submit button stays disabled until then - say so,
-                        or a disabled button gives no reason. */}
-                    <p id="new-password-hint" className="text-xs text-muted-foreground">
-                      Must rate &ldquo;Strong&rdquo; or better on the strength meter. A phrase of a few unrelated words works well.
-                    </p>
-                    {newPassword && (() => {
-                      const score = zxcvbn(newPassword).score;
-                      return (
-                        <div className="space-y-1">
-                          <div
-                            className="flex gap-1"
-                            role="meter"
-                            aria-label="Password strength"
-                            aria-valuemin={0}
-                            aria-valuemax={4}
-                            aria-valuenow={score}
-                            aria-valuetext={STRENGTH_LABELS[score]}
-                          >
-                            {[0, 1, 2, 3, 4].map(i => (
-                              <div
-                                key={i}
-                                aria-hidden="true"
-                                className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
-                              />
-                            ))}
-                          </div>
-                          <p className="text-xs text-muted-foreground" aria-live="polite">{STRENGTH_LABELS[score]}</p>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="confirm-password">Confirm new password</Label>
-                    <Input
-                      id="confirm-password"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                      aria-invalid={confirmPassword.length > 0 && newPassword !== confirmPassword}
-                      aria-describedby={confirmPassword && newPassword !== confirmPassword ? "confirm-password-error" : undefined}
-                      required
-                    />
-                    {confirmPassword && newPassword !== confirmPassword && (
-                      <p id="confirm-password-error" role="alert" className="text-xs text-destructive">Passwords do not match.</p>
-                    )}
-                  </div>
-
-                </form>
-                <DialogFooter>
-                  <Button variant="outline" type="button" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(false); }} className="mr-auto">
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    form="change-password-form"
-                    disabled={
-                      passwordSaving ||
-                      !currentPassword ||
-                      !newPassword ||
-                      newPassword !== confirmPassword ||
-                      zxcvbn(newPassword).score < 3
-                    }
-                  >
-                    {passwordSaving ? "Saving…" : "Change password"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-      <Dialog open={changeEmailOpen} onOpenChange={open => { if (!open && twoFAActive) return; if (!open) resetEmailDialog(); setChangeEmailOpen(open); }}>
-        <DialogContent
-          hideClose
-          onInteractOutside={e => { if (twoFAActive) e.preventDefault(); }}
-          onFocusOutside={e => { if (twoFAActive) e.preventDefault(); }}
-        >
-          <DialogHeader>
-            <DialogTitle>Change email address</DialogTitle>
-          </DialogHeader>
-          <form id="change-email-form" onSubmit={handleChangeEmail} className="flex flex-col gap-4 py-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="new-email">New email address</Label>
-              <Input
-                id="new-email"
-                type="email"
-                value={newEmail}
-                onChange={e => setNewEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
-              {emailVerificationEnabled && (
-                <p className="text-xs text-muted-foreground">
-                  We'll send a confirmation link to the new address. Your email only changes once you click it.
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email-current-password">Current password</Label>
-              <Input
-                id="email-current-password"
-                type="password"
-                value={emailCurrentPassword}
-                onChange={e => setEmailCurrentPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </div>
-          </form>
-          <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => { resetEmailDialog(); setChangeEmailOpen(false); }} className="mr-auto">
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="change-email-form"
-              disabled={emailSaving || !newEmail.trim() || !emailCurrentPassword}
-            >
-              {emailSaving ? "Saving…" : "Change email"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={confirmBackupCodesOpen} onOpenChange={setConfirmBackupCodesOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Generate new backup codes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This creates a fresh set of backup codes and permanently invalidates any codes generated before, so any previously saved codes will stop working.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmBackupCodesOpen(false);
-                void handleGenerateBackupCodes();
-              }}
-            >
-              Generate codes
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={backupCodesOpen} onOpenChange={setBackupCodesOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Backup codes</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Use these codes if your TOTP device is lost. Each code can only be used once. Generating new codes invalidates all previous ones.
-          </p>
-          <div className="grid grid-cols-2 gap-2 py-2">
-            {backupCodes.map(code => (
-              <code key={code} className="font-mono text-sm bg-muted rounded px-2 py-1 text-center select-all">
-                {code}
-              </code>
-            ))}
-          </div>
-          <DialogFooter className="justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard.writeText(backupCodes.join("\n"));
-                toast({ title: "Backup codes copied" });
-              }}
-            >
-              <Copy className="size-3.5 mr-1.5" />
-              Copy All
-            </Button>
-            <Button type="button" onClick={() => setBackupCodesOpen(false)}>
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {twoFADialog}
     </SettingsShell>
   );
 }

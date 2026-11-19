@@ -27,6 +27,7 @@ import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from 
 import { resolveAccess } from "./lib/access";
 import type { IdentityService } from "./account/identity";
 import { sweepSessions } from "./account/session";
+import { DELETION_SYNC_CRON, syncIdentityDeletions } from "./lib/identityDeletions";
 import { handleAuthCallback, handleAuthExchange, handleAuthLogin, handleAuthLogout, handleDevQuickLogin } from "./routes/auth";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripeWebhook";
@@ -56,7 +57,7 @@ export interface Env {
   IDENTITY_OIDC?: Fetcher;
   // OIDC client settings (see routes/auth.ts). OIDC_CLIENT_SECRET is a secret;
   // the rest are vars. Redirect URIs default to APP_ORIGIN/api/auth/callback
-  // and APP_ORIGIN/.
+  // and APP_ORIGIN (no trailing slash).
   OIDC_ISSUER?: string;
   OIDC_CLIENT_ID?: string;
   OIDC_CLIENT_SECRET?: string;
@@ -97,7 +98,16 @@ export interface Env {
 export default {
   // Daily cron (see cloudflare.config.ts triggers): revision retention. Keeps each
   // doc's newest revision unconditionally; see pruneDocRevisions.
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Hourly: accounts deleted on auth.cubityfir.st (lib/identityDeletions.ts).
+    if (controller.cron === DELETION_SYNC_CRON) {
+      ctx.waitUntil(
+        syncIdentityDeletions(env)
+          .then(r => { if (r.recorded || r.processed || r.failed) console.log(`[deletion-sync] recorded ${r.recorded}, processed ${r.processed}, failed ${r.failed}`); })
+          .catch(err => console.error("[deletion-sync] run failed:", err)),
+      );
+      return;
+    }
     ctx.waitUntil(
       pruneDocRevisions(env)
         .then(n => { if (n > 0) console.log(`[retention] pruned ${n} doc revisions`); })

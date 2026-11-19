@@ -5,15 +5,14 @@
  *
  * Prerequisites:
  *   pnpm dev  (from the monorepo root)
- *   packages/auth/.dev.vars: DEV_QUICK_LOGIN=true   (+ APP_ORIGIN=http://localhost:5173)
+ *   packages/api/.dev.vars: DEV_QUICK_LOGIN=true   (+ APP_ORIGIN=http://localhost:5173)
  *
- * Accounts are created via the dev quick-login panel on /login (the project's
- * credential-free localhost dev shortcut) rather than the register form, so the
- * suite is independent of the Flagship "signup" flag. Both accounts are removed
- * in globalTeardown; the site is deleted by the test body / afterAll.
+ * Accounts are created with e2e/signIn.ts (devSignIn, the localhost-only dev
+ * quick login). Both accounts are removed in globalTeardown; the site is deleted by the test body / afterAll.
  */
 
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { devSignIn } from "../signIn";
 
 // ── Unique-per-run values ────────────────────────────────────────────────────
 
@@ -39,42 +38,18 @@ let siteId = "";
 
 async function setupContext(browser: Browser, ip: string): Promise<[BrowserContext, Page]> {
   const ctx = await browser.newContext();
-  await ctx.addInitScript(() => {
-    Object.defineProperty(window, "turnstile", {
-      value: {
-        render(_: unknown, opts: { callback: (t: string) => void }) {
-          setTimeout(() => opts.callback("e2e-bypass-token"), 50);
-          return "mock-widget-id";
-        },
-        reset() {},
-        remove() {},
-      },
-      writable: true,
-      configurable: true,
-    });
-  });
   await ctx.route("**/api/**", async (route) => {
     await route.continue({ headers: { ...route.request().headers(), "CF-Connecting-IP": ip } });
   });
   return [ctx, await ctx.newPage()];
 }
 
-// Logs in via the DEV-only quick-login panel and returns the freshly-minted dev
-// user's email (decoded from the returned JWT — quick-login creates a random
-// dev-<hex>@localhost account each time).
+// Signs in a fresh dev user (localhost-only quick login) and returns its email.
+let devUsers = 0;
 async function devLogin(page: Page): Promise<string> {
-  await page.goto("/login?logout=1");
-  const respPromise = page.waitForResponse(
-    r => r.url().includes("/api/dev/quick-login") && r.request().method() === "POST",
-  );
-  // First "Free" button is the Standard (non-admin) row.
-  await page.getByRole("button", { name: "Free", exact: true }).first().click();
-  const resp = await respPromise;
-  const body = await resp.json() as { ok: boolean; data: { token: string } };
-  expect(body.ok).toBe(true);
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-  const payload = JSON.parse(Buffer.from(body.data.token.split(".")[1], "base64").toString()) as { email: string };
-  return payload.email;
+  const email = `e2e-org-${RUN_ID}-${++devUsers}@example.com`;
+  await devSignIn(page, { email, name: `Org User ${devUsers}` });
+  return email;
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

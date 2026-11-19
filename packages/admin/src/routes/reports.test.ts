@@ -97,9 +97,8 @@ describe("GET /sites (list site reports)", () => {
   it("defaults to the current queue (open + acknowledged), newest first", async () => {
     const { db, allQueue, calls } = makeDb();
     allQueue.push([siteReport()]);
-    const authDb = makeDb().db;
 
-    const request = makeApp({ DB: db, AUTH_DB: authDb });
+    const request = makeApp({ DB: db });
     const res = await request("/sites");
     expect(res.status).toBe(200);
     const body = await res.json() as { ok: boolean; data: { reports: unknown[]; nextCursor: string | null } };
@@ -110,27 +109,27 @@ describe("GET /sites (list site reports)", () => {
     expect(calls[0].sql).toContain("FROM site_reports");
     expect(calls[0].sql).toContain("r.status IN ('open', 'acknowledged')");
     expect(calls[0].sql).toContain("ORDER BY r.created_at DESC, r.id DESC");
-    // Anonymous report -> no auth-DB lookup fired.
-    expect(authDb.prepare).not.toHaveBeenCalled();
+    // Anonymous report -> no users lookup fired.
+    expect(calls).toHaveLength(1);
   });
 
-  it("resolves reporter identity from the auth DB for attributed reports", async () => {
-    const { db, allQueue } = makeDb();
+  it("resolves reporter identity from the users mirror for attributed reports", async () => {
+    const { db, allQueue, calls } = makeDb();
     allQueue.push([siteReport({ reporter_user_id: "user-9" })]);
-    const auth = makeDb();
-    auth.allQueue.push([{ id: "user-9", email: "u@example.com", name: "Uma" }]);
+    allQueue.push([{ id: "user-9", email: "u@example.com", name: "Uma" }]);
 
-    const request = makeApp({ DB: db, AUTH_DB: auth.db });
+    const request = makeApp({ DB: db });
     const res = await request("/sites");
     const body = await res.json() as { data: { reports: Array<{ reporter: unknown }> } };
     expect(body.data.reports[0].reporter).toEqual({ email: "u@example.com", name: "Uma" });
-    expect(auth.calls[0].binds).toEqual(["user-9"]);
+    expect(calls[1].sql).toContain("FROM users");
+    expect(calls[1].binds).toEqual(["user-9"]);
   });
 
   it("filters by a concrete status and by projectId", async () => {
     const { db, allQueue, calls } = makeDb();
     allQueue.push([]);
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/sites?status=resolved&projectId=proj-1");
     expect(res.status).toBe(200);
     expect(calls[0].sql).toContain("r.status = ?");
@@ -140,7 +139,7 @@ describe("GET /sites (list site reports)", () => {
 
   it("rejects an unknown status filter", async () => {
     const { db } = makeDb();
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/sites?status=bogus");
     expect(res.status).toBe(400);
   });
@@ -148,7 +147,7 @@ describe("GET /sites (list site reports)", () => {
   it("rejects an invalid cursor and pages with a valid one", async () => {
     const { db, allQueue, calls } = makeDb();
     allQueue.push([]);
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
 
     expect((await request("/sites?cursor=garbage")).status).toBe(400);
 
@@ -161,7 +160,7 @@ describe("GET /sites (list site reports)", () => {
     const { db, allQueue } = makeDb();
     // 26 rows -> 25 returned + cursor pointing at the 25th.
     allQueue.push(Array.from({ length: 26 }, (_, i) => siteReport({ id: `rep-${i}` })));
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const body = await (await request("/sites")).json() as { data: { reports: unknown[]; nextCursor: string | null } };
     expect(body.data.reports).toHaveLength(25);
     expect(body.data.nextCursor).not.toBeNull();
@@ -172,13 +171,12 @@ describe("GET /users (list user reports)", () => {
   it("resolves both the reported and reporting users' identities", async () => {
     const { db, allQueue, calls } = makeDb();
     allQueue.push([userReport()]);
-    const auth = makeDb();
-    auth.allQueue.push([
+    allQueue.push([
       { id: "user-bad", email: "bad@example.com", name: "Bad Actor" },
       { id: "user-good", email: "good@example.com", name: "Good Citizen" },
     ]);
 
-    const request = makeApp({ DB: db, AUTH_DB: auth.db });
+    const request = makeApp({ DB: db });
     const res = await request("/users");
     expect(res.status).toBe(200);
     const body = await res.json() as { data: { reports: Array<{ reported: unknown; reporter: unknown }> } };
@@ -188,13 +186,14 @@ describe("GET /users (list user reports)", () => {
     expect(calls[0].sql).toContain("FROM user_reports");
     expect(calls[0].sql).toContain("r.status IN ('open', 'acknowledged')");
     // Both ids resolved in one chunk.
-    expect(auth.calls[0].binds).toEqual(["user-bad", "user-good"]);
+    expect(calls[1].sql).toContain("FROM users");
+    expect(calls[1].binds).toEqual(["user-bad", "user-good"]);
   });
 
   it("filters to reports against one user via userId", async () => {
     const { db, allQueue, calls } = makeDb();
     allQueue.push([]);
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/users?userId=user-bad");
     expect(res.status).toBe(200);
     expect(calls[0].sql).toContain("r.reported_user_id = ?");
@@ -204,10 +203,9 @@ describe("GET /users (list user reports)", () => {
   it("leaves identities null for deleted accounts", async () => {
     const { db, allQueue } = makeDb();
     allQueue.push([userReport()]);
-    const auth = makeDb();
-    auth.allQueue.push([]); // neither user found
+    allQueue.push([]); // neither user found
 
-    const request = makeApp({ DB: db, AUTH_DB: auth.db });
+    const request = makeApp({ DB: db });
     const body = await (await request("/users")).json() as { data: { reports: Array<{ reported: unknown; reporter: unknown }> } };
     expect(body.data.reports[0].reported).toBeNull();
     expect(body.data.reports[0].reporter).toBeNull();
@@ -219,7 +217,7 @@ describe("PATCH /sites/:id and /users/:id (triage)", () => {
     const { db, firstQueue, calls } = makeDb();
     firstQueue.push({ id: "rep-1", status: "open", target: "proj-1" });
 
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/sites/rep-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -243,7 +241,7 @@ describe("PATCH /sites/:id and /users/:id (triage)", () => {
     const { db, firstQueue, calls } = makeDb();
     firstQueue.push({ id: "urep-1", status: "acknowledged", target: "user-bad" });
 
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/users/urep-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -262,7 +260,7 @@ describe("PATCH /sites/:id and /users/:id (triage)", () => {
 
   it("404s on an unknown report id without auditing", async () => {
     const { db } = makeDb();
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/sites/rep-missing", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -274,7 +272,7 @@ describe("PATCH /sites/:id and /users/:id (triage)", () => {
 
   it("rejects an invalid target status", async () => {
     const { db, calls } = makeDb();
-    const request = makeApp({ DB: db, AUTH_DB: makeDb().db });
+    const request = makeApp({ DB: db });
     const res = await request("/users/urep-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

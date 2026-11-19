@@ -8,31 +8,31 @@
 // database through a Wrangler config file. `cf d1 query --local` has no local
 // implementation yet either. So this goes through the running api dev server's
 // Local Explorer API (`/cdn-cgi/local/explorer/api/d1/database/<id>/raw`),
-// which binds both databases (DB = cubedocs-main, AUTH_DB = cubedocs-auth) and
-// reads/writes the exact same SQLite files as the dev servers.
+// which binds cubedocs-main (DB) and reads/writes the exact same SQLite files
+// as the dev servers.
 //
 // Requires the api worker to be running (`pnpm dev`, :8787). Override the
 // origin with ANNEX_DEV_API_ORIGIN (e.g. http://127.0.0.1:18787).
 //
 // CLI:
-//   node scripts/d1-local.mjs <main|auth> "<sql>"
-//   node scripts/d1-local.mjs <main|auth> --file path/to/file.sql
+//   node scripts/d1-local.mjs main "<sql>"
+//   node scripts/d1-local.mjs main --file path/to/file.sql
 // Prints each statement's result as JSON ({ columns, rows }). Exits non-zero on
 // any SQL or connection error.
 //
 // Programmatic (from Node/TS tests):
 //   import { d1Local } from "../scripts/d1-local.mjs";
-//   await d1Local("auth", "UPDATE users SET ...");
+//   await d1Local("main", "UPDATE users SET ...");
 // or, from synchronous code, spawn this file with execFileSync(process.execPath,
 // [script, db, sql]) - no shell, so SQL quoting is passed through verbatim.
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Database ids from packages/{api,auth}/cloudflare.config.ts.
+// Database id from packages/api/cloudflare.config.ts. (cubedocs-auth is retired:
+// accounts live on auth.cubityfir.st; Annex's users mirror is in cubedocs-main.)
 export const D1_DATABASES = {
   main: "267490be-7141-4d00-ab23-152742f2f6ef", // cubedocs-main
-  auth: "db327d85-b8c2-4fed-adaa-25e748778c86", // cubedocs-auth
 };
 
 export function devApiOrigin() {
@@ -42,13 +42,13 @@ export function devApiOrigin() {
 /**
  * Execute `sql` (one or more `;`-separated statements) against a local D1.
  * Resolves to the explorer's per-statement results; rejects on any error.
- * @param {"main" | "auth"} db
+ * @param {"main"} db
  * @param {string} sql
  * @returns {Promise<Array<{ success: boolean, results?: { columns: string[], rows: unknown[][] } }>>}
  */
 export async function d1Local(db, sql) {
   const id = D1_DATABASES[db];
-  if (!id) throw new Error(`Unknown database "${db}" (expected "main" or "auth")`);
+  if (!id) throw new Error(`Unknown database "${db}" (expected "main")`);
   const url = `${devApiOrigin()}/cdn-cgi/local/explorer/api/d1/database/${id}/raw`;
   let res;
   try {

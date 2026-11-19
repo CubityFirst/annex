@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OrphanedOwnershipCard } from "@/components/projects/OrphanedOwnershipCard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -784,6 +785,11 @@ export function ProjectsPage() {
         <h1 className="text-xl font-semibold">Projects</h1>
         <p className="text-sm text-muted-foreground mt-1">Inspect site details and manage project feature flags.</p>
       </div>
+
+      <OrphanedOwnershipCard
+        refreshKey={pager.items}
+        onFilterSite={name => { setQuery(name); setCommittedQuery(name); pager.reset(); }}
+      />
 
       <Card>
         <CardHeader>

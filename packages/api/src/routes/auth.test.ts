@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteD1, type SqliteD1 } from "../test/sqliteD1";
 import { createFakeIdp, type FakeIdp, type FakeUser } from "../test/fakeIdp";
-import { setOidcFetchForTests, STATE_COOKIE } from "./auth";
+import { setOidcFetchForTests, STATE_COOKIE, handoffCookieName, stateCookieName } from "./auth";
 import { clearOidcCaches, identityFetch } from "../account/oidc";
 import { clearIdentityCache, type IdentityService, type IdentityUser } from "../account/identity";
 import worker, { type Env } from "../index";
@@ -49,8 +49,10 @@ function call(method: string, path: string, init: { token?: string; cookie?: str
   }), env());
 }
 
-function cookieFrom(res: Response): string {
-  const set = res.headers.get("Set-Cookie") ?? "";
+function cookieFrom(res: Response, name = STATE_COOKIE): string {
+  // The login-state cookie is named per sign-in (annex_oidc_<state>).
+  const prefix = name === STATE_COOKIE ? `${STATE_COOKIE}_` : `${name}=`;
+  const set = res.headers.getSetCookie().find(c => c.startsWith(prefix)) ?? "";
   return set.split(";")[0];
 }
 
@@ -58,6 +60,15 @@ function fragment(res: Response): URLSearchParams {
   const loc = res.headers.get("Location")!;
   expect(loc.startsWith(`${APP}/auth/complete#`)).toBe(true);
   return new URLSearchParams(loc.slice(loc.indexOf("#") + 1));
+}
+
+// The completion page's exchange for a callback response: its attempt id
+// (from the fragment) and that attempt's handoff cookie.
+function handoff(cb: Response): { path: string; cookie: string; name: string } {
+  const attempt = fragment(cb).get("attempt")!;
+  expect(attempt).toMatch(/^[0-9a-f]{32}$/);
+  const name = handoffCookieName(attempt);
+  return { path: `/auth/exchange?attempt=${attempt}`, cookie: cookieFrom(cb, name), name };
 }
 
 // login -> authorize at the IdP -> callback; returns the callback response.
@@ -70,8 +81,9 @@ async function signIn(user: FakeUser = ALICE, returnTo = "/projects"): Promise<R
 
 async function signInToken(user: FakeUser = ALICE): Promise<string> {
   const cb = await signIn(user);
-  const code = fragment(cb).get("code")!;
-  const ex = await call("POST", "/auth/exchange", { body: { code } });
+  expect(fragment(cb).get("status")).toBe("ok");
+  const h = handoff(cb);
+  const ex = await call("POST", h.path, { cookie: h.cookie });
   expect(ex.status).toBe(200);
   return ((await ex.json()) as { data: { token: string } }).data.token;
 }
@@ -106,7 +118,7 @@ describe("GET /auth/login", () => {
     expect(loc.searchParams.get("state")).toBeTruthy();
     expect(loc.searchParams.get("nonce")).toBeTruthy();
     const cookie = res.headers.get("Set-Cookie")!;
-    expect(cookie).toContain(`${STATE_COOKIE}=`);
+    expect(cookie).toContain(`${stateCookieName(loc.searchParams.get("state")!)}=`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Secure");
@@ -127,14 +139,22 @@ describe("GET /auth/login", () => {
 });
 
 describe("GET /auth/callback", () => {
-  it("verifies the id_token, upserts the users mirror and hands the SPA a single-use code", async () => {
+  it("verifies the id_token, upserts the users mirror and hands the browser a single-use code in a cookie", async () => {
     const res = await signIn(ALICE, "/projects/p1");
     expect(res.status).toBe(302);
-    expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(res.headers.getSetCookie().find(c => c.startsWith(`${STATE_COOKIE}_`))).toContain("Max-Age=0");
     const frag = fragment(res);
     expect(frag.get("return_to")).toBe("/projects/p1");
-    const code = frag.get("code")!;
-    expect(code.length).toBeGreaterThan(20);
+    // The code never appears in a URL: only in an HttpOnly, SameSite=Strict cookie.
+    expect(frag.get("code")).toBeNull();
+    expect(res.headers.get("Location")).not.toContain("code=");
+    const h = handoff(res);
+    const set = res.headers.getSetCookie().find(c => c.startsWith(`${h.name}=`))!;
+    expect(set).toContain("HttpOnly");
+    expect(set).toContain("SameSite=Strict");
+    expect(set).toContain("Path=/api/auth");
+    const cookie = h.cookie;
+    expect(cookie.length).toBeGreaterThan(60);
 
     expect(db.sqlite.prepare("SELECT email, name, is_admin, status FROM users WHERE id = ?").get(ALICE.sub))
       .toEqual({ email: ALICE.email, name: ALICE.name, is_admin: 0, status: "active" });
@@ -143,14 +163,36 @@ describe("GET /auth/callback", () => {
     expect(session.id_token.split(".")).toHaveLength(3);
     expect(session.handoff_hash).toBeTruthy();
 
-    const ex = await call("POST", "/auth/exchange", { body: { code } });
+    const ex = await call("POST", h.path, { cookie });
     expect(ex.status).toBe(200);
+    expect(ex.headers.getSetCookie().find(c => c.startsWith(`${h.name}=`))).toContain("Max-Age=0");
     const token = ((await ex.json()) as { data: { token: string } }).data.token;
     // The code is single use.
-    expect((await call("POST", "/auth/exchange", { body: { code } })).status).toBe(400);
+    expect((await call("POST", h.path, { cookie })).status).toBe(400);
 
     const me = await call("GET", "/me/favourite-sites", { token });
     expect(me.status).toBe(200);
+  });
+
+  it("signs nobody in from a completion link or a code in the body - only the browser holding the cookie", async () => {
+    const res = await signIn();
+    const h = handoff(res);
+    const value = h.cookie.split("=")[1];
+    expect((await call("POST", h.path)).status).toBe(400);
+    expect((await call("POST", h.path, { body: { code: value } })).status).toBe(400);
+    // The rightful browser still can (the failed attempts didn't burn it).
+    expect((await call("POST", h.path, { cookie: h.cookie })).status).toBe(200);
+  });
+
+  it("redeems each of two sign-ins finishing at once in one browser as its own session", async () => {
+    const BOB: FakeUser = { sub: "user-bob", email: "bob@example.com", name: "Bob", roles: ["user"] };
+    const a = handoff(await signIn(ALICE));
+    const b = handoff(await signIn(BOB));
+    const jar = `${a.cookie}; ${b.cookie}`;
+    const tokenFor = async (path: string) => ((await (await call("POST", path, { cookie: jar })).json()) as { data: { token: string } }).data.token;
+    const userOf = (t: string) => JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).userId;
+    expect(userOf(await tokenFor(a.path))).toBe(ALICE.sub);
+    expect(userOf(await tokenFor(b.path))).toBe(BOB.sub);
   });
 
   it("refreshes name/email on the mirror and the member snapshots at sign-in", async () => {
@@ -184,11 +226,12 @@ describe("GET /auth/callback", () => {
     expect(fragment(res).get("error")).toBe("login_expired");
   });
 
-  it("refuses a state mismatch (callback from another login)", async () => {
+  it("refuses a state mismatch (another login's sealed state under this login's cookie name)", async () => {
     const first = await call("GET", "/auth/login");
     const second = await call("GET", "/auth/login");
     const cb = new URL(idp.authorize(first.headers.get("Location")!, ALICE));
-    const res = await call("GET", `/auth/callback${cb.search}`, { cookie: cookieFrom(second) });
+    const secondValue = cookieFrom(second).split("=")[1];
+    const res = await call("GET", `/auth/callback${cb.search}`, { cookie: `${stateCookieName(cb.searchParams.get("state")!)}=${secondValue}` });
     expect(fragment(res).get("error")).toBeTruthy();
     expect(fragment(res).get("code")).toBeNull();
     expect(idp.tokenRequests).toBe(0);
@@ -222,9 +265,23 @@ describe("GET /auth/callback", () => {
     expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM users").get()).toEqual({ n: 0 });
   });
 
+  it("keeps two sign-ins started in different tabs apart until both callbacks land", async () => {
+    const BOB: FakeUser = { sub: "user-bob", email: "bob@example.com", name: "Bob", roles: ["user"] };
+    const first = await call("GET", "/auth/login?return_to=/a");
+    const second = await call("GET", "/auth/login?return_to=/b");
+    const jar = `${cookieFrom(first)}; ${cookieFrom(second)}`;
+    const cbA = await call("GET", `/auth/callback${new URL(idp.authorize(first.headers.get("Location")!, ALICE)).search}`, { cookie: jar });
+    // The first callback clears only its own state cookie.
+    expect(cbA.headers.getSetCookie().filter(c => c.includes("Max-Age=0")).map(c => c.split("=")[0])).toEqual([cookieFrom(first).split("=")[0]]);
+    const cbB = await call("GET", `/auth/callback${new URL(idp.authorize(second.headers.get("Location")!, BOB)).search}`, { cookie: jar });
+    expect([fragment(cbA).get("return_to"), fragment(cbB).get("return_to")]).toEqual(["/a", "/b"]);
+    expect([fragment(cbA).get("status"), fragment(cbB).get("status")]).toEqual(["ok", "ok"]);
+  });
+
   it("passes an OAuth error code through, never the description", async () => {
     const login = await call("GET", "/auth/login");
-    const res = await call("GET", "/auth/callback?error=access_denied&error_description=%3Cscript%3E", { cookie: cookieFrom(login) });
+    const state = new URL(login.headers.get("Location")!).searchParams.get("state")!;
+    const res = await call("GET", `/auth/callback?error=access_denied&error_description=%3Cscript%3E&state=${state}`, { cookie: cookieFrom(login) });
     const frag = fragment(res);
     expect(frag.get("error")).toBe("access_denied");
     expect([...frag.keys()]).toEqual(["error"]);
@@ -326,6 +383,24 @@ describe("session standing", () => {
     expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
   });
 
+  it("persists a deleted-account answer, so a later identity outage can't fall back to an active mirror row", async () => {
+    const token = await signInToken();
+    clearIdentityCache();
+    identity.getUser.mockResolvedValue(null);
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+    expect(db.sqlite.prepare("SELECT status FROM users WHERE id = ?").get(ALICE.sub)).toEqual({ status: "deleted" });
+    clearIdentityCache();
+    identity.getUser.mockRejectedValue(new Error("identity down"));
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+  });
+
+  it("a deletion recorded by the sync wins over a cached active answer", async () => {
+    const token = await signInToken();
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(200); // caches "active"
+    db.sqlite.prepare("INSERT INTO identity_deletions (user_id, deleted_at, deleted_by) VALUES (?, 1, 'self')").run(ALICE.sub);
+    expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
+  });
+
   it("caches standing per isolate instead of calling the identity service on every request", async () => {
     const token = await signInToken();
     identity.getUser.mockClear();
@@ -364,7 +439,7 @@ describe("POST /auth/logout", () => {
     const url = new URL(((await res.json()) as { data: { logoutUrl: string } }).data.logoutUrl);
     expect(`${url.origin}${url.pathname}`).toBe(`${idp.issuer}/oauth/logout`);
     expect(url.searchParams.get("id_token_hint")).toBe(idToken);
-    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${APP}/`);
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(APP);
     expect((await call("GET", "/me/favourite-sites", { token })).status).toBe(401);
   });
 

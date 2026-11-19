@@ -7,7 +7,7 @@ import type { Env } from "../index";
 import { ROLE_RANK } from "../lib";
 import { resolveAccess } from "../lib/access";
 import { latestDocRevisionContent, snapshotDocRevision } from "../lib/docOps";
-import { accountStanding, standingFromMirror, type MirrorUser } from "../account/identity";
+import { accountStanding, IDENTITY_DELETED_SQL, standingFromMirror, type MirrorUser } from "../account/identity";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -347,7 +347,8 @@ export class DocCollabRoom implements DurableObject {
       try {
         const row = await this.env.DB.prepare(
           `SELECT s.expires_at, s.revoked_at, s.kind, (d.user_id IS NOT NULL) AS blocked,
-                  u.id, u.email, u.name, u.email_verified, u.is_admin, u.status, u.suspended_until, u.created_at
+                  u.id, u.email, u.name, u.email_verified, u.is_admin, u.status, u.suspended_until, u.created_at,
+                  ${IDENTITY_DELETED_SQL}
            FROM sessions s
            JOIN users u ON u.id = s.user_id
            LEFT JOIN user_deletions d ON d.user_id = u.id

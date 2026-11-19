@@ -3,28 +3,30 @@
 pnpm + Turbo monorepo 
 
 - `packages/frontend` - React 19 SPA (Vite, Tailwind CSS 4, shadcn/ui)
-- `packages/api` - Core Cloudflare Worker (projects, docs, files)
-- `packages/auth` - Auth Cloudflare Worker (login, register, TOTP, WebAuthn)
+- `packages/api` - Core Cloudflare Worker (projects, docs, files, Annex sign-in + sessions, billing, preferences)
+- `packages/admin` - Admin panel Worker + SPA (`admin.cubityfir.st`)
 - `packages/mcp` - stdio MCP server over the public `/v1` API, authenticated by one or more site-scoped API keys (see "Public API & Scoped API Keys")
 
 ### Auth
 
-Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by the Auth Worker and verified by the API Worker via a shared `JWT_SECRET`. The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
+Accounts live on the standalone identity service **auth.cubityfir.st** (worker `cubityfirst-auth`, its own repo + D1). Annex is an **OpenID Connect client** of it, like every other service: password, 2FA, passkeys, email changes, sessions on the identity side, account moderation, registration and account deletion all happen there. Annex keeps its own **sessions**, a **users mirror**, and everything Annex-specific (billing/Ink, preferences, handles, badges). See `memories/Identity-Client.md`.
 
-**Verification boundary - read this before touching auth flow:**
+**Read this before touching auth flow:**
 
-- **API Worker verifies sessions inline.** It binds the auth D1 as `AUTH_DB` (read-only by convention - no migrations) and calls `loadCurrentSession` from `packages/auth/src/session.ts` directly. One batched read of `sessions` + a `users` row LEFT-JOINed against `user_billing` and `user_preferences`, no service-binding hop. This is what every authenticated API request goes through (`packages/api/src/auth.ts`).
-- **Auth Worker owns credential/session writes; the admin worker writes a bounded set of auth-DB tables directly.** Login, register, change-password, session revoke, TOTP/WebAuthn enroll, lookup, etc. are still proxied through the `AUTH` service binding from the API worker. Anything that mutates credentials/sessions or needs rate limiting / email sending stays in the auth worker. The **admin worker** (`packages/admin`), however, binds the auth D1 as `AUTH_DB` read+write and writes these tables directly: `users` (moderation, force_password_change), `user_moderation_events`, `user_preferences` (badges, `handle`/`handle_locked`), `user_billing` (granted-plan columns), `user_deletions` (scheduled account deletion), and `admin_audit_log`. The API worker's `AUTH_DB` binding remains read-only by convention. Migrations still only live in `packages/auth/migrations/`.
-- **Cross-package import.** API worker imports `loadCurrentSession`, `sessionResultToResponse`, and `verifyJwt` directly from `packages/auth/src/`. The API tsconfig lists those files in `include`. **A schema change to `users` / `sessions` / `user_billing` / `user_preferences` columns referenced in `loadCurrentSession` requires redeploying auth + api + admin (in that order)**, because all three packages read these tables directly. Migrations themselves still only live in `packages/auth/migrations/`.
-- The auth worker's `/verify` endpoint still exists but the API worker no longer calls it - leave it in place for now in case external tooling depends on it.
+- **Sign-in** (`packages/api/src/routes/auth.ts`, `src/account/oidc.ts` on oauth4webapi): `GET /api/auth/login` → identity service (PKCE S256, state, nonce in an HMAC-sealed HttpOnly cookie) → `GET /api/auth/callback` (id_token claims + JWKS signature verified, `users` mirror upserted, pending Annex session created, its single-use handoff code set ONLY as an HttpOnly SameSite=Strict `annex_handoff_<attempt>` cookie - never in a URL, so a crafted link can't sign anyone in; one per sign-in) → SPA `/auth/complete#status=ok&attempt=<id>` → `POST /api/auth/exchange?attempt=<id>` redeems that cookie for the session JWT (kept in localStorage, sent as `Authorization: Bearer`). Sign-out: `POST /api/auth/logout` revokes the session and returns the end-session URL (`id_token_hint` kept on the session row). The admin panel runs the same flow (shared `AuthFlow`) as its own client with session `kind = 'admin'`.
+- **Server-side OIDC requests never fetch `https://auth.cubityfir.st` directly.** Annex's workers share the cubityfir.st zone with it, and a Worker's same-zone `fetch()` to another Worker's hostname goes to the origin, not that Worker. Discovery/JWKS/token go through the **`IDENTITY_OIDC`** service binding (`cubityfirst-auth` default export; `identityFetch` in `account/oidc.ts`). Only browser redirects use the public URL. Local dev falls back to the public/local issuer when the binding has no target.
+- **Sessions are verified inline** against cubedocs-main (`account/session.ts` `loadCurrentSession(token, env, kind)`: one batch of `sessions` + `users` mirror LEFT JOIN `user_billing`/`user_preferences`/`user_deletions`). The JWT (HS256, Annex-only `JWT_SECRET`) only proves Annex minted the session. **Account standing comes from the identity service** via the **`IDENTITY`** RPC binding (`IdentityService.getUser`, cached ~60s per isolate in `account/identity.ts`, falls back to the mirror's last known standing when unreachable). An admin-scheduled `user_deletions` row blocks the user in Annex regardless.
+- **The users mirror** (`users` in cubedocs-main) is refreshed at sign-in and whenever the standing check sees a change; name/email changes are copied to `project_members`/`organization_members` snapshots. `PATCH /me` refuses `name` (owned by the identity service). Invite-by-email asks `IDENTITY.findUserByEmail` and mirrors the result.
+- **No `AUTH_DB` / `AUTH` binding, no `packages/auth`.** Don't reintroduce a shared secret or a direct read of the identity DB.
 
 ### Database Schemas
 
 - **API DB** (`cubedocs-main`): projects, docs (+ `doc_ai_summaries` satellite; `docs.slug` is the doc's custom public-URL segment from the `slug:` frontmatter key - unique per project, normalized + synced by `docOps.syncDocSlug` on every save path incl. collab checkpoints and restores, resolved by `/public/docs/:site/:idOrSlug`), doc_revisions, folders, files, members, site_reports + user_reports (abuse reports: public "Report Site" button → `POST /public/projects/:id/report`, profile-card "Report user" → authenticated `POST /users/:id/report`; both triaged via the admin worker's `/api/reports/{sites,users}` routes + the admin "Reports" page's Sites/Users tabs) - see `packages/api/migrations/`. Bound as `DB` on the API worker.
 - **Recycle bin** (API DB, `0062_add_trash.sql`, `lib/trash.ts`, `routes/trash.ts`, `components/RecycleBin.tsx` - shown as the "Recycle bin" section of Site Settings, `/projects/:id/trash` redirects there): deleting a doc/file/folder (app, or `/v1` doc DELETE) **moves its rows out of** `docs`/`files`/`folders` into `trash_items` JSON snapshots (one `trash_entries` row per user-visible entry; a folder bins its whole subtree as one entry, except the home doc, which is moved to the root). Because binned rows are physically gone from the live tables, **no reader needs a "not deleted" filter - don't add one, and don't hard-delete docs/files/folders from a route; call `moveToTrash`**. Cascade-lost satellites that aren't derivable (`doc_shares`, the `docs_fts` row, `site_reports.doc_id`) ride in `extra_json` and come back on restore; R2 objects + `asset_revisions` stay until purge. Restore/list = editor+, delete-forever/empty = admin+, auto-purge after 30 days on the daily cron. Site deletion (api + admin) must include `trash_items` ids in its R2 sweep. `trash.test.ts` runs against real SQLite via `src/test/sqliteD1.ts` (all migrations applied) - use that harness for SQL-heavy logic.
 - **Doc search index** (API DB, `0064_rebuild_docs_fts.sql`, `lib/fts.ts`): `docs_fts` is FTS5 with an indexed `pid` = `hex(project_id)` token column plus a `docs_fts_map(rid, doc_id)` rowid map, so per-doc writes are rowid lookups and search MATCHes `pid:"<token>"` (`siteFtsMatch`) instead of scanning every site. **Never write `docs_fts` with raw SQL (`WHERE doc_id = ?` / `WHERE project_id = ?` are full scans, and a bare INSERT gets no `pid` or map row) - use the `fts*Statements` helpers**, which keep exactly one map row per FTS row and compose into a caller's batch (the insert + map statements must stay adjacent: `last_insert_rowid()`). Search weights stay `bm25(docs_fts, 5.0, 1.0, 0.0)` (pid weighted 0). `scripts/repair-docs-fts.sql` reconciles rows written by pre-0064 code.
-- **Admin account deletion is always delayed** (auth `0034_add_user_deletions.sql`, admin `lib/userDeletion.ts`, Users page checkboxes → bulk Delete/Disable/Re-enable/Cancel deletion): "Delete" only **schedules** - it disables the account now and writes a `user_deletions` row; the admin worker's hourly cron (`runDueUserDeletions`) performs the delete after 7 days, and any admin can cancel before then (restoring the prior moderation). Owned sites/orgs are deleted **only** when the operator ticked an explicit per-account box in the preview, scheduling refuses unless the confirmed ids exactly match current ownership (`sameIdSet`), and execution refuses if the account owns anything outside them. While a deletion is pending, `PATCH /api/users/:id` moderation is refused - cancel instead (the guard is inside the write, not just a pre-check). The cron claims each schedule by `(user_id, id)` with a lease; cancel is refused while leased or once `started_at` is set (first irreversible step), after which a failed run is retried to completion - a confirmed site/org that no longer exists counts as done. Real-SQLite scenario tests: `userDeletion.sqlite.test.ts`. **Don't add an immediate admin delete path.** Site deletion itself is shared via `lib/projectDelete.ts`.
-- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials, plus the 1:1 satellites `user_billing` (Stripe + plan state) and `user_preferences` (fonts, Ink cosmetics, timezone, bio, badges, opt-in profile `handle`) - see `packages/auth/migrations/`. The `handle` (`0035`, partial unique index, stored lowercase, rules in `packages/auth/src/handle.ts` mirrored by `frontend/src/lib/handle.ts`) powers the `/@<handle>` profile link: set/cleared via auth `/update-handle` (proxied as `PATCH /me/handle`), resolved by the API's `GET /users/by-handle/:handle` reading `AUTH_DB` directly. Null = link off. Admins moderate it via the admin worker's `PATCH /api/users/:id/handle` (Users → details → "Profile Link"; may assign reserved names) and can set `handle_locked`, which makes `/update-handle` refuse every user change (403 `reason: "locked"`, guarded inside the write too). Bound as `DB` on the auth worker (read+write), as `AUTH_DB` on the API worker (read-only by convention), and as `AUTH_DB` on the admin worker (read+write for moderation/badges/billing-grants/audit - see the verification-boundary note above). **A schema change to any column these direct readers/writers touch requires redeploying auth + api + admin (in that order).**
+- **Admin deletion is always delayed and deletes Annex data only** (api `0065_add_identity_mirror.sql` `user_deletions`, admin `lib/userDeletion.ts`, Users page checkboxes → bulk Delete/Cancel deletion): "Delete" only **schedules** - the `user_deletions` row blocks the person from Annex at once; the admin worker's hourly cron (`runDueUserDeletions`) deletes their Annex data after 7 days (Stripe customer, confirmed sites/orgs, memberships, billing, preferences, sessions) and sets `completed_at`. The users mirror row and schedule stay, so they remain blocked until the operator deletes the **identity account on auth.cubityfir.st** (Annex never deletes it). Any admin can cancel before execution starts. Moderation (disable/suspend) happens on auth.cubityfir.st, not in the Annex admin. Owned sites/orgs are deleted **only** when the operator ticked an explicit per-account box in the preview, scheduling refuses unless the confirmed ids exactly match current ownership (`sameIdSet`), and execution refuses if the account owns anything outside them. The cron claims each schedule by `(user_id, id)` with a lease; cancel is refused while leased or once `started_at` is set (first irreversible step), after which a failed run is retried to completion - a confirmed site/org that no longer exists counts as done; completed rows are never re-run. Real-SQLite scenario tests: `userDeletion.sqlite.test.ts`. **Don't add an immediate admin delete path.** Site deletion itself is shared via `lib/projectDelete.ts`.
+- **Account data** (cubedocs-main, `0065_add_identity_mirror.sql`; copied once from the retired `cubedocs-auth` by `scripts/import-auth-data.mjs`): the `users` mirror (`id` = OIDC `sub`, email, name, is_admin, last known `status`/`suspended_until`), Annex `sessions` (`kind` app/admin, `id_token`, single-use `handoff_hash`), and the satellites `user_billing` (Stripe + plan state) and `user_preferences` (fonts, theme, Ink cosmetics, timezone, bio, badges, opt-in profile `handle` + `handle_locked`), plus `webhook_events`, `user_deletions`, `user_moderation_events` (read-only history), `admin_audit_log` and `identity_deletions`. The `handle` (partial unique index, stored lowercase, rules in `packages/api/src/account/handle.ts` mirrored by `frontend/src/lib/handle.ts`) powers the `/@<handle>` profile link: set via `PATCH /me/handle`, resolved by `GET /users/by-handle/:handle`; admins moderate it via the admin worker's `PATCH /api/users/:id/handle` and can lock it (`403 reason: "locked"`).
+- **Deletion sync** (api `lib/identityDeletions.ts`, hourly cron `23 * * * *`): `IDENTITY.listDeletedUsers` from the newest recorded `identity_deletions.deleted_at`; for each account it deletes the Stripe customer, memberships, API keys, shares, favourites, avatars and the users mirror row (cascading the rest). **Sites/orgs the person owned are kept** (owner rows too) and listed on the admin Projects page ("Owner account deleted") for an operator to delete or leave. Failures stay pending with `last_error` and retry.
 
 #### Satellite tables and the resolver
 
@@ -33,9 +35,9 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 - Satellite row is created lazily - first write does `INSERT … ON CONFLICT(parent_id) DO UPDATE SET …`. A user/doc/etc. that has never had the feature touched has no satellite row at all.
 - Every reader does `LEFT JOIN <satellite> ON <satellite>.<parent>_id = <parent>.id`. Missing rows return NULL for every satellite column, which the consumer treats as "default."
 - The satellite declares `REFERENCES <parent>(id) ON DELETE CASCADE` so deleting the parent wipes the satellite row automatically.
-- Existing satellites: `doc_ai_summaries` (api DB; ai_summary cache), `user_billing` (auth DB; Stripe/plan state), `user_preferences` (auth DB; fonts + cosmetics + timezone + bio + badges).
+- Existing satellites: `doc_ai_summaries` (ai_summary cache), `user_billing` (Stripe/plan state), `user_preferences` (fonts + cosmetics + timezone + bio + badges + handle). All in cubedocs-main.
 
-`resolvePersonalPlan` in `packages/auth/src/plan.ts` is fed inputs from multiple tables (billing-state from `user_billing`, cosmetic prefs from `user_preferences`). Callers build a flat `PlanRow` from the LEFT-JOINed query result and hand it to the resolver - see `loadCurrentSession`, `members.ts`, `update-ink-prefs.ts` for the pattern.
+`resolvePersonalPlan` in `packages/api/src/account/plan.ts` is fed inputs from multiple tables (billing-state from `user_billing`, cosmetic prefs from `user_preferences`). Callers build a flat `PlanRow` from the LEFT-JOINed query result and hand it to the resolver - see `loadCurrentSession`, `members.ts`, `routes/me/update-ink-prefs.ts` for the pattern.
 
 ## Frontend Notes
 
@@ -62,7 +64,7 @@ The landing page's "See a demo" links to **`/demo`**, a local-only sandbox: a se
 
 ## Annex Ink + Stripe
 
-Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching the `user_billing` table (Stripe ids, `personal_plan_*`, `granted_plan_*`), the cosmetic-pref columns on `user_preferences` (`personal_plan_style`, `personal_presence_color`, `personal_crit_sparkles`), `billing.ts`, `stripe-webhook.ts`, the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** - see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
+Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching the `user_billing` table (Stripe ids, `personal_plan_*`, `granted_plan_*`), the cosmetic-pref columns on `user_preferences` (`personal_plan_style`, `personal_presence_color`, `personal_crit_sparkles`), `routes/billing.ts`, `routes/stripeWebhook.ts` (api worker), the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** - see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
 
 ## Realtime Collaboration
 
@@ -88,37 +90,28 @@ A site owner can map their **own domain** (e.g. `docs.example.com`) to their pub
 
 **Critical invariant:** the custom domain serves a **published, read-only** public site only - never the authenticated app (sessions/JWT are per-origin). Host detection (`isCustomDomain` in `lib/siteUrl.ts`) treats `localhost`/`*.cubityfir.st`/`*.workers.dev`/`*.pages.dev`/`*.local` as app hosts; anything else is a custom domain and boots `CustomDomainApp` (site-only routes). When `CF_API_TOKEN`/`CF_ZONE_ID` are unset the endpoints report "not configured" and never call Cloudflare.
 
-## Sign in with Annex (OIDC provider)
+## Identity provider (auth.cubityfir.st)
 
-Annex is an **OpenID Connect identity provider** (authorization-code + PKCE, RS256
-id_tokens via JWKS) so other first-party services can offer "Sign in with Annex".
-Issuer is the dedicated host **`https://auth.cubityfir.st`** (the auth worker serves
-`/oauth/{token,userinfo,jwks}` + `/.well-known/openid-configuration` there via routes
-in its `cloudflare.config.ts`); the browser-facing **authorization_endpoint is a SPA page on
-the app origin** `docs.cubityfir.st/oauth/authorize` because the user's Annex session
-lives there. **Anything touching `oauth_clients`/`oauth_codes` (`0028_*`), `src/oidc.ts`,
-`routes/oauth-*.ts`, the `/oauth/authorize` proxy, the `RATE_LIMITER_OIDC` binding,
-`OAuthAuthorizePage`, the `OIDC_*` vars/secret, the admin client-management surface
-(`packages/admin` `routes/oauth.ts` proxy + `OAuthClientsPage` "OAuth" tab → auth worker
-`/admin/oauth/clients*`), or the `scripts/{gen-oidc-key,register-oauth-client}.mjs`
-helpers belongs to this system** - see `memories/Oidc-Provider.md` and `docs/oauth/README.md`.
-
-**Critical invariants:** exact redirect-URI match only (no wildcards; never redirect to an
-unvalidated URI); PKCE S256 mandatory and verified *before* the single-use code is consumed;
-RS256 signs with a dedicated `OIDC_PRIVATE_KEY` (never the session `JWT_SECRET`) and the verifier
-pins `alg`; disabled clients + suspended users are refused at authorize, token, AND userinfo.
+Annex is **not** an OpenID Connect provider any more. Since 2026-11-18 the
+provider is the standalone `cubityfirst-auth` worker at `https://auth.cubityfir.st`
+(its own repo and D1); Annex is one of its clients (see "Auth" above). The
+`auth.cubityfir.st` hostname is cubityfirst-auth's Custom Domain - **never add
+routes for it to an Annex worker**. OAuth clients are managed at
+`auth.cubityfir.st/admin/clients`. The old `docs.cubityfir.st/oauth/authorize`
+URL redirects to the provider (frontend worker + SPA shim). See
+`docs/oauth/README.md`.
 
 ## Tests
 
 Tests exist - run them before reporting work as done when changes are testable.
 
-- **Vitest unit tests** live next to source as `*.test.ts(x)` in each package. Run per-package with `pnpm --filter <api|auth|frontend> test`, or all packages + e2e with `pnpm test` from the root. Coverage is heaviest in `packages/auth` (login, password, jwt, totp, plan, billing, stripe-webhook) and `packages/frontend/src/lib` (remark plugins, dice, frontmatter, userColor).
-- **Playwright e2e tests** live in `e2e/tests/` (one `*.spec.ts` per feature area - list the directory to see current coverage). Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
+- **Vitest unit tests** live next to source as `*.test.ts(x)` in each package. Run per-package with `pnpm --filter <api|frontend|@annex/admin|@annex/admin-frontend> test`, or all packages + e2e with `pnpm test` from the root. Sign-in is covered end to end against a fake OpenID provider (`packages/api/src/test/fakeIdp.ts`, `routes/auth.test.ts`); SQL-heavy logic runs on real SQLite (`src/test/sqliteD1.ts`, `test/session.ts` seeds a mirror user + session).
+- **Playwright e2e tests** live in `e2e/tests/` (one `*.spec.ts` per feature area - list the directory to see current coverage). Accounts live on auth.cubityfir.st, so suites sign in with `e2e/signIn.ts` (`devSignIn` via the api worker's localhost-only `POST /api/dev/quick-login`; needs `DEV_QUICK_LOGIN=true` + `APP_ORIGIN=http://localhost:5173` in `packages/api/.dev.vars`). `admin.spec.ts` uses the admin worker's own `POST /api/dev/quick-login` (`DEV_QUICK_LOGIN=true` + `APP_ORIGIN=http://localhost:5174` in `packages/admin/.dev.vars`). Keep `OIDC_ISSUER` in both `.dev.vars` local (see the `.example` files) so sign-out never redirects a test to the real provider. Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
 - When adding behavior with existing test coverage in the same area, extend the corresponding suite rather than leaving it untested.
 
 ## Commits
 
-Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperative summary>` (e.g. `feat(frontend): draft-first doc creation`, `fix(auth): ...`). Types/scopes are listed in `CONTRIBUTING.md` - scope is the package (`frontend`, `api`, `auth`, `admin`, `e2e`) or feature area (`files`, `search`, `orgs`, `billing`, `collab`, `oidc`, ...).
+Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperative summary>` (e.g. `feat(frontend): draft-first doc creation`, `fix(auth): ...`). Types/scopes are listed in `CONTRIBUTING.md` - scope is the package (`frontend`, `api`, `admin`, `e2e`) or feature area (`files`, `search`, `orgs`, `billing`, `collab`, `oidc`, ...).
 
 ## CLI Notes
 
@@ -126,10 +119,10 @@ Use Conventional Commits with a type **and** scope: `<type>(<scope>): <imperativ
 
 ## Worker Config (cf)
 
-Each worker (`packages/{api,auth,admin,frontend}`) is configured by **`cloudflare.config.ts`** (Worker settings, bindings, vars, routes/domains, crons, DO `exports`) plus **`wrangler.config.ts`** (build settings: assets dir, source maps). **These are the only Worker config files - there is no `wrangler.toml`/`wrangler.json`; don't add one.** They are what **`cf build` / `cf deploy`**, the Workers Builds deploy triggers, and local dev read, so a binding/var/route change goes in `cloudflare.config.ts` only. Each package pins `cf` and `wrangler` (the Wrangler bundler must be installed per package, not hoisted).
+Each worker (`packages/{api,admin,frontend}`) is configured by **`cloudflare.config.ts`** (Worker settings, bindings, vars, routes/domains, crons, DO `exports`) plus **`wrangler.config.ts`** (build settings: assets dir, source maps). **These are the only Worker config files - there is no `wrangler.toml`/`wrangler.json`; don't add one.** They are what **`cf build` / `cf deploy`**, the Workers Builds deploy triggers, and local dev read, so a binding/var/route change goes in `cloudflare.config.ts` only. Each package pins `cf` and `wrangler` (the Wrangler bundler must be installed per package, not hoisted).
 
-- **Local dev** (`pnpm dev`): api/auth/admin run `wrangler dev --experimental-new-config --port <n> --persist-to ../../.wrangler/state`, which loads `cloudflare.config.ts` + `wrangler.config.ts` (and `.dev.vars`) directly. Plain `cf dev` isn't used because it can't take a persist dir yet, and all workers must share one state dir (the api reads auth's DB via `AUTH_DB`). The frontend's `pnpm dev` is plain Vite.
-- **Local D1 SQL** (no Wrangler config means `wrangler d1 execute --local` can't resolve a database, and `cf d1 query --local` isn't implemented yet): use `node scripts/d1-local.mjs <main|auth> "<sql>"` (or `--file`), which runs through the running api dev server's Local Explorer API against the shared state - see "Local D1 State" below. Remote commands (`npx wrangler d1 execute <db> --remote`, `npx wrangler r2 object ... --remote`) work without a config file.
+- **Local dev** (`pnpm dev`): api/admin run `wrangler dev --experimental-new-config --port <n> --persist-to ../../.wrangler/state`, which loads `cloudflare.config.ts` + `wrangler.config.ts` (and `.dev.vars`) directly. Plain `cf dev` isn't used because it can't take a persist dir yet, and both workers must share one state dir (they share cubedocs-main). The frontend's `pnpm dev` is plain Vite. **Sign-in locally**: run the identity worker (`G:\scripts\auth`) with `npx wrangler dev --port 8790` (Annex's api owns :8787) and point `OIDC_*` in `packages/{api,admin}/.dev.vars` at it (see the `.dev.vars.example` files), or skip it with the dev quick-login buttons (`DEV_QUICK_LOGIN=true`).
+- **Local D1 SQL** (no Wrangler config means `wrangler d1 execute --local` can't resolve a database, and `cf d1 query --local` isn't implemented yet): use `node scripts/d1-local.mjs main "<sql>"` (or `--file`), which runs through the running api dev server's Local Explorer API against the shared state - see "Local D1 State" below. Remote commands (`npx wrangler d1 execute <db> --remote`, `npx wrangler r2 object ... --remote`) work without a config file.
 - D1 migrations: `pnpm migrate` / `node scripts/migrate.mjs <local|remote>` run `cf d1 migrations apply <DATABASE_ID>` (remote unless `--local`).
 - `annex-api`'s `DocCollabRoom` is declared as `exports.durableObject({ storage: "legacy-kv" })` - it was created with `new_classes` (KV-backed). Never change it to `"sqlite"`.
 - The frontend package depends on Vite, so `cf build` would run `vite build` instead of Wrangler; its deploy is `pnpm build && pnpm build:worker (cf-wrangler build) && cf deploy --prebuilt`.
@@ -141,10 +134,10 @@ The dev servers use a shared wrangler state at the **monorepo root** (`/.wrangle
 
 Local migrations (`pnpm migrate` / `node scripts/migrate.mjs local`) pass `--persist-to ../../.wrangler/state` from the package directory; any manual `cf d1 migrations apply <id> --local` must too, otherwise it hits a state the dev servers never read.
 
-Ad-hoc local queries go through `scripts/d1-local.mjs` (needs `pnpm dev` running - it talks to the api worker on :8787, override with `ANNEX_DEV_API_ORIGIN`). `main` = `cubedocs-main`, `auth` = `cubedocs-auth`; it prints the last statement's rows as JSON. Use it for DML/SELECTs - schema changes belong in migrations. e2e specs use the `e2e/d1Local.ts` wrapper.
+Ad-hoc local queries go through `scripts/d1-local.mjs` (needs `pnpm dev` running - it talks to the api worker on :8787, override with `ANNEX_DEV_API_ORIGIN`). `main` = `cubedocs-main` (the only database; accounts live on auth.cubityfir.st); it prints the last statement's rows as JSON. Use it for DML/SELECTs - schema changes belong in migrations. e2e specs use the `e2e/d1Local.ts` wrapper.
 
 ```
-node scripts/d1-local.mjs auth "SELECT id, email FROM users LIMIT 5"
+node scripts/d1-local.mjs main "SELECT id, email, status FROM users LIMIT 5"
 node scripts/d1-local.mjs main "UPDATE projects SET features = features | 4 WHERE id = '<id>'"
 ```
 
@@ -152,7 +145,7 @@ node scripts/d1-local.mjs main "UPDATE projects SET features = features | 4 WHER
 
 For running several feature branches side-by-side (e.g. many agents in parallel, each
 reviewable in a browser on its own port), use `scripts/worktree.mjs`. The main checkout runs
-the full stack via `pnpm dev` (frontend 5173 + api 8787 + auth 8788 + admin 8789 + the shared
+the full stack via `pnpm dev` (frontend 5173 + api 8787 + admin 8789 + the shared
 `.wrangler/state` D1) - that's the **one backend**. Each worktree adds **another frontend** on
 its own port, and the Vite `/api` proxy (hardcoded to `:8787` in `vite.config.ts`) makes every
 worktree frontend talk to that single backend and share the one dev DB. No app-code or

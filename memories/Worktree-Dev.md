@@ -7,9 +7,9 @@ browser on its own port - while a single shared backend serves them all. Driven 
 ## The model
 
 ```
-main checkout  G:\Scripts\cubedocs        →  pnpm dev   (frontend 5173 + api 8787 + auth 8788
+main checkout  G:\Scripts\cubedocs        →  pnpm dev   (frontend 5173 + api 8787
                                               + admin 8789 + the shared .wrangler/state D1)  ── full
-                                              stack; the api/auth/admin here are the ONE backend
+                                              stack; the api/admin here are the ONE backend   
 worktree A     ..\cubedocs-worktrees\feat-x  (branch feat-x)  →  vite --port 5200 ─┐
 worktree B     ..\cubedocs-worktrees\feat-y  (branch feat-y)  →  vite --port 5201 ─┼─ all proxy /api → :8787
 worktree C     ...                                            →  vite --port 5202 ─┘

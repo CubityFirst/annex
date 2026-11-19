@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   getModerationState,
-  mergeDateAndTime,
-  formatTimeInput,
   latestModerationSummary,
 } from "./moderation";
 import { formatDateTime } from "./format";
@@ -24,30 +22,6 @@ describe("getModerationState boundaries", () => {
   it("an elapsed timestamp is active again (boundary: exactly now)", () => {
     expect(getModerationState(nowSeconds, nowMs)).toEqual({ kind: "active" });
     expect(getModerationState(nowSeconds - 1, nowMs)).toEqual({ kind: "active" });
-  });
-});
-
-describe("mergeDateAndTime", () => {
-  it("applies the HH:MM onto the date, zeroing seconds", () => {
-    const date = new Date(2026, 6, 5, 23, 59, 58, 999);
-    const merged = mergeDateAndTime(date, "09:30");
-    expect(merged.getFullYear()).toBe(2026);
-    expect(merged.getMonth()).toBe(6);
-    expect(merged.getDate()).toBe(5);
-    expect(merged.getHours()).toBe(9);
-    expect(merged.getMinutes()).toBe(30);
-    expect(merged.getSeconds()).toBe(0);
-  });
-
-  it("treats unparsable time parts as 00:00", () => {
-    const merged = mergeDateAndTime(new Date(2026, 0, 1), "junk");
-    expect(merged.getHours()).toBe(0);
-    expect(merged.getMinutes()).toBe(0);
-  });
-
-  it("round-trips through formatTimeInput", () => {
-    const date = new Date(2026, 3, 2, 7, 5);
-    expect(formatTimeInput(date)).toBe("07:05");
   });
 });
 

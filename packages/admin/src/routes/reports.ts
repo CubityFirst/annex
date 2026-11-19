@@ -50,7 +50,7 @@ async function resolveUserIdentities(
   for (let i = 0; i < unique.length; i += 50) {
     const chunk = unique.slice(i, i + 50);
     const ph = chunk.map(() => "?").join(",");
-    const users = await env.AUTH_DB.prepare(
+    const users = await env.DB.prepare(
       `SELECT id, email, name FROM users WHERE id IN (${ph})`,
     ).bind(...chunk).all<{ id: string; email: string | null; name: string | null }>();
     for (const u of users.results) out[u.id] = { email: u.email, name: u.name };
